@@ -36,6 +36,16 @@
   <label class="filtre-case"><input type="radio" name="filtre-statut" value="avec_reponse"> Avec réponse</label>
 </div>
 
+<div class="filtre-entreprises">
+  <span class="filtre-titre">Ancienneté :</span>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="tous" checked> Toutes dates</label>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="7"> Moins d'1 semaine</label>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="30"> Moins d'1 mois</label>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="90"> Moins de 3 mois</label>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="180"> Moins de 6 mois</label>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="365"> Moins d'1 an</label>
+</div>
+
 {% if clients|length > 1 %}
 <div class="filtre-entreprises">
   <span class="filtre-titre">Entreprises :</span>
@@ -74,6 +84,7 @@
   const caseToutes = document.getElementById("case-filtre-toutes");
   const casesClients = Array.from(document.querySelectorAll(".case-filtre-client"));
   const casesStatut = Array.from(document.querySelectorAll('input[name=filtre-statut]'));
+  const casesAnciennete = Array.from(document.querySelectorAll('input[name=filtre-anciennete]'));
   const conteneurPagination = document.getElementById("pagination-avis");
   const texteAffichagePagination = document.getElementById("texte-pagination");
   const boutonPagePrecedente = document.getElementById("bouton-page-precedente");
@@ -169,12 +180,25 @@
     return coche ? coche.value : "tous";
   }
 
+  function ancienneteActive() {
+    const coche = casesAnciennete.find((c) => c.checked);
+    return coche ? coche.value : "tous";
+  }
+
   function avisFiltres() {
     const actifs = filtresActifs();
     let avis = actifs ? tousLesAvis.filter((a) => actifs.includes(a.client_id)) : tousLesAvis.slice();
     const statut = statutActif();
     if (statut === "sans_reponse") avis = avis.filter((a) => !a.reponse);
     if (statut === "avec_reponse") avis = avis.filter((a) => !!a.reponse);
+    const anciennete = ancienneteActive();
+    if (anciennete !== "tous") {
+      const seuilMs = Date.now() - Number(anciennete) * 24 * 60 * 60 * 1000;
+      avis = avis.filter((a) => {
+        const instant = new Date(a.date_avis).getTime();
+        return !isNaN(instant) && instant >= seuilMs;
+      });
+    }
     avis.sort((a, b) => (a.date_avis < b.date_avis ? 1 : -1));
     avis.sort((a, b) => (a.reponse ? 1 : 0) - (b.reponse ? 1 : 0));
     return avis;
@@ -344,6 +368,11 @@
   }));
 
   casesStatut.forEach((c) => c.addEventListener("change", () => {
+    pageActuelle = 1;
+    afficherAvis();
+  }));
+
+  casesAnciennete.forEach((c) => c.addEventListener("change", () => {
     pageActuelle = 1;
     afficherAvis();
   }));
