@@ -123,6 +123,32 @@
     </div>
   </form>
 
+  <div class="choix-image-bloc">
+    <span class="choix-image-titre">Base de connaissances (documents pour l'IA)</span>
+    {% if erreur_document %}
+    <p class="message-erreur">{{ erreur_document }}</p>
+    {% endif %}
+    {% if client.documents_connaissance %}
+    <div class="liste-etiquettes">
+      {% for document in client.documents_connaissance %}
+      <div class="etiquette-supprimable">
+        <span class="etiquette-chip">{{ document.nom_fichier }}</span>
+        <form method="post" action="/clients/{{ client.id }}/documents/{{ document.id }}/supprimer" onsubmit="return confirm('Retirer ce document de la base de connaissances ?');">
+          <button type="submit" class="lien-retirer-geotag" title="Retirer">×</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="texte-vide">Aucun document ajouté pour l'instant.</p>
+    {% endif %}
+    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/documents" enctype="multipart/form-data">
+      <input type="file" name="fichier" accept=".pdf,.docx,.txt" required>
+      <button type="submit" class="bouton-secondaire">Ajouter</button>
+    </form>
+    <p class="texte-discret">PDF, Word (.docx) ou texte (.txt) — vient compléter le "Contenu du site" ci-dessus, pas le remplacer. Seul le texte est conservé, pas le fichier d'origine.</p>
+  </div>
+
   <form method="post" action="/clients/{{ client.id }}/supprimer"
         onsubmit="return confirm('Supprimer ce client et tous ses posts ?');">
     <button type="submit" class="bouton-danger">Supprimer ce client</button>

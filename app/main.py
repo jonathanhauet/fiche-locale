@@ -25,6 +25,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import (
     claude_generation,
+    documents,
     gemini_images,
     geocodage,
     google_business,
@@ -438,7 +439,7 @@ def suggerer_reponse_avis_route(
         return JSONResponse({"erreur": "Non connecte."}, status_code=401)
 
     client = db.query(models.Client).filter_by(account_id=account_id, location_id=location_id).first()
-    contenu_site = client.contenu_site if client else ""
+    contenu_site = _contexte_ia_client(client) if client else ""
     consignes_avis = client.consignes_avis if client else ""
 
     try:
@@ -584,7 +585,7 @@ def generer_post_generique_route(
     if client_reference_id.strip():
         client_reference = db.get(models.Client, int(client_reference_id))
         if client_reference:
-            contenu_reference = client_reference.contenu_site
+            contenu_reference = _contexte_ia_client(client_reference)
 
     try:
         post_genere = claude_generation.generer_post_generique(theme, contenu_reference)
@@ -780,9 +781,23 @@ def creer_client(
     return RedirectResponse(f"/clients/{client.id}", status_code=303)
 
 
+def _contexte_ia_client(client: models.Client) -> str:
+    """
+    Contexte complet fourni a l'IA pour ce client : le champ libre
+    Client.contenu_site, complete par le texte extrait de chaque document de
+    la base de connaissances (voir app/documents.py).
+    """
+    morceaux = []
+    if client.contenu_site and client.contenu_site.strip():
+        morceaux.append(client.contenu_site.strip())
+    for document in client.documents_connaissance:
+        morceaux.append(f"--- Document : {document.nom_fichier} ---\n{document.texte_extrait}")
+    return "\n\n".join(morceaux)
+
+
 def _reponse_detail_client(
     request: Request, db: Session, client: models.Client, erreur_generation: str = None,
-    erreur_photo: str = None, code: int = 200,
+    erreur_photo: str = None, erreur_document: str = None, code: int = 200,
 ):
     posts = (
         db.query(models.Post)
@@ -810,6 +825,7 @@ def _reponse_detail_client(
                 for valeur in google_business.CATEGORIES_PHOTO
             ],
             "erreur_photo": erreur_photo,
+            "erreur_document": erreur_document,
             **_donnees_calendrier(request, db, client),
         },
         status_code=code,
@@ -845,7 +861,7 @@ def generer_posts_client(
         return HTMLResponse("Client introuvable.", status_code=404)
 
     try:
-        posts_generes = claude_generation.generer_posts_pour_client(client.contenu_site, nombre_posts)
+        posts_generes = claude_generation.generer_posts_pour_client(_contexte_ia_client(client), nombre_posts)
     except Exception as erreur:
         return _reponse_detail_client(request, db, client, erreur_generation=str(erreur), code=500)
 
@@ -858,6 +874,46 @@ def generer_posts_client(
             statut="BROUILLON",
         ))
     db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+@app.post("/clients/{client_id}/documents")
+def ajouter_document_client(
+    client_id: int, request: Request, fichier: UploadFile = File(...), db: Session = Depends(obtenir_session)
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    try:
+        octets = fichier.file.read()
+        texte_extrait = documents.extraire_texte(fichier.filename or "", octets)
+    except Exception as erreur:
+        return _reponse_detail_client(request, db, client, erreur_document=str(erreur), code=400)
+
+    db.add(models.DocumentConnaissance(
+        client_id=client.id, nom_fichier=fichier.filename or "document", texte_extrait=texte_extrait,
+    ))
+    db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+@app.post("/clients/{client_id}/documents/{document_id}/supprimer")
+def supprimer_document_client(client_id: int, document_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    document = db.get(models.DocumentConnaissance, document_id)
+    if document and document.client_id == client_id:
+        db.delete(document)
+        db.commit()
 
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 

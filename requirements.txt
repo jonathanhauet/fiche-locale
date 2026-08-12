@@ -16,3 +16,5 @@ apscheduler
 fpdf2
 Pillow
 piexif
+pypdf
+python-docx

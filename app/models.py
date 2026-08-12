@@ -49,6 +49,7 @@ class Client(Base):
     etiquettes = relationship("Etiquette", secondary=client_etiquettes, back_populates="clients")
     mots_cles = relationship("MotCle", back_populates="client", cascade="all, delete-orphan")
     releves_position = relationship("ReleveDePosition", back_populates="client", cascade="all, delete-orphan")
+    documents_connaissance = relationship("DocumentConnaissance", back_populates="client", cascade="all, delete-orphan")
 
 
 class Post(Base):
@@ -149,6 +150,24 @@ class MotCle(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="mots_cles")
+
+
+class DocumentConnaissance(Base):
+    """
+    Document (PDF/Word/texte) fournissant du contexte supplementaire a l'IA
+    pour ce client, en complement du champ libre Client.contenu_site. Seul
+    le texte extrait est conserve, pas le fichier d'origine.
+    """
+
+    __tablename__ = "documents_connaissance"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    nom_fichier = Column(String, default="")
+    texte_extrait = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="documents_connaissance")
 
 
 class ReleveDePosition(Base):
