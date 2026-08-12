@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Ajouter un client — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+<h1>Ajouter un client</h1>
+
+{% if not google_connecte %}
+<div class="bandeau-avertissement">
+  Google n'est pas connecté : vous pourrez créer le client, mais sans fiche
+  associée pour l'instant. <a href="/google/connecter">Connecter Google</a>
+</div>
+{% else %}
+<div class="bandeau-info">
+  <a href="/google/comptes">Gérer les comptes Google connectés</a>
+  si la fiche recherchée n'apparaît pas ci-dessous.
+</div>
+{% endif %}
+
+<form class="formulaire" method="post" action="/clients/nouveau">
+  <label>
+    Nom du client
+    <input type="text" name="nom" required>
+  </label>
+
+  {% if fiches %}
+  <label>
+    Fiche Google associée
+    <select name="fiche_google">
+      <option value="">— Aucune pour l'instant —</option>
+      {% for libelle_compte, fiches_du_compte in fiches|groupby("compte_libelle") %}
+      <optgroup label="{{ libelle_compte }}">
+        {% for fiche in fiches_du_compte %}
+        <option value="{{ fiche.compte_google_id }}|{{ fiche.account_id }}|{{ fiche.location_id }}">
+          {{ fiche.nom_compte }} — {{ fiche.nom_fiche }}
+        </option>
+        {% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
+  <label>
+    Contenu du site (texte fourni à l'IA pour générer les posts)
+    <textarea name="contenu_site" rows="16"></textarea>
+  </label>
+
+  <button type="submit">Créer le client</button>
+</form>
+{% endblock %}

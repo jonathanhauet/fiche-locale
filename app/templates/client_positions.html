@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Positions — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block tete_supplementaire %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+<h1>Positions — {{ client.nom }}</h1>
+<p class="texte-discret">Classement local (grille geographique) par mot-clé, via l'API DataForSEO — Google ne fournit pas cette donnée directement.</p>
+
+{% if not dataforseo_configure %}
+<div class="bandeau-avertissement">
+  DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD manquants dans le fichier .env. Créez un compte sur
+  <a href="https://dataforseo.com" target="_blank" rel="noopener">dataforseo.com</a>, ajoutez vos identifiants dans .env, puis relancez la plateforme.
+</div>
+{% endif %}
+
+{% if latitude is none or longitude is none %}
+<div class="bandeau-avertissement">
+  Coordonnées introuvables automatiquement pour cette fiche (Google ne les fournit que si elles ont été définies manuellement, et l'adresse n'a pas pu être géolocalisée). Recherchez la position vous-même ci-dessous :
+</div>
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Définir la position de la fiche</span>
+  <div class="recherche-ville">
+    <input type="text" id="champ-recherche-position" placeholder="Rechercher une ville ou une adresse">
+    <button type="button" id="bouton-rechercher-position" class="bouton-secondaire">Rechercher</button>
+  </div>
+  <ul id="resultats-recherche-position" class="resultats-recherche-ville" hidden></ul>
+</div>
+{% endif %}
+
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Mots-clés suivis</span>
+  {% if client.mots_cles %}
+  <div class="liste-etiquettes">
+    {% for mot_cle in client.mots_cles %}
+    <form method="post" action="/clients/{{ client.id }}/positions/mots_cles/{{ mot_cle.id }}/supprimer" class="etiquette-supprimable" onsubmit="return confirm('Retirer ce mot-clé suivi ?');">
+      <span class="etiquette-chip">{{ mot_cle.texte }}</span>
+      <button type="submit" class="lien-retirer-geotag" title="Retirer">×</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="texte-vide">Aucun mot-clé suivi pour l'instant.</p>
+  {% endif %}
+  <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/positions/mots_cles">
+    <input type="text" name="texte" placeholder="Ex : Serrurier Charleroi" required>
+    <button type="submit" class="bouton-secondaire">Ajouter</button>
+  </form>
+</div>
+
+{% if dataforseo_configure and latitude is not none and client.mots_cles %}
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Lancer une vérification</span>
+  <div class="formulaire-ligne">
+    <select id="select-mot-cle-verif">
+      {% for mot_cle in client.mots_cles %}
+      <option value="{{ mot_cle.texte }}">{{ mot_cle.texte }}</option>
+      {% endfor %}
+    </select>
+    <select id="select-taille-grille">
+      <option value="5" selected>Grille 5×5 (25 points, ~1,5 ¢)</option>
+      <option value="7">Grille 7×7 (49 points, ~3 ¢)</option>
+      <option value="3">Grille 3×3 (9 points, ~0,5 ¢)</option>
+    </select>
+    <select id="select-rayon-grille">
+      <option value="0.5">Écart 0,5 km entre points</option>
+      <option value="1">Écart 1 km entre points</option>
+      <option value="2" selected>Écart 2 km entre points</option>
+      <option value="5">Écart 5 km entre points</option>
+      <option value="10">Écart 10 km entre points</option>
+    </select>
+    <button type="button" id="bouton-lancer-verification" class="bouton">Lancer la vérification</button>
+  </div>
+  <div id="conteneur-progression-positions" class="conteneur-progression-avis" hidden>
+    <div class="barre-progression-fond"><div id="barre-progression-positions" class="barre-progression-remplissage"></div></div>
+    <span id="texte-progression-positions" class="texte-progression-avis"></span>
+  </div>
+  <p id="erreur-verification-positions" class="message-erreur" hidden></p>
+</div>
+{% endif %}
+
+<div id="conteneur-carte" class="conteneur-carte-positions" hidden>
+  <div id="carte-positions"></div>
+  <div id="resume-releve" class="texte-discret"></div>
+</div>
+
+<h2>Historique des vérifications</h2>
+{% if releves %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr><th>Date</th><th>Mot-clé</th><th>Grille</th><th>Statut</th><th></th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for releve in releves %}
+      <tr>
+        <td>{{ releve.cree_le.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td>{{ releve.mot_cle_texte }}</td>
+        <td>{{ releve.taille_grille }}×{{ releve.taille_grille }}</td>
+        <td><span class="etiquette-statut etiquette-{{ releve.statut|lower }}">{{ releve.statut }}</span></td>
+        <td><button type="button" class="bouton-secondaire bouton-voir-releve" data-releve-id="{{ releve.id }}">Voir la carte</button></td>
+        <td>
+          <form method="post" action="/clients/{{ client.id }}/positions/releve/{{ releve.id }}/supprimer" onsubmit="return confirm('Supprimer ce relevé de position ? Cette action est irréversible.');">
+            <button type="submit" class="bouton-secondaire bouton-danger" title="Supprimer">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucune vérification effectuée pour l'instant.</p>
+{% endif %}
+
+<script>
+(function () {
+  const clientId = {{ client.id }};
+  const boutonLancer = document.getElementById("bouton-lancer-verification");
+  const conteneurProgression = document.getElementById("conteneur-progression-positions");
+  const barreProgression = document.getElementById("barre-progression-positions");
+  const texteProgression = document.getElementById("texte-progression-positions");
+  const erreurVerification = document.getElementById("erreur-verification-positions");
+  const conteneurCarte = document.getElementById("conteneur-carte");
+  const resumeReleve = document.getElementById("resume-releve");
+
+  let carte = null;
+  let marqueurs = [];
+
+  function echapperTexte(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function initialiserCarte(latCentre, lngCentre) {
+    conteneurCarte.hidden = false;
+    if (!carte) {
+      carte = L.map("carte-positions").setView([latCentre, lngCentre], 12);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(carte);
+    } else {
+      carte.setView([latCentre, lngCentre], 12);
+    }
+    marqueurs.forEach((m) => carte.removeLayer(m));
+    marqueurs = [];
+  }
+
+  function couleurPosition(position) {
+    if (position == null) return "#9ca3af";
+    if (position <= 3) return "#16a34a";
+    if (position <= 10) return "#d98a06";
+    return "#dc2626";
+  }
+
+  function contenuPopupPoint(point) {
+    if (!point.verifie) return "En attente de vérification…";
+    const classement = point.classement || [];
+    if (!classement.length) {
+      return point.position != null ? `Position ${point.position}` : "Non trouvé dans les résultats";
+    }
+    const enTop10 = point.position != null && point.position <= 10;
+    const lignes = classement.map((c) => {
+      const estMoi = enTop10 && c.position === point.position;
+      return `<li${estMoi ? ' class="ligne-moi"' : ""}>#${c.position} — ${echapperTexte(c.nom)}${estMoi ? " (vous)" : ""}</li>`;
+    }).join("");
+    let html = `<ul class="classement-popup">${lignes}</ul>`;
+    if (point.position != null && !enTop10) {
+      html += `<p class="ligne-moi-hors-top">Votre fiche : #${point.position} — ${echapperTexte(point.nom_correspondance)}</p>`;
+    } else if (point.position == null) {
+      html += `<p class="texte-discret">Votre fiche n'apparaît pas dans les résultats renvoyés à ce point.</p>`;
+    }
+    return html;
+  }
+
+  function ajouterMarqueurPoint(point) {
+    const couleur = couleurPosition(point.position);
+    const texte = point.verifie ? (point.position != null ? String(point.position) : "?") : "…";
+    const icone = L.divIcon({
+      className: "marqueur-position",
+      html: `<span style="background:${couleur}">${texte}</span>`,
+      iconSize: [28, 28],
+    });
+    const marqueur = L.marker([point.latitude, point.longitude], { icon: icone }).addTo(carte);
+    marqueur.bindPopup(contenuPopupPoint(point));
+    marqueurs.push(marqueur);
+    return marqueur;
+  }
+
+  function afficherResume(resume) {
+    if (!resume) { resumeReleve.textContent = ""; return; }
+    resumeReleve.textContent = `${resume.verifies}/${resume.total} points vérifiés — Top 3 : ${resume.top3}, Top 10 : ${resume.top10}, non trouvé : ${resume.non_trouves}`;
+  }
+
+  const boutonRechercherPosition = document.getElementById("bouton-rechercher-position");
+  if (boutonRechercherPosition) {
+    const champRecherchePosition = document.getElementById("champ-recherche-position");
+    const resultatsRecherchePosition = document.getElementById("resultats-recherche-position");
+
+    boutonRechercherPosition.addEventListener("click", async () => {
+      if (!champRecherchePosition.value.trim()) return;
+      boutonRechercherPosition.disabled = true;
+      try {
+        const reponse = await fetch(`/geocodage?q=${encodeURIComponent(champRecherchePosition.value.trim())}`);
+        const donnees = await reponse.json();
+        const resultats = donnees.resultats || [];
+        resultatsRecherchePosition.innerHTML = resultats.length
+          ? resultats.map((r) => `<li><button type="button" class="bouton-resultat-ville" data-lat="${r.latitude}" data-lng="${r.longitude}">${echapperTexte(r.nom)}</button></li>`).join("")
+          : "<li class=\"texte-discret\">Aucun résultat.</li>";
+        resultatsRecherchePosition.hidden = false;
+      } finally {
+        boutonRechercherPosition.disabled = false;
+      }
+    });
+
+    resultatsRecherchePosition.addEventListener("click", (evenement) => {
+      if (!evenement.target.classList.contains("bouton-resultat-ville")) return;
+      const formulaire = document.createElement("form");
+      formulaire.method = "post";
+      formulaire.action = `/clients/${clientId}/positions/coordonnees`;
+      formulaire.innerHTML = `
+        <input type="hidden" name="latitude" value="${evenement.target.dataset.lat}">
+        <input type="hidden" name="longitude" value="${evenement.target.dataset.lng}">
+      `;
+      document.body.appendChild(formulaire);
+      formulaire.submit();
+    });
+  }
+
+  async function chargerReleve(releveId) {
+    const reponse = await fetch(`/clients/${clientId}/positions/releve/${releveId}`);
+    const donnees = await reponse.json();
+    if (!reponse.ok) { erreurVerification.textContent = donnees.erreur || "Erreur inconnue."; erreurVerification.hidden = false; return; }
+    initialiserCarte(donnees.latitude_centre, donnees.longitude_centre);
+    donnees.points.forEach((p) => ajouterMarqueurPoint(p));
+    afficherResume(donnees.resume);
+  }
+
+  document.querySelectorAll(".bouton-voir-releve").forEach((bouton) => {
+    bouton.addEventListener("click", () => chargerReleve(bouton.dataset.releveId));
+  });
+
+  if (boutonLancer) {
+    boutonLancer.addEventListener("click", async () => {
+      const motCle = document.getElementById("select-mot-cle-verif").value;
+      const taille = document.getElementById("select-taille-grille").value;
+      const rayon = document.getElementById("select-rayon-grille").value;
+      erreurVerification.hidden = true;
+      boutonLancer.disabled = true;
+      conteneurProgression.hidden = false;
+      barreProgression.style.width = "0%";
+      texteProgression.textContent = "Préparation de la grille…";
+
+      try {
+        const reponseDemarrage = await fetch(`/clients/${clientId}/positions/verifier/demarrer`, {
+          method: "POST",
+          body: new URLSearchParams({ mot_cle_texte: motCle, taille_grille: taille, rayon_km: rayon }),
+        });
+        const demarrage = await reponseDemarrage.json();
+        if (!reponseDemarrage.ok) throw new Error(demarrage.erreur || "Erreur inconnue.");
+
+        initialiserCarte(demarrage.latitude_centre, demarrage.longitude_centre);
+        const points = demarrage.points;
+        const marqueursParPoint = {};
+        points.forEach((p) => { marqueursParPoint[p.id] = ajouterMarqueurPoint({ ...p, verifie: false, position: null }); });
+
+        let termines = 0;
+        const CONCURRENCE = 4;
+        let curseur = 0;
+        async function traiterSuivant() {
+          while (curseur < points.length) {
+            const point = points[curseur++];
+            try {
+              const reponsePoint = await fetch(`/clients/${clientId}/positions/verifier/point/${point.id}`, { method: "POST" });
+              const resultat = await reponsePoint.json();
+              if (reponsePoint.ok) {
+                const marqueur = marqueursParPoint[point.id];
+                carte.removeLayer(marqueur);
+                marqueursParPoint[point.id] = ajouterMarqueurPoint({
+                  ...point, verifie: true, position: resultat.position,
+                  nom_correspondance: resultat.nom_correspondance, classement: resultat.classement,
+                });
+              }
+            } catch (e) { /* on continue avec les points suivants */ }
+            termines++;
+            barreProgression.style.width = `${Math.round((termines / points.length) * 100)}%`;
+            texteProgression.textContent = `${termines} / ${points.length} points vérifiés`;
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCE, points.length) }, traiterSuivant));
+
+        await chargerReleve(demarrage.releve_id);
+        resumeReleve.textContent += " — actualisez la page pour le voir apparaître dans l'historique ci-dessous.";
+      } catch (erreur) {
+        erreurVerification.textContent = erreur.message;
+        erreurVerification.hidden = false;
+      } finally {
+        boutonLancer.disabled = false;
+        conteneurProgression.hidden = true;
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

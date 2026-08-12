@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}{{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+<div class="barre-titre">
+  <h1>{{ client.nom }}</h1>
+  <div class="actions-avis">
+    <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/fiche">Informations de la fiche</a>
+    <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/positions">Positions</a>
+    <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/historique">Historique</a>
+    <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/stats">Statistiques</a>
+  </div>
+</div>
+
+{% if client.etiquettes %}
+<div class="liste-etiquettes">
+  {% for etiquette in client.etiquettes %}
+  <span class="etiquette-chip">{{ etiquette.nom }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<details class="bloc-repliable" open>
+  <summary>Calendrier de contenu</summary>
+  <div class="barre-titre">
+    <div class="navigation-calendrier">
+      <a class="bouton-secondaire" href="?annee={{ annee_mois_precedent }}&mois={{ mois_precedent }}" title="Mois précédent">&lsaquo;</a>
+      <h2>{{ libelle_mois }} {{ annee }}</h2>
+      <a class="bouton-secondaire" href="?annee={{ annee_mois_suivant }}&mois={{ mois_suivant }}" title="Mois suivant">&rsaquo;</a>
+    </div>
+    <a class="bouton" href="#carte-ia-generation">+ Publier</a>
+  </div>
+
+  <div class="grille-calendrier">
+    <div class="entete-calendrier">
+      <span>Lu</span><span>Ma</span><span>Me</span><span>Je</span><span>Ve</span><span>Sa</span><span>Di</span>
+    </div>
+    {% for semaine in semaines %}
+    <div class="ligne-calendrier">
+      {% for jour in semaine %}
+      {% set evenements = evenements_par_jour.get(jour) %}
+      <div class="case-jour {% if jour.month != mois %}case-jour-hors-mois{% endif %} {% if jour == aujourdhui %}case-jour-aujourdhui{% endif %}">
+        <span class="numero-jour">{{ jour.day }}</span>
+        {% if evenements %}
+        <details class="details-jour">
+          <summary class="pastilles-jour">
+            {% for post in evenements.posts %}
+            <span class="pastille {{ 'pastille-offre' if post.type_post == 'OFFER' else 'pastille-publication' }} {% if post.statut != 'PUBLIE_LIVE' %}pastille-creuse{% endif %}"></span>
+            {% endfor %}
+            {% for photo in evenements.photos %}
+            <span class="pastille pastille-photo {% if photo.statut != 'PUBLIE_LIVE' %}pastille-creuse{% endif %}"></span>
+            {% endfor %}
+          </summary>
+          <div class="panneau-jour">
+            {% for post in evenements.posts %}
+            <a href="/posts/{{ post.id }}" class="ligne-evenement-jour">
+              <span class="pastille {{ 'pastille-offre' if post.type_post == 'OFFER' else 'pastille-publication' }} {% if post.statut != 'PUBLIE_LIVE' %}pastille-creuse{% endif %}"></span>
+              <span>{{ post.titre or "(sans titre)" }}</span>
+              <span class="etiquette-statut etiquette-{{ post.statut|lower }}">{{ post.statut }}</span>
+            </a>
+            {% endfor %}
+            {% for photo in evenements.photos %}
+            <a href="#photos-fiche" class="ligne-evenement-jour">
+              <span class="pastille pastille-photo {% if photo.statut != 'PUBLIE_LIVE' %}pastille-creuse{% endif %}"></span>
+              <span>Photo ({{ photo.categorie }})</span>
+              <span class="etiquette-statut etiquette-{{ photo.statut|lower }}">{{ photo.statut }}</span>
+            </a>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="legende-calendrier">
+    <span class="legende-item"><span class="pastille pastille-offre"></span> Offre</span>
+    <span class="legende-item"><span class="pastille pastille-publication"></span> Publication</span>
+    <span class="legende-item"><span class="pastille pastille-photo"></span> Photo</span>
+    <span class="legende-item texte-discret">(plein = déjà en ligne, creux = programmé)</span>
+  </div>
+</details>
+
+<details class="bloc-repliable">
+  <summary>Informations du client</summary>
+  <form class="formulaire" method="post" action="/clients/{{ client.id }}/modifier">
+    <label>
+      Nom du client
+      <input type="text" name="nom" value="{{ client.nom }}" required>
+    </label>
+
+    <div class="ligne-champs">
+      <label>
+        Identifiant du compte Google (account_id)
+        <input type="text" name="account_id" value="{{ client.account_id }}">
+      </label>
+      <label>
+        Identifiant de la fiche Google (location_id)
+        <input type="text" name="location_id" value="{{ client.location_id }}">
+      </label>
+    </div>
+
+    <label>
+      Contenu du site (texte fourni à l'IA pour générer les posts)
+      <textarea name="contenu_site" rows="14">{{ client.contenu_site }}</textarea>
+    </label>
+
+    <label>
+      Consignes pour les réponses aux avis (IA)
+      <textarea name="consignes_avis" rows="4" placeholder="Ex : tutoyer les clients, ton chaleureux et légèrement humoristique, toujours signer par le prénom...">{{ client.consignes_avis }}</textarea>
+    </label>
+
+    <label>
+      Étiquettes (séparées par des virgules)
+      <input type="text" name="etiquettes" value="{{ client.etiquettes|map(attribute='nom')|join(', ') }}" placeholder="Ex : Plombiers, Abonnement Premium">
+    </label>
+
+    <div class="actions-avis">
+      <button type="submit">Enregistrer les modifications</button>
+    </div>
+  </form>
+
+  <form method="post" action="/clients/{{ client.id }}/supprimer"
+        onsubmit="return confirm('Supprimer ce client et tous ses posts ?');">
+    <button type="submit" class="bouton-danger">Supprimer ce client</button>
+  </form>
+</details>
+
+<h2 id="photos-fiche">Photos de la fiche Google</h2>
+{% if erreur_photo %}
+<p class="message-erreur">{{ erreur_photo }}</p>
+{% endif %}
+
+{% if not client.account_id or not client.location_id %}
+<p class="texte-vide">Ce client n'a pas de fiche Google associée.</p>
+{% else %}
+
+{% if photos_en_preparation %}
+<h3>En préparation ({{ photos_en_preparation|length }})</h3>
+<div class="grille-photos grille-photos-preparation" id="grille-photos-preparation">
+  {% for photo in photos_en_preparation %}
+  <figure class="carte-photo carte-photo-preparation" data-photo-id="{{ photo.id }}" data-statut="{{ photo.statut }}">
+    <img src="{{ photo.url_image }}" alt="{{ photo.categorie }}">
+    <figcaption>
+      <span class="etiquette-statut etiquette-{{ photo.statut|lower }}">
+        {% if photo.statut == "A_PUBLIER" and photo.date_prevue %}Programmée {{ photo.date_prevue.strftime("%d/%m/%Y") }}
+        {% elif photo.statut == "ECHEC_PUBLICATION" %}Échec
+        {% else %}Brouillon{% endif %}
+      </span>
+    </figcaption>
+    <form class="formulaire-photo-details" method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/modifier">
+      <input type="text" name="legende" value="{{ photo.legende }}" placeholder="Légende (optionnel)">
+      <select name="categorie">
+        {% for valeur, libelle in categories_photo %}
+        <option value="{{ valeur }}" {% if valeur == photo.categorie %}selected{% endif %}>{{ libelle }}</option>
+        {% endfor %}
+      </select>
+      <div class="bloc-geotag">
+        <div class="recherche-ville">
+          <input type="text" class="champ-recherche-ville" placeholder="Géotag : rechercher une ville (optionnel)">
+          <button type="button" class="bouton-secondaire bouton-rechercher-ville">Rechercher</button>
+        </div>
+        <ul class="resultats-recherche-ville" hidden></ul>
+        <p class="ville-selectionnee" {% if photo.latitude is none %}hidden{% endif %}>
+          📍 <span class="texte-ville-selectionnee">
+            {%- if photo.latitude is not none %}{{ "%.4f"|format(photo.latitude) }}, {{ "%.4f"|format(photo.longitude) }}{% endif -%}
+          </span>
+          <button type="button" class="lien-retirer-geotag">Retirer</button>
+        </p>
+        <input type="hidden" name="latitude" value="{{ photo.latitude if photo.latitude is not none else '' }}">
+        <input type="hidden" name="longitude" value="{{ photo.longitude if photo.longitude is not none else '' }}">
+      </div>
+      <button type="submit" class="bouton-secondaire">Enregistrer</button>
+    </form>
+    <form method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/supprimer"
+          onsubmit="return confirm('Retirer cette photo de la préparation ?');">
+      <button type="submit" class="bouton-danger bouton-supprimer-photo">Retirer</button>
+    </form>
+  </figure>
+  {% endfor %}
+</div>
+
+<div class="actions-avis">
+  <button type="button" id="bouton-publier-photos" class="bouton-publier">Publier maintenant sur la fiche</button>
+  <form class="formulaire-ligne formulaire-programmer-photos" method="post" action="/clients/{{ client.id }}/photos/programmer">
+    <input type="date" name="date_prevue" required>
+    <button type="submit" class="bouton-secondaire">Programmer l'envoi</button>
+  </form>
+</div>
+<div id="conteneur-progression-photos" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-photos" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-photos" class="texte-progression-avis"></span>
+</div>
+{% endif %}
+
+<div class="barre-titre">
+  <h3>Déjà sur la fiche</h3>
+  <button type="button" class="bouton-secondaire" onclick="window.location.reload()">⟳ Rafraîchir</button>
+</div>
+{% if photos %}
+<div class="grille-photos">
+  {% for photo in photos %}
+  <figure class="carte-photo">
+    <img src="{{ photo.miniature or photo.url }}" data-secours="{{ photo.url }}" class="image-fiche-photo" alt="{{ photo.categorie or 'Photo' }}">
+    <figcaption>{{ photo.categorie or "—" }}</figcaption>
+  </figure>
+  {% endfor %}
+</div>
+{% else %}
+<p class="texte-vide">Aucune photo trouvée sur cette fiche pour l'instant.</p>
+{% endif %}
+
+<form class="formulaire formulaire-ligne" method="post" action="/clients/{{ client.id }}/photos/importer" enctype="multipart/form-data">
+  <label>
+    Importer des photos
+    <input type="file" name="fichiers" accept="image/*" multiple required>
+  </label>
+  <label>
+    Catégorie
+    <select name="categorie">
+      {% for valeur, libelle in categories_photo %}
+      <option value="{{ valeur }}" {% if valeur == "ADDITIONAL" %}selected{% endif %}>{{ libelle }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Importer</button>
+</form>
+{% endif %}
+
+<div class="carte-ia" id="carte-ia-generation">
+  <div class="carte-ia-entete">
+    <span class="carte-ia-icone">✨</span>
+    <span class="carte-ia-libelles">
+      <span class="carte-ia-titre">Générer des posts avec l'IA</span>
+      <span class="carte-ia-sous-titre">À partir du contenu de la fiche, l'IA rédige plusieurs posts prêts à relire</span>
+    </span>
+  </div>
+  <div class="carte-ia-corps">
+    {% if erreur_generation %}
+    <p class="message-erreur">Erreur lors de la génération : {{ erreur_generation }}</p>
+    {% endif %}
+    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/generer">
+      <label>
+        Nombre de posts
+        <input type="number" name="nombre_posts" value="7" min="1" max="20">
+      </label>
+      <button type="submit" class="bouton">✨ Générer</button>
+    </form>
+  </div>
+</div>
+
+<h2>Posts ({{ posts|length }})</h2>
+{% if posts %}
+<ul class="liste-posts">
+  {% for post in posts %}
+  <li class="carte-post-revue" id="post-{{ post.id }}">
+    <div class="ligne-post-titre">
+      <strong>{{ post.titre }}</strong>
+      <span class="etiquette-statut etiquette-{{ post.statut|lower }}">{{ post.statut }}</span>
+    </div>
+    {% if post.image_url %}
+    <img src="{{ post.image_url }}" alt="" class="apercu-image-post-revue">
+    {% endif %}
+    <p class="texte-complet-post">{{ post.texte }}</p>
+
+    {% if post.statut == "BROUILLON" %}
+    <form method="post" action="/posts/{{ post.id }}/statut_rapide" class="formulaire-validation-rapide">
+      <div class="choix-heure choix-heure-compact">
+        <input type="date" name="date_prevue" required>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
+      </div>
+      <div class="ligne-actions-rapides">
+        <button type="submit" name="statut" value="A_PUBLIER" class="bouton">✓ Valider</button>
+        <button type="submit" name="statut" value="IGNORE" class="bouton-danger" formnovalidate>✕ Rejeter</button>
+        <a href="/posts/{{ post.id }}" class="bouton-secondaire">Modifier</a>
+      </div>
+    </form>
+    {% else %}
+    <div class="ligne-actions-rapides">
+      <a href="/posts/{{ post.id }}" class="bouton-secondaire">Ouvrir</a>
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun post généré pour l'instant.</p>
+{% endif %}
+
+<script>
+(function () {
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  // Une photo tres recemment envoyee peut ne pas encore etre disponible cote
+  // Google (delai de traitement). On tente la miniature, puis la pleine
+  // resolution, puis on affiche un message plutot qu'une image cassee.
+  document.querySelectorAll(".image-fiche-photo").forEach((image) => {
+    image.addEventListener("error", function gererErreurImage() {
+      const secours = this.dataset.secours;
+      if (secours && this.src !== secours) {
+        this.src = secours;
+        return;
+      }
+      this.removeEventListener("error", gererErreurImage);
+      const remplacement = document.createElement("div");
+      remplacement.className = "image-en-attente";
+      remplacement.textContent = "Photo en cours de traitement par Google…";
+      this.replaceWith(remplacement);
+    });
+  });
+
+  const boutonPublierPhotos = document.getElementById("bouton-publier-photos");
+  if (boutonPublierPhotos) {
+    boutonPublierPhotos.addEventListener("click", async () => {
+      const grille = document.getElementById("grille-photos-preparation");
+      const cartes = grille ? Array.from(grille.querySelectorAll(".carte-photo-preparation")) : [];
+      if (!cartes.length) return;
+
+      const conteneurProgression = document.getElementById("conteneur-progression-photos");
+      const barreProgression = document.getElementById("barre-progression-photos");
+      const texteProgression = document.getElementById("texte-progression-photos");
+
+      boutonPublierPhotos.disabled = true;
+      conteneurProgression.hidden = false;
+      barreProgression.style.width = "0%";
+      texteProgression.textContent = `0 / ${cartes.length} photo(s)`;
+
+      let termines = 0;
+      const erreurs = [];
+
+      for (const carte of cartes) {
+        const photoId = carte.dataset.photoId;
+        try {
+          const reponse = await fetch(`/clients/{{ client.id }}/photos/${photoId}/publier`, { method: "POST" });
+          const resultat = await reponse.json();
+          if (!reponse.ok) erreurs.push(resultat.erreur || `Photo ${photoId} : erreur inconnue.`);
+        } catch (e) {
+          erreurs.push(`Photo ${photoId} : erreur réseau.`);
+        }
+        termines++;
+        barreProgression.style.width = `${Math.round((termines / cartes.length) * 100)}%`;
+        texteProgression.textContent = `${termines} / ${cartes.length} photo(s)`;
+      }
+
+      if (erreurs.length) {
+        alert("Certaines photos n'ont pas pu être publiées :\n" + erreurs.join("\n"));
+      }
+      window.location.reload();
+    });
+  }
+
+  document.addEventListener("click", async (evenement) => {
+    const bloc = evenement.target.closest(".bloc-geotag");
+    if (!bloc) return;
+
+    if (evenement.target.classList.contains("bouton-rechercher-ville")) {
+      const champ = bloc.querySelector(".champ-recherche-ville");
+      const listeResultats = bloc.querySelector(".resultats-recherche-ville");
+      if (!champ.value.trim()) return;
+
+      evenement.target.disabled = true;
+      try {
+        const reponse = await fetch(`/geocodage?q=${encodeURIComponent(champ.value.trim())}`);
+        const donnees = await reponse.json();
+        const resultats = donnees.resultats || [];
+        listeResultats.innerHTML = resultats.length
+          ? resultats.map((r) => `<li><button type="button" class="bouton-resultat-ville" data-lat="${r.latitude}" data-lng="${r.longitude}">${echapper(r.nom)}</button></li>`).join("")
+          : "<li class=\"texte-discret\">Aucun résultat.</li>";
+        listeResultats.hidden = false;
+      } finally {
+        evenement.target.disabled = false;
+      }
+    }
+
+    if (evenement.target.classList.contains("bouton-resultat-ville")) {
+      const lat = evenement.target.dataset.lat;
+      const lng = evenement.target.dataset.lng;
+      bloc.querySelector("input[name=latitude]").value = lat;
+      bloc.querySelector("input[name=longitude]").value = lng;
+      bloc.querySelector(".texte-ville-selectionnee").textContent = `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`;
+      bloc.querySelector(".ville-selectionnee").hidden = false;
+      bloc.querySelector(".resultats-recherche-ville").hidden = true;
+      bloc.querySelector(".champ-recherche-ville").value = "";
+    }
+
+    if (evenement.target.classList.contains("lien-retirer-geotag")) {
+      bloc.querySelector("input[name=latitude]").value = "";
+      bloc.querySelector("input[name=longitude]").value = "";
+      bloc.querySelector(".ville-selectionnee").hidden = true;
+    }
+  });
+
+  document.addEventListener("keydown", (evenement) => {
+    if (evenement.key === "Enter" && evenement.target.classList.contains("champ-recherche-ville")) {
+      evenement.preventDefault();
+      evenement.target.closest(".bloc-geotag").querySelector(".bouton-rechercher-ville").click();
+    }
+  });
+})();
+</script>
+{% endblock %}

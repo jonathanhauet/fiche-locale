@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Informations de la fiche — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+<h1>Informations de la fiche — {{ client.nom }}</h1>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+{% if succes %}
+<div class="bandeau-info">{{ succes }}</div>
+{% endif %}
+
+{% if infos %}
+<form class="formulaire" method="post" action="/clients/{{ client.id }}/fiche/modifier"
+      onsubmit="return confirm('Enregistrer ces informations directement sur la fiche Google, publiquement visible ?');">
+
+  <label>
+    Nom de l'établissement
+    <input type="text" name="titre" value="{{ valeurs.titre }}" required>
+  </label>
+
+  <div class="ligne-champs">
+    <label>
+      Téléphone principal
+      <input type="text" name="telephone" value="{{ valeurs.telephone }}" placeholder="+33 1 23 45 67 89">
+    </label>
+    <label>
+      Site web
+      <input type="text" name="site_web" value="{{ valeurs.site_web }}" placeholder="https://...">
+    </label>
+  </div>
+
+  <label>
+    Description de l'établissement
+    <textarea name="description" rows="5">{{ valeurs.description }}</textarea>
+  </label>
+
+  <fieldset class="bloc-image" id="bloc-categories">
+    <legend>Catégories</legend>
+
+    <div class="choix-image-bloc">
+      <span class="choix-image-titre">Catégorie principale</span>
+      <span id="texte-categorie-principale">
+        {{ infos.categories.primaryCategory.displayName if infos.categories and infos.categories.primaryCategory else "Aucune catégorie définie" }}
+      </span>
+      <input type="hidden" name="categorie_principale_id" id="champ-categorie-principale-id"
+             value="{{ infos.categories.primaryCategory.name if infos.categories and infos.categories.primaryCategory else '' }}">
+    </div>
+
+    <div class="choix-image-bloc">
+      <span class="choix-image-titre">Catégories complémentaires</span>
+      <div class="liste-etiquettes" id="liste-categories-complementaires">
+        {% if infos.categories and infos.categories.additionalCategories %}
+        {% for cat in infos.categories.additionalCategories %}
+        <span class="etiquette-supprimable" data-categorie-id="{{ cat.name }}">
+          <span class="etiquette-chip">{{ cat.displayName }}</span>
+          <input type="hidden" name="categories_complementaires_id" value="{{ cat.name }}">
+          <button type="button" class="bouton-retirer-categorie" title="Retirer">×</button>
+        </span>
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="recherche-ville">
+      <input type="text" id="champ-recherche-categorie" placeholder="Rechercher une catégorie (ex : serrurier, salon de coiffure...)">
+      <button type="button" id="bouton-rechercher-categorie" class="bouton-secondaire">Rechercher</button>
+    </div>
+    <ul id="resultats-recherche-categorie" class="resultats-recherche-ville" hidden></ul>
+  </fieldset>
+
+  <fieldset class="bloc-image">
+    <legend>Adresse</legend>
+    <div class="ligne-champs">
+      <label>
+        Ligne d'adresse 1
+        <input type="text" name="adresse_ligne1" value="{{ valeurs.adresse_ligne1 }}">
+      </label>
+      <label>
+        Ligne d'adresse 2 (optionnel)
+        <input type="text" name="adresse_ligne2" value="{{ valeurs.adresse_ligne2 }}">
+      </label>
+    </div>
+    <div class="ligne-champs ligne-champs-adresse">
+      <label>
+        Ville
+        <input type="text" name="ville" value="{{ valeurs.ville }}">
+      </label>
+      <label>
+        Code postal
+        <input type="text" name="code_postal" value="{{ valeurs.code_postal }}">
+      </label>
+      <label>
+        Région / département
+        <input type="text" name="region" value="{{ valeurs.region }}">
+      </label>
+      <label>
+        Pays (code à 2 lettres)
+        <input type="text" name="pays" value="{{ valeurs.pays }}" maxlength="2" placeholder="FR">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bloc-image">
+    <legend>Horaires d'ouverture</legend>
+    <div class="tableau-horaires">
+      {% for jour in jours_semaine %}
+      {% set slug = slug_par_jour[jour] %}
+      <div class="ligne-horaire-jour" data-jour-slug="{{ slug }}">
+        <div class="ligne-horaire">
+          <span class="libelle-jour">{{ libelles_jour[jour] }}</span>
+          {% if jour in jours_verrouilles %}
+          <span class="texte-discret">Horaires complexes (à cheval sur un autre jour) — à modifier depuis l'app Google</span>
+          {% else %}
+          {% set horaire = horaires_par_jour.get(jour) %}
+          <label class="case-ferme">
+            <input type="checkbox" name="{{ slug }}_ferme" class="case-jour-ferme" {% if not horaire %}checked{% endif %}>
+            Fermé
+          </label>
+          <label class="case-ferme">
+            <input type="checkbox" name="{{ slug }}_24h" class="case-jour-24h" {% if horaire and horaire.vingt_quatre_heures %}checked{% endif %}>
+            Ouvert 24h/24
+          </label>
+          <button type="button" class="bouton-lien bouton-ajouter-coupure" {% if not horaire or horaire.vingt_quatre_heures %}disabled{% endif %}>+ Ajouter une coupure</button>
+          {% endif %}
+        </div>
+        {% if jour not in jours_verrouilles %}
+        <div class="liste-periodes-jour" {% if horaire and horaire.vingt_quatre_heures %}hidden{% endif %}>
+          {% set periodes = (horaire.periodes if horaire and not horaire.vingt_quatre_heures else []) %}
+          {% for periode in (periodes if periodes else [{"ouverture": "", "fermeture": ""}]) %}
+          <div class="ligne-periode">
+            <input type="time" name="{{ slug }}_ouverture" value="{{ periode.ouverture }}" {% if not horaire %}disabled{% endif %}>
+            <span class="texte-discret">à</span>
+            <input type="time" name="{{ slug }}_fermeture" value="{{ periode.fermeture }}" {% if not horaire %}disabled{% endif %}>
+            <button type="button" class="lien-retirer-geotag bouton-retirer-periode" title="Retirer cette coupure" {% if loop.length < 2 %}hidden{% endif %}>×</button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <div class="actions-avis">
+    <button type="submit">Enregistrer les modifications</button>
+  </div>
+</form>
+
+<details class="bloc-repliable">
+  <summary>Liens d'action</summary>
+  <div class="formulaire">
+    {% if erreur_liens_action %}
+    <p class="message-erreur">{{ erreur_liens_action }}</p>
+    {% endif %}
+
+    {% if liens_action %}
+    <div class="liste-etiquettes">
+      {% for lien in liens_action %}
+      <div class="etiquette-supprimable">
+        <span class="etiquette-chip">
+          {{ types_action|selectattr("0", "equalto", lien.placeActionType)|map(attribute="1")|first or lien.placeActionType }}
+          {% if lien.isPreferred %}★{% endif %}
+          — {{ lien.uri }}
+        </span>
+        {% if lien.isEditable %}
+        <form method="post" action="/clients/{{ client.id }}/fiche/liens_action/{{ lien.name.split('/')[-1] }}/supprimer" onsubmit="return confirm('Retirer ce lien d\'action de la fiche Google ?');">
+          <button type="submit" class="lien-retirer-geotag" title="Retirer">×</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="texte-vide">Aucun lien d'action sur cette fiche pour l'instant.</p>
+    {% endif %}
+
+    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/fiche/liens_action"
+          onsubmit="return confirm('Ajouter ce lien d\'action directement sur la fiche Google, publiquement visible ?');">
+      <label>
+        Type d'action
+        <select name="type_action" required>
+          {% for valeur, libelle in types_action %}
+          <option value="{{ valeur }}">{{ libelle }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        URL
+        <input type="url" name="uri" placeholder="https://..." required>
+      </label>
+      <label class="case-ferme">
+        <input type="checkbox" name="est_prefere"> Lien préféré
+      </label>
+      <button type="submit" class="bouton-secondaire">Ajouter</button>
+    </form>
+    <p class="texte-discret">Google n'accepte pas tous les types pour toutes les catégories d'établissement — une erreur peut s'afficher si ce type n'est pas autorisé pour cette fiche.</p>
+  </div>
+</details>
+{% endif %}
+
+<script>
+document.querySelectorAll(".ligne-horaire-jour").forEach((jourEl) => {
+  const caseFerme = jourEl.querySelector(".case-jour-ferme");
+  const case24h = jourEl.querySelector(".case-jour-24h");
+  const boutonAjouter = jourEl.querySelector(".bouton-ajouter-coupure");
+  const listePeriodes = jourEl.querySelector(".liste-periodes-jour");
+  if (!caseFerme) return; // jour verrouille, rien a faire
+
+  function actualiserEtatChamps() {
+    const inactif = caseFerme.checked || case24h.checked;
+    listePeriodes.hidden = inactif;
+    listePeriodes.querySelectorAll("input").forEach((champ) => { champ.disabled = inactif; });
+    boutonAjouter.disabled = inactif;
+  }
+
+  caseFerme.addEventListener("change", () => {
+    if (caseFerme.checked) case24h.checked = false;
+    actualiserEtatChamps();
+  });
+  case24h.addEventListener("change", () => {
+    if (case24h.checked) caseFerme.checked = false;
+    actualiserEtatChamps();
+  });
+
+  function actualiserBoutonsRetrait() {
+    const lignes = listePeriodes.querySelectorAll(".ligne-periode");
+    lignes.forEach((ligne) => {
+      const boutonRetrait = ligne.querySelector(".bouton-retirer-periode");
+      boutonRetrait.hidden = lignes.length < 2;
+    });
+  }
+
+  listePeriodes.addEventListener("click", (evenement) => {
+    if (!evenement.target.classList.contains("bouton-retirer-periode")) return;
+    evenement.target.closest(".ligne-periode").remove();
+    actualiserBoutonsRetrait();
+  });
+
+  boutonAjouter.addEventListener("click", () => {
+    const derniere = listePeriodes.querySelector(".ligne-periode:last-child");
+    const nouvelle = derniere.cloneNode(true);
+    nouvelle.querySelectorAll('input[type="time"]').forEach((champ) => { champ.value = ""; });
+    listePeriodes.appendChild(nouvelle);
+    actualiserBoutonsRetrait();
+  });
+
+  actualiserEtatChamps();
+});
+
+(function () {
+  const clientId = {{ client.id }};
+  const champRecherche = document.getElementById("champ-recherche-categorie");
+  const boutonRechercher = document.getElementById("bouton-rechercher-categorie");
+  const resultats = document.getElementById("resultats-recherche-categorie");
+  if (!boutonRechercher) return;
+
+  const texteCategoriePrincipale = document.getElementById("texte-categorie-principale");
+  const champCategoriePrincipaleId = document.getElementById("champ-categorie-principale-id");
+  const listeComplementaires = document.getElementById("liste-categories-complementaires");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  boutonRechercher.addEventListener("click", async () => {
+    if (!champRecherche.value.trim()) return;
+    boutonRechercher.disabled = true;
+    try {
+      const reponse = await fetch(`/clients/${clientId}/categories/recherche?q=${encodeURIComponent(champRecherche.value.trim())}`);
+      const donnees = await reponse.json();
+      const liste = donnees.resultats || [];
+      resultats.innerHTML = liste.length
+        ? liste.map((c) => `
+            <li>
+              <span>${echapper(c.displayName)}</span>
+              <button type="button" class="bouton-secondaire bouton-categorie-principale" data-id="${echapper(c.name)}" data-nom="${echapper(c.displayName)}">Définir comme principale</button>
+              <button type="button" class="bouton-secondaire bouton-categorie-ajouter" data-id="${echapper(c.name)}" data-nom="${echapper(c.displayName)}">+ Ajouter</button>
+            </li>`).join("")
+        : "<li class=\"texte-discret\">Aucun résultat.</li>";
+      resultats.hidden = false;
+    } finally {
+      boutonRechercher.disabled = false;
+    }
+  });
+
+  resultats.addEventListener("click", (evenement) => {
+    const cible = evenement.target;
+    if (cible.classList.contains("bouton-categorie-principale")) {
+      champCategoriePrincipaleId.value = cible.dataset.id;
+      texteCategoriePrincipale.textContent = cible.dataset.nom;
+    }
+    if (cible.classList.contains("bouton-categorie-ajouter")) {
+      if (listeComplementaires.querySelector(`[data-categorie-id="${CSS.escape(cible.dataset.id)}"]`)) return;
+      const chip = document.createElement("span");
+      chip.className = "etiquette-supprimable";
+      chip.dataset.categorieId = cible.dataset.id;
+      chip.innerHTML = `
+        <span class="etiquette-chip">${echapper(cible.dataset.nom)}</span>
+        <input type="hidden" name="categories_complementaires_id" value="${echapper(cible.dataset.id)}">
+        <button type="button" class="bouton-retirer-categorie" title="Retirer">×</button>
+      `;
+      listeComplementaires.appendChild(chip);
+    }
+  });
+
+  listeComplementaires.addEventListener("click", (evenement) => {
+    if (!evenement.target.classList.contains("bouton-retirer-categorie")) return;
+    evenement.target.closest(".etiquette-supprimable").remove();
+  });
+})();
+</script>
+{% endblock %}

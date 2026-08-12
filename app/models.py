@@ -1,0 +1,213 @@
+"""
+Modeles de la base de donnees. Remplacent progressivement les fichiers
+texte utilises par les scripts en ligne de commande (clients/*.txt,
+identifiants_fiches.json, posts_generes/*.txt, logs/journal_publications.csv).
+"""
+
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Table, Text
+from sqlalchemy.orm import relationship
+
+from .database import Base
+
+client_etiquettes = Table(
+    "client_etiquettes",
+    Base.metadata,
+    Column("client_id", Integer, ForeignKey("clients.id"), primary_key=True),
+    Column("etiquette_id", Integer, ForeignKey("etiquettes.id"), primary_key=True),
+)
+
+
+class Utilisateur(Base):
+    __tablename__ = "utilisateurs"
+
+    id = Column(Integer, primary_key=True)
+    identifiant = Column(String, unique=True, nullable=False)
+    mot_de_passe_hash = Column(String, nullable=False)
+
+
+class Client(Base):
+    __tablename__ = "clients"
+
+    id = Column(Integer, primary_key=True)
+    nom = Column(String, nullable=False)
+    contenu_site = Column(Text, default="")
+    account_id = Column(String, default="")
+    location_id = Column(String, default="")
+    compte_google_id = Column(Integer, ForeignKey("comptes_google.id"), nullable=True)
+    consignes_avis = Column(Text, default="")
+    # Coordonnees de la fiche, mises en cache depuis Google (voir google_location.py)
+    # pour centrer la grille de la carte de positions.
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
+    photos = relationship("PhotoFiche", back_populates="client", cascade="all, delete-orphan")
+    compte_google = relationship("CompteGoogle", back_populates="clients")
+    etiquettes = relationship("Etiquette", secondary=client_etiquettes, back_populates="clients")
+    mots_cles = relationship("MotCle", back_populates="client", cascade="all, delete-orphan")
+    releves_position = relationship("ReleveDePosition", back_populates="client", cascade="all, delete-orphan")
+
+
+class Post(Base):
+    __tablename__ = "posts"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    titre = Column(String, default="")
+    texte = Column(Text, default="")
+    image_url = Column(String, default="")
+    prompt_image = Column(Text, default="")
+    # "", BOOK, CALL, LEARN_MORE, ORDER, SHOP, SIGN_UP (bouton "appel a l'action" Google)
+    type_appel_action = Column(String, default="")
+    url_appel_action = Column(String, default="")
+    # STANDARD, EVENT, OFFER (format du post Google)
+    type_post = Column(String, default="STANDARD")
+    evenement_titre = Column(String, default="")
+    evenement_date_debut = Column(Date, nullable=True)
+    evenement_heure_debut = Column(String, nullable=True)  # "HH:MM"
+    evenement_date_fin = Column(Date, nullable=True)
+    evenement_heure_fin = Column(String, nullable=True)  # "HH:MM"
+    offre_code = Column(String, default="")
+    offre_url = Column(String, default="")
+    offre_conditions = Column(Text, default="")
+    # BROUILLON, A_PUBLIER, PUBLIE_LIVE, PUBLIE_REJECTED, ECHEC_PUBLICATION, IGNORE, SUPPRIME
+    statut = Column(String, default="BROUILLON")
+    date_prevue = Column(Date, nullable=True)
+    heure_prevue = Column(String, nullable=True)  # "HH:MM", utilise avec date_prevue pour la programmation
+    id_post_google = Column(String, default="")
+    # Regroupe les posts crees ensemble pour un envoi sur plusieurs fiches (voir /posts).
+    lot_id = Column(String, nullable=True, index=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+    maj_le = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    client = relationship("Client", back_populates="posts")
+    evenements = relationship(
+        "EvenementPublication", back_populates="post", cascade="all, delete-orphan"
+    )
+
+
+class EvenementPublication(Base):
+    __tablename__ = "evenements_publication"
+
+    id = Column(Integer, primary_key=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    etat = Column(String, nullable=False)
+    horodatage = Column(DateTime, default=datetime.utcnow)
+
+    post = relationship("Post", back_populates="evenements")
+
+
+class PhotoFiche(Base):
+    """
+    Photo importee pour une fiche Google : reste en BROUILLON (simple zone de
+    preparation, pas encore envoyee a Google) jusqu'a ce qu'elle soit publiee
+    manuellement ou programmee (meme logique que les posts).
+    """
+
+    __tablename__ = "photos_fiche"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    url_image = Column(String, default="")
+    categorie = Column(String, default="ADDITIONAL")
+    legende = Column(Text, default="")
+    # Geotag optionnel : coordonnees inscrites dans l'EXIF de la photo au moment de l'envoi.
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    # BROUILLON, A_PUBLIER, PUBLIE_LIVE, ECHEC_PUBLICATION
+    statut = Column(String, default="BROUILLON")
+    date_prevue = Column(Date, nullable=True)
+    id_media_google = Column(String, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+    maj_le = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    client = relationship("Client", back_populates="photos")
+
+
+class Etiquette(Base):
+    """Etiquette libre posee sur un ou plusieurs clients, pour les regrouper (ex. envoi multi-fiches)."""
+
+    __tablename__ = "etiquettes"
+
+    id = Column(Integer, primary_key=True)
+    nom = Column(String, unique=True, nullable=False)
+
+    clients = relationship("Client", secondary=client_etiquettes, back_populates="etiquettes")
+
+
+class MotCle(Base):
+    """Mot-cle suivi pour un client, reutilise a chaque releve de position (voir rank_tracking.py)."""
+
+    __tablename__ = "mots_cles"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    texte = Column(String, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="mots_cles")
+
+
+class ReleveDePosition(Base):
+    """
+    Une verification de classement sur une grille de points geographiques pour
+    un mot-cle donne (equivalent d'un "scan" Localo). Le mot-cle est copie ici
+    (independant de MotCle) pour garder l'historique meme si le mot-cle est
+    supprime plus tard.
+    """
+
+    __tablename__ = "releves_position"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    mot_cle_texte = Column(String, nullable=False)
+    taille_grille = Column(Integer, default=5)
+    rayon_km = Column(Float, default=2.0)
+    latitude_centre = Column(Float, nullable=False)
+    longitude_centre = Column(Float, nullable=False)
+    # EN_COURS, TERMINE, ECHEC
+    statut = Column(String, default="EN_COURS")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="releves_position")
+    points = relationship("PointDeGrille", back_populates="releve", cascade="all, delete-orphan")
+
+
+class PointDeGrille(Base):
+    """Un point de la grille d'un releve, avec le classement trouve a cet endroit (voir rank_tracking.py)."""
+
+    __tablename__ = "points_grille"
+
+    id = Column(Integer, primary_key=True)
+    releve_id = Column(Integer, ForeignKey("releves_position.id"), nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    # None tant que le point n'a pas ete verifie ; reste None si l'entreprise
+    # n'apparait pas dans les resultats renvoyes (hors classement visible).
+    position = Column(Integer, nullable=True)
+    verifie = Column(Boolean, default=False)
+    nom_correspondance = Column(String, default="")
+    # Top 10 des resultats a ce point (JSON : [{"position": int, "nom": str}, ...]),
+    # conserve pour reafficher le classement sans refaire d'appel API.
+    resultats_json = Column(Text, default="")
+
+    releve = relationship("ReleveDePosition", back_populates="points")
+
+
+class CompteGoogle(Base):
+    """
+    Un compte Google connecte a la plateforme. Plusieurs comptes peuvent etre
+    connectes (Jonathan gere des fiches reparties sur plusieurs comptes Google).
+    """
+
+    __tablename__ = "comptes_google"
+
+    id = Column(Integer, primary_key=True)
+    libelle = Column(String, default="")  # adresse e-mail du compte Google, si recuperee
+    refresh_token = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    clients = relationship("Client", back_populates="compte_google")

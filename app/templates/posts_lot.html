@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% set page_actuelle = "posts" %}
+{% block titre %}Lot de posts — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/posts">&larr; Retour à Posts</a></p>
+<h1>Lot de posts ({{ posts|length }} fiche{{ "s" if posts|length > 1 else "" }})</h1>
+<p class="texte-discret">Chaque exemplaire peut être ajusté individuellement avant l'envoi (cliquez sur son titre).</p>
+
+<ul class="liste-posts" id="liste-posts-lot">
+  {% for post in posts %}
+  <li data-post-id="{{ post.id }}">
+    <a class="lien-post" href="/posts/{{ post.id }}">
+      <div class="ligne-post-titre">
+        <strong>{{ post.client.nom }}</strong>
+        <span class="etiquette-statut etiquette-{{ post.statut|lower }}" data-badge-statut>{{ post.statut }}</span>
+      </div>
+      <p class="apercu-texte">{{ post.texte[:180] }}{% if post.texte|length > 180 %}…{% endif %}</p>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="actions-avis">
+  <button type="button" id="bouton-publier-lot" class="bouton-publier">Publier maintenant sur toutes les fiches</button>
+</div>
+
+<form class="formulaire" method="post" action="/posts/lot/{{ lot_id }}/programmer">
+  <label>
+    Date d'envoi
+    <input type="date" name="date_prevue" required>
+  </label>
+  <div class="choix-heure">
+    <span class="choix-image-titre">Heure d'envoi</span>
+    <div class="options-heure">
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
+      <label class="filtre-case">
+        <input type="radio" name="heure_mode" value="personnalise">
+        Personnalisé :
+        <select name="heure_h">{% for h in range(24) %}<option value="{{ h }}">{{ "%02d"|format(h) }}</option>{% endfor %}</select>h
+        <select name="heure_m">{% for m in range(60) %}<option value="{{ m }}">{{ "%02d"|format(m) }}</option>{% endfor %}</select>
+      </label>
+    </div>
+  </div>
+  <div class="actions-avis">
+    <button type="submit" class="bouton-secondaire">Programmer l'envoi sur toutes les fiches</button>
+  </div>
+</form>
+<div id="conteneur-progression-lot" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-lot" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-lot" class="texte-progression-avis"></span>
+</div>
+
+<script>
+(function () {
+  const bouton = document.getElementById("bouton-publier-lot");
+  bouton.addEventListener("click", async () => {
+    const elements = Array.from(document.querySelectorAll("#liste-posts-lot li"));
+    if (!elements.length) return;
+
+    const conteneurProgression = document.getElementById("conteneur-progression-lot");
+    const barreProgression = document.getElementById("barre-progression-lot");
+    const texteProgression = document.getElementById("texte-progression-lot");
+
+    bouton.disabled = true;
+    conteneurProgression.hidden = false;
+    barreProgression.style.width = "0%";
+    texteProgression.textContent = `0 / ${elements.length} fiche(s)`;
+
+    let termines = 0;
+    const erreurs = [];
+
+    for (const element of elements) {
+      const postId = element.dataset.postId;
+      try {
+        const reponse = await fetch(`/posts/${postId}/publier`, { method: "POST" });
+        if (!reponse.ok) {
+          erreurs.push(`${element.querySelector("strong").textContent} : erreur lors de la publication.`);
+        } else {
+          const badge = element.querySelector("[data-badge-statut]");
+          badge.textContent = "PUBLIE";
+        }
+      } catch (e) {
+        erreurs.push(`${element.querySelector("strong").textContent} : erreur réseau.`);
+      }
+      termines++;
+      barreProgression.style.width = `${Math.round((termines / elements.length) * 100)}%`;
+      texteProgression.textContent = `${termines} / ${elements.length} fiche(s)`;
+    }
+
+    if (erreurs.length) {
+      alert("Certains posts n'ont pas pu être publiés :\n" + erreurs.join("\n"));
+    }
+    window.location.reload();
+  });
+})();
+</script>
+{% endblock %}

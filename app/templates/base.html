@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titre %}Fiche Locale{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v={{ version_css }}">
+  {% block tete_supplementaire %}{% endblock %}
+</head>
+<body>
+  {% block corps %}
+  <div class="disposition">
+    <aside class="barre-laterale">
+      <div class="marque">
+        <span class="marque-icone">FL</span>
+        <span class="marque-texte">Fiche Locale</span>
+      </div>
+      <nav class="nav-laterale">
+        <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
+          <span class="nav-icone">◧</span> Clients
+        </a>
+        <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
+          <span class="nav-icone">▤</span> Posts en masse
+        </a>
+        <a href="/avis" class="{{ 'lien-actif' if page_actuelle == 'avis' else '' }}">
+          <span class="nav-icone">★</span> Avis
+        </a>
+        <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
+          <span class="nav-icone">⟲</span> Historique
+        </a>
+        <a href="/google/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_google' else '' }}">
+          <span class="nav-icone">⚙</span> Comptes Google
+        </a>
+      </nav>
+      <a class="lien-deconnexion-barre" href="/deconnexion">Se déconnecter</a>
+    </aside>
+    <main class="zone-contenu">
+      {% block contenu %}{% endblock %}
+    </main>
+  </div>
+  {% endblock %}
+</body>
+</html>

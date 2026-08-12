@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Historique — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+<h1>Historique des publications — {{ client.nom }}</h1>
+
+<div class="barre-titre">
+  <h2>Actuellement sur la fiche</h2>
+  <button type="button" class="bouton-secondaire" onclick="window.location.reload()">⟳ Rafraîchir</button>
+</div>
+<p class="texte-discret">Liste lue en direct sur votre fiche Google (peut inclure des posts publiés depuis l'app Google elle-même, pas seulement via cette plateforme).</p>
+
+{% if erreur_posts_en_ligne %}
+<p class="message-erreur">{{ erreur_posts_en_ligne }}</p>
+{% elif posts_en_ligne %}
+<ul class="liste-posts">
+  {% for post in posts_en_ligne %}
+  <li>
+    {% if post.url_recherche %}<a class="lien-post" href="{{ post.url_recherche }}" target="_blank" rel="noopener">{% else %}<div class="lien-post">{% endif %}
+      <div class="ligne-post-titre">
+        <strong>{{ post.date_creation }}</strong>
+        <span class="etiquette-statut etiquette-{{ post.etat|lower }}">{{ post.etat }}</span>
+      </div>
+      <p class="apercu-texte">{{ post.texte[:180] }}{% if post.texte|length > 180 %}…{% endif %}</p>
+    {% if post.url_recherche %}</a>{% else %}</div>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun post actuellement visible sur cette fiche.</p>
+{% endif %}
+
+<h2>Journal des publications</h2>
+{% if evenements %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Post</th>
+        <th>État</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for evenement in evenements %}
+      <tr>
+        <td>{{ evenement.horodatage.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><a href="/posts/{{ evenement.post.id }}">{{ evenement.post.titre }}</a></td>
+        <td><span class="etiquette-statut etiquette-{{ evenement.etat|lower }}">{{ evenement.etat }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucune publication pour l'instant.</p>
+{% endif %}
+{% endblock %}

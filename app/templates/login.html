@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titre %}Connexion — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <form class="carte-connexion" method="post" action="/connexion">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    {% if erreur %}<p class="message-erreur">{{ erreur }}</p>{% endif %}
+    <label>
+      Identifiant
+      <input type="text" name="identifiant" required autofocus>
+    </label>
+    <label>
+      Mot de passe
+      <input type="password" name="mot_de_passe" required>
+    </label>
+    <button type="submit">Se connecter</button>
+  </form>
+</div>
+{% endblock %}

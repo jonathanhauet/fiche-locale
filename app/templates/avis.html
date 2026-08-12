@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+{% set page_actuelle = "avis" %}
+{% block titre %}Avis — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Avis Google (tous clients)</h1>
+  <div class="actions-avis">
+    <select id="select-portee-suggestion">
+      <option value="page">Suggestions IA : cette page</option>
+      <option value="tout">Suggestions IA : tous les avis filtrés</option>
+    </select>
+    <button type="button" id="bouton-generer-suggestions" class="bouton-secondaire">🤖 Générer les suggestions</button>
+    <button type="button" id="bouton-rafraichir-avis" class="bouton">⟳ Rafraîchir</button>
+  </div>
+</div>
+
+{% if not google_connecte %}
+<div class="bandeau-avertissement">
+  Google n'est pas connecté. <a href="/google/comptes">Connecter un compte Google</a>
+</div>
+{% elif not clients %}
+<p class="texte-vide">Aucun client avec une fiche Google associée pour l'instant.</p>
+{% else %}
+
+<div id="conteneur-progression-avis" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-avis" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-avis" class="texte-progression-avis"></span>
+</div>
+
+<div class="filtre-entreprises">
+  <span class="filtre-titre">Statut :</span>
+  <label class="filtre-case"><input type="radio" name="filtre-statut" value="tous" checked> Tous</label>
+  <label class="filtre-case"><input type="radio" name="filtre-statut" value="sans_reponse"> Sans réponse</label>
+  <label class="filtre-case"><input type="radio" name="filtre-statut" value="avec_reponse"> Avec réponse</label>
+</div>
+
+{% if clients|length > 1 %}
+<div class="filtre-entreprises">
+  <span class="filtre-titre">Entreprises :</span>
+  <label class="filtre-case"><input type="checkbox" id="case-filtre-toutes" checked> Toutes</label>
+  {% for client in clients %}
+  <label class="filtre-case">
+    <input type="checkbox" class="case-filtre-client" value="{{ client.id }}" checked> {{ client.nom }}
+  </label>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div id="erreurs-avis"></div>
+<ul id="liste-avis" class="liste-avis"></ul>
+<p id="texte-vide-avis" class="texte-vide" hidden>Aucun avis trouvé.</p>
+
+<div id="pagination-avis" class="pagination-avis" hidden>
+  <button type="button" id="bouton-page-precedente" class="bouton-secondaire">← Précédent</button>
+  <span id="texte-pagination" class="texte-discret"></span>
+  <button type="button" id="bouton-page-suivante" class="bouton-secondaire">Suivant →</button>
+</div>
+
+<script id="donnees-clients-avis" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-avis").textContent);
+  const boutonRafraichir = document.getElementById("bouton-rafraichir-avis");
+  const boutonGenererSuggestions = document.getElementById("bouton-generer-suggestions");
+  const selectPorteeSuggestion = document.getElementById("select-portee-suggestion");
+  const conteneurProgression = document.getElementById("conteneur-progression-avis");
+  const barreProgression = document.getElementById("barre-progression-avis");
+  const texteProgression = document.getElementById("texte-progression-avis");
+  const conteneurErreurs = document.getElementById("erreurs-avis");
+  const listeAvis = document.getElementById("liste-avis");
+  const texteVide = document.getElementById("texte-vide-avis");
+  const caseToutes = document.getElementById("case-filtre-toutes");
+  const casesClients = Array.from(document.querySelectorAll(".case-filtre-client"));
+  const casesStatut = Array.from(document.querySelectorAll('input[name=filtre-statut]'));
+  const conteneurPagination = document.getElementById("pagination-avis");
+  const texteAffichagePagination = document.getElementById("texte-pagination");
+  const boutonPagePrecedente = document.getElementById("bouton-page-precedente");
+  const boutonPageSuivante = document.getElementById("bouton-page-suivante");
+
+  const TAILLE_PAGE = 50;
+
+  let tousLesAvis = [];
+  let chargementEnCours = false;
+  let pageActuelle = 1;
+  const suggestionsEnVol = new Set();
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function etoiles(note) {
+    return "★".repeat(note) + "☆".repeat(5 - note);
+  }
+
+  function formaterDateRelative(iso) {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (isNaN(date)) return "";
+    const secondes = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (secondes < 60) return "à l'instant";
+    const minutes = Math.floor(secondes / 60);
+    if (minutes < 60) return `il y a ${minutes} minute${minutes > 1 ? "s" : ""}`;
+    const heures = Math.floor(minutes / 60);
+    if (heures < 24) return `il y a ${heures} heure${heures > 1 ? "s" : ""}`;
+    const jours = Math.floor(heures / 24);
+    if (jours === 1) return "hier";
+    if (jours < 7) return `il y a ${jours} jours`;
+    const semaines = Math.floor(jours / 7);
+    if (semaines < 4) return `il y a ${semaines} semaine${semaines > 1 ? "s" : ""}`;
+    const mois = Math.floor(jours / 30);
+    if (mois < 12) return `il y a ${mois} mois`;
+    const ans = Math.floor(jours / 365);
+    return `il y a ${ans} an${ans > 1 ? "s" : ""}`;
+  }
+
+  function formaterDateExacte(iso) {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (isNaN(date)) return "";
+    return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+  }
+
+  function carteAvisHTML(item) {
+    const sansReponse = !item.reponse;
+    const boutonSupprimer = item.reponse
+      ? `<button type="button" class="bouton-danger bouton-supprimer-reponse">Supprimer la réponse</button>`
+      : "";
+    return `
+      <li class="carte-avis ${sansReponse ? "carte-avis-sans-reponse" : ""}"
+          data-client-id="${item.client_id}" data-review-id="${echapper(item.review_id)}"
+          data-account-id="${echapper(item.account_id)}" data-location-id="${echapper(item.location_id)}">
+        <div class="entete-avis">
+          <div>
+            <strong>${echapper(item.auteur)}</strong>
+            <span class="etoiles">${etoiles(item.note)}</span>
+            <span class="date-avis" title="${echapper(formaterDateExacte(item.date_avis))}">${formaterDateRelative(item.date_avis)}</span>
+          </div>
+          <span class="etiquette-statut">${echapper(item.client_nom)}</span>
+        </div>
+        <p class="commentaire-avis">${echapper(item.commentaire) || "(avis sans commentaire écrit)"}</p>
+        <div class="bloc-reponse-existante">
+          ${item.reponse ? `<div class="reponse-existante"><p><strong>Votre réponse :</strong> <span class="texte-reponse-existante">${echapper(item.reponse)}</span></p></div>` : ""}
+        </div>
+        <form class="formulaire formulaire-avis formulaire-repondre">
+          <textarea name="texte_reponse" rows="3" placeholder="Votre réponse...">${echapper(item.texte_suggere || item.reponse || "")}</textarea>
+          <div class="actions-avis">
+            <button type="submit">${item.reponse ? "Modifier la réponse" : "Envoyer la réponse"}</button>
+          </div>
+        </form>
+        <div class="actions-avis">
+          <button type="button" class="bouton-secondaire bouton-suggerer">Suggérer une réponse (IA)</button>
+          ${boutonSupprimer}
+        </div>
+        <p class="message-erreur message-erreur-carte" hidden></p>
+      </li>`;
+  }
+
+  function filtresActifs() {
+    if (!casesClients.length) return null;
+    return casesClients.filter((c) => c.checked).map((c) => Number(c.value));
+  }
+
+  function statutActif() {
+    const coche = casesStatut.find((c) => c.checked);
+    return coche ? coche.value : "tous";
+  }
+
+  function avisFiltres() {
+    const actifs = filtresActifs();
+    let avis = actifs ? tousLesAvis.filter((a) => actifs.includes(a.client_id)) : tousLesAvis.slice();
+    const statut = statutActif();
+    if (statut === "sans_reponse") avis = avis.filter((a) => !a.reponse);
+    if (statut === "avec_reponse") avis = avis.filter((a) => !!a.reponse);
+    avis.sort((a, b) => (a.date_avis < b.date_avis ? 1 : -1));
+    avis.sort((a, b) => (a.reponse ? 1 : 0) - (b.reponse ? 1 : 0));
+    return avis;
+  }
+
+  function afficherAvis() {
+    const avisFiltresListe = avisFiltres();
+    const totalPages = Math.max(1, Math.ceil(avisFiltresListe.length / TAILLE_PAGE));
+    pageActuelle = Math.min(Math.max(1, pageActuelle), totalPages);
+    const debut = (pageActuelle - 1) * TAILLE_PAGE;
+    const avisPage = avisFiltresListe.slice(debut, debut + TAILLE_PAGE);
+
+    listeAvis.innerHTML = avisPage.map(carteAvisHTML).join("");
+    texteVide.hidden = avisFiltresListe.length > 0 || chargementEnCours;
+
+    conteneurPagination.hidden = avisFiltresListe.length <= TAILLE_PAGE;
+    texteAffichagePagination.textContent = `Page ${pageActuelle} / ${totalPages} (${avisFiltresListe.length} avis)`;
+    boutonPagePrecedente.disabled = pageActuelle <= 1;
+    boutonPageSuivante.disabled = pageActuelle >= totalPages;
+  }
+
+  function trouverCarte(item) {
+    return listeAvis.querySelector(
+      `.carte-avis[data-review-id="${CSS.escape(item.review_id)}"][data-account-id="${CSS.escape(item.account_id)}"]`
+    );
+  }
+
+  async function suggererPourItem(item) {
+    const carteInitiale = trouverCarte(item);
+    if (carteInitiale) {
+      const zone = carteInitiale.querySelector("textarea[name=texte_reponse]");
+      zone.disabled = true;
+      zone.placeholder = "Génération de la suggestion IA...";
+    }
+    let erreurMessage = null;
+    try {
+      const donnees = new URLSearchParams({
+        account_id: item.account_id,
+        location_id: item.location_id,
+        review_id: item.review_id,
+        commentaire: item.commentaire || "",
+        note: item.note || 0,
+      });
+      const reponseHttp = await fetch("/avis/suggerer", { method: "POST", body: donnees });
+      const resultat = await reponseHttp.json();
+      if (!reponseHttp.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+      item.texte_suggere = resultat.texte_suggere || "";
+    } catch (erreur) {
+      erreurMessage = erreur.message;
+    } finally {
+      const carteActuelle = trouverCarte(item);
+      if (carteActuelle) {
+        const zone = carteActuelle.querySelector("textarea[name=texte_reponse]");
+        zone.disabled = false;
+        zone.placeholder = "Votre réponse...";
+        if (item.texte_suggere) zone.value = item.texte_suggere;
+        if (erreurMessage) {
+          const messageErreur = carteActuelle.querySelector(".message-erreur-carte");
+          messageErreur.textContent = erreurMessage;
+          messageErreur.hidden = false;
+        }
+      }
+    }
+  }
+
+  async function genererSuggestionsEnMasse() {
+    const avisFiltresListe = avisFiltres();
+    const source = selectPorteeSuggestion.value === "page"
+      ? avisFiltresListe.slice((pageActuelle - 1) * TAILLE_PAGE, (pageActuelle - 1) * TAILLE_PAGE + TAILLE_PAGE)
+      : avisFiltresListe;
+    const items = source.filter((a) => !a.reponse && !a.texte_suggere && !suggestionsEnVol.has(a));
+
+    if (!items.length) {
+      alert("Aucun avis sans réponse ni suggestion existante dans cette sélection.");
+      return;
+    }
+    if (!confirm(`Générer une suggestion IA pour ${items.length} avis ? Cela consomme des crédits de l'API Claude (facturée à l'usage).`)) {
+      return;
+    }
+
+    boutonGenererSuggestions.disabled = true;
+    conteneurProgression.hidden = false;
+    barreProgression.style.width = "0%";
+    let termines = 0;
+    texteProgression.textContent = `0 / ${items.length} suggestions`;
+
+    const CONCURRENCE_SUGGESTION = 2;
+    let curseur = 0;
+    async function traiterSuivant() {
+      while (curseur < items.length) {
+        const item = items[curseur++];
+        suggestionsEnVol.add(item);
+        await suggererPourItem(item);
+        suggestionsEnVol.delete(item);
+        termines++;
+        barreProgression.style.width = `${Math.round((termines / items.length) * 100)}%`;
+        texteProgression.textContent = `${termines} / ${items.length} suggestions`;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCE_SUGGESTION, items.length) }, traiterSuivant));
+
+    conteneurProgression.hidden = true;
+    boutonGenererSuggestions.disabled = false;
+    afficherAvis();
+  }
+
+  async function chargerAvis() {
+    if (chargementEnCours) return;
+    chargementEnCours = true;
+    pageActuelle = 1;
+    boutonRafraichir.disabled = true;
+    tousLesAvis = [];
+    conteneurErreurs.innerHTML = "";
+    listeAvis.innerHTML = "";
+    texteVide.hidden = true;
+    conteneurProgression.hidden = false;
+    barreProgression.style.width = "0%";
+    texteProgression.textContent = `0 / ${clients.length} entreprises`;
+
+    let termines = 0;
+    const erreurs = [];
+    const CONCURRENCE = 3;
+    let curseur = 0;
+
+    async function traiterSuivant() {
+      while (curseur < clients.length) {
+        const client = clients[curseur++];
+        try {
+          const reponse = await fetch(`/avis/donnees/${client.id}`);
+          const donnees = await reponse.json();
+          if (donnees.erreur) erreurs.push(donnees.erreur);
+          if (donnees.avis) tousLesAvis.push(...donnees.avis);
+        } catch (e) {
+          erreurs.push(`${client.nom} : erreur reseau.`);
+        }
+        termines++;
+        barreProgression.style.width = `${Math.round((termines / clients.length) * 100)}%`;
+        texteProgression.textContent = `${termines} / ${clients.length} entreprises`;
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCE, clients.length) }, traiterSuivant));
+
+    conteneurProgression.hidden = true;
+    if (erreurs.length) {
+      conteneurErreurs.innerHTML = erreurs.map((e) => `<p class="message-erreur">${echapper(e)}</p>`).join("");
+    }
+    chargementEnCours = false;
+    boutonRafraichir.disabled = false;
+    afficherAvis();
+  }
+
+  boutonRafraichir.addEventListener("click", chargerAvis);
+  boutonGenererSuggestions.addEventListener("click", genererSuggestionsEnMasse);
+
+  if (caseToutes) {
+    caseToutes.addEventListener("change", () => {
+      casesClients.forEach((c) => { c.checked = caseToutes.checked; });
+      pageActuelle = 1;
+      afficherAvis();
+    });
+  }
+  casesClients.forEach((c) => c.addEventListener("change", () => {
+    if (caseToutes) caseToutes.checked = casesClients.every((x) => x.checked);
+    pageActuelle = 1;
+    afficherAvis();
+  }));
+
+  casesStatut.forEach((c) => c.addEventListener("change", () => {
+    pageActuelle = 1;
+    afficherAvis();
+  }));
+
+  boutonPagePrecedente.addEventListener("click", () => {
+    pageActuelle -= 1;
+    afficherAvis();
+  });
+  boutonPageSuivante.addEventListener("click", () => {
+    pageActuelle += 1;
+    afficherAvis();
+  });
+
+  listeAvis.addEventListener("submit", async (evenement) => {
+    const formulaire = evenement.target;
+    if (!formulaire.classList.contains("formulaire-repondre")) return;
+    evenement.preventDefault();
+
+    const carte = formulaire.closest(".carte-avis");
+    const texteReponse = formulaire.querySelector("textarea[name=texte_reponse]").value;
+    const messageErreur = carte.querySelector(".message-erreur-carte");
+    messageErreur.hidden = true;
+
+    const donnees = new URLSearchParams({
+      account_id: carte.dataset.accountId,
+      location_id: carte.dataset.locationId,
+      review_id: carte.dataset.reviewId,
+      texte_reponse: texteReponse,
+    });
+
+    try {
+      const reponseHttp = await fetch("/avis/repondre", { method: "POST", body: donnees });
+      const resultat = await reponseHttp.json();
+      if (!reponseHttp.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+
+      const item = tousLesAvis.find(
+        (a) => a.review_id === carte.dataset.reviewId && a.account_id === carte.dataset.accountId
+      );
+      if (item) { item.reponse = resultat.reponse; item.date_reponse = resultat.date_reponse; }
+      afficherAvis();
+    } catch (erreur) {
+      messageErreur.textContent = erreur.message;
+      messageErreur.hidden = false;
+    }
+  });
+
+  listeAvis.addEventListener("click", async (evenement) => {
+    const carte = evenement.target.closest(".carte-avis");
+    if (!carte) return;
+    const messageErreur = carte.querySelector(".message-erreur-carte");
+    messageErreur.hidden = true;
+
+    if (evenement.target.classList.contains("bouton-suggerer")) {
+      const item = tousLesAvis.find(
+        (a) => a.review_id === carte.dataset.reviewId && a.account_id === carte.dataset.accountId
+      );
+      if (item) {
+        delete item.texte_suggere;
+        await suggererPourItem(item);
+      }
+    }
+
+    if (evenement.target.classList.contains("bouton-supprimer-reponse")) {
+      if (!confirm("Supprimer cette réponse sur Google ?")) return;
+      evenement.target.disabled = true;
+      const donnees = new URLSearchParams({
+        account_id: carte.dataset.accountId,
+        location_id: carte.dataset.locationId,
+        review_id: carte.dataset.reviewId,
+      });
+      try {
+        const reponseHttp = await fetch("/avis/supprimer_reponse", { method: "POST", body: donnees });
+        const resultat = await reponseHttp.json();
+        if (!reponseHttp.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+        const item = tousLesAvis.find(
+          (a) => a.review_id === carte.dataset.reviewId && a.account_id === carte.dataset.accountId
+        );
+        if (item) { item.reponse = null; item.date_reponse = null; }
+        afficherAvis();
+      } catch (erreur) {
+        messageErreur.textContent = erreur.message;
+        messageErreur.hidden = false;
+        evenement.target.disabled = false;
+      }
+    }
+  });
+
+  chargerAvis();
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Clients — Fiche Locale{% endblock %}
+{% block contenu %}
+
+{% if not google_connecte %}
+<div class="bandeau-avertissement">
+  Google n'est pas encore connecté.
+  <a href="/google/connecter">Connecter mon compte Google</a>
+  pour pouvoir choisir une fiche lors de l'ajout d'un client.
+</div>
+{% else %}
+<div class="bandeau-info">
+  Compte(s) Google connecté(s). <a href="/google/comptes">Gérer les comptes Google</a>
+</div>
+{% endif %}
+
+<div class="barre-titre">
+  <h1>Clients</h1>
+  <a class="bouton" href="/clients/nouveau">+ Ajouter un client</a>
+</div>
+
+{% if clients %}
+<ul class="liste-clients">
+  {% for client in clients %}
+  <li>
+    <a href="/clients/{{ client.id }}">
+      <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
+      <span>{{ client.nom }}</span>
+    </a>
+    {% if not client.account_id or not client.location_id %}
+      <span class="etiquette-avertissement">fiche Google non associée</span>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun client pour l'instant.</p>
+{% endif %}
+
+{% endblock %}

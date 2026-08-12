@@ -1,0 +1,22 @@
+Rédige {NOMBRE_POSTS} Google Business Profile posts pour l'entreprise dont le contenu figure dans ta base de connaissance. Appuie-toi sur ce contenu pour identifier l'activité, les prestations proposées et les communes/zones d'intervention à cibler.
+
+Contraintes de rédaction :
+
+Chaque post doit faire entre 1200 et 1400 caractères (espaces compris).
+Passe quelques lignes pour aérer le texte.
+
+Intègre des mots-clés locaux dans chaque post : nom des communes ciblées + prestations + termes de recherche réels (ex. « [prestation] [ville] »).
+
+Respecte les règles Google Business Profile : aucun numéro de téléphone dans le texte, valeur/accroche dans les 150 premiers caractères
+
+Varie les angles : chaque post traite d'une prestation ou d'une situation différente (urgence, installation, entretien, promotion, conseil, clientèle professionnelle, etc.).
+
+Contexte temporel :
+
+Tu peux intégrer un contexte saisonnier si c'est cohérent et naturel avec la période de publication et l'activité, mais ce n'est pas obligatoire.
+
+Format de sortie :
+
+Présente les posts directement dans la conversation, en texte clair, prêts à copier-coller.
+Pour chaque post, indique : un titre de repère, le corps du post.
+Ne pose aucune question, rédige les posts immédiatement.

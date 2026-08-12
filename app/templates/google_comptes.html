@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set page_actuelle = "comptes_google" %}
+{% block titre %}Comptes Google — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Comptes Google connectés</h1>
+  <a class="bouton" href="/google/connecter">+ Connecter un autre compte</a>
+</div>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+{% if comptes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Compte</th>
+        <th>Connecté le</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for compte in comptes %}
+      <tr>
+        <td>{{ compte.libelle }}</td>
+        <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>
+          <form method="post" action="/google/comptes/{{ compte.id }}/deconnecter"
+                onsubmit="return confirm('Déconnecter ce compte Google ?');">
+            <button type="submit" class="bouton-danger">Déconnecter</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucun compte Google connecté pour l'instant.</p>
+{% endif %}
+{% endblock %}

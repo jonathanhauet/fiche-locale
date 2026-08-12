@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set page_actuelle = "historique" %}
+{% block titre %}Historique — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+<h1>Historique des publications</h1>
+
+{% if evenements %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Client</th>
+        <th>Post</th>
+        <th>État</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for evenement in evenements %}
+      <tr>
+        <td>{{ evenement.horodatage.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ evenement.post.client.nom }}</td>
+        <td><a href="/posts/{{ evenement.post.id }}">{{ evenement.post.titre }}</a></td>
+        <td><span class="etiquette-statut etiquette-{{ evenement.etat|lower }}">{{ evenement.etat }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucune publication pour l'instant.</p>
+{% endif %}
+{% endblock %}

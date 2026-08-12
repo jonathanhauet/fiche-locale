@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}{{ post.titre }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ post.client_id }}">&larr; Retour à {{ post.client.nom }}</a></p>
+<h1>Relecture du post</h1>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+<form class="formulaire" method="post" action="/posts/{{ post.id }}/modifier">
+  <label>
+    Titre
+    <input type="text" name="titre" value="{{ post.titre }}" required>
+  </label>
+
+  <label>
+    Texte du post
+    <textarea name="texte" rows="14" required>{{ post.texte }}</textarea>
+  </label>
+
+  <label>
+    Format du post
+    <select name="type_post" id="select-type-post">
+      {% for valeur, libelle in types_post %}
+      <option value="{{ valeur }}" {% if valeur == post.type_post %}selected{% endif %}>{{ libelle }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <fieldset class="bloc-image" id="bloc-evenement">
+    <legend>Détails de l'événement (Événement et Offre)</legend>
+    <label>
+      Titre de l'événement (optionnel, reprend le titre du post sinon)
+      <input type="text" name="evenement_titre" value="{{ post.evenement_titre }}">
+    </label>
+    <div class="ligne-champs">
+      <label>
+        Début
+        <input type="date" name="evenement_date_debut" value="{{ post.evenement_date_debut or '' }}">
+      </label>
+      <label>
+        Heure de début (optionnel)
+        <input type="time" name="evenement_heure_debut" value="{{ post.evenement_heure_debut or '' }}">
+      </label>
+    </div>
+    <div class="ligne-champs">
+      <label>
+        Fin
+        <input type="date" name="evenement_date_fin" value="{{ post.evenement_date_fin or '' }}">
+      </label>
+      <label>
+        Heure de fin (optionnel)
+        <input type="time" name="evenement_heure_fin" value="{{ post.evenement_heure_fin or '' }}">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bloc-image" id="bloc-offre">
+    <legend>Détails de l'offre</legend>
+    <label>
+      Code promo (optionnel)
+      <input type="text" name="offre_code" value="{{ post.offre_code }}">
+    </label>
+    <label>
+      Lien pour profiter de l'offre en ligne (optionnel)
+      <input type="text" name="offre_url" value="{{ post.offre_url }}" placeholder="https://...">
+    </label>
+    <label>
+      Conditions générales (optionnel)
+      <textarea name="offre_conditions" rows="2">{{ post.offre_conditions }}</textarea>
+    </label>
+  </fieldset>
+
+  <div class="ligne-champs">
+    <label>
+      Statut
+      <select name="statut">
+        {% for valeur in ["BROUILLON", "A_PUBLIER", "IGNORE", "PUBLIE_LIVE", "PUBLIE_REJECTED", "ECHEC_PUBLICATION", "SUPPRIME"] %}
+        <option value="{{ valeur }}" {% if post.statut == valeur %}selected{% endif %}>{{ valeur }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Date de publication prévue (laisser vide pour publier immédiatement)
+      <input type="date" name="date_prevue" value="{{ post.date_prevue or '' }}">
+    </label>
+  </div>
+
+  <div class="choix-heure">
+    <span class="choix-image-titre">Heure d'envoi (si une date est renseignée)</span>
+    <div class="options-heure">
+      <label class="filtre-case">
+        <input type="radio" name="heure_mode" value="0830" {% if not post.heure_prevue or post.heure_prevue == "08:30" %}checked{% endif %}> 08h30
+      </label>
+      <label class="filtre-case">
+        <input type="radio" name="heure_mode" value="1230" {% if post.heure_prevue == "12:30" %}checked{% endif %}> 12h30
+      </label>
+      <label class="filtre-case">
+        <input type="radio" name="heure_mode" value="1830" {% if post.heure_prevue == "18:30" %}checked{% endif %}> 18h30
+      </label>
+      <label class="filtre-case">
+        <input type="radio" name="heure_mode" value="personnalise" {% if post.heure_prevue and post.heure_prevue not in ["08:30", "12:30", "18:30"] %}checked{% endif %}>
+        Personnalisé :
+        <select name="heure_h">
+          {% for h in range(24) %}<option value="{{ h }}" {% if post.heure_prevue and post.heure_prevue.split(':')[0]|int == h %}selected{% endif %}>{{ "%02d"|format(h) }}</option>{% endfor %}
+        </select>h
+        <select name="heure_m">
+          {% for m in range(60) %}<option value="{{ m }}" {% if post.heure_prevue and post.heure_prevue.split(':')[1]|int == m %}selected{% endif %}>{{ "%02d"|format(m) }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <details class="bloc-repliable" {% if post.image_url %}open{% endif %}>
+    <summary>Image</summary>
+    <div class="formulaire">
+      <div class="apercu-image-conteneur" {% if not post.image_url %}hidden{% endif %} id="apercu-image-conteneur">
+        <img id="apercu-image-principal" class="apercu-image" src="{{ post.image_url }}" alt="Image du post">
+        <button type="button" id="bouton-retirer-image" class="bouton-retirer-image" title="Retirer l'image">×</button>
+      </div>
+
+      <label>
+        URL de l'image
+        <input type="text" id="image_url" name="image_url" value="{{ post.image_url }}">
+      </label>
+
+      <div class="choix-image-bloc">
+        <span class="choix-image-titre">Choisir une photo déjà présente sur la fiche</span>
+        {% if photos %}
+        <div class="grille-photos grille-photos-choix">
+          {% for photo in photos %}
+          <button type="button" class="carte-photo-choix {% if photo.url == post.image_url %}carte-photo-choix-selectionnee{% endif %}" data-url="{{ photo.url }}">
+            <img src="{{ photo.miniature or photo.url }}" data-secours="{{ photo.url }}" class="image-fiche-photo" alt="{{ photo.categorie or 'Photo' }}">
+            <span class="etiquette-categorie-photo">{{ photo.categorie or "Photo" }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="texte-vide">Aucune photo disponible sur la fiche pour l'instant.</p>
+        {% endif %}
+      </div>
+
+      <label>
+        Prompt image (pour génération IA)
+        <textarea name="prompt_image" rows="3">{{ post.prompt_image }}</textarea>
+      </label>
+
+      <div class="actions-image-post">
+        <div class="choix-image-bloc">
+          <span class="choix-image-titre">Téléverser une photo depuis mon ordinateur</span>
+          <div class="formulaire-ligne formulaire-televerser-image">
+            <input type="file" name="fichier" accept="image/*">
+            <button type="submit" formaction="/posts/{{ post.id }}/televerser_image" formenctype="multipart/form-data" class="bouton-secondaire">Téléverser</button>
+          </div>
+        </div>
+        <div class="choix-image-bloc">
+          <span class="choix-image-titre">Générer une image avec l'IA (à partir du prompt ci-dessus)</span>
+          <button type="submit" formaction="/posts/{{ post.id }}/generer_image" class="bouton-secondaire">Générer avec l'IA</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="bloc-repliable" id="details-appel-action" {% if post.type_appel_action %}open{% endif %}>
+    <summary>Bouton d'appel à l'action</summary>
+    <div class="formulaire" id="bloc-appel-action">
+      <label>
+        Type de bouton
+        <select name="type_appel_action" id="select-appel-action">
+          {% for valeur, libelle in options_appel_action %}
+          <option value="{{ valeur }}" {% if valeur == post.type_appel_action %}selected{% endif %}>{{ libelle }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label id="bloc-url-appel-action">
+        Lien du bouton
+        <input type="text" name="url_appel_action" value="{{ post.url_appel_action }}" placeholder="https://...">
+      </label>
+      <p class="texte-discret" id="note-appel-telephone">
+        Le numéro de téléphone déjà renseigné sur la fiche sera utilisé automatiquement — aucun lien à saisir.
+      </p>
+    </div>
+  </details>
+
+  <div class="actions-avis">
+    <button type="submit">Enregistrer les modifications</button>
+  </div>
+</form>
+
+{% if post.statut not in ["PUBLIE_LIVE", "SUPPRIME"] %}
+<form method="post" action="/posts/{{ post.id }}/publier"
+      onsubmit="return confirm('Publier ce post maintenant sur la fiche Google ? Cette action est immediate et visible publiquement.');">
+  <button type="submit" class="bouton-publier">Publier maintenant</button>
+</form>
+{% endif %}
+
+{% if post.id_post_google %}
+<p class="texte-discret">Dernier identifiant Google : {{ post.id_post_google }}</p>
+{% endif %}
+
+<script>
+(function () {
+  // Une photo tres recemment envoyee peut ne pas encore etre disponible cote
+  // Google (delai de traitement) : on tente la miniature, puis la pleine
+  // resolution, puis on affiche un message plutot qu'une image cassee.
+  document.querySelectorAll(".image-fiche-photo").forEach((image) => {
+    image.addEventListener("error", function gererErreurImage() {
+      const secours = this.dataset.secours;
+      if (secours && this.src !== secours) {
+        this.src = secours;
+        return;
+      }
+      this.removeEventListener("error", gererErreurImage);
+      const remplacement = document.createElement("div");
+      remplacement.className = "image-en-attente";
+      remplacement.textContent = "Photo en cours de traitement par Google…";
+      this.replaceWith(remplacement);
+    });
+  });
+
+  const champUrlImage = document.getElementById("image_url");
+  const conteneurApercu = document.getElementById("apercu-image-conteneur");
+  const apercuImage = document.getElementById("apercu-image-principal");
+
+  function definirImage(url) {
+    champUrlImage.value = url;
+    if (url) {
+      apercuImage.src = url;
+      conteneurApercu.hidden = false;
+    } else {
+      apercuImage.src = "";
+      conteneurApercu.hidden = true;
+    }
+    document.querySelectorAll(".carte-photo-choix").forEach((c) => c.classList.remove("carte-photo-choix-selectionnee"));
+  }
+
+  document.querySelectorAll(".carte-photo-choix").forEach((carte) => {
+    carte.addEventListener("click", () => {
+      definirImage(carte.dataset.url);
+      carte.classList.add("carte-photo-choix-selectionnee");
+    });
+  });
+
+  document.getElementById("bouton-retirer-image").addEventListener("click", () => definirImage(""));
+
+  const selectTypePost = document.getElementById("select-type-post");
+  const blocEvenement = document.getElementById("bloc-evenement");
+  const blocOffre = document.getElementById("bloc-offre");
+  const detailsAppelAction = document.getElementById("details-appel-action");
+
+  function actualiserTypePost() {
+    const valeur = selectTypePost.value;
+    blocEvenement.hidden = valeur === "STANDARD";
+    blocOffre.hidden = valeur !== "OFFER";
+    detailsAppelAction.hidden = valeur === "OFFER";
+  }
+  selectTypePost.addEventListener("change", actualiserTypePost);
+  actualiserTypePost();
+
+  const selectAppelAction = document.getElementById("select-appel-action");
+  const blocUrlAppelAction = document.getElementById("bloc-url-appel-action");
+  const noteAppelTelephone = document.getElementById("note-appel-telephone");
+
+  function actualiserAppelAction() {
+    blocUrlAppelAction.hidden = selectAppelAction.value === "" || selectAppelAction.value === "CALL";
+    noteAppelTelephone.hidden = selectAppelAction.value !== "CALL";
+  }
+  selectAppelAction.addEventListener("change", actualiserAppelAction);
+  actualiserAppelAction();
+
+  champUrlImage.addEventListener("input", () => {
+    if (champUrlImage.value.trim()) {
+      apercuImage.src = champUrlImage.value.trim();
+      conteneurApercu.hidden = false;
+    } else {
+      conteneurApercu.hidden = true;
+    }
+  });
+})();
+</script>
+{% endblock %}

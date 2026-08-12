@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Statistiques — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+<h1>Statistiques — {{ client.nom }}</h1>
+
+<form class="formulaire" method="get" action="/clients/{{ client.id }}/stats">
+  <div class="formulaire-ligne">
+    <label>
+      Du
+      <input type="date" name="debut" value="{{ debut }}">
+    </label>
+    <label>
+      Au
+      <input type="date" name="fin" value="{{ fin }}">
+    </label>
+    <button type="submit">Actualiser</button>
+  </div>
+
+  <details class="bloc-repliable">
+    <summary>Options du rapport PDF</summary>
+    <div class="formulaire">
+      <span class="choix-image-titre">Sections à inclure</span>
+      <div class="liste-etiquettes">
+        <label class="filtre-case"><input type="checkbox" name="sections" value="visibilite" checked> Visibilité sur Google</label>
+        <label class="filtre-case"><input type="checkbox" name="sections" value="comparatif" checked> Comparatif année précédente</label>
+        <label class="filtre-case"><input type="checkbox" name="sections" value="avis" checked> Avis clients</label>
+        <label class="filtre-case"><input type="checkbox" name="sections" value="posts" checked> Publications (posts)</label>
+        <label class="filtre-case"><input type="checkbox" name="sections" value="mots_cles" checked> Mots-clés de recherche</label>
+      </div>
+      <div class="actions-avis">
+        <button type="submit" formaction="/clients/{{ client.id }}/stats/pdf" class="bouton">Télécharger le rapport PDF</button>
+      </div>
+    </div>
+  </details>
+</form>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+{% if statistiques %}
+<h2>Visibilité sur Google</h2>
+<ul class="liste-stats">
+  {% for libelle, valeur in statistiques.items() %}
+  <li>
+    <span>{{ libelle }}</span>
+    <span class="valeur-avec-evolution">
+      <strong>{{ valeur }}</strong>
+      {% if comparatif_visibilite %}
+      {% set comp = comparatif_visibilite[libelle] %}
+      <span class="evolution-n1 {% if comp.evolution is none %}evolution-neutre{% elif comp.evolution >= 0 %}evolution-positive{% else %}evolution-negative{% endif %}">
+        {{ comp.n1 }} l'an dernier{% if comp.evolution is not none %} ({{ "+" if comp.evolution >= 0 }}{{ comp.evolution }}%){% endif %}
+      </span>
+      {% endif %}
+    </span>
+  </li>
+  {% endfor %}
+</ul>
+{% if not comparatif_visibilite %}
+<p class="texte-discret">Comparatif avec l'année dernière indisponible (pas assez d'historique sur cette période).</p>
+{% endif %}
+
+<h2>Avis clients</h2>
+<ul class="liste-stats">
+  <li><span>Note moyenne actuelle</span><strong>{{ resume_avis.note_moyenne_globale or "N/A" }}{% if resume_avis.note_moyenne_globale %}/5{% endif %}</strong></li>
+  <li><span>Nombre total d'avis</span><strong>{{ resume_avis.total_avis_global }}</strong></li>
+  <li>
+    <span>Nouveaux avis sur la période</span>
+    <span class="valeur-avec-evolution">
+      <strong>{{ resume_avis.nombre_avis_periode }}</strong>
+      {% if evolution_avis is not none %}
+      <span class="evolution-n1 {% if evolution_avis >= 0 %}evolution-positive{% else %}evolution-negative{% endif %}">
+        {{ resume_avis.nombre_avis_periode_n1 }} l'an dernier ({{ "+" if evolution_avis >= 0 }}{{ evolution_avis }}%)
+      </span>
+      {% endif %}
+    </span>
+  </li>
+  {% if resume_avis.note_moyenne_periode %}
+  <li><span>Note moyenne des nouveaux avis</span><strong>{{ resume_avis.note_moyenne_periode }}/5</strong></li>
+  {% endif %}
+</ul>
+
+<h2>Publications Google (posts)</h2>
+<p class="texte-discret">{{ posts_publies|length }} post(s) publié(s) sur la période.</p>
+{% if posts_publies %}
+<ul class="liste-stats">
+  {% for post in posts_publies %}
+  <li><span>{{ post.date }}</span><strong>{{ post.titre }}</strong></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>Mots-clés de recherche</h2>
+<p class="texte-discret">Termes réellement tapés sur Google ayant amené des vues sur la fiche (donnée Google, granularité mensuelle).</p>
+{% if erreur_mots_cles %}
+<p class="message-erreur">{{ erreur_mots_cles }}</p>
+{% elif mots_cles %}
+<ul class="liste-stats">
+  {% for entree in mots_cles %}
+  <li>
+    <span>{{ entree.mot_cle }}</span>
+    <strong>{{ "< " if entree.est_seuil }}{{ entree.impressions }}</strong>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun mot-clé remonté par Google sur cette période.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% set page_actuelle = "posts" %}
+{% block titre %}Posts multi-fiches — Fiche Locale{% endblock %}
+{% block contenu %}
+<h1>Publier un post sur plusieurs fiches</h1>
+<p class="texte-discret">Le même texte et la même image seront envoyés sur chaque fiche sélectionnée.</p>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+{% if not etiquettes %}
+<div class="bandeau-avertissement">
+  Aucune étiquette pour l'instant. Ajoutez-en depuis la fiche d'un client ("Informations du client" → Étiquettes), puis revenez ici.
+</div>
+{% endif %}
+
+<form class="formulaire" method="post" action="/posts/creer_multi" enctype="multipart/form-data">
+  <div class="choix-image-bloc">
+    <span class="choix-image-titre">Destinataires</span>
+
+    {% if etiquettes %}
+    <div class="filtre-entreprises">
+      <span class="filtre-titre">Étiquettes :</span>
+      {% for etiquette in etiquettes %}
+      <label class="filtre-case">
+        <input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+      </label>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+    <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+    <p id="texte-compte-clients" class="texte-discret" hidden></p>
+  </div>
+
+  <label>
+    Titre
+    <input type="text" name="titre" value="{{ valeurs.titre }}">
+  </label>
+
+  <label>
+    Texte du post
+    <textarea name="texte" rows="8" required>{{ valeurs.texte }}</textarea>
+  </label>
+
+  <details class="carte-ia" open>
+    <summary class="carte-ia-entete">
+      <span class="carte-ia-icone">✨</span>
+      <span class="carte-ia-libelles">
+        <span class="carte-ia-titre">Générer le texte avec l'IA</span>
+        <span class="carte-ia-sous-titre">Décrivez un thème, l'IA rédige le post pour vous</span>
+      </span>
+    </summary>
+    <div class="carte-ia-corps">
+      <div class="carte-ia-ligne">
+        <input type="text" id="champ-theme-ia" placeholder="Ex : l'importance de répondre aux avis Google">
+        <button type="button" id="bouton-generer-theme" class="bouton">✨ Générer</button>
+      </div>
+      <label class="carte-ia-option">
+        Ou reprendre le contenu d'une fiche existante comme inspiration (les détails géographiques sont automatiquement retirés)
+        <select id="select-client-reference">
+          <option value="">— Aucune —</option>
+          {% for c in clients_reference %}
+          <option value="{{ c.id }}">{{ c.nom }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p id="erreur-generation-theme" class="message-erreur" hidden></p>
+    </div>
+  </details>
+
+  <label>
+    Format du post
+    <select name="type_post" id="select-type-post">
+      {% for valeur, libelle in types_post %}
+      <option value="{{ valeur }}" {% if valeur == valeurs.type_post %}selected{% endif %}>{{ libelle }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <fieldset class="bloc-image" id="bloc-evenement">
+    <legend>Détails de l'événement (Événement et Offre)</legend>
+    <label>
+      Titre de l'événement (optionnel, reprend le titre du post sinon)
+      <input type="text" name="evenement_titre" value="{{ valeurs.evenement_titre }}">
+    </label>
+    <div class="ligne-champs">
+      <label>
+        Début
+        <input type="date" name="evenement_date_debut" value="{{ valeurs.evenement_date_debut }}">
+      </label>
+      <label>
+        Heure de début (optionnel)
+        <input type="time" name="evenement_heure_debut" value="{{ valeurs.evenement_heure_debut }}">
+      </label>
+    </div>
+    <div class="ligne-champs">
+      <label>
+        Fin
+        <input type="date" name="evenement_date_fin" value="{{ valeurs.evenement_date_fin }}">
+      </label>
+      <label>
+        Heure de fin (optionnel)
+        <input type="time" name="evenement_heure_fin" value="{{ valeurs.evenement_heure_fin }}">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bloc-image" id="bloc-offre">
+    <legend>Détails de l'offre</legend>
+    <label>
+      Code promo (optionnel)
+      <input type="text" name="offre_code" value="{{ valeurs.offre_code }}">
+    </label>
+    <label>
+      Lien pour profiter de l'offre en ligne (optionnel)
+      <input type="text" name="offre_url" value="{{ valeurs.offre_url }}" placeholder="https://...">
+    </label>
+    <label>
+      Conditions générales (optionnel)
+      <textarea name="offre_conditions" rows="2">{{ valeurs.offre_conditions }}</textarea>
+    </label>
+  </fieldset>
+
+  <details class="bloc-repliable" {% if valeurs.image_url %}open{% endif %}>
+    <summary>Image</summary>
+    <div class="formulaire">
+      <div class="apercu-image-conteneur" id="apercu-image-conteneur" {% if not valeurs.image_url %}hidden{% endif %}>
+        <img id="apercu-image-principal" class="apercu-image" src="{{ valeurs.image_url }}" alt="Image du post">
+        <button type="button" id="bouton-retirer-image" class="bouton-retirer-image" title="Retirer l'image">×</button>
+      </div>
+      <label>
+        URL de l'image
+        <input type="text" id="image_url" name="image_url" value="{{ valeurs.image_url }}">
+      </label>
+      <label>
+        Ou téléverser une photo depuis mon ordinateur
+        <input type="file" name="fichier_image" accept="image/*">
+      </label>
+      <label>
+        Prompt image (pour génération IA — la génération se fait ensuite sur la page de chaque post créé)
+        <textarea name="prompt_image" rows="3">{{ valeurs.prompt_image }}</textarea>
+      </label>
+    </div>
+  </details>
+
+  <details class="bloc-repliable" id="details-appel-action" {% if valeurs.type_appel_action %}open{% endif %}>
+    <summary>Bouton d'appel à l'action</summary>
+    <div class="formulaire" id="bloc-appel-action">
+      <label>
+        Type de bouton
+        <select name="type_appel_action" id="select-appel-action">
+          {% for valeur, libelle in options_appel_action %}
+          <option value="{{ valeur }}" {% if valeur == valeurs.type_appel_action %}selected{% endif %}>{{ libelle }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label id="bloc-url-appel-action">
+        Lien du bouton
+        <input type="text" name="url_appel_action" value="{{ valeurs.url_appel_action }}" placeholder="https://...">
+      </label>
+      <p class="texte-discret" id="note-appel-telephone">
+        Le numéro de téléphone déjà renseigné sur chaque fiche sera utilisé automatiquement — aucun lien à saisir.
+      </p>
+    </div>
+  </details>
+
+  <div class="actions-avis">
+    <button type="submit">Créer les brouillons pour les fiches sélectionnées</button>
+  </div>
+</form>
+
+<script id="donnees-clients-posts" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-posts").textContent);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  const conteneurClients = document.getElementById("liste-clients-cibles");
+  const texteAucunClient = document.getElementById("texte-aucun-client");
+  const texteCompteClients = document.getElementById("texte-compte-clients");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function actualiserListe() {
+    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    if (!etiquettesActives.length) {
+      conteneurClients.innerHTML = "";
+      texteAucunClient.hidden = false;
+      texteCompteClients.hidden = true;
+      return;
+    }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
+    texteAucunClient.hidden = true;
+    texteCompteClients.hidden = false;
+    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    conteneurClients.innerHTML = correspondants.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      </label>
+    `).join("");
+  }
+
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+
+  const champTheme = document.getElementById("champ-theme-ia");
+  const selectClientReference = document.getElementById("select-client-reference");
+  const boutonGenererTheme = document.getElementById("bouton-generer-theme");
+  const erreurGenerationTheme = document.getElementById("erreur-generation-theme");
+
+  boutonGenererTheme.addEventListener("click", async () => {
+    if (!champTheme.value.trim() && !selectClientReference.value) return;
+    erreurGenerationTheme.hidden = true;
+    boutonGenererTheme.disabled = true;
+    try {
+      const reponse = await fetch("/posts/generer_generique", {
+        method: "POST",
+        body: new URLSearchParams({
+          theme: champTheme.value.trim(),
+          client_reference_id: selectClientReference.value,
+        }),
+      });
+      const resultat = await reponse.json();
+      if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+      document.querySelector('input[name=titre]').value = resultat.titre || "";
+      document.querySelector('textarea[name=texte]').value = resultat.texte || "";
+      document.querySelector('textarea[name=prompt_image]').value = resultat.prompt_image || "";
+    } catch (erreur) {
+      erreurGenerationTheme.textContent = erreur.message;
+      erreurGenerationTheme.hidden = false;
+    } finally {
+      boutonGenererTheme.disabled = false;
+    }
+  });
+
+  const champUrlImage = document.getElementById("image_url");
+  const conteneurApercu = document.getElementById("apercu-image-conteneur");
+  const apercuImage = document.getElementById("apercu-image-principal");
+
+  document.getElementById("bouton-retirer-image").addEventListener("click", () => {
+    champUrlImage.value = "";
+    conteneurApercu.hidden = true;
+  });
+
+  champUrlImage.addEventListener("input", () => {
+    if (champUrlImage.value.trim()) {
+      apercuImage.src = champUrlImage.value.trim();
+      conteneurApercu.hidden = false;
+    } else {
+      conteneurApercu.hidden = true;
+    }
+  });
+
+  const selectAppelAction = document.getElementById("select-appel-action");
+  const blocUrlAppelAction = document.getElementById("bloc-url-appel-action");
+  const noteAppelTelephone = document.getElementById("note-appel-telephone");
+  const detailsAppelAction = document.getElementById("details-appel-action");
+
+  function actualiserAppelAction() {
+    blocUrlAppelAction.hidden = selectAppelAction.value === "" || selectAppelAction.value === "CALL";
+    noteAppelTelephone.hidden = selectAppelAction.value !== "CALL";
+  }
+  selectAppelAction.addEventListener("change", actualiserAppelAction);
+  actualiserAppelAction();
+
+  const selectTypePost = document.getElementById("select-type-post");
+  const blocEvenement = document.getElementById("bloc-evenement");
+  const blocOffre = document.getElementById("bloc-offre");
+
+  function actualiserTypePost() {
+    const valeur = selectTypePost.value;
+    blocEvenement.hidden = valeur === "STANDARD";
+    blocOffre.hidden = valeur !== "OFFER";
+    detailsAppelAction.hidden = valeur === "OFFER";
+  }
+  selectTypePost.addEventListener("change", actualiserTypePost);
+  actualiserTypePost();
+})();
+</script>
+{% endblock %}
