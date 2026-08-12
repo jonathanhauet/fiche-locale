@@ -69,12 +69,21 @@
       const bouton = evenement.submitter
         || evenement.target.querySelector('button[type="submit"], input[type="submit"]');
       if (!bouton || bouton.disabled) return;
-      bouton.disabled = true;
-      if (bouton.tagName === "BUTTON") {
-        bouton.textContent = "⏳ En cours...";
-      } else {
-        bouton.value = "⏳ En cours...";
-      }
+      // Important : ne PAS desactiver le bouton de facon synchrone ici. Un
+      // controle desactive est exclu des donnees envoyees par le formulaire -
+      // si c'est justement le bouton cliquant (name=statut, value=IGNORE par
+      // exemple) qui porte l'information soumise, la desactiver avant l'envoi
+      // fait disparaitre cette valeur du formulaire recu par le serveur. On
+      // repousse donc la desactivation au tour suivant, une fois que le
+      // navigateur a deja prepare la requete de soumission.
+      setTimeout(() => {
+        bouton.disabled = true;
+        if (bouton.tagName === "BUTTON") {
+          bouton.textContent = "⏳ En cours...";
+        } else {
+          bouton.value = "⏳ En cours...";
+        }
+      }, 0);
     });
   </script>
   {% endblock %}
