@@ -162,15 +162,29 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     return json.loads(bloc_texte)
 
 
-def suggerer_reponse_avis(commentaire_avis: str, note: int, contenu_site: str, consignes_avis: str = "") -> str:
+def suggerer_reponse_avis(
+    commentaire_avis: str, note: int, contenu_site: str, consignes_avis: str = "", auteur: str = "",
+) -> str:
     """Suggere une reponse courte et professionnelle a un avis Google, a relire avant envoi."""
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
 
     bloc_consignes_client = (
         f"\nConsignes de style propres a cette entreprise (a respecter en priorite) :\n{consignes_avis}\n"
+        "Attention : ces consignes concernent le style de l'entreprise qui repond (ex. un prenom pour "
+        "signer), jamais le nom du client a qui l'on s'adresse.\n"
         if consignes_avis.strip()
         else ""
+    )
+
+    bloc_auteur = (
+        f"Nom du client qui a laisse cet avis (fourni par Google, eventuellement un pseudo) : {auteur.strip()}\n"
+        "Si tu commences par une salutation nominative, utilise UNIQUEMENT ce nom (ou son prenom s'il est "
+        "visible) - ne jamais utiliser un autre nom trouve ailleurs dans ce prompt (ex. un prenom de "
+        "signature mentionne dans les consignes de style, qui designe l'entreprise, pas le client).\n\n"
+        if auteur.strip()
+        else "Nom du client inconnu : n'utilise aucune salutation nominative (pas de \"Bonjour X\"), "
+        "reste sur une formule generale comme \"Bonjour,\" ou \"Merci beaucoup,\".\n\n"
     )
 
     avis_sans_commentaire = not commentaire_avis.strip()
@@ -191,6 +205,7 @@ def suggerer_reponse_avis(commentaire_avis: str, note: int, contenu_site: str, c
         "(a la premiere personne, comme si le gerant repondait directement).\n\n"
         f"Contexte de l'entreprise :\n{contenu_site}\n"
         f"{bloc_consignes_client}\n"
+        f"{bloc_auteur}"
         f"{bloc_avis}\n\n"
         "Consignes :\n"
         "- Remercie sincerement si l'avis est positif ; reste courtois, professionnel et jamais "

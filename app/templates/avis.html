@@ -241,6 +241,7 @@
         review_id: item.review_id,
         commentaire: item.commentaire || "",
         note: item.note || 0,
+        auteur: item.auteur || "",
       });
       const reponseHttp = await fetch("/avis/suggerer", { method: "POST", body: donnees });
       const resultat = await reponseHttp.json();

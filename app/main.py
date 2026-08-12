@@ -433,6 +433,7 @@ def suggerer_reponse_avis_route(
     review_id: str = Form(...),
     commentaire: str = Form(""),
     note: int = Form(0),
+    auteur: str = Form(""),
     db: Session = Depends(obtenir_session),
 ):
     if not utilisateur_connecte(request):
@@ -443,7 +444,7 @@ def suggerer_reponse_avis_route(
     consignes_avis = client.consignes_avis if client else ""
 
     try:
-        texte_suggere = claude_generation.suggerer_reponse_avis(commentaire, note, contenu_site, consignes_avis)
+        texte_suggere = claude_generation.suggerer_reponse_avis(commentaire, note, contenu_site, consignes_avis, auteur)
     except Exception as erreur_ia:
         return JSONResponse({"erreur": f"Erreur lors de la suggestion : {erreur_ia}"}, status_code=500)
 
