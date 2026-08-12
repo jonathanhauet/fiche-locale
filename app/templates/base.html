@@ -57,6 +57,26 @@
       });
     })();
   </script>
+  <script>
+    // Feedback visuel generique sur les boutons de validation (Enregistrer,
+    // Ajouter, Supprimer...) : desactive le bouton et affiche "En cours..."
+    // pendant le chargement de la page suivante. Ne s'applique qu'aux
+    // formulaires soumis normalement (navigation) - si un script dedie a deja
+    // intercepte la soumission (fetch, etc., via preventDefault), on ne
+    // touche a rien pour ne pas interferer avec sa propre gestion.
+    document.addEventListener("submit", (evenement) => {
+      if (evenement.defaultPrevented) return;
+      const bouton = evenement.submitter
+        || evenement.target.querySelector('button[type="submit"], input[type="submit"]');
+      if (!bouton || bouton.disabled) return;
+      bouton.disabled = true;
+      if (bouton.tagName === "BUTTON") {
+        bouton.textContent = "⏳ En cours...";
+      } else {
+        bouton.value = "⏳ En cours...";
+      }
+    });
+  </script>
   {% endblock %}
 </body>
 </html>
