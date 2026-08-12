@@ -173,19 +173,32 @@ def suggerer_reponse_avis(commentaire_avis: str, note: int, contenu_site: str, c
         else ""
     )
 
+    avis_sans_commentaire = not commentaire_avis.strip()
+    if avis_sans_commentaire:
+        bloc_avis = (
+            f"Avis recu : uniquement une note de {note}/5, sans aucun commentaire ecrit.\n\n"
+            "Il n'y a donc pas de contenu a commenter ou personnaliser : ne demande jamais au client "
+            "de preciser son avis ou de fournir plus de details, ce message ne lui sera pas transmis. "
+            "Redige simplement un remerciement court et chaleureux adapte a une note "
+            f"de {note}/5 (positif si {note} est eleve, plus neutre/invitant a revenir en echange si {note} "
+            "est moyen ou bas), sans faire reference a un commentaire qui n'existe pas."
+        )
+    else:
+        bloc_avis = f"Avis recu (note {note}/5) :\n« {commentaire_avis} »"
+
     prompt = (
         "Tu rediges une reponse a un avis client Google, au nom de l'entreprise elle-meme "
         "(a la premiere personne, comme si le gerant repondait directement).\n\n"
         f"Contexte de l'entreprise :\n{contenu_site}\n"
         f"{bloc_consignes_client}\n"
-        f"Avis recu (note {note}/5) :\n« {commentaire_avis} »\n\n"
+        f"{bloc_avis}\n\n"
         "Consignes :\n"
         "- Remercie sincerement si l'avis est positif ; reste courtois, professionnel et jamais "
         "defensif si l'avis est negatif ou mitige (propose si besoin un echange direct pour resoudre "
         "le probleme, sans admettre de faute que tu ne connais pas).\n"
         "- Reste bref : 2 a 4 phrases.\n"
-        "- Personnalise en fonction du contenu reel de l'avis. N'invente aucun detail specifique "
-        "que tu ne connais pas (nom d'employe, date, evenement precis).\n"
+        "- Personnalise en fonction du contenu reel de l'avis s'il y en a un. N'invente aucun detail "
+        "specifique que tu ne connais pas (nom d'employe, date, evenement precis).\n"
         "- Pas de formule signature du type « L'equipe de ... ». Reste naturel et humain.\n"
         "- Reponds uniquement avec le texte de la reponse, sans guillemets ni commentaire autour."
     )
