@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import (
     claude_generation,
@@ -144,6 +145,17 @@ def _migrer_vers_multi_comptes():
 _migrer_vers_multi_comptes()
 
 app = FastAPI(title="Fiche Locale - Plateforme")
+
+# Derriere un proxy inverse (Railway, Heroku...), la requete arrive en HTTP
+# en interne meme si le visiteur est en HTTPS : sans ce middleware,
+# request.url_for() (utilise pour construire l'URL de callback OAuth Google)
+# genererait une URL en http:// qui ne correspondrait a aucune URI de
+# redirection autorisee cote Google (redirect_uri_mismatch). On se base sur
+# l'en-tete X-Forwarded-Proto envoye par le proxy pour connaitre le vrai
+# protocole. Configure ici (plutot qu'en option de ligne de commande uvicorn)
+# pour ne pas dependre de la facon dont la plateforme d'hebergement decoupe
+# la commande du Procfile.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 CLE_SESSION = os.getenv("SECRET_KEY")
 if not CLE_SESSION:
