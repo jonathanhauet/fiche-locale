@@ -31,7 +31,7 @@
       {% for libelle_compte, fiches_du_compte in fiches|groupby("compte_libelle") %}
       <optgroup label="{{ libelle_compte }}">
         {% for fiche in fiches_du_compte %}
-        <option value="{{ fiche.compte_google_id }}|{{ fiche.account_id }}|{{ fiche.location_id }}">
+        <option value="{{ fiche.compte_google_id }}|{{ fiche.account_id }}|{{ fiche.location_id }}" data-nom="{{ fiche.nom_fiche }}">
           {{ fiche.nom_compte }} — {{ fiche.nom_fiche }}
         </option>
         {% endfor %}
@@ -48,4 +48,27 @@
 
   <button type="submit">Créer le client</button>
 </form>
+
+{% if fiches %}
+<script>
+(function () {
+  const selectFiche = document.querySelector('select[name="fiche_google"]');
+  const champNom = document.querySelector('input[name="nom"]');
+  if (!selectFiche || !champNom) return;
+
+  let rempliAutomatiquement = true;
+  // Ne se declenche que sur une vraie frappe utilisateur (assigner .value en
+  // JS ne declenche pas cet evenement) : des que l'utilisateur tape lui-meme,
+  // on arrete d'ecraser sa saisie.
+  champNom.addEventListener("input", () => { rempliAutomatiquement = false; });
+
+  selectFiche.addEventListener("change", () => {
+    if (!rempliAutomatiquement) return;
+    const option = selectFiche.selectedOptions[0];
+    const nom = option ? option.dataset.nom : "";
+    if (nom) champNom.value = nom;
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
