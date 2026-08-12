@@ -14,33 +14,49 @@
   {% block corps %}
   <div class="disposition">
     <aside class="barre-laterale">
-      <div class="marque">
-        <span class="marque-icone">FL</span>
-        <span class="marque-texte">Fiche Locale</span>
+      <div class="entete-barre-laterale">
+        <div class="marque">
+          <span class="marque-icone">FL</span>
+          <span class="marque-texte">Fiche Locale</span>
+        </div>
+        <button type="button" id="bouton-menu-mobile" class="bouton-menu-mobile" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="menu-laterale">☰</button>
       </div>
-      <nav class="nav-laterale">
-        <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
-          <span class="nav-icone">◧</span> Clients
-        </a>
-        <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
-          <span class="nav-icone">▤</span> Posts en masse
-        </a>
-        <a href="/avis" class="{{ 'lien-actif' if page_actuelle == 'avis' else '' }}">
-          <span class="nav-icone">★</span> Avis
-        </a>
-        <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
-          <span class="nav-icone">⟲</span> Historique
-        </a>
-        <a href="/google/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_google' else '' }}">
-          <span class="nav-icone">⚙</span> Comptes Google
-        </a>
-      </nav>
-      <a class="lien-deconnexion-barre" href="/deconnexion">Se déconnecter</a>
+      <div class="menu-laterale-repliable" id="menu-laterale">
+        <nav class="nav-laterale">
+          <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
+            <span class="nav-icone">◧</span> Clients
+          </a>
+          <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
+            <span class="nav-icone">▤</span> Posts en masse
+          </a>
+          <a href="/avis" class="{{ 'lien-actif' if page_actuelle == 'avis' else '' }}">
+            <span class="nav-icone">★</span> Avis
+          </a>
+          <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
+            <span class="nav-icone">⟲</span> Historique
+          </a>
+          <a href="/google/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_google' else '' }}">
+            <span class="nav-icone">⚙</span> Comptes Google
+          </a>
+        </nav>
+        <a class="lien-deconnexion-barre" href="/deconnexion">Se déconnecter</a>
+      </div>
     </aside>
     <main class="zone-contenu">
       {% block contenu %}{% endblock %}
     </main>
   </div>
+  <script>
+    (function () {
+      const bouton = document.getElementById("bouton-menu-mobile");
+      const menu = document.getElementById("menu-laterale");
+      if (!bouton) return;
+      bouton.addEventListener("click", () => {
+        const ouvert = menu.classList.toggle("ouvert");
+        bouton.setAttribute("aria-expanded", ouvert ? "true" : "false");
+      });
+    })();
+  </script>
   {% endblock %}
 </body>
 </html>

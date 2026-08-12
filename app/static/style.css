@@ -103,12 +103,35 @@ a { color: var(--accent); }
   height: 100vh;
 }
 
+.entete-barre-laterale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
 .marque {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   padding: 0 0.5rem;
-  margin-bottom: 2rem;
+}
+
+.bouton-menu-mobile {
+  display: none;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+}
+
+.menu-laterale-repliable {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .marque-icone {
@@ -1411,14 +1434,23 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   .barre-laterale {
     width: 100%;
     height: auto;
-    position: static;
-    flex-direction: row;
-    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
     padding: 0.8rem 1rem;
   }
-  .marque { margin-bottom: 0; }
-  .nav-laterale { flex-direction: row; }
-  .lien-deconnexion-barre { margin-left: auto; }
+  .entete-barre-laterale { margin-bottom: 0; }
+  .bouton-menu-mobile { display: block; }
+  .menu-laterale-repliable {
+    display: none;
+    flex: none;
+  }
+  .menu-laterale-repliable.ouvert {
+    display: flex;
+    margin-top: 0.8rem;
+  }
+  .nav-laterale { flex-direction: column; }
+  .lien-deconnexion-barre { margin-left: 0; margin-top: 0.6rem; }
   .zone-contenu { padding: 1.5rem 1.2rem 3rem; max-width: 100%; }
   .ligne-champs { grid-template-columns: 1fr; }
 }
