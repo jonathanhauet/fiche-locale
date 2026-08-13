@@ -24,6 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import (
+    bilan_pdf,
     brevo_email,
     claude_generation,
     documents,
@@ -1875,6 +1876,82 @@ def basculer_recap_actif(client_id: int, request: Request, db: Session = Depends
         client.recap_actif = not client.recap_actif
         db.commit()
     return RedirectResponse("/recaps", status_code=303)
+
+
+# --- Bilan ponctuel (PDF multi-fiches) ---------------------------------------
+
+
+@app.get("/bilan", response_class=HTMLResponse)
+def bilan_formulaire(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    debut, fin = _periode_depuis_requete(request)
+    return templates.TemplateResponse(
+        request,
+        "bilan.html",
+        {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "debut": debut, "fin": fin},
+    )
+
+
+@app.get("/bilan/pdf")
+def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client_ids = [int(v) for v in request.query_params.getlist("client_ids") if v.strip()]
+    if not client_ids:
+        return HTMLResponse("Selectionnez au moins une fiche.", status_code=400)
+
+    debut, fin = _periode_depuis_requete(request)
+
+    sections_clients = []
+    for client_id in client_ids:
+        client = db.get(models.Client, client_id)
+        if not client or not client.account_id or not client.location_id:
+            continue
+
+        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+        if not identifiants:
+            continue
+
+        try:
+            donnees = rapport_donnees.rassembler_donnees_rapport(db, client, debut, fin)
+        except Exception:
+            # Fiche en erreur (token expire, etc.) : on l'ignore plutot que
+            # de faire echouer tout le bilan pour les autres fiches valides.
+            continue
+
+        avis_positifs = google_reviews.avis_positifs_periode(
+            identifiants, client.account_id, client.location_id, debut, fin
+        )
+        resume_avis_texte = None
+        if len(avis_positifs) > 1:
+            try:
+                resume_avis_texte = claude_generation.resumer_avis_positifs(avis_positifs)
+            except Exception:
+                resume_avis_texte = None
+
+        sections_clients.append({
+            "nom": client.nom,
+            "donnees": donnees,
+            "avis_positifs": avis_positifs,
+            "resume_avis_texte": resume_avis_texte,
+        })
+
+    if not sections_clients:
+        return HTMLResponse("Aucune fiche valide parmi la selection (fiche Google associee et compte valide requis).", status_code=400)
+
+    octets_pdf = bilan_pdf.generer_bilan_pdf(sections_clients, debut, fin)
+    nom_fichier = f"bilan_{debut.isoformat()}_{fin.isoformat()}.pdf"
+    return Response(
+        content=octets_pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
 
 
 def _obtenir_ou_creer_etiquettes(db: Session, noms_etiquettes) -> list:

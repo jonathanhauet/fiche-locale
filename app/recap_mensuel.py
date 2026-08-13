@@ -51,7 +51,7 @@ def construire_sujet(client: models.Client, mois: int, annee: int) -> str:
     return f"Le récap de {LIBELLES_MOIS[mois]} pour ta fiche Google"
 
 
-def _total_et_evolution(statistiques: dict, comparatif_visibilite, cles: list[str]) -> tuple[int, float]:
+def total_et_evolution(statistiques: dict, comparatif_visibilite, cles: list[str]) -> tuple[int, float]:
     total = sum(statistiques.get(c, 0) for c in cles)
     if not comparatif_visibilite:
         return total, None
@@ -137,7 +137,7 @@ def construire_email(
 
     # --- Visibilite ---
     lignes_visi = []
-    total_vues, evolution_vues = _total_et_evolution(statistiques, comparatif_visibilite, CLES_VUES)
+    total_vues, evolution_vues = total_et_evolution(statistiques, comparatif_visibilite, CLES_VUES)
     if total_vues:
         lignes_visi.append(_ligne_stat("Vues de ta fiche sur Google", total_vues, evolution_vues))
     for libelle in ("Clics sur \"Appeler\"", "Clics vers le site web", "Demandes d'itinéraire", "Messages reçus"):

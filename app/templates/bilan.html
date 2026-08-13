@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% set page_actuelle = "bilan" %}
+{% block titre %}Bilan — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Bilan</h1>
+</div>
+
+<p class="texte-discret">
+  Génère un bilan PDF ponctuel pour une ou plusieurs fiches (une section par fiche dans le même fichier) —
+  utile pour donner des nouvelles à un client sans attendre le récap mensuel automatique.
+</p>
+
+{% if not etiquettes %}
+<div class="bandeau-avertissement">
+  Aucune étiquette pour l'instant. Ajoutez-en depuis la fiche d'un client ("Informations du client" → Étiquettes),
+  ou depuis la page <a href="/etiquettes">Étiquettes</a>, puis revenez ici.
+</div>
+{% endif %}
+
+<form class="formulaire" method="get" action="/bilan/pdf">
+  <div class="choix-image-bloc">
+    <span class="choix-image-titre">Fiches à inclure</span>
+
+    {% if etiquettes %}
+    <div class="filtre-entreprises">
+      <span class="filtre-titre">Étiquettes :</span>
+      {% for etiquette in etiquettes %}
+      <label class="filtre-case">
+        <input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+      </label>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+    <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+    <p id="texte-compte-clients" class="texte-discret" hidden></p>
+  </div>
+
+  <div class="formulaire-ligne">
+    <label>
+      Du
+      <input type="date" name="debut" value="{{ debut }}">
+    </label>
+    <label>
+      Au
+      <input type="date" name="fin" value="{{ fin }}">
+    </label>
+  </div>
+
+  <div class="actions-avis">
+    <button type="submit" id="bouton-telecharger-bilan" disabled>Télécharger le bilan PDF</button>
+  </div>
+</form>
+
+<script id="donnees-clients-bilan" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-bilan").textContent);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  const conteneurClients = document.getElementById("liste-clients-cibles");
+  const texteAucunClient = document.getElementById("texte-aucun-client");
+  const texteCompteClients = document.getElementById("texte-compte-clients");
+  const boutonTelecharger = document.getElementById("bouton-telecharger-bilan");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function actualiserEtatBouton() {
+    const auMoinsUne = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length > 0;
+    boutonTelecharger.disabled = !auMoinsUne;
+  }
+
+  function actualiserListe() {
+    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    if (!etiquettesActives.length) {
+      conteneurClients.innerHTML = "";
+      texteAucunClient.hidden = false;
+      texteCompteClients.hidden = true;
+      actualiserEtatBouton();
+      return;
+    }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
+    texteAucunClient.hidden = true;
+    texteCompteClients.hidden = false;
+    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    conteneurClients.innerHTML = correspondants.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      </label>
+    `).join("");
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((c) => c.addEventListener("change", actualiserEtatBouton));
+    actualiserEtatBouton();
+  }
+
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+})();
+</script>
+{% endblock %}
