@@ -795,6 +795,10 @@ def nouveau_client_formulaire(request: Request, db: Session = Depends(obtenir_se
             f for f in fiches
             if (f["compte_google_id"], f["account_id"], f["location_id"]) not in fiches_deja_liees
         ]
+        # Tri alphabetique par nom de fiche (le groupby de Jinja trie ensuite
+        # par compte, de facon stable : l'ordre alphabetique par fiche est
+        # donc conserve a l'interieur de chaque groupe).
+        fiches.sort(key=lambda f: f["nom_fiche"].lower())
 
     return templates.TemplateResponse(
         request,
