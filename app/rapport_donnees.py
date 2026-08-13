@@ -10,7 +10,16 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from . import brevo_email, google_business, google_oauth, google_performance, google_reviews, models, recap_mensuel
+from . import (
+    brevo_email,
+    claude_generation,
+    google_business,
+    google_oauth,
+    google_performance,
+    google_reviews,
+    models,
+    recap_mensuel,
+)
 
 
 def _date_n1(jour: date) -> date:
@@ -145,11 +154,45 @@ def mois_precedent(aujourdhui: date) -> tuple[int, int]:
     return dernier_jour_precedent.month, dernier_jour_precedent.year
 
 
+def construire_contenu_recap(db: Session, client: models.Client, mois: int, annee: int) -> tuple[str, str]:
+    """
+    Assemble le sujet et le HTML du recap pour ce client/periode, sans rien
+    envoyer. Utilise a la fois par l'apercu (main.py) et par l'envoi reel
+    (envoyer_recap_client ci-dessous), pour que les deux restent identiques.
+    """
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        raise RuntimeError("Le compte Google associe a ce client n'est plus valide.")
+
+    debut = date(annee, mois, 1)
+    fin = date(annee, mois, calendar.monthrange(annee, mois)[1])
+
+    donnees = rassembler_donnees_rapport(db, client, debut, fin)
+    avis_positifs = google_reviews.avis_positifs_periode(
+        identifiants, client.account_id, client.location_id, debut, fin
+    )
+
+    # Un seul avis positif : la citation directe suffit (voir recap_mensuel).
+    # Plusieurs : on demande un resume a l'IA pour ne pas juxtaposer trop de
+    # citations - si l'IA echoue (credits epuises, etc.), on se rabat
+    # simplement sur des citations individuelles, l'email part quand meme.
+    resume_avis_texte = None
+    if len(avis_positifs) > 1:
+        try:
+            resume_avis_texte = claude_generation.resumer_avis_positifs(avis_positifs)
+        except Exception:
+            resume_avis_texte = None
+
+    sujet = recap_mensuel.construire_sujet(client, mois, annee)
+    html = recap_mensuel.construire_email(client, donnees, mois, annee, avis_positifs, resume_avis_texte)
+    return sujet, html
+
+
 def envoyer_recap_client(db: Session, client: models.Client, mois: int, annee: int) -> tuple[str, str]:
     """
-    Assemble et envoie le recap mensuel a un client pour la periode mois/annee,
-    puis enregistre le resultat (EnvoiRecap). N'envoie rien si un recap a deja
-    ete envoye avec succes pour cette periode (evite les doublons, y compris
+    Envoie le recap mensuel a un client pour la periode mois/annee, puis
+    enregistre le resultat (EnvoiRecap). N'envoie rien si un recap a deja ete
+    envoye avec succes pour cette periode (evite les doublons, y compris
     depuis un declenchement manuel). Renvoie (etat, erreur).
     """
     deja_envoye = (
@@ -160,23 +203,11 @@ def envoyer_recap_client(db: Session, client: models.Client, mois: int, annee: i
     if deja_envoye:
         return "ENVOYE", ""
 
-    debut = date(annee, mois, 1)
-    fin = date(annee, mois, calendar.monthrange(annee, mois)[1])
-
     try:
         if not client.email:
             raise RuntimeError("Aucun email renseigne pour ce client.")
-        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-        if not identifiants:
-            raise RuntimeError("Le compte Google associe a ce client n'est plus valide.")
-
-        donnees = rassembler_donnees_rapport(db, client, debut, fin)
-        avis_recents = google_reviews.avis_cinq_etoiles_recents(
-            identifiants, client.account_id, client.location_id, debut, fin
-        )
-        sujet = recap_mensuel.construire_sujet(client, mois, annee)
-        html = recap_mensuel.construire_email(client, donnees, mois, annee, avis_recents)
-        brevo_email.envoyer_email(client.email, client.nom, sujet, html)
+        sujet, html = construire_contenu_recap(db, client, mois, annee)
+        brevo_email.envoyer_email(client.email, client.prenom or client.nom, sujet, html)
         etat, erreur = "ENVOYE", ""
     except Exception as e:
         etat, erreur = "ECHEC", str(e)

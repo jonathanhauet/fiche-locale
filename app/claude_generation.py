@@ -231,3 +231,43 @@ def suggerer_reponse_avis(
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
     return bloc_texte.strip()
+
+
+def resumer_avis_positifs(avis: list[dict]) -> str:
+    """
+    Resume en 1-2 phrases chaleureuses ce que plusieurs avis positifs (note et
+    commentaire) mettent en avant en commun, pour le recap mensuel envoye au
+    client. Utilise seulement quand il y a plusieurs avis (sinon la citation
+    directe suffit, voir recap_mensuel.py).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    bloc_avis = "\n\n".join(
+        f"- ({a.get('note', '?')}/5) « {a['commentaire']} »" for a in avis
+    )
+
+    prompt = (
+        "Voici plusieurs avis Google recents et positifs laisses par des clients d'une entreprise :\n\n"
+        f"{bloc_avis}\n\n"
+        "Redige un resume chaleureux en 1 a 2 phrases, destine a etre envoye PAR l'agence qui gere la "
+        "fiche Google A l'entreprise elle-meme (pas au client final), pour lui faire plaisir en lui "
+        "montrant ce que ses propres clients apprecient. Mets en avant les points communs qui reviennent "
+        "(ex. reactivite, qualite du travail, accueil...). Ne cite pas les auteurs nommement. Reste "
+        "naturel, evite les formules toutes faites et les superlatifs excessifs. Reponds uniquement avec "
+        "le texte du resume, sans guillemets ni commentaire autour."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=512,
+        thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    return bloc_texte.strip()

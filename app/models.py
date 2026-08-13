@@ -37,8 +37,10 @@ class Client(Base):
     location_id = Column(String, default="")
     compte_google_id = Column(Integer, ForeignKey("comptes_google.id"), nullable=True)
     consignes_avis = Column(Text, default="")
-    # Email du client, utilise pour l'envoi du recap mensuel (voir recap_mensuel.py).
+    # Email et prenom du client (contact personnel, distinct de son nom
+    # d'entreprise), utilises pour l'envoi du recap mensuel (voir recap_mensuel.py).
     email = Column(String, default="")
+    prenom = Column(String, default="")
     # Coordonnees de la fiche, mises en cache depuis Google (voir google_location.py)
     # pour centrer la grille de la carte de positions.
     latitude = Column(Float, nullable=True)

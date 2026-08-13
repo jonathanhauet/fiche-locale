@@ -92,10 +92,16 @@
       <input type="text" name="nom" value="{{ client.nom }}" required>
     </label>
 
-    <label>
-      E-mail du client (pour l'envoi du récap mensuel)
-      <input type="email" name="email" value="{{ client.email }}" placeholder="client@exemple.fr">
-    </label>
+    <div class="ligne-champs">
+      <label>
+        Prénom du client (pour s'adresser à lui personnellement dans le récap)
+        <input type="text" name="prenom" value="{{ client.prenom }}" placeholder="Ex : Nicolas">
+      </label>
+      <label>
+        E-mail du client (pour l'envoi du récap mensuel)
+        <input type="email" name="email" value="{{ client.email }}" placeholder="client@exemple.fr">
+      </label>
+    </div>
 
     <div class="ligne-champs">
       <label>

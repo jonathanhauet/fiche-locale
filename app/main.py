@@ -83,6 +83,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN longitude REAL"))
         if "email" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN email TEXT DEFAULT ''"))
+        if "prenom" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN prenom TEXT DEFAULT ''"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -1810,21 +1812,11 @@ def apercu_recap(client_id: int, request: Request, db: Session = Depends(obtenir
         return HTMLResponse("Client introuvable ou sans fiche Google associee.", status_code=404)
 
     mois, annee = rapport_donnees.mois_precedent(date.today())
-    debut = date(annee, mois, 1)
-    fin = date(annee, mois, calendar.monthrange(annee, mois)[1])
-
     try:
-        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-        if not identifiants:
-            raise RuntimeError("Le compte Google associe a ce client n'est plus valide.")
-        donnees = rapport_donnees.rassembler_donnees_rapport(db, client, debut, fin)
-        avis_recents = google_reviews.avis_cinq_etoiles_recents(
-            identifiants, client.account_id, client.location_id, debut, fin
-        )
+        _sujet, html = rapport_donnees.construire_contenu_recap(db, client, mois, annee)
     except Exception as erreur:
         return HTMLResponse(f"Impossible de generer l'apercu : {erreur}", status_code=500)
 
-    html = recap_mensuel.construire_email(client, donnees, mois, annee, avis_recents)
     return HTMLResponse(html)
 
 
@@ -1867,6 +1859,7 @@ def modifier_client(
     location_id: str = Form(""),
     consignes_avis: str = Form(""),
     email: str = Form(""),
+    prenom: str = Form(""),
     etiquettes: list[str] = Form(default=[]),
     db: Session = Depends(obtenir_session),
 ):
@@ -1884,6 +1877,7 @@ def modifier_client(
     client.location_id = location_id.strip()
     client.consignes_avis = consignes_avis
     client.email = email.strip()
+    client.prenom = prenom.strip()
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     db.commit()
     return RedirectResponse(f"/clients/{client_id}", status_code=303)

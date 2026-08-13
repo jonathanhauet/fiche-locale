@@ -11,7 +11,19 @@ clients mail ignorent tres largement le CSS externe, ce template n'utilise
 donc pas static/style.css.
 """
 
+import os
+
+from dotenv import load_dotenv
+
 from . import models
+
+DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
+DOSSIER_PLATEFORME = os.path.dirname(DOSSIER_APP)
+load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
+
+# Numero WhatsApp de l'agence (format international sans espaces ni "+", ex.
+# "33612345678"), propose comme second moyen de reponse dans le pied du recap.
+WHATSAPP_NUMERO = os.getenv("RECAP_WHATSAPP_NUMERO", "").strip()
 
 LIBELLES_MOIS = {
     1: "janvier", 2: "février", 3: "mars", 4: "avril", 5: "mai", 6: "juin",
@@ -61,7 +73,8 @@ def _ligne_stat(libelle: str, valeur, evolution=None) -> str:
 
 
 def construire_email(
-    client: models.Client, donnees: dict, mois: int, annee: int, avis_recents: list[dict],
+    client: models.Client, donnees: dict, mois: int, annee: int,
+    avis_positifs: list[dict], resume_avis_texte: str = None,
 ) -> str:
     statistiques = donnees.get("statistiques") or {}
     resume_avis = donnees.get("resume_avis") or {}
@@ -90,14 +103,29 @@ def construire_email(
         <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">⭐ Vos avis</h2>
         <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_avis)}</table>""")
 
-    # --- Citations d'avis 5 etoiles ---
-    if avis_recents:
+    # --- Avis positifs : citation directe s'il n'y en a qu'un, resume IA s'il
+    # y en a plusieurs (repli sur 2 citations si le resume echoue/est absent). ---
+    if resume_avis_texte:
+        sections.append(f"""
+        <div style="background:{COULEUR_FOND_CARTE};border-left:3px solid {COULEUR_ACCENT};
+                    padding:12px 16px;margin:10px 0;border-radius:4px;">
+          <p style="margin:0;color:{COULEUR_TEXTE};font-size:14px;">{resume_avis_texte}</p>
+        </div>""")
+    elif len(avis_positifs) == 1:
+        a = avis_positifs[0]
+        sections.append(f"""
+        <div style="background:{COULEUR_FOND_CARTE};border-left:3px solid {COULEUR_ACCENT};
+                    padding:12px 16px;margin:10px 0;border-radius:4px;">
+          <p style="margin:0;color:{COULEUR_TEXTE};font-style:italic;font-size:14px;">« {a['commentaire']} »</p>
+          <p style="margin:6px 0 0;color:{COULEUR_DISCRET};font-size:13px;">— {a['auteur']}</p>
+        </div>""")
+    elif len(avis_positifs) > 1:
         citations = "".join(f"""
         <div style="background:{COULEUR_FOND_CARTE};border-left:3px solid {COULEUR_ACCENT};
                     padding:12px 16px;margin:10px 0;border-radius:4px;">
           <p style="margin:0;color:{COULEUR_TEXTE};font-style:italic;font-size:14px;">« {a['commentaire']} »</p>
           <p style="margin:6px 0 0;color:{COULEUR_DISCRET};font-size:13px;">— {a['auteur']}</p>
-        </div>""" for a in avis_recents)
+        </div>""" for a in avis_positifs[:2])
         sections.append(citations)
 
     # --- Visibilite ---
@@ -132,6 +160,16 @@ def construire_email(
         f"Pas de nouveauté marquante ce mois-ci — on continue le travail de fond !</p>"
     )
 
+    prenom_ou_nom = client.prenom.strip() if client.prenom and client.prenom.strip() else client.nom
+
+    pied_contact = "Une question sur votre fiche ? Répondez simplement à cet email"
+    if WHATSAPP_NUMERO:
+        pied_contact += (
+            f' ou écrivez-moi directement sur <a href="https://wa.me/{WHATSAPP_NUMERO}" '
+            f'style="color:{COULEUR_ACCENT};">WhatsApp</a>'
+        )
+    pied_contact += "."
+
     return f"""<!doctype html>
 <html lang="fr">
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
@@ -147,7 +185,7 @@ def construire_email(
           </tr>
           <tr>
             <td style="padding:28px 32px;">
-              <p style="color:{COULEUR_TEXTE};font-size:15px;">Bonjour {client.nom},</p>
+              <p style="color:{COULEUR_TEXTE};font-size:15px;">Bonjour {prenom_ou_nom},</p>
               <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qu'il s'est passé sur votre fiche Google ce mois-ci :</p>
               {contenu_sections}
             </td>
@@ -155,7 +193,7 @@ def construire_email(
           <tr>
             <td style="padding:20px 32px;background:{COULEUR_FOND_CARTE};">
               <p style="margin:0;color:{COULEUR_DISCRET};font-size:13px;">
-                Une question sur votre fiche ? Répondez simplement à cet email.
+                {pied_contact}
               </p>
             </td>
           </tr>

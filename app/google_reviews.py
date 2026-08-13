@@ -165,19 +165,21 @@ def resumer_avis(
     return resultat
 
 
-def avis_cinq_etoiles_recents(
-    identifiants, account_id: str, location_id: str, date_debut, date_fin, limite: int = 2,
+def avis_positifs_periode(
+    identifiants, account_id: str, location_id: str, date_debut, date_fin,
+    note_minimum: int = 4, limite: int = 15,
 ) -> list[dict]:
     """
-    Les avis 5 etoiles les plus recents avec un commentaire, dans la periode
-    donnee - utilise pour les citations mises en avant dans le recap mensuel.
+    Les avis positifs (note >= note_minimum) avec un commentaire, dans la
+    periode donnee, les plus recents en tete - utilise pour le recap mensuel
+    (citation directe s'il n'y en a qu'un, resume IA s'il y en a plusieurs).
     Une seule page suffit (avis recents en tete), pas besoin de toutes_les_pages.
     """
     avis = _lister_avis_dune_fiche(identifiants, account_id, location_id)
 
     candidats = []
     for a in avis:
-        if a.get("starRating") != "FIVE" or not a.get("comment", "").strip():
+        if NOTES.get(a.get("starRating"), 0) < note_minimum or not a.get("comment", "").strip():
             continue
         try:
             date_creation = datetime.fromisoformat(a.get("createTime", "").replace("Z", "+00:00")).date()
@@ -189,6 +191,10 @@ def avis_cinq_etoiles_recents(
 
     candidats.sort(key=lambda item: item[0], reverse=True)
     return [
-        {"auteur": a.get("reviewer", {}).get("displayName", "Anonyme"), "commentaire": a.get("comment", "")}
+        {
+            "auteur": a.get("reviewer", {}).get("displayName", "Anonyme"),
+            "commentaire": a.get("comment", ""),
+            "note": NOTES.get(a.get("starRating"), 0),
+        }
         for _, a in candidats[:limite]
     ]
