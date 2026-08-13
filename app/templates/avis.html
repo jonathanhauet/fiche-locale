@@ -241,6 +241,13 @@
 
     listeAvis.innerHTML = avisPage.map(carteAvisHTML).join("");
     texteVide.hidden = avisFiltresListe.length > 0 || chargementEnCours;
+    if (casesClients.length && casesClients.every((c) => !c.checked)) {
+      texteVide.textContent = "Aucune entreprise cochée dans le filtre \"Entreprises\" ci-dessus : cochez-en au moins une pour voir des avis.";
+    } else if (casesEtiquettes.length && casesEtiquettes.every((c) => !c.checked)) {
+      texteVide.textContent = "Aucune étiquette cochée dans le filtre \"Étiquettes\" ci-dessus : cochez-en au moins une pour voir des avis.";
+    } else {
+      texteVide.textContent = "Aucun avis trouvé.";
+    }
 
     conteneurPagination.hidden = avisFiltresListe.length <= TAILLE_PAGE;
     texteAffichagePagination.textContent = `Page ${pageActuelle} / ${totalPages} (${avisFiltresListe.length} avis)`;
