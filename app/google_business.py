@@ -154,6 +154,8 @@ def lister_posts(identifiants, account_id: str, location_id: str):
                 "texte": item.get("summary", ""),
                 "etat": item.get("state", ""),
                 "date_creation": date_affichee,
+                "date_creation_brute": cree_le,
+                "id_post_google": item.get("name", ""),
                 "url_image": media[0].get("googleUrl") if media else "",
                 "url_recherche": item.get("searchUrl", ""),
             })

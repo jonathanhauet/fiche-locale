@@ -156,7 +156,8 @@ def generer_rapport_pdf(
                 pdf.cell(0, 5, post["date"], new_x="LMARGIN", new_y="NEXT")
                 pdf.set_font("Helvetica", "", 10)
                 pdf.set_text_color(*COULEUR_TEXTE)
-                pdf.multi_cell(0, 6, _nettoyer(post["titre"]))
+                titre = post["titre"] + (" (hors plateforme)" if post.get("source") == "google" else "")
+                pdf.multi_cell(0, 6, _nettoyer(titre))
                 pdf.ln(1)
 
     # --- Mots-cles de recherche ---

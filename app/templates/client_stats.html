@@ -83,11 +83,25 @@
 </ul>
 
 <h2>Publications Google (posts)</h2>
-<p class="texte-discret">{{ posts_publies|length }} post(s) publié(s) sur la période.</p>
+<p class="texte-discret">
+  {{ posts_publies|length }} post(s) publié(s) sur la période
+  (posts créés via cette plateforme + posts actuellement en ligne sur la fiche Google).
+</p>
+<p class="texte-discret">
+  Les posts publiés autrement que via cette plateforme sont comptés seulement s'ils sont
+  encore visibles sur la fiche au moment de la consultation (Google ne conserve pas
+  d'historique complet des posts au-delà de quelques jours).
+</p>
 {% if posts_publies %}
 <ul class="liste-stats">
   {% for post in posts_publies %}
-  <li><span>{{ post.date }}</span><strong>{{ post.titre }}</strong></li>
+  <li>
+    <span>{{ post.date }}</span>
+    <span class="valeur-avec-evolution">
+      <strong>{{ post.titre }}</strong>
+      {% if post.source == "google" %}<span class="etiquette-statut">Hors plateforme</span>{% endif %}
+    </span>
+  </li>
   {% endfor %}
 </ul>
 {% endif %}

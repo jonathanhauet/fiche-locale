@@ -1635,6 +1635,15 @@ def _date_n1(jour: date) -> date:
         return jour.replace(year=jour.year - 1, day=28)
 
 
+def _parser_date_iso(chaine: str):
+    if not chaine:
+        return None
+    try:
+        return datetime.fromisoformat(chaine.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
 def _donnees_rapport_vides() -> dict:
     return {
         "statistiques": {}, "resume_avis": {}, "posts_publies": [],
@@ -1668,9 +1677,38 @@ def _rassembler_donnees_rapport(db: Session, client: models.Client, debut: date,
         .order_by(models.EvenementPublication.horodatage.desc())
         .all()
     )
-    posts_publies = [
-        {"titre": e.post.titre, "date": e.horodatage.strftime("%d/%m/%Y")} for e in evenements
+    posts_publies_tries = [
+        (e.horodatage.date(), {"titre": e.post.titre, "date": e.horodatage.strftime("%d/%m/%Y"), "source": "plateforme"})
+        for e in evenements
     ]
+
+    # Complete avec les posts reellement en ligne sur la fiche Google, pour
+    # compter aussi ceux publies par un autre moyen que cette plateforme. On
+    # exclut ceux deja comptes ci-dessus (meme id_post_google) pour ne pas les
+    # compter deux fois. Limite connue : l'API Google (localPosts.list) ne
+    # renvoie que les posts actuellement actifs sur la fiche, pas un historique
+    # complet - un post externe deja expire cote Google au moment de la
+    # consultation ne pourra donc pas etre comptabilise ici.
+    ids_deja_comptes = {e.post.id_post_google for e in evenements if e.post.id_post_google}
+    try:
+        posts_en_ligne = google_business.lister_posts(identifiants, client.account_id, client.location_id)
+    except Exception:
+        posts_en_ligne = []
+
+    for post_google in posts_en_ligne:
+        if post_google.get("id_post_google") and post_google["id_post_google"] in ids_deja_comptes:
+            continue
+        jour = _parser_date_iso(post_google.get("date_creation_brute", ""))
+        if not jour or not (debut <= jour <= fin):
+            continue
+        posts_publies_tries.append((jour, {
+            "titre": post_google.get("texte", "")[:80] or "(post sans titre)",
+            "date": jour.strftime("%d/%m/%Y"),
+            "source": "google",
+        }))
+
+    posts_publies_tries.sort(key=lambda item: item[0], reverse=True)
+    posts_publies = [item[1] for item in posts_publies_tries]
 
     try:
         mots_cles = google_performance.recuperer_mots_cles_recherche(identifiants, client.location_id, debut, fin)
