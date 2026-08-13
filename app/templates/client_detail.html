@@ -92,6 +92,11 @@
       <input type="text" name="nom" value="{{ client.nom }}" required>
     </label>
 
+    <label>
+      E-mail du client (pour l'envoi du récap mensuel)
+      <input type="email" name="email" value="{{ client.email }}" placeholder="client@exemple.fr">
+    </label>
+
     <div class="ligne-champs">
       <label>
         Identifiant du compte Google (account_id)

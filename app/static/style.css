@@ -751,7 +751,7 @@ button:active { transform: translateY(1px); }
 }
 
 .etiquette-a_publier { background: var(--accent-clair); color: var(--accent); border-color: transparent; }
-.etiquette-publie_live, .etiquette-live { background: var(--succes-clair); color: var(--succes); border-color: transparent; }
+.etiquette-publie_live, .etiquette-live, .etiquette-envoye { background: var(--succes-clair); color: var(--succes); border-color: transparent; }
 .etiquette-publie_rejected, .etiquette-rejected, .etiquette-echec_publication, .etiquette-echec { background: var(--danger-clair); color: var(--danger); border-color: transparent; }
 .etiquette-brouillon, .etiquette-ignore, .etiquette-supprime { opacity: 0.75; }
 

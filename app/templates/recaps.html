@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set page_actuelle = "recaps" %}
+{% block titre %}Récap mensuel — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Récap mensuel</h1>
+</div>
+
+<p class="texte-discret">
+  Un récap par email est envoyé automatiquement à chaque client (avec un e-mail renseigné)
+  au début de chaque mois, pour le mois précédent — actuellement <strong>{{ mois_cible }} {{ annee_cible }}</strong>.
+</p>
+
+{% if not brevo_configure %}
+<div class="bandeau-avertissement">
+  L'envoi n'est pas encore configuré : ajoutez BREVO_API_KEY et BREVO_EMAIL_EXPEDITEUR dans le fichier .env.
+</div>
+{% endif %}
+
+{% if lignes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Client</th>
+        <th>E-mail</th>
+        <th>Dernier récap</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ligne in lignes %}
+      <tr>
+        <td>{{ ligne.client.nom }}</td>
+        <td>
+          {% if ligne.client.email %}
+          {{ ligne.client.email }}
+          {% else %}
+          <span class="texte-discret">non renseigné</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if ligne.dernier_envoi %}
+          {{ ligne.dernier_envoi.mois }}/{{ ligne.dernier_envoi.annee }}
+          <span class="etiquette-statut etiquette-{{ ligne.dernier_envoi.etat|lower }}">{{ ligne.dernier_envoi.etat }}</span>
+          {% else %}
+          <span class="texte-discret">jamais envoyé</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="actions-avis">
+            <a class="bouton-secondaire" href="/clients/{{ ligne.client.id }}/recap/apercu" target="_blank" rel="noopener">Aperçu</a>
+            <form method="post" action="/clients/{{ ligne.client.id }}/recap/envoyer">
+              <button type="submit" class="bouton-secondaire" {% if not ligne.client.email %}disabled{% endif %}>Envoyer maintenant</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucun client avec une fiche Google associée pour l'instant.</p>
+{% endif %}
+{% endblock %}

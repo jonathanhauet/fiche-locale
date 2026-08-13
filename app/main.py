@@ -24,6 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import (
+    brevo_email,
     claude_generation,
     documents,
     gemini_images,
@@ -38,10 +39,16 @@ from . import (
     models,
     ovh_upload,
     rank_tracking,
+    rapport_donnees,
     rapport_pdf,
+    recap_mensuel,
 )
 from .database import Base, engine, obtenir_session
-from .planificateur import verifier_et_publier_photos_programmees, verifier_et_publier_posts_programmes
+from .planificateur import (
+    envoyer_recaps_mensuels,
+    verifier_et_publier_photos_programmees,
+    verifier_et_publier_posts_programmes,
+)
 from .security import verifier_mot_de_passe
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
@@ -74,6 +81,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN latitude REAL"))
         if "longitude" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN longitude REAL"))
+        if "email" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN email TEXT DEFAULT ''"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -191,6 +200,14 @@ planificateur.add_job(
     "interval",
     minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
     id="publication_photos_programmee",
+)
+# Le recap mensuel n'a pas besoin d'un rythme aussi rapide : une verification
+# quotidienne suffit (job idempotent via EnvoiRecap, cf. planificateur.py).
+planificateur.add_job(
+    envoyer_recaps_mensuels,
+    "interval",
+    hours=24,
+    id="recap_mensuel",
 )
 planificateur.start()
 
@@ -1678,131 +1695,6 @@ def _periode_depuis_requete(request: Request):
     return debut, fin
 
 
-def _date_n1(jour: date) -> date:
-    """Meme date un an plus tot (repli au 28 fevrier si jour = 29 fevrier)."""
-    try:
-        return jour.replace(year=jour.year - 1)
-    except ValueError:
-        return jour.replace(year=jour.year - 1, day=28)
-
-
-def _parser_date_iso(chaine: str):
-    if not chaine:
-        return None
-    try:
-        return datetime.fromisoformat(chaine.replace("Z", "+00:00")).date()
-    except ValueError:
-        return None
-
-
-def _donnees_rapport_vides() -> dict:
-    return {
-        "statistiques": {}, "resume_avis": {}, "posts_publies": [],
-        "mots_cles": [], "erreur_mots_cles": None,
-        "comparatif_visibilite": None, "evolution_avis": None,
-    }
-
-
-def _rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, fin: date) -> dict:
-    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-    if not identifiants:
-        raise RuntimeError(
-            "Le compte Google associe a ce client n'est plus valide. "
-            "Reconnectez-le depuis la page Comptes Google."
-        )
-
-    debut_n1, fin_n1 = _date_n1(debut), _date_n1(fin)
-
-    statistiques = google_performance.recuperer_statistiques(identifiants, client.location_id, debut, fin)
-    resume_avis = google_reviews.resumer_avis(
-        identifiants, client.account_id, client.location_id, debut, fin, debut_n1, fin_n1
-    )
-
-    evenements = (
-        db.query(models.EvenementPublication)
-        .join(models.Post)
-        .filter(models.Post.client_id == client.id)
-        .filter(models.EvenementPublication.etat == "LIVE")
-        .filter(models.EvenementPublication.horodatage >= datetime.combine(debut, datetime.min.time()))
-        .filter(models.EvenementPublication.horodatage <= datetime.combine(fin, datetime.max.time()))
-        .order_by(models.EvenementPublication.horodatage.desc())
-        .all()
-    )
-    posts_publies_tries = [
-        (e.horodatage.date(), {"titre": e.post.titre, "date": e.horodatage.strftime("%d/%m/%Y"), "source": "plateforme"})
-        for e in evenements
-    ]
-
-    # Complete avec les posts reellement en ligne sur la fiche Google, pour
-    # compter aussi ceux publies par un autre moyen que cette plateforme. On
-    # exclut ceux deja comptes ci-dessus (meme id_post_google) pour ne pas les
-    # compter deux fois. Limite connue : l'API Google (localPosts.list) ne
-    # renvoie que les posts actuellement actifs sur la fiche, pas un historique
-    # complet - un post externe deja expire cote Google au moment de la
-    # consultation ne pourra donc pas etre comptabilise ici.
-    ids_deja_comptes = {e.post.id_post_google for e in evenements if e.post.id_post_google}
-    try:
-        posts_en_ligne = google_business.lister_posts(identifiants, client.account_id, client.location_id)
-    except Exception:
-        posts_en_ligne = []
-
-    for post_google in posts_en_ligne:
-        if post_google.get("id_post_google") and post_google["id_post_google"] in ids_deja_comptes:
-            continue
-        jour = _parser_date_iso(post_google.get("date_creation_brute", ""))
-        if not jour or not (debut <= jour <= fin):
-            continue
-        posts_publies_tries.append((jour, {
-            "titre": post_google.get("texte", "")[:80] or "(post sans titre)",
-            "date": jour.strftime("%d/%m/%Y"),
-            "source": "google",
-        }))
-
-    posts_publies_tries.sort(key=lambda item: item[0], reverse=True)
-    posts_publies = [item[1] for item in posts_publies_tries]
-
-    try:
-        mots_cles = google_performance.recuperer_mots_cles_recherche(identifiants, client.location_id, debut, fin)
-        erreur_mots_cles = None
-    except Exception as erreur:
-        mots_cles = []
-        erreur_mots_cles = str(erreur)
-
-    # Comparatif N-1 : requiert un second appel Performance API sur la meme
-    # periode l'annee precedente. Si Google n'a pas d'historique aussi loin
-    # (fiche trop recente, periode hors plage disponible), on desactive
-    # simplement le comparatif plutot que de casser la page.
-    try:
-        statistiques_n1 = google_performance.recuperer_statistiques(identifiants, client.location_id, debut_n1, fin_n1)
-    except Exception:
-        statistiques_n1 = None
-
-    comparatif_visibilite = None
-    if statistiques_n1 is not None:
-        comparatif_visibilite = {}
-        for libelle, valeur in statistiques.items():
-            valeur_n1 = statistiques_n1.get(libelle, 0)
-            evolution = round((valeur - valeur_n1) / valeur_n1 * 100, 1) if valeur_n1 else None
-            comparatif_visibilite[libelle] = {"n1": valeur_n1, "evolution": evolution}
-
-    evolution_avis = None
-    nombre_avis_periode_n1 = resume_avis.get("nombre_avis_periode_n1")
-    if nombre_avis_periode_n1:
-        evolution_avis = round(
-            (resume_avis["nombre_avis_periode"] - nombre_avis_periode_n1) / nombre_avis_periode_n1 * 100, 1
-        )
-
-    return {
-        "statistiques": statistiques,
-        "resume_avis": resume_avis,
-        "posts_publies": posts_publies,
-        "mots_cles": mots_cles,
-        "erreur_mots_cles": erreur_mots_cles,
-        "comparatif_visibilite": comparatif_visibilite,
-        "evolution_avis": evolution_avis,
-    }
-
-
 @app.get("/clients/{client_id}/stats", response_class=HTMLResponse)
 def stats_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -1819,14 +1711,14 @@ def stats_client(client_id: int, request: Request, db: Session = Depends(obtenir
         return templates.TemplateResponse(
             request, "client_stats.html",
             {"client": client, "debut": debut, "fin": fin, "erreur": "Ce client n'a pas de fiche Google associee.",
-             **_donnees_rapport_vides()},
+             **rapport_donnees.donnees_rapport_vides()},
         )
 
     try:
-        donnees = _rassembler_donnees_rapport(db, client, debut, fin)
+        donnees = rapport_donnees.rassembler_donnees_rapport(db, client, debut, fin)
         erreur = None
     except Exception as e:
-        donnees = _donnees_rapport_vides()
+        donnees = rapport_donnees.donnees_rapport_vides()
         erreur = str(e)
 
     return templates.TemplateResponse(
@@ -1851,7 +1743,7 @@ def stats_client_pdf(client_id: int, request: Request, db: Session = Depends(obt
         sections = rapport_pdf.SECTIONS_DISPONIBLES
 
     try:
-        donnees = _rassembler_donnees_rapport(db, client, debut, fin)
+        donnees = rapport_donnees.rassembler_donnees_rapport(db, client, debut, fin)
     except Exception as erreur:
         return HTMLResponse(f"Impossible de generer le rapport : {erreur}", status_code=500)
 
@@ -1867,6 +1759,88 @@ def stats_client_pdf(client_id: int, request: Request, db: Session = Depends(obt
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
     )
+
+
+# --- Recap mensuel (email) --------------------------------------------------
+
+
+@app.get("/recaps", response_class=HTMLResponse)
+def recaps(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    clients = (
+        db.query(models.Client)
+        .filter(models.Client.account_id != "", models.Client.location_id != "")
+        .order_by(models.Client.nom)
+        .all()
+    )
+    mois, annee = rapport_donnees.mois_precedent(date.today())
+
+    lignes = []
+    for client in clients:
+        dernier_envoi = (
+            db.query(models.EnvoiRecap)
+            .filter_by(client_id=client.id)
+            .order_by(models.EnvoiRecap.horodatage.desc())
+            .first()
+        )
+        lignes.append({"client": client, "dernier_envoi": dernier_envoi})
+
+    return templates.TemplateResponse(
+        request, "recaps.html",
+        {
+            "lignes": lignes,
+            "mois_cible": recap_mensuel.LIBELLES_MOIS[mois],
+            "annee_cible": annee,
+            "brevo_configure": brevo_email.identifiants_configures(),
+        },
+    )
+
+
+@app.get("/clients/{client_id}/recap/apercu", response_class=HTMLResponse)
+def apercu_recap(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return HTMLResponse("Client introuvable ou sans fiche Google associee.", status_code=404)
+
+    mois, annee = rapport_donnees.mois_precedent(date.today())
+    debut = date(annee, mois, 1)
+    fin = date(annee, mois, calendar.monthrange(annee, mois)[1])
+
+    try:
+        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+        if not identifiants:
+            raise RuntimeError("Le compte Google associe a ce client n'est plus valide.")
+        donnees = rapport_donnees.rassembler_donnees_rapport(db, client, debut, fin)
+        avis_recents = google_reviews.avis_cinq_etoiles_recents(
+            identifiants, client.account_id, client.location_id, debut, fin
+        )
+    except Exception as erreur:
+        return HTMLResponse(f"Impossible de generer l'apercu : {erreur}", status_code=500)
+
+    html = recap_mensuel.construire_email(client, donnees, mois, annee, avis_recents)
+    return HTMLResponse(html)
+
+
+@app.post("/clients/{client_id}/recap/envoyer")
+def envoyer_recap_manuel(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    mois, annee = rapport_donnees.mois_precedent(date.today())
+    rapport_donnees.envoyer_recap_client(db, client, mois, annee)
+    return RedirectResponse("/recaps", status_code=303)
 
 
 def _obtenir_ou_creer_etiquettes(db: Session, noms_etiquettes) -> list:
@@ -1892,6 +1866,7 @@ def modifier_client(
     account_id: str = Form(""),
     location_id: str = Form(""),
     consignes_avis: str = Form(""),
+    email: str = Form(""),
     etiquettes: list[str] = Form(default=[]),
     db: Session = Depends(obtenir_session),
 ):
@@ -1908,6 +1883,7 @@ def modifier_client(
     client.account_id = account_id.strip()
     client.location_id = location_id.strip()
     client.consignes_avis = consignes_avis
+    client.email = email.strip()
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     db.commit()
     return RedirectResponse(f"/clients/{client_id}", status_code=303)

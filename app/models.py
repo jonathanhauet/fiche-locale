@@ -37,6 +37,8 @@ class Client(Base):
     location_id = Column(String, default="")
     compte_google_id = Column(Integer, ForeignKey("comptes_google.id"), nullable=True)
     consignes_avis = Column(Text, default="")
+    # Email du client, utilise pour l'envoi du recap mensuel (voir recap_mensuel.py).
+    email = Column(String, default="")
     # Coordonnees de la fiche, mises en cache depuis Google (voir google_location.py)
     # pour centrer la grille de la carte de positions.
     latitude = Column(Float, nullable=True)
@@ -50,6 +52,7 @@ class Client(Base):
     mots_cles = relationship("MotCle", back_populates="client", cascade="all, delete-orphan")
     releves_position = relationship("ReleveDePosition", back_populates="client", cascade="all, delete-orphan")
     documents_connaissance = relationship("DocumentConnaissance", back_populates="client", cascade="all, delete-orphan")
+    envois_recap = relationship("EnvoiRecap", back_populates="client", cascade="all, delete-orphan")
 
 
 class Post(Base):
@@ -99,6 +102,22 @@ class EvenementPublication(Base):
     horodatage = Column(DateTime, default=datetime.utcnow)
 
     post = relationship("Post", back_populates="evenements")
+
+
+class EnvoiRecap(Base):
+    """Trace d'un envoi (reussi ou non) du recap mensuel a un client, voir recap_mensuel.py."""
+
+    __tablename__ = "envois_recap"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    mois = Column(Integer, nullable=False)
+    annee = Column(Integer, nullable=False)
+    etat = Column(String, nullable=False)  # ENVOYE, ECHEC
+    erreur = Column(Text, default="")
+    horodatage = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="envois_recap")
 
 
 class PhotoFiche(Base):

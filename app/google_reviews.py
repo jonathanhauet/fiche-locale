@@ -163,3 +163,32 @@ def resumer_avis(
         resultat["note_moyenne_periode_n1"] = note_moyenne_periode_n1
 
     return resultat
+
+
+def avis_cinq_etoiles_recents(
+    identifiants, account_id: str, location_id: str, date_debut, date_fin, limite: int = 2,
+) -> list[dict]:
+    """
+    Les avis 5 etoiles les plus recents avec un commentaire, dans la periode
+    donnee - utilise pour les citations mises en avant dans le recap mensuel.
+    Une seule page suffit (avis recents en tete), pas besoin de toutes_les_pages.
+    """
+    avis = _lister_avis_dune_fiche(identifiants, account_id, location_id)
+
+    candidats = []
+    for a in avis:
+        if a.get("starRating") != "FIVE" or not a.get("comment", "").strip():
+            continue
+        try:
+            date_creation = datetime.fromisoformat(a.get("createTime", "").replace("Z", "+00:00")).date()
+        except ValueError:
+            continue
+        if not (date_debut <= date_creation <= date_fin):
+            continue
+        candidats.append((date_creation, a))
+
+    candidats.sort(key=lambda item: item[0], reverse=True)
+    return [
+        {"auteur": a.get("reviewer", {}).get("displayName", "Anonyme"), "commentaire": a.get("comment", "")}
+        for _, a in candidats[:limite]
+    ]

@@ -6,7 +6,7 @@ commande : ici, une tache de fond integree au processus web (APScheduler).
 
 from datetime import date, datetime, time
 
-from . import google_business, google_oauth, google_publish, models
+from . import google_business, google_oauth, google_publish, models, rapport_donnees
 from .database import SessionLocal
 
 
@@ -98,5 +98,32 @@ def verifier_et_publier_photos_programmees():
                 google_business.publier_photo_fiche(db, identifiants, photo)
             except Exception:
                 continue
+    finally:
+        db.close()
+
+
+def envoyer_recaps_mensuels():
+    """
+    Envoie le recap mensuel (voir recap_mensuel.py) aux clients eligibles pour
+    le mois qui vient de se terminer. Tourne quotidiennement : sans effet la
+    plupart des jours grace a la verification "deja envoye" (EnvoiRecap) faite
+    par rapport_donnees.envoyer_recap_client - un echec (ex. token Google
+    expire) est simplement retente le lendemain.
+    """
+    db = SessionLocal()
+    try:
+        if not google_oauth.google_est_connecte(db):
+            return
+
+        mois, annee = rapport_donnees.mois_precedent(date.today())
+        clients_eligibles = (
+            db.query(models.Client)
+            .filter(models.Client.email != "")
+            .filter(models.Client.account_id != "", models.Client.location_id != "")
+            .all()
+        )
+
+        for client in clients_eligibles:
+            rapport_donnees.envoyer_recap_client(db, client, mois, annee)
     finally:
         db.close()
