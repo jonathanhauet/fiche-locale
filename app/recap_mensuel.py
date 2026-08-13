@@ -25,6 +25,10 @@ load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
 # "33612345678"), propose comme second moyen de reponse dans le pied du recap.
 WHATSAPP_NUMERO = os.getenv("RECAP_WHATSAPP_NUMERO", "").strip()
 
+# Photo de l'expediteur (URL publique, ex. hebergee via OVH comme les images
+# de posts), affichee en petit dans le bandeau du haut pour personnaliser.
+PHOTO_URL = os.getenv("RECAP_PHOTO_URL", "").strip()
+
 LIBELLES_MOIS = {
     1: "janvier", 2: "février", 3: "mars", 4: "avril", 5: "mai", 6: "juin",
     7: "juillet", 8: "août", 9: "septembre", 10: "octobre", 11: "novembre", 12: "décembre",
@@ -208,8 +212,18 @@ def construire_email(
         <table role="presentation" width="600" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden;">
           <tr>
             <td style="background:{COULEUR_ACCENT};padding:24px 32px;">
-              <p style="margin:0;color:#ffffff;font-size:13px;letter-spacing:0.5px;text-transform:uppercase;">Récap mensuel</p>
-              <h1 style="margin:4px 0 0;color:#ffffff;font-size:22px;">{nom_mois.capitalize()} {annee}</h1>
+              <table role="presentation" width="100%" style="border-collapse:collapse;">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <p style="margin:0;color:#ffffff;font-size:13px;letter-spacing:0.5px;text-transform:uppercase;">Récap mensuel</p>
+                    <h1 style="margin:4px 0 0;color:#ffffff;font-size:22px;">{nom_mois.capitalize()} {annee}</h1>
+                  </td>
+                  {f'''<td style="width:52px;vertical-align:middle;text-align:right;">
+                    <img src="{PHOTO_URL}" width="46" height="46" alt=""
+                         style="width:46px;height:46px;border-radius:50%;border:2px solid #ffffff;display:block;object-fit:cover;">
+                  </td>''' if PHOTO_URL else ""}
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>
