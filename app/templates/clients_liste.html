@@ -28,9 +28,20 @@
       <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
       <span>{{ client.nom }}</span>
     </a>
-    {% if not client.account_id or not client.location_id %}
-      <span class="etiquette-avertissement">fiche Google non associée</span>
-    {% endif %}
+    <div class="actions-avis">
+      {% if not client.account_id or not client.location_id %}
+        <span class="etiquette-avertissement">fiche Google non associée</span>
+      {% endif %}
+      {% if not client.prenom %}
+        <span class="etiquette-avertissement">prénom manquant</span>
+      {% endif %}
+      {% if not client.email %}
+        <span class="etiquette-avertissement">email manquant</span>
+      {% endif %}
+      {% if not client.documents_connaissance %}
+        <span class="etiquette-avertissement">base de connaissance vide</span>
+      {% endif %}
+    </div>
   </li>
   {% endfor %}
 </ul>
