@@ -200,22 +200,9 @@
     return coche ? coche.value : "tous";
   }
 
-  function etiquettesActives() {
-    if (!casesEtiquettes.length) return null;
-    const cochees = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
-    return cochees.length === casesEtiquettes.length ? null : cochees;
-  }
-
   function avisFiltres() {
     const actifs = filtresActifs();
     let avis = actifs ? tousLesAvis.filter((a) => actifs.includes(a.client_id)) : tousLesAvis.slice();
-    const etiquettesFiltre = etiquettesActives();
-    if (etiquettesFiltre) {
-      avis = avis.filter((a) => {
-        const ens = etiquettesParClient.get(a.client_id);
-        return ens && etiquettesFiltre.some((id) => ens.has(id));
-      });
-    }
     const statut = statutActif();
     if (statut === "sans_reponse") avis = avis.filter((a) => !a.reponse);
     if (statut === "avec_reponse") avis = avis.filter((a) => !!a.reponse);
@@ -241,13 +228,9 @@
 
     listeAvis.innerHTML = avisPage.map(carteAvisHTML).join("");
     texteVide.hidden = avisFiltresListe.length > 0 || chargementEnCours;
-    if (casesClients.length && casesClients.every((c) => !c.checked)) {
-      texteVide.textContent = "Aucune entreprise cochée dans le filtre \"Entreprises\" ci-dessus : cochez-en au moins une pour voir des avis.";
-    } else if (casesEtiquettes.length && casesEtiquettes.every((c) => !c.checked)) {
-      texteVide.textContent = "Aucune étiquette cochée dans le filtre \"Étiquettes\" ci-dessus : cochez-en au moins une pour voir des avis.";
-    } else {
-      texteVide.textContent = "Aucun avis trouvé.";
-    }
+    texteVide.textContent = (casesClients.length && casesClients.every((c) => !c.checked))
+      ? "Aucune entreprise cochée dans le filtre \"Entreprises\" ci-dessus : cochez-en au moins une (ou une étiquette) pour voir des avis."
+      : "Aucun avis trouvé.";
 
     conteneurPagination.hidden = avisFiltresListe.length <= TAILLE_PAGE;
     texteAffichagePagination.textContent = `Page ${pageActuelle} / ${totalPages} (${avisFiltresListe.length} avis)`;
@@ -403,15 +386,42 @@
     afficherAvis();
   }));
 
+  // Les etiquettes ne filtrent pas independamment : cocher une etiquette coche
+  // directement les entreprises correspondantes ci-dessus (et inversement), pour
+  // eviter le piege des deux filtres combines en ET qui peut afficher "0 avis"
+  // meme quand une etiquette est cochee.
+  function synchroniserEntreprisesPourEtiquette(caseEtiquette) {
+    const etiquetteId = Number(caseEtiquette.value);
+    casesClients.forEach((caseClient) => {
+      const idsEtiquettes = etiquettesParClient.get(Number(caseClient.value));
+      if (!idsEtiquettes || !idsEtiquettes.has(etiquetteId)) return;
+      if (caseEtiquette.checked) {
+        caseClient.checked = true;
+        return;
+      }
+      // Ne decoche l'entreprise que si aucune autre etiquette encore cochee
+      // ne la couvre aussi (une entreprise avec 2 etiquettes reste visible
+      // tant qu'au moins une des deux est cochee).
+      const couverteParAutreEtiquette = casesEtiquettes.some((autre) => (
+        autre !== caseEtiquette && autre.checked && idsEtiquettes.has(Number(autre.value))
+      ));
+      if (!couverteParAutreEtiquette) caseClient.checked = false;
+    });
+  }
+
   if (caseToutesEtiquettes) {
     caseToutesEtiquettes.addEventListener("change", () => {
       casesEtiquettes.forEach((c) => { c.checked = caseToutesEtiquettes.checked; });
+      casesEtiquettes.forEach(synchroniserEntreprisesPourEtiquette);
+      if (caseToutes) caseToutes.checked = casesClients.every((x) => x.checked);
       pageActuelle = 1;
       afficherAvis();
     });
   }
   casesEtiquettes.forEach((c) => c.addEventListener("change", () => {
     if (caseToutesEtiquettes) caseToutesEtiquettes.checked = casesEtiquettes.every((x) => x.checked);
+    synchroniserEntreprisesPourEtiquette(c);
+    if (caseToutes) caseToutes.checked = casesClients.every((x) => x.checked);
     pageActuelle = 1;
     afficherAvis();
   }));
