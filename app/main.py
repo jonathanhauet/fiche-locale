@@ -2273,3 +2273,34 @@ async def publier_post_route(post_id: int, request: Request, db: Session = Depen
         return _reponse_post_detail(request, db, post, erreur=f"Erreur lors de la publication : {erreur}", code=500)
 
     return RedirectResponse(f"/clients/{post.client_id}#post-{post_id}", status_code=303)
+
+
+@app.post("/posts/{post_id}/programmer")
+async def programmer_post_route(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Enregistre le formulaire de relecture et programme le post (statut
+    A_PUBLIER) pour la date/heure choisies - aucun appel a Google ici, c'est
+    la tache planifiee qui publiera reellement au moment venu (voir
+    planificateur.verifier_et_publier_posts_programmes). Evite l'etape
+    supplementaire de "valider" a nouveau depuis la liste des posts.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post = db.get(models.Post, post_id)
+    if not post:
+        return HTMLResponse("Post introuvable.", status_code=404)
+
+    formulaire = await request.form()
+    _appliquer_formulaire_post(post, formulaire)
+
+    if not post.date_prevue:
+        return _reponse_post_detail(
+            request, db, post, erreur="Choisissez une date pour programmer ce post.", code=400
+        )
+
+    post.statut = "A_PUBLIER"
+    db.commit()
+
+    return RedirectResponse(f"/clients/{post.client_id}#post-{post_id}", status_code=303)

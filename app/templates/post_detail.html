@@ -84,7 +84,7 @@
     </label>
     <label>
       Date de publication prévue (laisser vide pour publier immédiatement)
-      <input type="date" name="date_prevue" value="{{ post.date_prevue or '' }}">
+      <input type="date" name="date_prevue" id="champ-date-prevue" value="{{ post.date_prevue or '' }}">
     </label>
   </div>
 
@@ -187,9 +187,14 @@
   <div class="actions-avis">
     <button type="submit">Enregistrer les modifications</button>
     {% if post.statut not in ["PUBLIE_LIVE", "SUPPRIME"] %}
-    <button type="submit" formaction="/posts/{{ post.id }}/publier" class="bouton-publier"
-            onclick="return confirm('Publier ce post maintenant sur la fiche Google ? Cette action est immediate et visible publiquement.');">
-      Publier maintenant
+    <button type="submit" id="bouton-publier-programmer" class="bouton-publier"
+            formaction="/posts/{{ post.id }}/{{ 'programmer' if post.date_prevue else 'publier' }}"
+            data-url-publier="/posts/{{ post.id }}/publier"
+            data-url-programmer="/posts/{{ post.id }}/programmer"
+            data-confirm-publier="Publier ce post maintenant sur la fiche Google ? Cette action est immediate et visible publiquement."
+            data-confirm-programmer="Programmer ce post ? Il sera publié automatiquement à la date et l'heure choisies."
+            onclick="return confirm(this.getAttribute('formaction').endsWith('/programmer') ? this.dataset.confirmProgrammer : this.dataset.confirmPublier);">
+      {{ "Programmer" if post.date_prevue else "Publier maintenant" }}
     </button>
     {% endif %}
   </div>
@@ -277,6 +282,24 @@
       conteneurApercu.hidden = true;
     }
   });
+
+  // Des qu'une date est choisie, "Publier maintenant" devient "Programmer" :
+  // le bouton pointe alors vers la route qui enregistre + programme (statut
+  // A_PUBLIER) au lieu de publier tout de suite sur Google.
+  const champDatePrevue = document.getElementById("champ-date-prevue");
+  const boutonPublierProgrammer = document.getElementById("bouton-publier-programmer");
+  if (champDatePrevue && boutonPublierProgrammer) {
+    const actualiserBoutonPublication = () => {
+      const programme = !!champDatePrevue.value;
+      boutonPublierProgrammer.textContent = programme ? "Programmer" : "Publier maintenant";
+      boutonPublierProgrammer.setAttribute(
+        "formaction",
+        programme ? boutonPublierProgrammer.dataset.urlProgrammer : boutonPublierProgrammer.dataset.urlPublier
+      );
+    };
+    champDatePrevue.addEventListener("input", actualiserBoutonPublication);
+    champDatePrevue.addEventListener("change", actualiserBoutonPublication);
+  }
 })();
 </script>
 {% endblock %}
