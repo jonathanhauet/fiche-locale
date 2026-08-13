@@ -17,7 +17,7 @@
 </div>
 {% endif %}
 
-<form class="formulaire" method="post" action="/clients/nouveau">
+<form class="formulaire" method="post" action="/clients/nouveau" enctype="multipart/form-data">
   <label>
     Nom du client
     <input type="text" name="nom" required>
@@ -44,6 +44,17 @@
   <label>
     Contenu du site (texte fourni à l'IA pour générer les posts)
     <textarea name="contenu_site" rows="16"></textarea>
+  </label>
+
+  <label>
+    Base de connaissances (documents pour l'IA)
+    <input type="file" name="fichiers" accept=".pdf,.docx,.txt" multiple>
+  </label>
+  <p class="texte-discret">PDF, Word (.docx) ou texte (.txt), plusieurs fichiers possibles — vient compléter le "Contenu du site" ci-dessus, pas le remplacer. D'autres pourront être ajoutés plus tard depuis la fiche du client.</p>
+
+  <label>
+    Consignes pour les réponses aux avis (IA)
+    <textarea name="consignes_avis" rows="4" placeholder="Ex : tutoyer les clients, ton chaleureux et légèrement humoristique, toujours signer par le prénom..."></textarea>
   </label>
 
   <button type="submit">Créer le client</button>

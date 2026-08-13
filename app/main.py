@@ -760,7 +760,9 @@ def creer_client(
     request: Request,
     nom: str = Form(...),
     contenu_site: str = Form(""),
+    consignes_avis: str = Form(""),
     fiche_google: str = Form(""),
+    fichiers: list[UploadFile] = File(default=[]),
     db: Session = Depends(obtenir_session),
 ):
     redirection = rediriger_si_non_connecte(request)
@@ -773,12 +775,36 @@ def creer_client(
     client = models.Client(
         nom=nom.strip(),
         contenu_site=contenu_site,
+        consignes_avis=consignes_avis,
         account_id=account_id,
         location_id=location_id,
         compte_google_id=int(compte_google_id) if compte_google_id else None,
     )
     db.add(client)
     db.commit()
+
+    # Base de connaissances renseignee des la creation : on cree quand meme le
+    # client si un document echoue a l'extraction, l'erreur est juste affichee
+    # sur sa fiche (comme un ajout de document classique).
+    erreurs_documents = []
+    for fichier in fichiers:
+        if not fichier.filename:
+            continue
+        try:
+            octets = fichier.file.read()
+            texte_extrait = documents.extraire_texte(fichier.filename, octets)
+        except Exception as erreur:
+            erreurs_documents.append(f"{fichier.filename} : {erreur}")
+            continue
+        db.add(models.DocumentConnaissance(
+            client_id=client.id, nom_fichier=fichier.filename, texte_extrait=texte_extrait,
+        ))
+    db.commit()
+
+    if erreurs_documents:
+        client = db.get(models.Client, client.id)
+        return _reponse_detail_client(request, db, client, erreur_document=" ; ".join(erreurs_documents), code=200)
+
     return RedirectResponse(f"/clients/{client.id}", status_code=303)
 
 
