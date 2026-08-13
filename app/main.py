@@ -392,12 +392,23 @@ def liste_avis(request: Request, db: Session = Depends(obtenir_session)):
             .all()
         )
 
-    clients_json = json.dumps([{"id": c.id, "nom": c.nom} for c in clients]).replace("</", "<\\/")
+    clients_json = json.dumps([
+        {"id": c.id, "nom": c.nom, "etiquettes": [e.id for e in c.etiquettes]} for c in clients
+    ]).replace("</", "<\\/")
+
+    etiquettes_disponibles = sorted(
+        {etiquette for c in clients for etiquette in c.etiquettes}, key=lambda e: e.nom
+    )
 
     return templates.TemplateResponse(
         request,
         "avis.html",
-        {"clients": clients, "clients_json": clients_json, "google_connecte": google_connecte},
+        {
+            "clients": clients,
+            "clients_json": clients_json,
+            "etiquettes_disponibles": etiquettes_disponibles,
+            "google_connecte": google_connecte,
+        },
     )
 
 

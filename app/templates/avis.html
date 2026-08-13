@@ -58,6 +58,18 @@
 </div>
 {% endif %}
 
+{% if etiquettes_disponibles %}
+<div class="filtre-entreprises">
+  <span class="filtre-titre">Étiquettes :</span>
+  <label class="filtre-case"><input type="checkbox" id="case-filtre-etiquettes-toutes" checked> Toutes</label>
+  {% for etiquette in etiquettes_disponibles %}
+  <label class="filtre-case">
+    <input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}" checked> {{ etiquette.nom }}
+  </label>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div id="erreurs-avis"></div>
 <ul id="liste-avis" class="liste-avis"></ul>
 <p id="texte-vide-avis" class="texte-vide" hidden>Aucun avis trouvé.</p>
@@ -83,6 +95,9 @@
   const texteVide = document.getElementById("texte-vide-avis");
   const caseToutes = document.getElementById("case-filtre-toutes");
   const casesClients = Array.from(document.querySelectorAll(".case-filtre-client"));
+  const caseToutesEtiquettes = document.getElementById("case-filtre-etiquettes-toutes");
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  const etiquettesParClient = new Map(clients.map((c) => [c.id, new Set(c.etiquettes || [])]));
   const casesStatut = Array.from(document.querySelectorAll('input[name=filtre-statut]'));
   const casesAnciennete = Array.from(document.querySelectorAll('input[name=filtre-anciennete]'));
   const conteneurPagination = document.getElementById("pagination-avis");
@@ -185,9 +200,22 @@
     return coche ? coche.value : "tous";
   }
 
+  function etiquettesActives() {
+    if (!casesEtiquettes.length) return null;
+    const cochees = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    return cochees.length === casesEtiquettes.length ? null : cochees;
+  }
+
   function avisFiltres() {
     const actifs = filtresActifs();
     let avis = actifs ? tousLesAvis.filter((a) => actifs.includes(a.client_id)) : tousLesAvis.slice();
+    const etiquettesFiltre = etiquettesActives();
+    if (etiquettesFiltre) {
+      avis = avis.filter((a) => {
+        const ens = etiquettesParClient.get(a.client_id);
+        return ens && etiquettesFiltre.some((id) => ens.has(id));
+      });
+    }
     const statut = statutActif();
     if (statut === "sans_reponse") avis = avis.filter((a) => !a.reponse);
     if (statut === "avec_reponse") avis = avis.filter((a) => !!a.reponse);
@@ -364,6 +392,19 @@
   }
   casesClients.forEach((c) => c.addEventListener("change", () => {
     if (caseToutes) caseToutes.checked = casesClients.every((x) => x.checked);
+    pageActuelle = 1;
+    afficherAvis();
+  }));
+
+  if (caseToutesEtiquettes) {
+    caseToutesEtiquettes.addEventListener("change", () => {
+      casesEtiquettes.forEach((c) => { c.checked = caseToutesEtiquettes.checked; });
+      pageActuelle = 1;
+      afficherAvis();
+    });
+  }
+  casesEtiquettes.forEach((c) => c.addEventListener("change", () => {
+    if (caseToutesEtiquettes) caseToutesEtiquettes.checked = casesEtiquettes.every((x) => x.checked);
     pageActuelle = 1;
     afficherAvis();
   }));
