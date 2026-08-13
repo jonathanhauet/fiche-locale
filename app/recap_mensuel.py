@@ -145,14 +145,16 @@ def construire_email(
         <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📈 Ta visibilité sur Google</h2>
         <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_visi)}</table>""")
 
-    # --- Posts publies ---
+    # --- Posts publies : avec leur date, pour montrer tout le travail fait
+    # dans le mois (pas de plafond - un mois normal en compte peu). ---
     if posts_publies:
         items = "".join(
-            f'<li style="margin-bottom:4px;color:{COULEUR_TEXTE};font-size:14px;">{p["titre"]}</li>'
-            for p in posts_publies[:5]
+            f'<li style="margin-bottom:6px;color:{COULEUR_TEXTE};font-size:14px;">'
+            f'<span style="color:{COULEUR_DISCRET};font-size:12px;">{p["date"]}</span> — {p["titre"]}</li>'
+            for p in posts_publies
         )
         sections.append(f"""
-        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📝 Publié sur ta fiche</h2>
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📝 Publié sur ta fiche ({len(posts_publies)})</h2>
         <ul style="margin:8px 0;padding-left:20px;">{items}</ul>""")
 
     contenu_sections = "".join(sections) or (
