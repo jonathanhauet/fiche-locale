@@ -30,6 +30,15 @@ def _date_n1(jour: date) -> date:
         return jour.replace(year=jour.year - 1, day=28)
 
 
+def _tronquer_proprement(texte: str, longueur: int = 100) -> str:
+    """Tronque au dernier espace avant `longueur` (pas au milieu d'un mot) et ajoute une ellipse."""
+    texte = texte.strip()
+    if len(texte) <= longueur:
+        return texte
+    tronque = texte[:longueur].rsplit(" ", 1)[0]
+    return (tronque or texte[:longueur]) + "…"
+
+
 def _parser_date_iso(chaine: str):
     if not chaine:
         return None
@@ -97,7 +106,7 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
         if not jour or not (debut <= jour <= fin):
             continue
         posts_publies_tries.append((jour, {
-            "titre": post_google.get("texte", "")[:80] or "(post sans titre)",
+            "titre": _tronquer_proprement(post_google.get("texte", "")) or "(post sans titre)",
             "date": jour.strftime("%d/%m/%Y"),
             "source": "google",
         }))

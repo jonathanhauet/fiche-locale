@@ -173,9 +173,11 @@ def avis_positifs_periode(
     Les avis positifs (note >= note_minimum) avec un commentaire, dans la
     periode donnee, les plus recents en tete - utilise pour le recap mensuel
     (citation directe s'il n'y en a qu'un, resume IA s'il y en a plusieurs).
-    Une seule page suffit (avis recents en tete), pas besoin de toutes_les_pages.
+    toutes_les_pages=True est necessaire : sur une fiche tres active, les
+    quelques avis recus AVEC commentaire peuvent etre noyes au-dela de la
+    premiere page parmi les avis recus SANS commentaire (etoiles seules).
     """
-    avis = _lister_avis_dune_fiche(identifiants, account_id, location_id)
+    avis = _lister_avis_dune_fiche(identifiants, account_id, location_id, toutes_les_pages=True)
 
     candidats = []
     for a in avis:
