@@ -44,7 +44,7 @@ COULEUR_FOND_CARTE = "#f9fafb"
 
 
 def construire_sujet(client: models.Client, mois: int, annee: int) -> str:
-    return f"Le récap de {LIBELLES_MOIS[mois]} pour {client.nom}"
+    return f"Le récap de {LIBELLES_MOIS[mois]} pour ta fiche Google"
 
 
 def _total_et_evolution(statistiques: dict, comparatif_visibilite, cles: list[str]) -> tuple[int, float]:
@@ -81,6 +81,7 @@ def construire_email(
     comparatif_visibilite = donnees.get("comparatif_visibilite")
     posts_publies = donnees.get("posts_publies") or []
     nom_mois = LIBELLES_MOIS[mois]
+    en_mois = f"en {nom_mois}"
 
     sections = []
 
@@ -90,7 +91,7 @@ def construire_email(
     if nombre_avis:
         evolution_avis = donnees.get("evolution_avis")
         lignes_avis.append(_ligne_stat(
-            "Nouveaux avis ce mois-ci", nombre_avis,
+            f"Nouveaux avis {en_mois}", nombre_avis,
             evolution_avis if evolution_avis is not None and evolution_avis > 0 else None,
         ))
     if resume_avis.get("note_moyenne_globale"):
@@ -159,7 +160,7 @@ def construire_email(
 
     contenu_sections = "".join(sections) or (
         f'<p style="color:{COULEUR_DISCRET};font-size:14px;">'
-        f"Pas de nouveauté marquante ce mois-ci — on continue le travail de fond !</p>"
+        f"Pas de nouveauté marquante {en_mois} — on continue le travail de fond !</p>"
     )
 
     prenom_ou_nom = client.prenom.strip() if client.prenom and client.prenom.strip() else client.nom
@@ -188,7 +189,7 @@ def construire_email(
           <tr>
             <td style="padding:28px 32px;">
               <p style="color:{COULEUR_TEXTE};font-size:15px;">Bonjour {prenom_ou_nom},</p>
-              <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qui s'est passé sur ta fiche Google ce mois-ci :</p>
+              <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qui s'est passé sur ta fiche Google {en_mois} :</p>
               {contenu_sections}
             </td>
           </tr>
