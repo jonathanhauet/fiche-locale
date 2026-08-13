@@ -206,12 +206,17 @@ planificateur.add_job(
     minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
     id="publication_photos_programmee",
 )
-# Le recap mensuel n'a pas besoin d'un rythme aussi rapide : une verification
-# quotidienne suffit (job idempotent via EnvoiRecap, cf. planificateur.py).
+# Verification quotidienne a heure fixe (plutot qu'un intervalle glissant
+# depuis le dernier redemarrage du serveur) : le recap du mois precedent part
+# donc toujours autour de la meme heure peu apres le 1er du mois, de facon
+# previsible. Le job reste idempotent (EnvoiRecap) et tourne chaque jour,
+# donc un echec un jour donne (token expire, etc.) est retente le lendemain
+# sans intervention manuelle.
 planificateur.add_job(
     envoyer_recaps_mensuels,
-    "interval",
-    hours=24,
+    "cron",
+    hour=8,
+    timezone="Europe/Brussels",
     id="recap_mensuel",
 )
 planificateur.start()
