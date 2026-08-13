@@ -859,6 +859,9 @@ def _reponse_detail_client(
         .order_by(models.PhotoFiche.cree_le.desc())
         .all()
     )
+    toutes_etiquettes_json = json.dumps(
+        [e.nom for e in db.query(models.Etiquette).order_by(models.Etiquette.nom).all()]
+    ).replace("</", "<\\/")
     return templates.TemplateResponse(
         request,
         "client_detail.html",
@@ -874,6 +877,7 @@ def _reponse_detail_client(
             ],
             "erreur_photo": erreur_photo,
             "erreur_document": erreur_document,
+            "toutes_etiquettes_json": toutes_etiquettes_json,
             **_donnees_calendrier(request, db, client),
         },
         status_code=code,
@@ -1865,9 +1869,9 @@ def stats_client_pdf(client_id: int, request: Request, db: Session = Depends(obt
     )
 
 
-def _obtenir_ou_creer_etiquettes(db: Session, texte_etiquettes: str) -> list:
-    """Convertit 'a, b, c' en liste d'objets Etiquette, en creant celles qui n'existent pas encore."""
-    noms = {n.strip() for n in texte_etiquettes.split(",") if n.strip()}
+def _obtenir_ou_creer_etiquettes(db: Session, noms_etiquettes) -> list:
+    """Convertit une liste de noms en liste d'objets Etiquette, en creant celles qui n'existent pas encore."""
+    noms = {n.strip() for n in noms_etiquettes if n.strip()}
     etiquettes = []
     for nom in noms:
         etiquette = db.query(models.Etiquette).filter_by(nom=nom).first()
@@ -1888,7 +1892,7 @@ def modifier_client(
     account_id: str = Form(""),
     location_id: str = Form(""),
     consignes_avis: str = Form(""),
-    etiquettes: str = Form(""),
+    etiquettes: list[str] = Form(default=[]),
     db: Session = Depends(obtenir_session),
 ):
     redirection = rediriger_si_non_connecte(request)
