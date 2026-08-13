@@ -748,6 +748,16 @@ def nouveau_client_formulaire(request: Request, db: Session = Depends(obtenir_se
         comptes_avec_identifiants = [c for c in comptes_avec_identifiants if c[2] is not None]
         fiches = google_business.lister_fiches_multi_comptes(comptes_avec_identifiants)
 
+        # On ne repropose pas les fiches deja associees a un client existant.
+        fiches_deja_liees = {
+            (c.compte_google_id, c.account_id, c.location_id)
+            for c in db.query(models.Client).filter(models.Client.location_id != "").all()
+        }
+        fiches = [
+            f for f in fiches
+            if (f["compte_google_id"], f["account_id"], f["location_id"]) not in fiches_deja_liees
+        ]
+
     return templates.TemplateResponse(
         request,
         "client_nouveau.html",
