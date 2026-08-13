@@ -2081,18 +2081,13 @@ def detail_post(post_id: int, request: Request, db: Session = Depends(obtenir_se
     return _reponse_post_detail(request, db, post)
 
 
-@app.post("/posts/{post_id}/modifier")
-async def modifier_post(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return redirection
-
-    post = db.get(models.Post, post_id)
-    if not post:
-        return HTMLResponse("Post introuvable.", status_code=404)
-
-    formulaire = await request.form()
-
+def _appliquer_formulaire_post(post: models.Post, formulaire) -> None:
+    """
+    Applique au post les champs du formulaire de relecture (post_detail.html).
+    Partage entre modifier_post et publier_post_route pour que "Publier
+    maintenant" tienne compte des modifications non explicitement enregistrees
+    (ex. une photo choisie sur la fiche) plutot que de les perdre.
+    """
     post.titre = formulaire.get("titre", "").strip()
     post.texte = formulaire.get("texte", "")
     post.statut = formulaire.get("statut", post.statut)
@@ -2117,6 +2112,19 @@ async def modifier_post(post_id: int, request: Request, db: Session = Depends(ob
     post.offre_url = formulaire.get("offre_url", "").strip()
     post.offre_conditions = formulaire.get("offre_conditions", "")
 
+
+@app.post("/posts/{post_id}/modifier")
+async def modifier_post(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post = db.get(models.Post, post_id)
+    if not post:
+        return HTMLResponse("Post introuvable.", status_code=404)
+
+    formulaire = await request.form()
+    _appliquer_formulaire_post(post, formulaire)
     db.commit()
 
     return RedirectResponse(f"/posts/{post_id}", status_code=303)
@@ -2209,7 +2217,7 @@ def televerser_image_post(
 
 
 @app.post("/posts/{post_id}/publier")
-def publier_post_route(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+async def publier_post_route(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -2217,6 +2225,14 @@ def publier_post_route(post_id: int, request: Request, db: Session = Depends(obt
     post = db.get(models.Post, post_id)
     if not post:
         return HTMLResponse("Post introuvable.", status_code=404)
+
+    # Le bouton "Publier maintenant" fait partie du meme formulaire que
+    # "Enregistrer les modifications" (voir post_detail.html) : on applique
+    # d'abord les champs du formulaire (ex. une photo choisie sur la fiche
+    # mais pas encore enregistree) pour ne jamais publier un etat perime.
+    formulaire = await request.form()
+    _appliquer_formulaire_post(post, formulaire)
+    db.commit()
 
     if not post.client.account_id or not post.client.location_id:
         return _reponse_post_detail(request, db, post, erreur="Ce client n'a pas de fiche Google associee.", code=400)
@@ -2230,4 +2246,4 @@ def publier_post_route(post_id: int, request: Request, db: Session = Depends(obt
     except Exception as erreur:
         return _reponse_post_detail(request, db, post, erreur=f"Erreur lors de la publication : {erreur}", code=500)
 
-    return RedirectResponse(f"/posts/{post_id}", status_code=303)
+    return RedirectResponse(f"/clients/{post.client_id}#post-{post_id}", status_code=303)

@@ -186,15 +186,14 @@
 
   <div class="actions-avis">
     <button type="submit">Enregistrer les modifications</button>
+    {% if post.statut not in ["PUBLIE_LIVE", "SUPPRIME"] %}
+    <button type="submit" formaction="/posts/{{ post.id }}/publier" class="bouton-publier"
+            onclick="return confirm('Publier ce post maintenant sur la fiche Google ? Cette action est immediate et visible publiquement.');">
+      Publier maintenant
+    </button>
+    {% endif %}
   </div>
 </form>
-
-{% if post.statut not in ["PUBLIE_LIVE", "SUPPRIME"] %}
-<form method="post" action="/posts/{{ post.id }}/publier"
-      onsubmit="return confirm('Publier ce post maintenant sur la fiche Google ? Cette action est immediate et visible publiquement.');">
-  <button type="submit" class="bouton-publier">Publier maintenant</button>
-</form>
-{% endif %}
 
 {% if post.id_post_google %}
 <p class="texte-discret">Dernier identifiant Google : {{ post.id_post_google }}</p>
