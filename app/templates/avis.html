@@ -31,15 +31,15 @@
 
 <div class="filtre-entreprises">
   <span class="filtre-titre">Statut :</span>
-  <label class="filtre-case"><input type="radio" name="filtre-statut" value="tous" checked> Tous</label>
-  <label class="filtre-case"><input type="radio" name="filtre-statut" value="sans_reponse"> Sans réponse</label>
+  <label class="filtre-case"><input type="radio" name="filtre-statut" value="tous"> Tous</label>
+  <label class="filtre-case"><input type="radio" name="filtre-statut" value="sans_reponse" checked> Sans réponse</label>
   <label class="filtre-case"><input type="radio" name="filtre-statut" value="avec_reponse"> Avec réponse</label>
 </div>
 
 <div class="filtre-entreprises">
   <span class="filtre-titre">Ancienneté :</span>
-  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="tous" checked> Toutes dates</label>
-  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="7"> Moins d'1 semaine</label>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="tous"> Toutes dates</label>
+  <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="7" checked> Moins d'1 semaine</label>
   <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="30"> Moins d'1 mois</label>
   <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="90"> Moins de 3 mois</label>
   <label class="filtre-case"><input type="radio" name="filtre-anciennete" value="180"> Moins de 6 mois</label>
@@ -111,6 +111,10 @@
   let chargementEnCours = false;
   let pageActuelle = 1;
   const suggestionsEnVol = new Set();
+  // Avis deja recuperes en memoire, par client - evite de rappeler l'API pour
+  // un client deja charge quand on coche/decoche des filtres (voir
+  // assurerChargementClientsSelectionnes ci-dessous).
+  const idsClientsCharges = new Set();
 
   function echapper(texte) {
     const div = document.createElement("div");
@@ -324,42 +328,54 @@
     afficherAvis();
   }
 
-  async function chargerAvis() {
+  // Ne charge que les clients actuellement coches et pas deja en memoire -
+  // arriver sur la page ou cocher un filtre ne declenche donc plus jamais
+  // d'appel a l'API pour des entreprises non selectionnees.
+  async function assurerChargementClientsSelectionnes() {
     if (chargementEnCours) return;
+    const actifs = filtresActifs();
+    const idsCibles = (actifs === null ? clients.map((c) => c.id) : actifs)
+      .filter((id) => !idsClientsCharges.has(id));
+
+    if (!idsCibles.length) {
+      pageActuelle = 1;
+      afficherAvis();
+      return;
+    }
+
     chargementEnCours = true;
-    pageActuelle = 1;
     boutonRafraichir.disabled = true;
-    tousLesAvis = [];
     conteneurErreurs.innerHTML = "";
-    listeAvis.innerHTML = "";
-    texteVide.hidden = true;
     conteneurProgression.hidden = false;
     barreProgression.style.width = "0%";
-    texteProgression.textContent = `0 / ${clients.length} entreprises`;
+    texteProgression.textContent = `0 / ${idsCibles.length} entreprises`;
 
+    const clientsParId = new Map(clients.map((c) => [c.id, c]));
     let termines = 0;
     const erreurs = [];
     const CONCURRENCE = 3;
     let curseur = 0;
 
     async function traiterSuivant() {
-      while (curseur < clients.length) {
-        const client = clients[curseur++];
+      while (curseur < idsCibles.length) {
+        const id = idsCibles[curseur++];
+        const client = clientsParId.get(id);
         try {
-          const reponse = await fetch(`/avis/donnees/${client.id}`);
+          const reponse = await fetch(`/avis/donnees/${id}`);
           const donnees = await reponse.json();
           if (donnees.erreur) erreurs.push(donnees.erreur);
           if (donnees.avis) tousLesAvis.push(...donnees.avis);
+          idsClientsCharges.add(id);
         } catch (e) {
-          erreurs.push(`${client.nom} : erreur reseau.`);
+          erreurs.push(`${client ? client.nom : id} : erreur reseau.`);
         }
         termines++;
-        barreProgression.style.width = `${Math.round((termines / clients.length) * 100)}%`;
-        texteProgression.textContent = `${termines} / ${clients.length} entreprises`;
+        barreProgression.style.width = `${Math.round((termines / idsCibles.length) * 100)}%`;
+        texteProgression.textContent = `${termines} / ${idsCibles.length} entreprises`;
       }
     }
 
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCE, clients.length) }, traiterSuivant));
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCE, idsCibles.length) }, traiterSuivant));
 
     conteneurProgression.hidden = true;
     if (erreurs.length) {
@@ -367,23 +383,32 @@
     }
     chargementEnCours = false;
     boutonRafraichir.disabled = false;
+    pageActuelle = 1;
     afficherAvis();
   }
 
-  boutonRafraichir.addEventListener("click", chargerAvis);
+  // "Rafraichir" force un nouveau chargement des entreprises actuellement
+  // cochees (purge leur cache), plutot que de tout recharger.
+  async function rafraichirAvis() {
+    const actifs = filtresActifs();
+    const idsCibles = actifs === null ? clients.map((c) => c.id) : actifs;
+    tousLesAvis = tousLesAvis.filter((a) => !idsCibles.includes(a.client_id));
+    idsCibles.forEach((id) => idsClientsCharges.delete(id));
+    await assurerChargementClientsSelectionnes();
+  }
+
+  boutonRafraichir.addEventListener("click", rafraichirAvis);
   boutonGenererSuggestions.addEventListener("click", genererSuggestionsEnMasse);
 
   if (caseToutes) {
     caseToutes.addEventListener("change", () => {
       casesClients.forEach((c) => { c.checked = caseToutes.checked; });
-      pageActuelle = 1;
-      afficherAvis();
+      assurerChargementClientsSelectionnes();
     });
   }
   casesClients.forEach((c) => c.addEventListener("change", () => {
     if (caseToutes) caseToutes.checked = casesClients.every((x) => x.checked);
-    pageActuelle = 1;
-    afficherAvis();
+    assurerChargementClientsSelectionnes();
   }));
 
   // Les etiquettes ne filtrent pas independamment : cocher une etiquette coche
@@ -414,16 +439,14 @@
       casesEtiquettes.forEach((c) => { c.checked = caseToutesEtiquettes.checked; });
       casesEtiquettes.forEach(synchroniserEntreprisesPourEtiquette);
       if (caseToutes) caseToutes.checked = casesClients.every((x) => x.checked);
-      pageActuelle = 1;
-      afficherAvis();
+      assurerChargementClientsSelectionnes();
     });
   }
   casesEtiquettes.forEach((c) => c.addEventListener("change", () => {
     if (caseToutesEtiquettes) caseToutesEtiquettes.checked = casesEtiquettes.every((x) => x.checked);
     synchroniserEntreprisesPourEtiquette(c);
     if (caseToutes) caseToutes.checked = casesClients.every((x) => x.checked);
-    pageActuelle = 1;
-    afficherAvis();
+    assurerChargementClientsSelectionnes();
   }));
 
   casesStatut.forEach((c) => c.addEventListener("change", () => {
@@ -519,7 +542,11 @@
     }
   });
 
-  chargerAvis();
+  // Toutes les entreprises sont cochees par defaut (voir template) : ceci
+  // charge donc tout au premier chargement, mais seulement une fois grace au
+  // cache - cocher/decocher ensuite ne re-appelle l'API que pour ce qui n'est
+  // pas deja en memoire.
+  assurerChargementClientsSelectionnes();
 })();
 </script>
 {% endif %}
