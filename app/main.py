@@ -1884,6 +1884,25 @@ def basculer_recap_actif(client_id: int, request: Request, db: Session = Depends
     return RedirectResponse("/recaps", status_code=303)
 
 
+# --- Acces rapide aux positions ----------------------------------------------
+
+
+@app.get("/positions", response_class=HTMLResponse)
+def positions_formulaire(request: Request, db: Session = Depends(obtenir_session)):
+    """Raccourci menu vers l'onglet Positions d'une fiche, sans devoir d'abord ouvrir sa page client."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    clients = (
+        db.query(models.Client)
+        .filter(models.Client.account_id != "", models.Client.location_id != "")
+        .order_by(models.Client.nom)
+        .all()
+    )
+    return templates.TemplateResponse(request, "positions_index.html", {"clients": clients})
+
+
 # --- Bilan ponctuel (PDF multi-fiches) ---------------------------------------
 
 

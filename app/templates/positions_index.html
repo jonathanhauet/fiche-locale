@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% set page_actuelle = "positions" %}
+{% block titre %}Positions — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Positions</h1>
+</div>
+
+<p class="texte-discret">Accès rapide à la carte de positions d'une fiche, sans passer par sa page client.</p>
+
+{% if clients %}
+<ul class="liste-clients">
+  {% for client in clients %}
+  <li>
+    <a href="/clients/{{ client.id }}/positions">
+      <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
+      <span>{{ client.nom }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun client avec une fiche Google associée pour l'instant.</p>
+{% endif %}
+{% endblock %}
