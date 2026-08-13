@@ -895,6 +895,7 @@ def _reponse_detail_client(
         {
             "client": client,
             "posts": posts,
+            "posts_en_ligne": _posts_en_ligne_pour_client(db, client),
             "erreur_generation": erreur_generation,
             "photos": _photos_pour_client(db, client),
             "photos_en_preparation": photos_en_preparation,
@@ -2155,6 +2156,24 @@ def _photos_pour_client(db: Session, client: models.Client):
         if identifiants:
             return google_business.lister_photos(identifiants, client.account_id, client.location_id)
     return []
+
+
+def _posts_en_ligne_pour_client(db: Session, client: models.Client, limite: int = 5) -> list:
+    """
+    Les derniers posts reellement presents sur la fiche Google (lecture directe,
+    pas seulement ceux publies via cette plateforme - voir google_business.lister_posts).
+    """
+    if not client.account_id or not client.location_id:
+        return []
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return []
+    try:
+        posts = google_business.lister_posts(identifiants, client.account_id, client.location_id)
+    except Exception:
+        return []
+    posts.sort(key=lambda p: p.get("date_creation_brute", ""), reverse=True)
+    return posts[:limite]
 
 
 def _photos_pour_post(db: Session, post: models.Post):

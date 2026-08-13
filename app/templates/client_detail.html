@@ -322,6 +322,29 @@
   </div>
 </details>
 
+<div class="barre-titre">
+  <h2>Déjà sur la fiche Google</h2>
+  <a class="bouton-secondaire" href="/clients/{{ client.id }}/historique">Voir tout l'historique</a>
+</div>
+<p class="texte-discret">Les {{ posts_en_ligne|length }} derniers posts lus en direct sur la fiche (y compris ceux publiés autrement que via cette plateforme).</p>
+{% if posts_en_ligne %}
+<ul class="liste-posts">
+  {% for post in posts_en_ligne %}
+  <li>
+    {% if post.url_recherche %}<a class="lien-post" href="{{ post.url_recherche }}" target="_blank" rel="noopener">{% else %}<div class="lien-post">{% endif %}
+      <div class="ligne-post-titre">
+        <strong>{{ post.date_creation }}</strong>
+        <span class="etiquette-statut etiquette-{{ post.etat|lower }}">{{ post.etat }}</span>
+      </div>
+      <p class="apercu-texte">{{ post.texte[:180] }}{% if post.texte|length > 180 %}…{% endif %}</p>
+    {% if post.url_recherche %}</a>{% else %}</div>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun post actuellement visible sur cette fiche.</p>
+{% endif %}
+
 <h2>Posts ({{ posts|length }})</h2>
 {% if posts %}
 <ul class="liste-posts">
