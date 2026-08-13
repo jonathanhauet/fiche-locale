@@ -85,6 +85,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN email TEXT DEFAULT ''"))
         if "prenom" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN prenom TEXT DEFAULT ''"))
+        if "recap_actif" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN recap_actif BOOLEAN DEFAULT TRUE"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -1832,6 +1834,20 @@ def envoyer_recap_manuel(client_id: int, request: Request, db: Session = Depends
 
     mois, annee = rapport_donnees.mois_precedent(date.today())
     rapport_donnees.envoyer_recap_client(db, client, mois, annee)
+    return RedirectResponse("/recaps", status_code=303)
+
+
+@app.post("/clients/{client_id}/recap/basculer")
+def basculer_recap_actif(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Active/desactive l'envoi automatique du recap mensuel pour ce client, sans toucher a son email."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if client:
+        client.recap_actif = not client.recap_actif
+        db.commit()
     return RedirectResponse("/recaps", status_code=303)
 
 

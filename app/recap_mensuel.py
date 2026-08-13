@@ -100,7 +100,7 @@ def construire_email(
         ))
     if lignes_avis:
         sections.append(f"""
-        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">⭐ Vos avis</h2>
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">⭐ Tes avis</h2>
         <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_avis)}</table>""")
 
     # --- Avis positifs : citation directe s'il n'y en a qu'un, resume IA s'il
@@ -132,7 +132,7 @@ def construire_email(
     lignes_visi = []
     total_vues, evolution_vues = _total_et_evolution(statistiques, comparatif_visibilite, CLES_VUES)
     if total_vues:
-        lignes_visi.append(_ligne_stat("Vues de votre fiche sur Google", total_vues, evolution_vues))
+        lignes_visi.append(_ligne_stat("Vues de ta fiche sur Google", total_vues, evolution_vues))
     for libelle in ("Clics sur \"Appeler\"", "Clics vers le site web"):
         valeur = statistiques.get(libelle)
         if valeur:
@@ -142,7 +142,7 @@ def construire_email(
             lignes_visi.append(_ligne_stat(libelle, valeur, evolution if evolution and evolution > 0 else None))
     if lignes_visi:
         sections.append(f"""
-        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📈 Votre visibilité sur Google</h2>
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📈 Ta visibilité sur Google</h2>
         <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_visi)}</table>""")
 
     # --- Posts publies ---
@@ -152,7 +152,7 @@ def construire_email(
             for p in posts_publies[:5]
         )
         sections.append(f"""
-        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📝 Publié sur votre fiche</h2>
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📝 Publié sur ta fiche</h2>
         <ul style="margin:8px 0;padding-left:20px;">{items}</ul>""")
 
     contenu_sections = "".join(sections) or (
@@ -162,10 +162,10 @@ def construire_email(
 
     prenom_ou_nom = client.prenom.strip() if client.prenom and client.prenom.strip() else client.nom
 
-    pied_contact = "Une question sur votre fiche ? Répondez simplement à cet email"
+    pied_contact = "Une question sur ta fiche ? Réponds-moi simplement à cet email"
     if WHATSAPP_NUMERO:
         pied_contact += (
-            f' ou écrivez-moi directement sur <a href="https://wa.me/{WHATSAPP_NUMERO}" '
+            f' ou écris-moi directement sur <a href="https://wa.me/{WHATSAPP_NUMERO}" '
             f'style="color:{COULEUR_ACCENT};">WhatsApp</a>'
         )
     pied_contact += "."
@@ -186,7 +186,7 @@ def construire_email(
           <tr>
             <td style="padding:28px 32px;">
               <p style="color:{COULEUR_TEXTE};font-size:15px;">Bonjour {prenom_ou_nom},</p>
-              <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qu'il s'est passé sur votre fiche Google ce mois-ci :</p>
+              <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qui s'est passé sur ta fiche Google ce mois-ci :</p>
               {contenu_sections}
             </td>
           </tr>

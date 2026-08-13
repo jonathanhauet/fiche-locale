@@ -27,6 +27,7 @@
         <th>Client</th>
         <th>E-mail</th>
         <th>Dernier récap</th>
+        <th>Envoi automatique</th>
         <th></th>
       </tr>
     </thead>
@@ -48,6 +49,15 @@
           {% else %}
           <span class="texte-discret">jamais envoyé</span>
           {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/clients/{{ ligne.client.id }}/recap/basculer">
+            {% if ligne.client.recap_actif %}
+            <button type="submit" class="bouton-secondaire">✅ Activé — désactiver</button>
+            {% else %}
+            <button type="submit" class="bouton-secondaire">⏸️ Désactivé — activer</button>
+            {% endif %}
+          </form>
         </td>
         <td>
           <div class="actions-avis">

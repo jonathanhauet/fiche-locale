@@ -41,6 +41,9 @@ class Client(Base):
     # d'entreprise), utilises pour l'envoi du recap mensuel (voir recap_mensuel.py).
     email = Column(String, default="")
     prenom = Column(String, default="")
+    # Permet de desactiver l'envoi automatique du recap mensuel pour ce client
+    # sans effacer son email (voir page /recaps).
+    recap_actif = Column(Boolean, default=True)
     # Coordonnees de la fiche, mises en cache depuis Google (voir google_location.py)
     # pour centrer la grille de la carte de positions.
     latitude = Column(Float, nullable=True)

@@ -253,9 +253,10 @@ def resumer_avis_positifs(avis: list[dict]) -> str:
         "Redige un resume chaleureux en 1 a 2 phrases, destine a etre envoye PAR l'agence qui gere la "
         "fiche Google A l'entreprise elle-meme (pas au client final), pour lui faire plaisir en lui "
         "montrant ce que ses propres clients apprecient. Mets en avant les points communs qui reviennent "
-        "(ex. reactivite, qualite du travail, accueil...). Ne cite pas les auteurs nommement. Reste "
-        "naturel, evite les formules toutes faites et les superlatifs excessifs. Reponds uniquement avec "
-        "le texte du resume, sans guillemets ni commentaire autour."
+        "(ex. reactivite, qualite du travail, accueil...). Ne cite pas les auteurs nommement. Tutoie "
+        "l'entreprise (le reste de l'email la tutoie). Reste naturel, evite les formules toutes faites et "
+        "les superlatifs excessifs. Reponds uniquement avec le texte du resume, sans guillemets ni "
+        "commentaire autour."
     )
 
     client = Anthropic(api_key=CLE_API)

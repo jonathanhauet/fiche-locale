@@ -120,6 +120,7 @@ def envoyer_recaps_mensuels():
             db.query(models.Client)
             .filter(models.Client.email != "")
             .filter(models.Client.account_id != "", models.Client.location_id != "")
+            .filter(models.Client.recap_actif)
             .all()
         )
 
