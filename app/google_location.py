@@ -7,7 +7,7 @@ deja presentes sur la fiche (voir google_business.lister_photos).
 
 import requests
 
-CHAMPS_LECTURE = "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,profile,latlng,categories"
+CHAMPS_LECTURE = "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,profile,latlng,categories,metadata.mapsUri"
 
 JOURS_SEMAINE = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
 LIBELLES_JOUR = {

@@ -74,12 +74,14 @@ def _ligne_stat(libelle: str, valeur, evolution=None) -> str:
 
 def construire_email(
     client: models.Client, donnees: dict, mois: int, annee: int,
-    avis_positifs: list[dict], resume_avis_texte: str = None,
+    avis_positifs: list[dict], resume_avis_texte: str = None, lien_fiche_google: str = "",
 ) -> str:
     statistiques = donnees.get("statistiques") or {}
     resume_avis = donnees.get("resume_avis") or {}
     comparatif_visibilite = donnees.get("comparatif_visibilite")
     posts_publies = donnees.get("posts_publies") or []
+    mots_cles = donnees.get("mots_cles") or []
+    photos_publiees = donnees.get("photos_publiees") or 0
     nom_mois = LIBELLES_MOIS[mois]
     en_mois = f"en {nom_mois}"
 
@@ -134,7 +136,7 @@ def construire_email(
     total_vues, evolution_vues = _total_et_evolution(statistiques, comparatif_visibilite, CLES_VUES)
     if total_vues:
         lignes_visi.append(_ligne_stat("Vues de ta fiche sur Google", total_vues, evolution_vues))
-    for libelle in ("Clics sur \"Appeler\"", "Clics vers le site web"):
+    for libelle in ("Clics sur \"Appeler\"", "Clics vers le site web", "Demandes d'itinéraire", "Messages reçus"):
         valeur = statistiques.get(libelle)
         if valeur:
             evolution = None
@@ -158,12 +160,36 @@ def construire_email(
         <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📝 Publié sur ta fiche ({len(posts_publies)})</h2>
         <ul style="margin:8px 0;padding-left:20px;">{items}</ul>""")
 
+    # --- Photos ajoutees : compte seulement, pas de plafond a montrer. ---
+    if photos_publiees:
+        sections.append(f"""
+        <p style="color:{COULEUR_TEXTE};font-size:14px;">📷 <strong>{photos_publiees}</strong> photo(s) ajoutée(s) à ta fiche {en_mois}.</p>""")
+
+    # --- Mots-cles de recherche : preuve concrete du travail SEO. ---
+    if mots_cles:
+        items = "".join(
+            f'<li style="margin-bottom:4px;color:{COULEUR_TEXTE};font-size:14px;">'
+            f'{"moins de " if m["est_seuil"] else ""}{m["impressions"]} recherche(s) — <strong>{m["mot_cle"]}</strong></li>'
+            for m in mots_cles[:5]
+        )
+        sections.append(f"""
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">🔎 Ce que tes clients ont tapé sur Google</h2>
+        <ul style="margin:8px 0;padding-left:20px;">{items}</ul>""")
+
     contenu_sections = "".join(sections) or (
         f'<p style="color:{COULEUR_DISCRET};font-size:14px;">'
         f"Pas de nouveauté marquante {en_mois} — on continue le travail de fond !</p>"
     )
 
     prenom_ou_nom = client.prenom.strip() if client.prenom and client.prenom.strip() else client.nom
+
+    bouton_fiche = (
+        f'<p style="margin:24px 0 0;">'
+        f'<a href="{lien_fiche_google}" style="display:inline-block;background:{COULEUR_ACCENT};color:#ffffff;'
+        f'padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600;">'
+        f"Voir ma fiche sur Google →</a></p>"
+        if lien_fiche_google else ""
+    )
 
     pied_contact = "Une question sur ta fiche ? Réponds-moi simplement à cet email"
     if WHATSAPP_NUMERO:
@@ -191,6 +217,7 @@ def construire_email(
               <p style="color:{COULEUR_TEXTE};font-size:15px;">Bonjour {prenom_ou_nom},</p>
               <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qui s'est passé sur ta fiche Google {en_mois} :</p>
               {contenu_sections}
+              {bouton_fiche}
             </td>
           </tr>
           <tr>

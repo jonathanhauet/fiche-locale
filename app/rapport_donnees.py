@@ -14,6 +14,7 @@ from . import (
     brevo_email,
     claude_generation,
     google_business,
+    google_location,
     google_oauth,
     google_performance,
     google_reviews,
@@ -53,6 +54,7 @@ def donnees_rapport_vides() -> dict:
         "statistiques": {}, "resume_avis": {}, "posts_publies": [],
         "mots_cles": [], "erreur_mots_cles": None,
         "comparatif_visibilite": None, "evolution_avis": None,
+        "photos_publiees": 0,
     }
 
 
@@ -114,6 +116,14 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
     posts_publies_tries.sort(key=lambda item: item[0], reverse=True)
     posts_publies = [item[1] for item in posts_publies_tries]
 
+    photos_publiees = (
+        db.query(models.PhotoFiche)
+        .filter(models.PhotoFiche.client_id == client.id)
+        .filter(models.PhotoFiche.statut == "PUBLIE_LIVE")
+        .filter(models.PhotoFiche.date_prevue >= debut, models.PhotoFiche.date_prevue <= fin)
+        .count()
+    )
+
     try:
         mots_cles = google_performance.recuperer_mots_cles_recherche(identifiants, client.location_id, debut, fin)
         erreur_mots_cles = None
@@ -153,6 +163,7 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
         "erreur_mots_cles": erreur_mots_cles,
         "comparatif_visibilite": comparatif_visibilite,
         "evolution_avis": evolution_avis,
+        "photos_publiees": photos_publiees,
     }
 
 
@@ -192,8 +203,18 @@ def construire_contenu_recap(db: Session, client: models.Client, mois: int, anne
         except Exception:
             resume_avis_texte = None
 
+    # Lien "Voir ma fiche sur Google" : facultatif, on n'echoue jamais le
+    # recap pour ca (fiche pas encore visible sur Maps, erreur API, etc.).
+    try:
+        infos_fiche = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+        lien_fiche_google = (infos_fiche.get("metadata") or {}).get("mapsUri", "")
+    except Exception:
+        lien_fiche_google = ""
+
     sujet = recap_mensuel.construire_sujet(client, mois, annee)
-    html = recap_mensuel.construire_email(client, donnees, mois, annee, avis_positifs, resume_avis_texte)
+    html = recap_mensuel.construire_email(
+        client, donnees, mois, annee, avis_positifs, resume_avis_texte, lien_fiche_google
+    )
     return sujet, html
 
 
