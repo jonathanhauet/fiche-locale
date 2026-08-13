@@ -302,6 +302,26 @@
   </div>
 </div>
 
+<details class="bloc-repliable">
+  <summary>Écrire un post soi-même (sans IA)</summary>
+  <div class="formulaire">
+    {% if erreur_post_manuel %}
+    <p class="message-erreur">{{ erreur_post_manuel }}</p>
+    {% endif %}
+    <form class="formulaire" method="post" action="/clients/{{ client.id }}/posts/creer">
+      <label>
+        Titre (optionnel)
+        <input type="text" name="titre">
+      </label>
+      <label>
+        Texte du post
+        <textarea name="texte" rows="6" required></textarea>
+      </label>
+      <button type="submit" class="bouton-secondaire">Créer le post</button>
+    </form>
+  </div>
+</details>
+
 <h2>Posts ({{ posts|length }})</h2>
 {% if posts %}
 <ul class="liste-posts">

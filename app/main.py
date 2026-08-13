@@ -866,7 +866,7 @@ def _contexte_ia_client(client: models.Client) -> str:
 
 def _reponse_detail_client(
     request: Request, db: Session, client: models.Client, erreur_generation: str = None,
-    erreur_photo: str = None, erreur_document: str = None, code: int = 200,
+    erreur_photo: str = None, erreur_document: str = None, erreur_post_manuel: str = None, code: int = 200,
 ):
     posts = (
         db.query(models.Post)
@@ -898,6 +898,7 @@ def _reponse_detail_client(
             ],
             "erreur_photo": erreur_photo,
             "erreur_document": erreur_document,
+            "erreur_post_manuel": erreur_post_manuel,
             "toutes_etiquettes_json": toutes_etiquettes_json,
             **_donnees_calendrier(request, db, client),
         },
@@ -946,6 +947,31 @@ def generer_posts_client(
             prompt_image=post_genere["prompt_image"],
             statut="BROUILLON",
         ))
+    db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+@app.post("/clients/{client_id}/posts/creer")
+def creer_post_manuel(
+    client_id: int, request: Request, titre: str = Form(""), texte: str = Form(...),
+    db: Session = Depends(obtenir_session),
+):
+    """Cree un post directement, sans passer par la generation IA."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    if not texte.strip():
+        return _reponse_detail_client(
+            request, db, client, erreur_post_manuel="Le texte du post ne peut pas etre vide.", code=400
+        )
+
+    db.add(models.Post(client_id=client.id, titre=titre.strip(), texte=texte, statut="BROUILLON"))
     db.commit()
 
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
