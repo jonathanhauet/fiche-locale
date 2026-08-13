@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set page_actuelle = "etiquettes" %}
+{% block titre %}Étiquettes — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Étiquettes</h1>
+</div>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+<form class="formulaire formulaire-ligne" method="post" action="/etiquettes">
+  <label>
+    Nouvelle étiquette
+    <input type="text" name="nom" placeholder="Ex : Plombiers" required>
+  </label>
+  <button type="submit">+ Ajouter</button>
+</form>
+
+{% if etiquettes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Étiquette</th>
+        <th>Clients associés</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for etiquette in etiquettes %}
+      <tr>
+        <td><span class="etiquette-chip">{{ etiquette.nom }}</span></td>
+        <td>
+          {% if etiquette.clients %}
+          {{ etiquette.clients|map(attribute='nom')|join(', ') }}
+          {% else %}
+          <span class="texte-discret">Aucun</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/etiquettes/{{ etiquette.id }}/supprimer"
+                onsubmit="return confirm('Supprimer cette étiquette ?{% if etiquette.clients %} Elle sera retirée de {{ etiquette.clients|length }} client(s).{% endif %}');">
+            <button type="submit" class="bouton-danger">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucune étiquette créée pour l'instant.</p>
+{% endif %}
+{% endblock %}

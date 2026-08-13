@@ -2001,6 +2001,57 @@ def google_deconnecter_compte(compte_id: int, request: Request, db: Session = De
     return RedirectResponse("/google/comptes", status_code=303)
 
 
+# --- Etiquettes --------------------------------------------------------------
+
+
+@app.get("/etiquettes", response_class=HTMLResponse)
+def liste_etiquettes(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    return templates.TemplateResponse(request, "etiquettes.html", {"etiquettes": etiquettes, "erreur": None})
+
+
+@app.post("/etiquettes")
+def creer_etiquette(request: Request, nom: str = Form(...), db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    nom = nom.strip()
+    erreur = None
+    if not nom:
+        erreur = "Le nom de l'étiquette ne peut pas être vide."
+    elif db.query(models.Etiquette).filter_by(nom=nom).first():
+        erreur = f"L'étiquette « {nom} » existe déjà."
+    else:
+        db.add(models.Etiquette(nom=nom))
+        db.commit()
+
+    if erreur:
+        etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+        return templates.TemplateResponse(
+            request, "etiquettes.html", {"etiquettes": etiquettes, "erreur": erreur}, status_code=400
+        )
+    return RedirectResponse("/etiquettes", status_code=303)
+
+
+@app.post("/etiquettes/{etiquette_id}/supprimer")
+def supprimer_etiquette(etiquette_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquette = db.get(models.Etiquette, etiquette_id)
+    if etiquette:
+        etiquette.clients = []
+        db.delete(etiquette)
+        db.commit()
+    return RedirectResponse("/etiquettes", status_code=303)
+
+
 # --- Relecture d'un post ----------------------------------------------------
 
 
