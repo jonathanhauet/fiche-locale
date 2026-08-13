@@ -95,6 +95,19 @@
       }, 0);
     });
   </script>
+  <script>
+    // Un clic sur un champ date n'ouvre le calendrier natif que sur la petite
+    // icone a droite : ailleurs dans le champ (ex. sur les chiffres), on
+    // n'obtient qu'un discret focus de segment, facilement percu comme "rien
+    // ne se passe". On force l'ouverture du calendrier des le premier clic,
+    // ou qu'il ait lieu dans le champ.
+    document.addEventListener("click", (evenement) => {
+      const champ = evenement.target.closest('input[type="date"]');
+      if (champ && typeof champ.showPicker === "function") {
+        try { champ.showPicker(); } catch (erreur) { /* ignore (contexte non autorise, navigateur ancien...) */ }
+      }
+    });
+  </script>
   {% endblock %}
 </body>
 </html>
