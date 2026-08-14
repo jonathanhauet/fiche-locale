@@ -223,6 +223,14 @@
     return avis;
   }
 
+  function ajusterHauteurTextarea(zone) {
+    // Les reponses (surtout suggerees par l'IA) depassent souvent les 3
+    // lignes par defaut : sans ca, le texte est coupe et seule la poignee
+    // de redimensionnement manuel (en bas a droite) permet de tout voir.
+    zone.style.height = "auto";
+    zone.style.height = `${zone.scrollHeight}px`;
+  }
+
   function afficherAvis() {
     const avisFiltresListe = avisFiltres();
     const totalPages = Math.max(1, Math.ceil(avisFiltresListe.length / TAILLE_PAGE));
@@ -231,6 +239,7 @@
     const avisPage = avisFiltresListe.slice(debut, debut + TAILLE_PAGE);
 
     listeAvis.innerHTML = avisPage.map(carteAvisHTML).join("");
+    listeAvis.querySelectorAll("textarea[name=texte_reponse]").forEach(ajusterHauteurTextarea);
     texteVide.hidden = avisFiltresListe.length > 0 || chargementEnCours;
     texteVide.textContent = (casesClients.length && casesClients.every((c) => !c.checked))
       ? "Aucune entreprise cochée dans le filtre \"Entreprises\" ci-dessus : cochez-en au moins une (ou une étiquette) pour voir des avis."
@@ -278,6 +287,7 @@
         zone.disabled = false;
         zone.placeholder = "Votre réponse...";
         if (item.texte_suggere) zone.value = item.texte_suggere;
+        ajusterHauteurTextarea(zone);
         if (erreurMessage) {
           const messageErreur = carteActuelle.querySelector(".message-erreur-carte");
           messageErreur.textContent = erreurMessage;
@@ -466,6 +476,12 @@
   boutonPageSuivante.addEventListener("click", () => {
     pageActuelle += 1;
     afficherAvis();
+  });
+
+  listeAvis.addEventListener("input", (evenement) => {
+    if (evenement.target.matches("textarea[name=texte_reponse]")) {
+      ajusterHauteurTextarea(evenement.target);
+    }
   });
 
   listeAvis.addEventListener("submit", async (evenement) => {
