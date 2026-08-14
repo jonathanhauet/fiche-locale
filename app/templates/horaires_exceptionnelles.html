@@ -42,10 +42,11 @@
 {% endif %}
 
 {% if not etiquettes %}
-<div class="bandeau-avertissement">
-  Aucune étiquette pour l'instant. Ajoutez-en depuis la fiche d'un client ("Informations du client" → Étiquettes),
-  ou depuis la page <a href="/etiquettes">Étiquettes</a>, puis revenez ici.
-</div>
+<p class="texte-discret">
+  Aucune étiquette pour l'instant — sélectionne directement les fiches ci-dessous. Tu peux aussi en créer depuis
+  la fiche d'un client ("Informations du client" → Étiquettes) ou depuis la page <a href="/etiquettes">Étiquettes</a>
+  pour cocher plusieurs fiches d'un coup la prochaine fois.
+</p>
 {% endif %}
 
 <form class="formulaire" method="post" action="/horaires-exceptionnelles/appliquer">
@@ -54,7 +55,7 @@
 
     {% if etiquettes %}
     <div class="filtre-entreprises">
-      <span class="filtre-titre">Étiquettes :</span>
+      <span class="filtre-titre">Cocher par étiquette :</span>
       {% for etiquette in etiquettes %}
       <label class="filtre-case">
         <input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}
@@ -64,7 +65,7 @@
     {% endif %}
 
     <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
-    <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+    <p id="texte-aucun-client" class="texte-vide" hidden>Aucune fiche Google associée pour l'instant.</p>
     <p id="texte-compte-clients" class="texte-discret" hidden></p>
   </div>
 
@@ -112,33 +113,41 @@
   }
 
   function actualiserEtatBouton() {
-    const auMoinsUne = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length > 0;
-    boutonAppliquer.disabled = !auMoinsUne;
+    const coches = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length;
+    boutonAppliquer.disabled = coches === 0;
+    texteCompteClients.hidden = coches === 0;
+    if (coches > 0) texteCompteClients.textContent = `${coches} fiche(s) sélectionnée(s).`;
   }
 
-  function actualiserListe() {
-    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
-    if (!etiquettesActives.length) {
-      conteneurClients.innerHTML = "";
+  function rendreListeClients() {
+    if (!clients.length) {
       texteAucunClient.hidden = false;
-      texteCompteClients.hidden = true;
-      actualiserEtatBouton();
       return;
     }
-    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
-    texteAucunClient.hidden = true;
-    texteCompteClients.hidden = false;
-    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
-    conteneurClients.innerHTML = correspondants.map((c) => `
+    // Toutes les fiches sont listees directement, decochees par defaut : les
+    // etiquettes ci-dessus ne sont qu'un raccourci pour en cocher plusieurs
+    // d'un coup, elles ne filtrent plus la liste.
+    conteneurClients.innerHTML = clients.map((c) => `
       <label class="etiquette-chip-case">
-        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+        <input type="checkbox" name="client_ids" value="${c.id}"> ${echapper(c.nom)}
       </label>
     `).join("");
     conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((c) => c.addEventListener("change", actualiserEtatBouton));
+  }
+
+  function basculerParEtiquette(caseEtiquette) {
+    const idEtiquette = Number(caseEtiquette.value);
+    const idsCorrespondants = clients
+      .filter((c) => c.etiquette_ids.includes(idEtiquette))
+      .map((c) => c.id);
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((champ) => {
+      if (idsCorrespondants.includes(Number(champ.value))) champ.checked = caseEtiquette.checked;
+    });
     actualiserEtatBouton();
   }
 
-  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+  rendreListeClients();
+  casesEtiquettes.forEach((c) => c.addEventListener("change", () => basculerParEtiquette(c)));
 
   caseFerme.addEventListener("change", () => {
     blocHorairesReduits.hidden = caseFerme.checked;
