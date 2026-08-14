@@ -177,6 +177,24 @@ class PhotoFiche(Base):
     client = relationship("Client", back_populates="photos")
 
 
+class ComparatifAvis(Base):
+    """
+    Snapshot enregistre d'un comparatif d'avis multi-fiches (voir /avis/comparatif) :
+    permet de retrouver plus tard un comparatif deja genere (les chiffres au
+    moment de la generation, pas recalcules) et d'en telecharger le PDF, sans
+    re-interroger Google.
+    """
+
+    __tablename__ = "comparatifs_avis"
+
+    id = Column(Integer, primary_key=True)
+    libelle = Column(String, default="")
+    date_debut = Column(Date, nullable=False)
+    date_fin = Column(Date, nullable=False)
+    donnees_json = Column(Text, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class Etiquette(Base):
     """Etiquette libre posee sur un ou plusieurs clients, pour les regrouper (ex. envoi multi-fiches)."""
 

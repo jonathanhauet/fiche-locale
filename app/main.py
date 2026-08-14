@@ -29,6 +29,7 @@ from . import (
     bilan_pdf,
     brevo_email,
     claude_generation,
+    comparatif_avis_pdf,
     deux_facteurs,
     documents,
     gemini_images,
@@ -746,6 +747,111 @@ def avis_comparatif_donnees_client(client_id: int, request: Request, db: Session
         return JSONResponse({"avis": avis, "erreur": None})
     except Exception as erreur:
         return JSONResponse({"avis": [], "erreur": f"{client.nom} : {erreur}"})
+
+
+@app.post("/avis/comparatif/enregistrer")
+async def enregistrer_comparatif_avis(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Enregistre en base le resultat (deja calcule cote navigateur, voir
+    avis_comparatif.html) d'un comparatif genere - snapshot fige, pas
+    recalcule a la consultation - pour alimenter /avis/comparatif/historique
+    et permettre le telechargement du PDF sans re-interroger Google.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+
+    corps = await request.json()
+    try:
+        date_debut = date.fromisoformat(corps["date_debut"])
+        date_fin = date.fromisoformat(corps["date_fin"])
+    except (KeyError, ValueError, TypeError):
+        return JSONResponse({"erreur": "Dates invalides."}, status_code=400)
+
+    comparatif = models.ComparatifAvis(
+        libelle=(corps.get("libelle") or "").strip()[:200],
+        date_debut=date_debut,
+        date_fin=date_fin,
+        donnees_json=json.dumps(corps.get("donnees") or {}),
+    )
+    db.add(comparatif)
+    db.commit()
+    return JSONResponse({"id": comparatif.id})
+
+
+@app.get("/avis/comparatif/historique", response_class=HTMLResponse)
+def historique_comparatifs_avis(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comparatifs = db.query(models.ComparatifAvis).order_by(models.ComparatifAvis.cree_le.desc()).all()
+    lignes = []
+    for c in comparatifs:
+        donnees = json.loads(c.donnees_json)
+        lignes.append({
+            "id": c.id,
+            "libelle": c.libelle or "Sans nom",
+            "date_debut": c.date_debut,
+            "date_fin": c.date_fin,
+            "cree_le": c.cree_le,
+            "total_periode": donnees.get("total_periode", 0),
+            "moyenne_periode": donnees.get("moyenne_periode"),
+        })
+    return templates.TemplateResponse(request, "avis_comparatif_historique.html", {"comparatifs": lignes})
+
+
+@app.get("/avis/comparatif/{comparatif_id}", response_class=HTMLResponse)
+def voir_comparatif_avis(comparatif_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comparatif = db.get(models.ComparatifAvis, comparatif_id)
+    if not comparatif:
+        return HTMLResponse("Comparatif introuvable.", status_code=404)
+
+    return templates.TemplateResponse(
+        request,
+        "avis_comparatif_detail.html",
+        {
+            "comparatif": comparatif,
+            "donnees_json": json.dumps(json.loads(comparatif.donnees_json)).replace("</", "<\\/"),
+        },
+    )
+
+
+@app.get("/avis/comparatif/{comparatif_id}/pdf")
+def telecharger_comparatif_avis_pdf(comparatif_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comparatif = db.get(models.ComparatifAvis, comparatif_id)
+    if not comparatif:
+        return HTMLResponse("Comparatif introuvable.", status_code=404)
+
+    octets_pdf = comparatif_avis_pdf.generer_comparatif_pdf(
+        comparatif.libelle, comparatif.date_debut, comparatif.date_fin, json.loads(comparatif.donnees_json)
+    )
+    nom_fichier = f"comparatif_avis_{comparatif.date_debut}_{comparatif.date_fin}.pdf"
+    return Response(
+        content=octets_pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
+
+
+@app.post("/avis/comparatif/{comparatif_id}/supprimer")
+def supprimer_comparatif_avis(comparatif_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comparatif = db.get(models.ComparatifAvis, comparatif_id)
+    if comparatif:
+        db.delete(comparatif)
+        db.commit()
+    return RedirectResponse("/avis/comparatif/historique", status_code=303)
 
 
 @app.get("/completude/donnees/{client_id}")

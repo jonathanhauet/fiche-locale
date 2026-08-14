@@ -6,6 +6,7 @@
 
 <div class="barre-titre">
   <h1>Comparatif avis</h1>
+  <a class="bouton-secondaire" href="/avis/comparatif/historique">🕓 Historique des comparatifs</a>
 </div>
 
 <p class="texte-discret">
@@ -54,6 +55,7 @@
 
 <div class="actions-avis">
   <button type="button" id="bouton-generer" disabled>Générer les statistiques</button>
+  <a class="bouton-secondaire" id="lien-telecharger-pdf" hidden href="#">📄 Télécharger le PDF</a>
 </div>
 
 <div id="conteneur-progression-comparatif" class="conteneur-progression-avis" hidden>
@@ -140,6 +142,7 @@
   const resultats = document.getElementById("resultats-comparatif");
   const corpsTableauClassement = document.getElementById("corps-tableau-classement");
   const conteneurGraphique = document.getElementById("conteneur-graphique-comparatif");
+  const lienPdf = document.getElementById("lien-telecharger-pdf");
 
   function echapper(texte) {
     const div = document.createElement("div");
@@ -245,6 +248,46 @@
       </tr>`;
   }
 
+  function afficherResultats(payload) {
+    document.getElementById("chiffre-total-periode").textContent = payload.total_periode;
+    document.getElementById("chiffre-moyenne-periode").textContent = payload.moyenne_periode !== null ? `${payload.moyenne_periode}/5` : "—";
+    document.getElementById("chiffre-positifs-periode").textContent = payload.positifs_periode;
+    document.getElementById("chiffre-negatifs-periode").textContent = payload.negatifs_periode;
+    document.getElementById("chiffre-total-global").textContent = payload.total_historique;
+    document.getElementById("chiffre-moyenne-global").textContent = payload.moyenne_historique !== null ? `${payload.moyenne_historique}/5` : "—";
+
+    const classementTrie = [...payload.classement].sort((a, b) => b.total_periode - a.total_periode);
+    corpsTableauClassement.innerHTML = classementTrie.map(ligneClassementHTML).join("");
+
+    construireGraphique(payload.evolution_jour);
+    resultats.hidden = false;
+  }
+
+  function libelleSelection() {
+    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => c.parentElement.textContent.trim());
+    if (etiquettesActives.length) return etiquettesActives.join(", ");
+    const nbCoches = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length;
+    return `${nbCoches} fiche(s) sélectionnée(s)`;
+  }
+
+  async function enregistrerComparatif(payload, debut, fin) {
+    try {
+      const reponse = await fetch("/avis/comparatif/enregistrer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ libelle: libelleSelection(), date_debut: debut, date_fin: fin, donnees: payload }),
+      });
+      const resultat = await reponse.json();
+      if (resultat.id) {
+        lienPdf.href = `/avis/comparatif/${resultat.id}/pdf`;
+        lienPdf.hidden = false;
+      }
+    } catch (erreur) {
+      // L'enregistrement dans l'historique n'est pas bloquant : les
+      // resultats restent affiches meme si cet appel echoue.
+    }
+  }
+
   async function genererStatistiques() {
     const idsCoches = Array.from(conteneurClients.querySelectorAll('input[name="client_ids"]:checked')).map((c) => Number(c.value));
     const clientsCibles = clients.filter((c) => idsCoches.includes(c.id));
@@ -259,6 +302,7 @@
 
     boutonGenerer.disabled = true;
     resultats.hidden = true;
+    lienPdf.hidden = true;
     conteneurErreurs.innerHTML = "";
     conteneurProgression.hidden = false;
     barreProgression.style.width = "0%";
@@ -294,9 +338,7 @@
     }
 
     // --- Global (tout historique) ---
-    document.getElementById("chiffre-total-global").textContent = tousLesAvis.length;
     const moyenneGlobale = moyenne(tousLesAvis);
-    document.getElementById("chiffre-moyenne-global").textContent = moyenneGlobale !== null ? `${moyenneGlobale}/5` : "—";
 
     // --- Periode ---
     const avisPeriode = tousLesAvis.filter((a) => {
@@ -305,12 +347,7 @@
     });
     const positifsPeriode = avisPeriode.filter((a) => a.note >= 4);
     const negatifsPeriode = avisPeriode.filter((a) => a.note > 0 && a.note <= 3);
-
-    document.getElementById("chiffre-total-periode").textContent = avisPeriode.length;
     const moyennePeriode = moyenne(avisPeriode);
-    document.getElementById("chiffre-moyenne-periode").textContent = moyennePeriode !== null ? `${moyennePeriode}/5` : "—";
-    document.getElementById("chiffre-positifs-periode").textContent = positifsPeriode.length;
-    document.getElementById("chiffre-negatifs-periode").textContent = negatifsPeriode.length;
 
     // --- Classement par fiche ---
     const statsParClient = clientsCibles.map((client) => {
@@ -325,8 +362,6 @@
         total_historique: avisClientTotal.length,
       };
     });
-    statsParClient.sort((a, b) => b.total_periode - a.total_periode);
-    corpsTableauClassement.innerHTML = statsParClient.map(ligneClassementHTML).join("");
 
     // --- Graphique jour par jour ---
     const jours = joursEntre(debut, fin);
@@ -336,9 +371,20 @@
       const j = (a.date_avis || "").slice(0, 10);
       if (j in compteParJour) compteParJour[j]++;
     });
-    construireGraphique(jours.map((j) => ({ date: j, total: compteParJour[j] })));
 
-    resultats.hidden = false;
+    const payload = {
+      total_periode: avisPeriode.length,
+      moyenne_periode: moyennePeriode,
+      positifs_periode: positifsPeriode.length,
+      negatifs_periode: negatifsPeriode.length,
+      total_historique: tousLesAvis.length,
+      moyenne_historique: moyenneGlobale,
+      classement: statsParClient,
+      evolution_jour: jours.map((j) => ({ date: j, total: compteParJour[j] })),
+    };
+
+    afficherResultats(payload);
+    enregistrerComparatif(payload, debut, fin);
   }
 
   boutonGenerer.addEventListener("click", genererStatistiques);

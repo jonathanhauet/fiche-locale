@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set page_actuelle = "avis_comparatif" %}
+{% block titre %}Historique des comparatifs — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/avis/comparatif">&larr; Retour au comparatif d'avis</a></p>
+
+<div class="barre-titre">
+  <h1>Historique des comparatifs</h1>
+</div>
+
+{% if not comparatifs %}
+<p class="texte-vide">Aucun comparatif enregistré pour l'instant — génère des statistiques depuis la page Comparatif avis.</p>
+{% else %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique disposition-fixe">
+    <colgroup>
+      <col style="width: 16%;">
+      <col style="width: 28%;">
+      <col style="width: 18%;">
+      <col style="width: 12%;">
+      <col style="width: 12%;">
+      <col style="width: 14%;">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Généré le</th>
+        <th>Libellé</th>
+        <th>Période</th>
+        <th>Avis (période)</th>
+        <th>Moyenne</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in comparatifs %}
+      <tr>
+        <td>{{ c.cree_le.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td class="cellule-libre">{{ c.libelle }}</td>
+        <td>{{ c.date_debut.strftime("%d/%m/%Y") }} → {{ c.date_fin.strftime("%d/%m/%Y") }}</td>
+        <td>{{ c.total_periode }}</td>
+        <td>{{ "%.1f"|format(c.moyenne_periode) ~ "/5" if c.moyenne_periode else "—" }}</td>
+        <td class="actions-avis actions-verticales">
+          <a class="bouton-secondaire" href="/avis/comparatif/{{ c.id }}">Voir</a>
+          <a class="bouton-secondaire" href="/avis/comparatif/{{ c.id }}/pdf">PDF</a>
+          <form method="post" action="/avis/comparatif/{{ c.id }}/supprimer"
+                onsubmit="return confirm('Supprimer ce comparatif de l\'historique ?');">
+            <button type="submit" class="bouton-danger">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

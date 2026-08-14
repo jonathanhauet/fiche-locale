@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% set page_actuelle = "avis_comparatif" %}
+{% block titre %}{{ comparatif.libelle or "Comparatif" }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/avis/comparatif/historique">&larr; Retour à l'historique</a></p>
+
+<div class="barre-titre">
+  <h1>{{ comparatif.libelle or "Comparatif" }}</h1>
+  <a class="bouton-secondaire" href="/avis/comparatif/{{ comparatif.id }}/pdf">📄 Télécharger le PDF</a>
+</div>
+
+<p class="texte-discret">
+  Période du {{ comparatif.date_debut.strftime("%d/%m/%Y") }} au {{ comparatif.date_fin.strftime("%d/%m/%Y") }}
+  — généré le {{ comparatif.cree_le.strftime("%d/%m/%Y à %H:%M") }}. Chiffres figés au moment de la génération
+  (pas recalculés depuis).
+</p>
+
+<div class="grille-resume">
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-total-periode">0</span>
+    <span class="carte-resume-libelle">Avis reçus (période)</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-moyenne-periode">—</span>
+    <span class="carte-resume-libelle">Moyenne (période)</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-positifs-periode">0</span>
+    <span class="carte-resume-libelle">Avis positifs (période)</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-negatifs-periode">0</span>
+    <span class="carte-resume-libelle">Avis négatifs (période)</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-total-global">0</span>
+    <span class="carte-resume-libelle">Avis au total (tout historique)</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-moyenne-global">—</span>
+    <span class="carte-resume-libelle">Moyenne globale (tout historique)</span>
+  </div>
+</div>
+
+<h2>Évolution jour par jour (période)</h2>
+<div id="conteneur-graphique-comparatif" class="conteneur-graphique-comparatif"></div>
+
+<h2>Classement par fiche (période)</h2>
+<div class="conteneur-tableau">
+  <table class="tableau-historique disposition-fixe">
+    <colgroup>
+      <col style="width: 28%;">
+      <col style="width: 14%;">
+      <col style="width: 15%;">
+      <col style="width: 13%;">
+      <col style="width: 13%;">
+      <col style="width: 17%;">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Fiche</th>
+        <th>Avis (période)</th>
+        <th>Moyenne (période)</th>
+        <th>Positifs</th>
+        <th>Négatifs</th>
+        <th>Total (historique)</th>
+      </tr>
+    </thead>
+    <tbody id="corps-tableau-classement"></tbody>
+  </table>
+</div>
+
+<script id="donnees-comparatif" type="application/json">{{ donnees_json|safe }}</script>
+<script>
+(function () {
+  const donnees = JSON.parse(document.getElementById("donnees-comparatif").textContent);
+  const conteneurGraphique = document.getElementById("conteneur-graphique-comparatif");
+  const corpsTableauClassement = document.getElementById("corps-tableau-classement");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function ligneClassementHTML(stat) {
+    return `
+      <tr>
+        <td>${echapper(stat.client_nom)}</td>
+        <td>${stat.total_periode}</td>
+        <td>${stat.moyenne_periode !== null ? stat.moyenne_periode + "/5" : "—"}</td>
+        <td>${stat.positifs}</td>
+        <td>${stat.negatifs}</td>
+        <td>${stat.total_historique}</td>
+      </tr>`;
+  }
+
+  function construireGraphique(donneesParJour) {
+    const LARGEUR = 800;
+    const HAUTEUR = 180;
+    const PADDING_BAS = 22;
+    const PADDING_HAUT = 10;
+    const zoneHauteur = HAUTEUR - PADDING_BAS - PADDING_HAUT;
+    const n = donneesParJour.length;
+    const maxValeur = Math.max(1, ...donneesParJour.map((d) => d.total));
+    const largeurBande = LARGEUR / n;
+    const largeurBarre = Math.max(1, Math.min(24, largeurBande - 2));
+
+    let barres = "";
+    donneesParJour.forEach((jour, i) => {
+      const x = i * largeurBande + (largeurBande - largeurBarre) / 2;
+      const h = jour.total === 0 ? 0 : Math.max(2, (jour.total / maxValeur) * zoneHauteur);
+      const y = HAUTEUR - PADDING_BAS - h;
+      barres += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${largeurBarre.toFixed(1)}" height="${h.toFixed(1)}" rx="3" class="barre-graphique"><title>${jour.date} : ${jour.total} avis</title></rect>`;
+    });
+
+    const pasLabel = Math.max(1, Math.ceil(n / 8));
+    let labels = "";
+    donneesParJour.forEach((jour, i) => {
+      if (i % pasLabel !== 0 && i !== n - 1) return;
+      const x = i * largeurBande + largeurBande / 2;
+      const [, mois, jourNum] = jour.date.split("-");
+      labels += `<text x="${x.toFixed(1)}" y="${HAUTEUR - 6}" class="texte-axe-graphique" text-anchor="middle">${jourNum}/${mois}</text>`;
+    });
+
+    conteneurGraphique.innerHTML = `
+      <svg viewBox="0 0 ${LARGEUR} ${HAUTEUR}" class="graphique-comparatif" role="img" aria-label="Évolution du nombre d'avis par jour">
+        <line x1="0" y1="${HAUTEUR - PADDING_BAS}" x2="${LARGEUR}" y2="${HAUTEUR - PADDING_BAS}" class="ligne-base-graphique" />
+        ${barres}
+        ${labels}
+      </svg>`;
+  }
+
+  document.getElementById("chiffre-total-periode").textContent = donnees.total_periode;
+  document.getElementById("chiffre-moyenne-periode").textContent = donnees.moyenne_periode !== null ? `${donnees.moyenne_periode}/5` : "—";
+  document.getElementById("chiffre-positifs-periode").textContent = donnees.positifs_periode;
+  document.getElementById("chiffre-negatifs-periode").textContent = donnees.negatifs_periode;
+  document.getElementById("chiffre-total-global").textContent = donnees.total_historique;
+  document.getElementById("chiffre-moyenne-global").textContent = donnees.moyenne_historique !== null ? `${donnees.moyenne_historique}/5` : "—";
+
+  const classementTrie = [...(donnees.classement || [])].sort((a, b) => b.total_periode - a.total_periode);
+  corpsTableauClassement.innerHTML = classementTrie.map(ligneClassementHTML).join("");
+
+  if (donnees.evolution_jour && donnees.evolution_jour.length) {
+    construireGraphique(donnees.evolution_jour);
+  }
+})();
+</script>
+{% endblock %}
