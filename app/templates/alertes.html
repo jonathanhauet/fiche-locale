@@ -9,14 +9,18 @@
 
 <p class="texte-discret">
   Ce qui mérite ton attention sur l'ensemble des clients : fiches sans nouveau post depuis
-  {{ seuil_inactivite_jours }} jours, et avis négatifs restés sans réponse. Le suivi de position
-  n'est pas inclus ici (payant, il reste à la demande).
+  {{ seuil_inactivite_jours }} jours, fiches Google incomplètes, et avis négatifs restés sans réponse.
+  Le suivi de position n'est pas inclus ici (payant, il reste à la demande).
 </p>
 
 <div class="grille-resume">
   <div class="carte-resume">
     <span class="carte-resume-chiffre{{ ' chiffre-attention' if clients_inactifs else '' }}">{{ clients_inactifs|length }}</span>
     <span class="carte-resume-libelle">Fiche{{ "s" if clients_inactifs|length != 1 else "" }} sans post récent</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-fiches-incompletes">…</span>
+    <span class="carte-resume-libelle">Fiches incomplètes</span>
   </div>
   <div class="carte-resume">
     <span class="carte-resume-chiffre" id="chiffre-avis-negatifs">…</span>
@@ -45,6 +49,11 @@
 <p class="texte-vide">Toutes les fiches ont un post récent.</p>
 {% endif %}
 
+<h2>Fiches Google incomplètes</h2>
+<p class="texte-discret">Téléphone, site web, description, horaires, catégorie secondaire — cinq informations qui aident une fiche à mieux convertir.</p>
+<ul id="liste-alertes-completude" class="liste-clients"></ul>
+<p id="texte-vide-completude" class="texte-vide" hidden>Toutes les fiches ont ces cinq informations renseignées.</p>
+
 <h2>Avis négatifs sans réponse</h2>
 <div id="conteneur-progression-alertes" class="conteneur-progression-avis" hidden>
   <div class="barre-progression-fond"><div id="barre-progression-alertes" class="barre-progression-remplissage"></div></div>
@@ -65,14 +74,18 @@
   const CONCURRENCE = 3;
 
   const chiffreAvisNegatifs = document.getElementById("chiffre-avis-negatifs");
+  const chiffreFichesIncompletes = document.getElementById("chiffre-fiches-incompletes");
   const conteneurProgression = document.getElementById("conteneur-progression-alertes");
   const barreProgression = document.getElementById("barre-progression-alertes");
   const texteProgression = document.getElementById("texte-progression-alertes");
   const conteneurErreurs = document.getElementById("erreurs-alertes");
   const listeAlertes = document.getElementById("liste-alertes-avis");
   const texteVide = document.getElementById("texte-vide-alertes");
+  const listeCompletude = document.getElementById("liste-alertes-completude");
+  const texteVideCompletude = document.getElementById("texte-vide-completude");
 
   let avisSignales = [];
+  let fichesIncompletes = [];
 
   function echapper(texte) {
     const div = document.createElement("div");
@@ -142,9 +155,30 @@
     texteVide.hidden = avisSignales.length > 0;
   }
 
-  async function chargerAlertesAvis() {
+  function carteCompletudeHTML(item) {
+    return `
+      <li>
+        <a href="/clients/${item.client_id}/fiche">
+          <span class="avatar-client">${echapper(item.client_nom[0] || "?").toUpperCase()}</span>
+          <span>${echapper(item.client_nom)}</span>
+        </a>
+        <div class="actions-avis">
+          <span class="etiquette-avertissement">manque : ${echapper(item.manquants.join(", "))}</span>
+        </div>
+      </li>`;
+  }
+
+  function afficherCompletude() {
+    chiffreFichesIncompletes.textContent = fichesIncompletes.length;
+    chiffreFichesIncompletes.classList.toggle("chiffre-attention", fichesIncompletes.length > 0);
+    listeCompletude.innerHTML = fichesIncompletes.map(carteCompletudeHTML).join("");
+    texteVideCompletude.hidden = fichesIncompletes.length > 0;
+  }
+
+  async function chargerAlertes() {
     if (!clients.length) {
       afficherAlertes();
+      afficherCompletude();
       return;
     }
     conteneurProgression.hidden = false;
@@ -154,18 +188,27 @@
     let termines = 0;
     const erreurs = [];
     let tousLesAvis = [];
+    let tousLesScores = [];
     let curseur = 0;
 
     async function traiterSuivant() {
       while (curseur < clients.length) {
         const client = clients[curseur++];
-        try {
-          const reponse = await fetch(`/avis/donnees/${client.id}`);
-          const donnees = await reponse.json();
-          if (donnees.erreur) erreurs.push(donnees.erreur);
-          if (donnees.avis) tousLesAvis.push(...donnees.avis);
-        } catch (erreur) {
-          erreurs.push(`${client.nom} : erreur réseau.`);
+        const [reponseAvis, reponseCompletude] = await Promise.allSettled([
+          fetch(`/avis/donnees/${client.id}`).then((r) => r.json()),
+          fetch(`/completude/donnees/${client.id}`).then((r) => r.json()),
+        ]);
+        if (reponseAvis.status === "fulfilled") {
+          if (reponseAvis.value.erreur) erreurs.push(reponseAvis.value.erreur);
+          if (reponseAvis.value.avis) tousLesAvis.push(...reponseAvis.value.avis);
+        } else {
+          erreurs.push(`${client.nom} : erreur réseau (avis).`);
+        }
+        if (reponseCompletude.status === "fulfilled") {
+          if (reponseCompletude.value.erreur) erreurs.push(reponseCompletude.value.erreur);
+          if (reponseCompletude.value.resultat) tousLesScores.push(reponseCompletude.value.resultat);
+        } else {
+          erreurs.push(`${client.nom} : erreur réseau (complétude).`);
         }
         termines++;
         barreProgression.style.width = `${Math.round((termines / clients.length) * 100)}%`;
@@ -178,6 +221,11 @@
     if (erreurs.length) {
       conteneurErreurs.innerHTML = erreurs.map((e) => `<p class="message-erreur">${echapper(e)}</p>`).join("");
     }
+
+    fichesIncompletes = tousLesScores
+      .filter((r) => r.manquants.length > 0)
+      .sort((a, b) => a.score - b.score);
+    afficherCompletude();
 
     avisSignales = tousLesAvis
       .filter((a) => a.note > 0 && a.note <= 3 && !a.reponse && joursDepuis(a.date_avis) >= SEUIL_JOURS_AVIS_NEGATIF)
@@ -270,7 +318,7 @@
     }
   });
 
-  chargerAlertesAvis();
+  chargerAlertes();
 })();
 </script>
 {% endblock %}

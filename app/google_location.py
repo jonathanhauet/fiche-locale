@@ -7,7 +7,10 @@ deja presentes sur la fiche (voir google_business.lister_photos).
 
 import requests
 
-CHAMPS_LECTURE = "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,profile,latlng,categories,metadata.mapsUri"
+CHAMPS_LECTURE = (
+    "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,specialHours,"
+    "profile,latlng,categories,metadata.mapsUri"
+)
 
 JOURS_SEMAINE = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
 LIBELLES_JOUR = {
@@ -108,6 +111,71 @@ def adresse_texte(infos: dict) -> str:
         if valeur:
             morceaux.append(valeur)
     return ", ".join(morceaux)
+
+
+def construire_periode_exceptionnelle(date_iso: str, ferme: bool, ouverture: str = "", fermeture: str = "") -> dict:
+    """
+    Construit un SpecialHourPeriod Google pour une seule date (ex. jour ferie,
+    fermeture ponctuelle ou horaires reduits). date_iso : "AAAA-MM-JJ".
+    """
+    annee, mois, jour = (int(x) for x in date_iso.split("-"))
+    periode = {"startDate": {"year": annee, "month": mois, "day": jour}, "closed": ferme}
+    if not ferme and ouverture and fermeture:
+        h_o, m_o = (int(x) for x in ouverture.split(":"))
+        h_f, m_f = (int(x) for x in fermeture.split(":"))
+        periode["openTime"] = {"hours": h_o, "minutes": m_o}
+        periode["closeTime"] = {"hours": h_f, "minutes": m_f}
+    return periode
+
+
+def fusionner_horaires_exceptionnels(special_hours_actuelles: dict, nouvelle_periode: dict) -> list[dict]:
+    """
+    L'API Google remplace l'integralite de specialHours.specialHourPeriods a
+    chaque ecriture (pas de fusion cote serveur) : il faut donc reconstruire
+    nous-memes la liste complete. On retire une eventuelle periode deja
+    definie pour la meme date (ecrasement volontaire, ex. mise a jour d'un
+    jour ferie deja programme) et on garde toutes les autres dates telles quelles.
+    """
+    date_cible = nouvelle_periode["startDate"]
+    conservees = [
+        p for p in (special_hours_actuelles or {}).get("specialHourPeriods", [])
+        if p.get("startDate") != date_cible
+    ]
+    conservees.append(nouvelle_periode)
+    return conservees
+
+
+CRITERES_COMPLETUDE = [
+    ("telephone", "Téléphone"),
+    ("site_web", "Site web"),
+    ("description", "Description"),
+    ("horaires", "Horaires"),
+    ("categorie_secondaire", "Catégorie secondaire"),
+]
+
+
+def score_completude(infos: dict) -> dict:
+    """
+    Score simple base uniquement sur la lecture deja faite via
+    obtenir_infos_fiche (aucun appel API supplementaire, donc utilisable sur
+    beaucoup de fiches sans ralentir). Les photos ne sont volontairement pas
+    incluses ici (necessiterait un appel media a part par fiche) - elles
+    restent visibles individuellement sur la page de chaque client.
+    """
+    infos = infos or {}
+    presents = {
+        "telephone": bool((infos.get("phoneNumbers") or {}).get("primaryPhone")),
+        "site_web": bool(infos.get("websiteUri")),
+        "description": bool((infos.get("profile") or {}).get("description")),
+        "horaires": bool((infos.get("regularHours") or {}).get("periods")),
+        "categorie_secondaire": bool((infos.get("categories") or {}).get("additionalCategories")),
+    }
+    manquants = [libelle for cle, libelle in CRITERES_COMPLETUDE if not presents[cle]]
+    return {
+        "score": len(CRITERES_COMPLETUDE) - len(manquants),
+        "total": len(CRITERES_COMPLETUDE),
+        "manquants": manquants,
+    }
 
 
 def horaires_par_jour(regular_hours: dict):

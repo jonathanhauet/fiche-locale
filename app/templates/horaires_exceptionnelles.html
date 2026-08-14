@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% set page_actuelle = "horaires_exceptionnelles" %}
+{% block titre %}Horaires exceptionnels — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Horaires exceptionnels</h1>
+</div>
+
+<p class="texte-discret">
+  Applique une même date (jour férié, fermeture ponctuelle ou horaires réduits) à plusieurs fiches d'un coup,
+  sans toucher aux horaires habituels de chaque fiche. Si une date exceptionnelle existait déjà pour ce jour
+  sur une fiche, elle est remplacée.
+</p>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+{% if resultats %}
+<div class="bandeau-info">
+  Appliqué pour le {{ date_appliquee }} : {{ resultats|selectattr("succes")|list|length }} / {{ resultats|length }} fiche(s) mise(s) à jour.
+</div>
+<ul class="liste-clients">
+  {% for r in resultats %}
+  <li>
+    <a href="/clients/{{ r.client.id }}">
+      <span class="avatar-client">{{ r.client.nom[:1]|upper }}</span>
+      <span>{{ r.client.nom }}</span>
+    </a>
+    <div class="actions-avis">
+      {% if r.succes %}
+      <span class="etiquette-statut etiquette-publie_live">Mise à jour</span>
+      {% else %}
+      <span class="etiquette-avertissement">{{ r.erreur }}</span>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if not etiquettes %}
+<div class="bandeau-avertissement">
+  Aucune étiquette pour l'instant. Ajoutez-en depuis la fiche d'un client ("Informations du client" → Étiquettes),
+  ou depuis la page <a href="/etiquettes">Étiquettes</a>, puis revenez ici.
+</div>
+{% endif %}
+
+<form class="formulaire" method="post" action="/horaires-exceptionnelles/appliquer">
+  <div class="choix-image-bloc">
+    <span class="choix-image-titre">Fiches concernées</span>
+
+    {% if etiquettes %}
+    <div class="filtre-entreprises">
+      <span class="filtre-titre">Étiquettes :</span>
+      {% for etiquette in etiquettes %}
+      <label class="filtre-case">
+        <input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+      </label>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+    <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+    <p id="texte-compte-clients" class="texte-discret" hidden></p>
+  </div>
+
+  <label>
+    Date
+    <input type="date" name="date" required>
+  </label>
+
+  <label class="filtre-case">
+    <input type="checkbox" name="ferme" id="case-ferme" checked> Fermé toute la journée
+  </label>
+
+  <div id="bloc-horaires-reduits" class="formulaire-ligne" hidden>
+    <label>
+      Ouverture
+      <input type="time" name="ouverture">
+    </label>
+    <label>
+      Fermeture
+      <input type="time" name="fermeture">
+    </label>
+  </div>
+
+  <div class="actions-avis">
+    <button type="submit" id="bouton-appliquer-horaires" disabled>Appliquer aux fiches sélectionnées</button>
+  </div>
+</form>
+
+<script id="donnees-clients-horaires" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-horaires").textContent);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  const conteneurClients = document.getElementById("liste-clients-cibles");
+  const texteAucunClient = document.getElementById("texte-aucun-client");
+  const texteCompteClients = document.getElementById("texte-compte-clients");
+  const boutonAppliquer = document.getElementById("bouton-appliquer-horaires");
+  const caseFerme = document.getElementById("case-ferme");
+  const blocHorairesReduits = document.getElementById("bloc-horaires-reduits");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function actualiserEtatBouton() {
+    const auMoinsUne = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length > 0;
+    boutonAppliquer.disabled = !auMoinsUne;
+  }
+
+  function actualiserListe() {
+    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    if (!etiquettesActives.length) {
+      conteneurClients.innerHTML = "";
+      texteAucunClient.hidden = false;
+      texteCompteClients.hidden = true;
+      actualiserEtatBouton();
+      return;
+    }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
+    texteAucunClient.hidden = true;
+    texteCompteClients.hidden = false;
+    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    conteneurClients.innerHTML = correspondants.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      </label>
+    `).join("");
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((c) => c.addEventListener("change", actualiserEtatBouton));
+    actualiserEtatBouton();
+  }
+
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+
+  caseFerme.addEventListener("change", () => {
+    blocHorairesReduits.hidden = caseFerme.checked;
+  });
+})();
+</script>
+{% endblock %}

@@ -463,6 +463,33 @@ def avis_donnees_client(client_id: int, request: Request, db: Session = Depends(
         return JSONResponse({"avis": [], "erreur": f"{client.nom} : {erreur}"})
 
 
+@app.get("/completude/donnees/{client_id}")
+def completude_donnees_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Renvoie en JSON le score de completude d'un seul client, pour le chargement progressif cote navigateur."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"resultat": None, "erreur": None})
+
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({
+            "resultat": None,
+            "erreur": f"{client.nom} : compte Google non valide (a reconnecter depuis Comptes Google).",
+        })
+
+    try:
+        infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+        resultat = google_location.score_completude(infos)
+        resultat["client_id"] = client.id
+        resultat["client_nom"] = client.nom
+        return JSONResponse({"resultat": resultat, "erreur": None})
+    except Exception as erreur:
+        return JSONResponse({"resultat": None, "erreur": f"{client.nom} : {erreur}"})
+
+
 @app.post("/avis/suggerer")
 def suggerer_reponse_avis_route(
     request: Request,
@@ -1470,6 +1497,109 @@ async def modifier_fiche_client(client_id: int, request: Request, db: Session = 
     except Exception:
         infos = None
     return _reponse_fiche_client(request, client, db, infos=infos, succes="Fiche mise a jour avec succes.")
+
+
+@app.get("/horaires-exceptionnelles", response_class=HTMLResponse)
+def horaires_exceptionnelles_formulaire(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    return templates.TemplateResponse(
+        request,
+        "horaires_exceptionnelles.html",
+        {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "resultats": None, "erreur": None},
+    )
+
+
+@app.post("/horaires-exceptionnelles/appliquer")
+async def appliquer_horaires_exceptionnelles(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Applique une meme date exceptionnelle (fermeture ou horaires reduits) a
+    plusieurs fiches d'un coup - utile pour les jours feries. Traite chaque
+    fiche independamment (l'echec d'une fiche ne bloque pas les autres) et
+    affiche un resultat detaille par fiche, puisqu'il s'agit d'une ecriture
+    reelle sur des fiches Google en production.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    formulaire = await request.form()
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    clients_json = _clients_json_avec_etiquettes(db)
+
+    client_ids = [int(v) for v in formulaire.getlist("client_ids") if v.strip()]
+    date_iso = formulaire.get("date", "").strip()
+    ferme = bool(formulaire.get("ferme"))
+    ouverture = formulaire.get("ouverture", "").strip()
+    fermeture = formulaire.get("fermeture", "").strip()
+
+    if not client_ids:
+        return templates.TemplateResponse(
+            request, "horaires_exceptionnelles.html",
+            {"etiquettes": etiquettes, "clients_json": clients_json, "resultats": None,
+             "erreur": "Selectionnez au moins une fiche."},
+            status_code=400,
+        )
+    if not date_iso:
+        return templates.TemplateResponse(
+            request, "horaires_exceptionnelles.html",
+            {"etiquettes": etiquettes, "clients_json": clients_json, "resultats": None,
+             "erreur": "Choisissez une date."},
+            status_code=400,
+        )
+    if not ferme and not (ouverture and fermeture):
+        return templates.TemplateResponse(
+            request, "horaires_exceptionnelles.html",
+            {"etiquettes": etiquettes, "clients_json": clients_json, "resultats": None,
+             "erreur": "Indiquez une heure d'ouverture et de fermeture, ou cochez «Fermé toute la journée»."},
+            status_code=400,
+        )
+
+    nouvelle_periode = google_location.construire_periode_exceptionnelle(date_iso, ferme, ouverture, fermeture)
+
+    resultats = []
+    for client_id in client_ids:
+        client = db.get(models.Client, client_id)
+        if not client:
+            continue
+        entree = {"client": client, "succes": False, "erreur": None}
+        if not client.account_id or not client.location_id:
+            entree["erreur"] = "Pas de fiche Google associee."
+            resultats.append(entree)
+            continue
+        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+        if not identifiants:
+            entree["erreur"] = "Compte Google non valide (a reconnecter depuis Comptes Google)."
+            resultats.append(entree)
+            continue
+        try:
+            infos_actuelles = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+            periodes = google_location.fusionner_horaires_exceptionnels(
+                infos_actuelles.get("specialHours"), nouvelle_periode
+            )
+            google_location.mettre_a_jour_fiche(
+                identifiants, client.location_id,
+                {"specialHours": {"specialHourPeriods": periodes}}, ["specialHours"],
+            )
+            entree["succes"] = True
+        except Exception as erreur:
+            entree["erreur"] = str(erreur)
+        resultats.append(entree)
+
+    return templates.TemplateResponse(
+        request,
+        "horaires_exceptionnelles.html",
+        {
+            "etiquettes": etiquettes,
+            "clients_json": clients_json,
+            "resultats": resultats,
+            "date_appliquee": date_iso,
+            "erreur": None,
+        },
+    )
 
 
 @app.post("/clients/{client_id}/fiche/liens_action")
