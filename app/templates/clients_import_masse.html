@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Import multiple de clients — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+<h1>Créer plusieurs clients en une fois</h1>
+<p class="texte-discret">
+  Sélectionne les fiches Google à importer, ajuste les noms si besoin : la
+  base de connaissances et les consignes ci-dessous sont appliquées à tous
+  les clients créés.
+</p>
+
+{% if not google_connecte %}
+<div class="bandeau-avertissement">
+  Google n'est pas connecté : impossible de sélectionner des fiches.
+  <a href="/google/connecter">Connecter Google</a>
+</div>
+{% else %}
+
+{% if resultats %}
+<div class="bandeau-info">
+  <strong>{{ resultats.crees }}</strong> client{{ "s" if resultats.crees != 1 else "" }} créé{{ "s" if resultats.crees != 1 else "" }}{% if resultats.details_ignores %}, {{ resultats.details_ignores|length }} ignoré(s){% endif %}.
+</div>
+{% if resultats.details_ignores %}
+<ul class="texte-discret">
+  {% for detail in resultats.details_ignores %}<li>{{ detail }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+
+{% if not fiches %}
+<p class="texte-vide">Toutes les fiches Google connectées sont déjà associées à un client.</p>
+{% else %}
+<form class="formulaire" method="post" action="/clients/import-masse" enctype="multipart/form-data">
+  <label>
+    Contenu du site (texte fourni à l'IA, appliqué à tous les clients créés)
+    <textarea name="contenu_site" rows="10"></textarea>
+  </label>
+
+  <label>
+    Base de connaissances (documents, appliqués à tous les clients créés)
+    <input type="file" name="fichiers" accept=".pdf,.docx,.txt" multiple>
+  </label>
+  <p class="texte-discret">PDF, Word (.docx) ou texte (.txt), plusieurs fichiers possibles. Le(s) même(s) document(s) est/sont ajouté(s) à chaque client sélectionné.</p>
+
+  <label>
+    Consignes pour les réponses aux avis (IA, appliquées à tous les clients créés)
+    <textarea name="consignes_avis" rows="4"></textarea>
+  </label>
+
+  <div class="barre-titre">
+    <span class="choix-image-titre">{{ fiches|length }} fiche(s) Google disponible(s)</span>
+    <div class="barre-outils-import-masse">
+      <input type="text" id="filtre-fiches-masse" placeholder="Filtrer par nom...">
+      <button type="button" id="bouton-tout-cocher" class="bouton-secondaire">Tout cocher</button>
+      <button type="button" id="bouton-tout-decocher" class="bouton-secondaire">Tout décocher</button>
+    </div>
+  </div>
+
+  <div class="conteneur-tableau">
+    <table class="tableau-historique disposition-fixe">
+      <colgroup>
+        <col style="width:6%;">
+        <col style="width:34%;">
+        <col style="width:60%;">
+      </colgroup>
+      <thead>
+        <tr><th></th><th>Compte Google</th><th>Nom du client</th></tr>
+      </thead>
+      <tbody>
+        {% for fiche in fiches %}
+        {% set cle = fiche.compte_google_id ~ "|" ~ fiche.account_id ~ "|" ~ fiche.location_id %}
+        <tr class="ligne-fiche-masse" data-recherche="{{ (fiche.nom_fiche ~ ' ' ~ fiche.nom_compte)|lower }}">
+          <td><input type="checkbox" name="selection" value="{{ cle }}"></td>
+          <td class="texte-discret">{{ fiche.nom_compte }}</td>
+          <td><input type="text" name="nom__{{ cle }}" value="{{ fiche.nom_fiche }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <button type="submit">Créer les clients sélectionnés</button>
+</form>
+
+<script>
+(function () {
+  const filtre = document.getElementById("filtre-fiches-masse");
+  const lignes = document.querySelectorAll(".ligne-fiche-masse");
+
+  filtre.addEventListener("input", () => {
+    const terme = filtre.value.trim().toLowerCase();
+    lignes.forEach((ligne) => {
+      ligne.hidden = !!terme && !ligne.dataset.recherche.includes(terme);
+    });
+  });
+
+  document.getElementById("bouton-tout-cocher").addEventListener("click", () => {
+    lignes.forEach((ligne) => {
+      if (!ligne.hidden) ligne.querySelector('input[type="checkbox"]').checked = true;
+    });
+  });
+  document.getElementById("bouton-tout-decocher").addEventListener("click", () => {
+    lignes.forEach((ligne) => {
+      if (!ligne.hidden) ligne.querySelector('input[type="checkbox"]').checked = false;
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endif %}
+{% endblock %}

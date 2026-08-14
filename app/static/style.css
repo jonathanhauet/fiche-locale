@@ -362,6 +362,17 @@ a { color: var(--accent); }
 
 .bloc-section .texte-explication-2fa { text-align: left; margin-bottom: 0.9rem; }
 
+.barre-outils-import-masse {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.barre-outils-import-masse input[type="text"] { width: 220px; }
+
+.ligne-fiche-masse td { vertical-align: middle; }
+
 /* ---------- Formulaires ---------- */
 
 label {

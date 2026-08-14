@@ -1145,29 +1145,8 @@ def nouveau_client_formulaire(request: Request, db: Session = Depends(obtenir_se
     if redirection:
         return redirection
 
-    fiches = []
     google_connecte = google_oauth.google_est_connecte(db)
-    if google_connecte:
-        comptes_avec_identifiants = [
-            (compte.id, compte.libelle, google_oauth.obtenir_identifiants(db, compte.id))
-            for compte in google_oauth.lister_comptes(db)
-        ]
-        comptes_avec_identifiants = [c for c in comptes_avec_identifiants if c[2] is not None]
-        fiches = google_business.lister_fiches_multi_comptes(comptes_avec_identifiants)
-
-        # On ne repropose pas les fiches deja associees a un client existant.
-        fiches_deja_liees = {
-            (c.compte_google_id, c.account_id, c.location_id)
-            for c in db.query(models.Client).filter(models.Client.location_id != "").all()
-        }
-        fiches = [
-            f for f in fiches
-            if (f["compte_google_id"], f["account_id"], f["location_id"]) not in fiches_deja_liees
-        ]
-        # Tri alphabetique par nom de fiche (le groupby de Jinja trie ensuite
-        # par compte, de facon stable : l'ordre alphabetique par fiche est
-        # donc conserve a l'interieur de chaque groupe).
-        fiches.sort(key=lambda f: f["nom_fiche"].lower())
+    fiches = _fiches_google_non_liees(db) if google_connecte else []
 
     return templates.TemplateResponse(
         request,
@@ -1227,6 +1206,120 @@ def creer_client(
         return _reponse_detail_client(request, db, client, erreur_document=" ; ".join(erreurs_documents), code=200)
 
     return RedirectResponse(f"/clients/{client.id}", status_code=303)
+
+
+def _fiches_google_non_liees(db: Session) -> list[dict]:
+    """Fiches Google (tous comptes connectes confondus) pas encore associees a un client."""
+    comptes_avec_identifiants = [
+        (compte.id, compte.libelle, google_oauth.obtenir_identifiants(db, compte.id))
+        for compte in google_oauth.lister_comptes(db)
+    ]
+    comptes_avec_identifiants = [c for c in comptes_avec_identifiants if c[2] is not None]
+    fiches = google_business.lister_fiches_multi_comptes(comptes_avec_identifiants)
+
+    fiches_deja_liees = {
+        (c.compte_google_id, c.account_id, c.location_id)
+        for c in db.query(models.Client).filter(models.Client.location_id != "").all()
+    }
+    fiches = [
+        f for f in fiches
+        if (f["compte_google_id"], f["account_id"], f["location_id"]) not in fiches_deja_liees
+    ]
+    fiches.sort(key=lambda f: f["nom_fiche"].lower())
+    return fiches
+
+
+@app.get("/clients/import-masse", response_class=HTMLResponse)
+def import_masse_formulaire(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    google_connecte = google_oauth.google_est_connecte(db)
+    fiches = _fiches_google_non_liees(db) if google_connecte else []
+
+    return templates.TemplateResponse(
+        request,
+        "clients_import_masse.html",
+        {"fiches": fiches, "google_connecte": google_connecte, "resultats": None},
+    )
+
+
+@app.post("/clients/import-masse")
+async def creer_clients_masse(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    formulaire = await request.form()
+    contenu_site = formulaire.get("contenu_site", "")
+    consignes_avis = formulaire.get("consignes_avis", "")
+    selection = [v.strip() for v in formulaire.getlist("selection") if v.strip()]
+
+    # Le meme document est joint a chaque client cree : on extrait son texte
+    # une seule fois plutot que de refaire l'extraction pour chacun.
+    documents_extraits = []
+    erreurs_documents = []
+    for fichier in formulaire.getlist("fichiers"):
+        if not getattr(fichier, "filename", ""):
+            continue
+        try:
+            octets = await fichier.read()
+            texte_extrait = documents.extraire_texte(fichier.filename, octets)
+            documents_extraits.append((fichier.filename, texte_extrait))
+        except Exception as erreur:
+            erreurs_documents.append(f"{fichier.filename} : {erreur}")
+
+    fiches_deja_liees = {
+        (c.compte_google_id, c.account_id, c.location_id)
+        for c in db.query(models.Client).filter(models.Client.location_id != "").all()
+    }
+
+    details_ignores = list(erreurs_documents)
+    nb_crees = 0
+    for cle in selection:
+        compte_google_id_brut, _, reste = cle.partition("|")
+        account_id, _, location_id = reste.partition("|")
+        compte_google_id = int(compte_google_id_brut) if compte_google_id_brut else None
+
+        if (compte_google_id, account_id, location_id) in fiches_deja_liees:
+            details_ignores.append(f"{formulaire.get(f'nom__{cle}', cle)} : déjà associée à un client.")
+            continue
+
+        nom = formulaire.get(f"nom__{cle}", "").strip()
+        if not nom:
+            details_ignores.append(f"{cle} : nom vide.")
+            continue
+
+        client = models.Client(
+            nom=nom, contenu_site=contenu_site, consignes_avis=consignes_avis,
+            account_id=account_id, location_id=location_id, compte_google_id=compte_google_id,
+        )
+        db.add(client)
+        db.flush()
+
+        for nom_fichier, texte_extrait in documents_extraits:
+            db.add(models.DocumentConnaissance(
+                client_id=client.id, nom_fichier=nom_fichier, texte_extrait=texte_extrait,
+            ))
+
+        fiches_deja_liees.add((compte_google_id, account_id, location_id))
+        nb_crees += 1
+
+    db.commit()
+
+    google_connecte = google_oauth.google_est_connecte(db)
+    fiches = _fiches_google_non_liees(db) if google_connecte else []
+
+    return templates.TemplateResponse(
+        request,
+        "clients_import_masse.html",
+        {
+            "fiches": fiches,
+            "google_connecte": google_connecte,
+            "resultats": {"crees": nb_crees, "details_ignores": details_ignores},
+        },
+    )
 
 
 def _contexte_ia_client(client: models.Client) -> str:
