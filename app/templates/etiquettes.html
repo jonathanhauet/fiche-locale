@@ -34,7 +34,7 @@
       {% for etiquette in etiquettes %}
       <tr>
         <td><span class="etiquette-chip">{{ etiquette.nom }}</span></td>
-        <td>
+        <td class="cellule-libre">
           {% if etiquette.clients %}
           {{ etiquette.clients|map(attribute='nom')|join(', ') }}
           {% else %}

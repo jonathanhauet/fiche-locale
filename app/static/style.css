@@ -1231,6 +1231,18 @@ h3 { font-size: 0.95rem; margin: 1.3rem 0 0.8rem; color: var(--texte-discret); }
 .tableau-historique a { color: var(--accent); text-decoration: none; }
 .tableau-historique tr:last-child td { border-bottom: none; }
 
+/* Cellules a contenu variable (nom d'entreprise, email, liste de clients...) :
+   le nowrap par defaut sur les cellules du tableau force sinon la colonne a
+   s'elargir pour tenir tout le texte sur une seule ligne - avec un contenu
+   long, la table entiere depasse alors la largeur visible sans que le
+   defilement horizontal du conteneur ne soit assez visible pour etre utilise.
+   overflow-wrap:anywhere permet de couper meme un mot sans espace (email). */
+.cellule-libre {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 260px;
+}
+
 /* ---------- Avis ---------- */
 
 .carte-avis {

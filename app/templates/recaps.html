@@ -34,8 +34,8 @@
     <tbody>
       {% for ligne in lignes %}
       <tr>
-        <td>{{ ligne.client.nom }}</td>
-        <td>
+        <td class="cellule-libre">{{ ligne.client.nom }}</td>
+        <td class="cellule-libre">
           {% if ligne.client.email %}
           {{ ligne.client.email }}
           {% else %}
