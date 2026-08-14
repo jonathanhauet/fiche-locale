@@ -52,14 +52,16 @@
 <form method="post" action="/clients/supprimer-masse" id="formulaire-suppression-masse"
       onsubmit="return confirm(`Supprimer definitivement ${document.querySelectorAll('.case-client-suppression:checked').length} client(s) ? Leurs posts, photos et documents seront aussi supprimes. Cette action est irreversible.`);">
   <div class="barre-outils-import-masse barre-outils-selection-clients">
+    <input type="text" id="filtre-liste-clients" placeholder="Filtrer par nom...">
     <button type="button" id="bouton-tout-cocher-clients" class="bouton-secondaire">Tout cocher</button>
     <button type="button" id="bouton-tout-decocher-clients" class="bouton-secondaire">Tout décocher</button>
     <button type="submit" id="bouton-supprimer-selection" class="bouton-danger" disabled>🗑 Supprimer la sélection</button>
   </div>
+  <p id="texte-aucun-resultat-filtre" class="texte-vide" hidden>Aucun client ne correspond à ce filtre.</p>
 
   <ul class="liste-clients">
     {% for client in clients %}
-    <li>
+    <li class="ligne-client-filtrable" data-recherche="{{ client.nom|lower }}">
       <input type="checkbox" name="client_ids" value="{{ client.id }}" class="case-client-suppression">
       <a href="/clients/{{ client.id }}">
         <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
@@ -88,6 +90,9 @@
 (function () {
   const cases = Array.from(document.querySelectorAll(".case-client-suppression"));
   const boutonSupprimer = document.getElementById("bouton-supprimer-selection");
+  const lignes = Array.from(document.querySelectorAll(".ligne-client-filtrable"));
+  const filtre = document.getElementById("filtre-liste-clients");
+  const texteAucunResultat = document.getElementById("texte-aucun-resultat-filtre");
 
   function actualiser() {
     const nbCoches = cases.filter((c) => c.checked).length;
@@ -97,12 +102,26 @@
 
   cases.forEach((c) => c.addEventListener("change", actualiser));
   document.getElementById("bouton-tout-cocher-clients").addEventListener("click", () => {
-    cases.forEach((c) => { c.checked = true; });
+    lignes.forEach((ligne) => {
+      if (!ligne.hidden) ligne.querySelector(".case-client-suppression").checked = true;
+    });
     actualiser();
   });
   document.getElementById("bouton-tout-decocher-clients").addEventListener("click", () => {
-    cases.forEach((c) => { c.checked = false; });
+    lignes.forEach((ligne) => {
+      if (!ligne.hidden) ligne.querySelector(".case-client-suppression").checked = false;
+    });
     actualiser();
+  });
+
+  filtre.addEventListener("input", () => {
+    const terme = filtre.value.trim().toLowerCase();
+    let visibles = 0;
+    lignes.forEach((ligne) => {
+      ligne.hidden = !!terme && !ligne.dataset.recherche.includes(terme);
+      if (!ligne.hidden) visibles++;
+    });
+    texteAucunResultat.hidden = visibles > 0;
   });
 })();
 </script>

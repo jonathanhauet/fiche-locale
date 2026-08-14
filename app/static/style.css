@@ -154,6 +154,41 @@ a { color: var(--accent); }
   color: white;
 }
 
+.recherche-globale-clients {
+  position: relative;
+  margin-bottom: 1.1rem;
+}
+
+.recherche-globale-clients input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--barre-texte);
+  font-size: 0.85rem;
+}
+
+.recherche-globale-clients input::placeholder { color: rgba(255, 255, 255, 0.5); }
+
+.recherche-globale-clients input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+.recherche-globale-clients .resultats-recherche-ville {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon-petit);
+  box-shadow: var(--ombre);
+  padding: 0.3rem;
+  max-height: 280px;
+}
+
 .nav-laterale {
   display: flex;
   flex-direction: column;
@@ -1304,6 +1339,7 @@ button:active { transform: translateY(1px); }
 }
 
 .bouton-resultat-ville {
+  display: block;
   width: 100%;
   text-align: left;
   background: var(--fond);
@@ -1312,6 +1348,7 @@ button:active { transform: translateY(1px); }
   font-weight: 400;
   white-space: normal;
   line-height: 1.3;
+  text-decoration: none;
 }
 
 .bouton-resultat-ville:hover { background: var(--accent-clair); border-color: var(--accent); }

@@ -49,7 +49,7 @@ from . import (
     recap_mensuel,
     soldes_api,
 )
-from .database import Base, engine, obtenir_session
+from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
     envoyer_recaps_mensuels,
     verifier_et_publier_photos_programmees,
@@ -207,6 +207,24 @@ templates.env.globals["version_css"] = int(
 # affichee sur toutes les pages) : voir soldes_api.py pour le detail du cache.
 templates.env.globals["solde_dataforseo"] = soldes_api.solde_dataforseo
 templates.env.globals["liens_plateformes_paiement"] = soldes_api.LIENS_PLATEFORMES_PAIEMENT
+
+
+def _clients_json_recherche_globale() -> str:
+    """
+    Liste {id, nom} de tous les clients, pour la recherche rapide de la barre
+    laterale (voir base.html) - utilise une session dediee (pas celle de la
+    requete en cours) car appelee comme fonction globale Jinja, sans acces a
+    la dependance Depends(obtenir_session) de la route affichee.
+    """
+    db = SessionLocal()
+    try:
+        clients = db.query(models.Client).order_by(models.Client.nom).all()
+        return json.dumps([{"id": c.id, "nom": c.nom} for c in clients]).replace("</", "<\\/")
+    finally:
+        db.close()
+
+
+templates.env.globals["clients_json_recherche_globale"] = _clients_json_recherche_globale
 
 # Tache de fond : publie automatiquement les posts programmes dont la date
 # est arrivee. Remplace la tache planifiee Windows des scripts en ligne de

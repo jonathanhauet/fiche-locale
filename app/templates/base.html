@@ -22,6 +22,11 @@
         <button type="button" id="bouton-menu-mobile" class="bouton-menu-mobile" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="menu-laterale">☰</button>
       </div>
       <div class="menu-laterale-repliable" id="menu-laterale">
+        <div class="recherche-globale-clients">
+          <input type="text" id="champ-recherche-globale-clients" autocomplete="off" placeholder="🔎 Rechercher un client...">
+          <ul id="resultats-recherche-globale-clients" class="resultats-recherche-ville" hidden></ul>
+        </div>
+        <script id="donnees-recherche-globale-clients" type="application/json">{{ clients_json_recherche_globale()|safe }}</script>
         <nav class="nav-laterale">
           <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
             <span class="nav-icone">◧</span> Clients
@@ -127,6 +132,50 @@
         }
       }, 0);
     });
+  </script>
+  <script>
+    // Recherche rapide d'un client depuis n'importe quelle page (barre laterale).
+    (function () {
+      const champ = document.getElementById("champ-recherche-globale-clients");
+      const resultats = document.getElementById("resultats-recherche-globale-clients");
+      if (!champ) return;
+
+      const donnees = document.getElementById("donnees-recherche-globale-clients");
+      const clients = JSON.parse(donnees.textContent);
+
+      function echapper(texte) {
+        const div = document.createElement("div");
+        div.textContent = texte == null ? "" : String(texte);
+        return div.innerHTML;
+      }
+
+      function afficherResultats() {
+        const saisie = champ.value.trim().toLowerCase();
+        if (!saisie) {
+          resultats.hidden = true;
+          resultats.innerHTML = "";
+          return;
+        }
+        const correspondances = clients.filter((c) => c.nom.toLowerCase().includes(saisie)).slice(0, 8);
+        resultats.innerHTML = correspondances.length
+          ? correspondances.map((c) => `<li><a href="/clients/${c.id}" class="bouton-resultat-ville">${echapper(c.nom)}</a></li>`).join("")
+          : `<li class="texte-discret">Aucun client trouvé.</li>`;
+        resultats.hidden = false;
+      }
+
+      champ.addEventListener("input", afficherResultats);
+      champ.addEventListener("focus", () => { if (champ.value.trim()) afficherResultats(); });
+      document.addEventListener("click", (evenement) => {
+        if (evenement.target !== champ && !resultats.contains(evenement.target)) resultats.hidden = true;
+      });
+      champ.addEventListener("keydown", (evenement) => {
+        if (evenement.key === "Enter") {
+          evenement.preventDefault();
+          const premier = resultats.querySelector("a");
+          if (premier) window.location.href = premier.getAttribute("href");
+        }
+      });
+    })();
   </script>
   <script>
     // Un clic sur un champ date n'ouvre le calendrier natif que sur la petite
