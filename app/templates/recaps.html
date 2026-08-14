@@ -63,7 +63,7 @@
           {% endif %}
         </td>
         <td>
-          <div class="actions-avis">
+          <div class="actions-avis actions-verticales">
             <a class="bouton-secondaire" href="/clients/{{ ligne.client.id }}/recap/apercu" target="_blank" rel="noopener">Aperçu</a>
             <form method="post" action="/clients/{{ ligne.client.id }}/recap/envoyer">
               <button type="submit" class="bouton-secondaire" {% if not ligne.client.email %}disabled{% endif %}>Envoyer</button>
