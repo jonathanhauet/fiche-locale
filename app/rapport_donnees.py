@@ -19,6 +19,7 @@ from . import (
     google_performance,
     google_reviews,
     models,
+    qr_code,
     recap_mensuel,
 )
 
@@ -272,19 +273,32 @@ def construire_contenu_recap(
         except Exception:
             resume_avis_texte = None
 
-    # Lien "Voir ma fiche sur Google" : facultatif, on n'echoue jamais le
-    # recap pour ca (fiche pas encore visible sur Maps, erreur API, etc.).
+    # Lien "Voir ma fiche sur Google" + lien "Laisser un avis" (a partager
+    # aux clients) : facultatifs, on n'echoue jamais le recap pour ca (fiche
+    # pas encore visible sur Maps, erreur API, etc.).
+    lien_fiche_google = ""
+    lien_avis_google = ""
     try:
         infos_fiche = google_location.obtenir_infos_fiche(identifiants, client.location_id)
-        lien_fiche_google = (infos_fiche.get("metadata") or {}).get("mapsUri", "")
+        metadata_fiche = infos_fiche.get("metadata") or {}
+        lien_fiche_google = metadata_fiche.get("mapsUri", "")
+        lien_avis_google = metadata_fiche.get("newReviewUri", "")
     except Exception:
-        lien_fiche_google = ""
+        pass
+
+    qr_code_avis = None
+    if lien_avis_google:
+        try:
+            qr_code_avis = qr_code.data_uri(lien_avis_google)
+        except Exception:
+            qr_code_avis = None
 
     groupes_etiquette = resume_groupes_etiquette(db, client, debut, fin, cache_groupes)
 
     sujet = recap_mensuel.construire_sujet(client, mois, annee)
     html = recap_mensuel.construire_email(
-        client, donnees, mois, annee, avis_positifs, resume_avis_texte, lien_fiche_google, groupes_etiquette
+        client, donnees, mois, annee, avis_positifs, resume_avis_texte, lien_fiche_google, groupes_etiquette,
+        lien_avis_google, qr_code_avis,
     )
     return sujet, html
 

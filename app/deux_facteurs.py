@@ -4,13 +4,12 @@ Google Authenticator / Authy / etc. Voir app/main.py pour le flux de connexion
 en deux etapes qui utilise ces fonctions.
 """
 
-import base64
 import secrets
 import string
-from io import BytesIO
 
 import pyotp
-import qrcode
+
+from . import qr_code
 
 NOM_EMETTEUR = "Fiche Locale"
 
@@ -30,11 +29,7 @@ def uri_provisionnement(secret: str, identifiant: str) -> str:
 
 
 def qr_code_data_uri(uri: str) -> str:
-    image = qrcode.make(uri)
-    tampon = BytesIO()
-    image.save(tampon, format="PNG")
-    encode = base64.b64encode(tampon.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{encode}"
+    return qr_code.data_uri(uri)
 
 
 def code_valide(secret: str, code: str) -> bool:

@@ -82,7 +82,7 @@ def _ligne_stat(libelle: str, valeur, evolution=None) -> str:
 def construire_email(
     client: models.Client, donnees: dict, mois: int, annee: int,
     avis_positifs: list[dict], resume_avis_texte: str = None, lien_fiche_google: str = "",
-    groupes_etiquette: list[dict] = None,
+    groupes_etiquette: list[dict] = None, lien_avis_google: str = "", qr_code_avis: str = None,
 ) -> str:
     statistiques = donnees.get("statistiques") or {}
     resume_avis = donnees.get("resume_avis") or {}
@@ -217,6 +217,30 @@ def construire_email(
         if lien_fiche_google else ""
     )
 
+    # Lien "Laisser un avis" a partager par le client a SES propres clients
+    # (affiche en caisse, envoye par SMS/WhatsApp...) + QR code equivalent
+    # pour un affichage papier. Facultatif : absent si Google ne renvoie pas
+    # ce lien pour la fiche (voir rapport_donnees.envoyer_recap_client).
+    bloc_avis_a_partager = ""
+    if lien_avis_google:
+        qr_html = (
+            f'<img src="{qr_code_avis}" width="130" height="130" alt="QR code pour laisser un avis" '
+            f'style="display:block;margin:12px auto 0;border-radius:6px;">'
+            f'<p style="margin:8px 0 0;color:{COULEUR_DISCRET};font-size:12px;">'
+            f"Ou fais-leur scanner ce QR code (par exemple affiché en caisse).</p>"
+            if qr_code_avis else ""
+        )
+        bloc_avis_a_partager = f"""
+        <div style="background:{COULEUR_FOND_CARTE};padding:16px 20px;margin:24px 0 0;border-radius:6px;text-align:center;">
+          <p style="margin:0 0 8px;color:{COULEUR_TEXTE};font-size:14px;">
+            📣 Envie de récolter plus d'avis ? Partage ce lien à tes clients :
+          </p>
+          <p style="margin:0;">
+            <a href="{lien_avis_google}" style="color:{COULEUR_ACCENT};font-size:13px;word-break:break-all;">{lien_avis_google}</a>
+          </p>
+          {qr_html}
+        </div>"""
+
     pied_contact = "Une question sur ta fiche ? Réponds-moi simplement à cet email"
     if WHATSAPP_NUMERO:
         pied_contact += (
@@ -255,6 +279,7 @@ def construire_email(
               <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qui s'est passé sur ta fiche <strong>{client.nom}</strong> {en_mois} :</p>
               {contenu_sections}
               {bouton_fiche}
+              {bloc_avis_a_partager}
             </td>
           </tr>
           <tr>

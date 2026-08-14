@@ -9,7 +9,7 @@ import requests
 
 CHAMPS_LECTURE = (
     "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,specialHours,"
-    "profile,latlng,categories,metadata.mapsUri"
+    "profile,latlng,categories,metadata.mapsUri,metadata.newReviewUri"
 )
 
 JOURS_SEMAINE = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
