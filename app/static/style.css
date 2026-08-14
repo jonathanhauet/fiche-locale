@@ -1236,12 +1236,24 @@ h3 { font-size: 0.95rem; margin: 1.3rem 0 0.8rem; color: var(--texte-discret); }
    s'elargir pour tenir tout le texte sur une seule ligne - avec un contenu
    long, la table entiere depasse alors la largeur visible sans que le
    defilement horizontal du conteneur ne soit assez visible pour etre utilise.
-   overflow-wrap:anywhere permet de couper meme un mot sans espace (email). */
-.cellule-libre {
+   overflow-wrap:anywhere permet de couper meme un mot sans espace (email).
+   Selecteur .tableau-historique td.cellule-libre (et non juste .cellule-libre)
+   : il faut au moins la meme specificite que la regle "td { white-space:
+   nowrap }" ci-dessus pour la remplacer, sinon le nowrap gagne silencieusement
+   malgre cette regle (constate en verifiant le style calcule du navigateur,
+   pas juste en relisant le CSS). */
+.tableau-historique td.cellule-libre {
   white-space: normal;
   overflow-wrap: anywhere;
-  max-width: 260px;
 }
+
+/* En layout "auto" (par defaut), max-width sur une cellule ne suffit pas a
+   contraindre une colonne de facon fiable : le navigateur peut quand meme
+   l'elargir selon le contenu des AUTRES lignes de la meme colonne (constate
+   avec une liste de clients bien plus longue que lors du premier essai). Le
+   layout "fixe" force chaque colonne a respecter la largeur du <colgroup> du
+   tableau (voir recaps.html/etiquettes.html), quel que soit le contenu. */
+.tableau-historique.disposition-fixe { table-layout: fixed; }
 
 /* ---------- Avis ---------- */
 
