@@ -199,6 +199,52 @@ a { color: var(--accent); }
 
 .lien-deconnexion-barre:hover { opacity: 1; }
 
+.bloc-liens-plateformes {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
+.titre-liens-plateformes {
+  margin: 0 0 0.3rem;
+  padding: 0 0.7rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--barre-texte);
+  opacity: 0.55;
+}
+
+.lien-plateforme {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--rayon-petit);
+  color: var(--barre-texte);
+  text-decoration: none;
+  font-size: 0.85rem;
+  opacity: 0.85;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.lien-plateforme:hover { background: rgba(255, 255, 255, 0.06); opacity: 1; }
+
+.solde-plateforme {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--succes);
+}
+
+.solde-plateforme.solde-bas { color: var(--danger); }
+
+.texte-alerte-solde {
+  margin: 0.3rem 0.7rem 0;
+  font-size: 0.75rem;
+  color: var(--danger);
+}
+
 .zone-contenu {
   flex: 1;
   min-width: 0;

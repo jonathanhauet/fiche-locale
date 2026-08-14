@@ -57,6 +57,21 @@
             <span class="nav-icone">⚙</span> Comptes Google
           </a>
         </nav>
+        <div class="bloc-liens-plateformes">
+          <p class="titre-liens-plateformes">Comptes &amp; crédits</p>
+          {% set solde = solde_dataforseo() %}
+          {% for plateforme in liens_plateformes_paiement %}
+          <a href="{{ plateforme.url }}" target="_blank" rel="noopener" class="lien-plateforme">
+            <span>{{ plateforme.nom }}</span>
+            {% if plateforme.nom == "DataForSEO" and solde.valeur is not none %}
+            <span class="solde-plateforme{{ ' solde-bas' if solde.bas else '' }}">{{ "%.2f"|format(solde.valeur) }} $</span>
+            {% endif %}
+          </a>
+          {% endfor %}
+          {% if solde.bas %}
+          <p class="texte-alerte-solde">⚠ Solde DataForSEO bas — pense à recharger.</p>
+          {% endif %}
+        </div>
         <a class="lien-deconnexion-barre" href="/deconnexion">Se déconnecter</a>
       </div>
     </aside>

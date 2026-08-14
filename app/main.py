@@ -43,6 +43,7 @@ from . import (
     rapport_donnees,
     rapport_pdf,
     recap_mensuel,
+    soldes_api,
 )
 from .database import Base, engine, obtenir_session
 from .planificateur import (
@@ -188,6 +189,10 @@ templates = Jinja2Templates(directory=os.path.join(DOSSIER_APP, "templates"))
 templates.env.globals["version_css"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "style.css"))
 )
+# Fonctions appelables directement depuis les templates (barre laterale,
+# affichee sur toutes les pages) : voir soldes_api.py pour le detail du cache.
+templates.env.globals["solde_dataforseo"] = soldes_api.solde_dataforseo
+templates.env.globals["liens_plateformes_paiement"] = soldes_api.LIENS_PLATEFORMES_PAIEMENT
 
 # Tache de fond : publie automatiquement les posts programmes dont la date
 # est arrivee. Remplace la tache planifiee Windows des scripts en ligne de
@@ -218,6 +223,17 @@ planificateur.add_job(
     hour=8,
     timezone="Europe/Brussels",
     id="recap_mensuel",
+)
+# Solde DataForSEO affiche dans la barre laterale : rafraichi peu apres le
+# demarrage (next_run_time proche mais pas immediat, pour ne pas retarder le
+# tout premier chargement de page) puis toutes les 6h - jamais a la volee au
+# chargement d'une page (voir soldes_api.py).
+planificateur.add_job(
+    soldes_api.rafraichir_solde_dataforseo,
+    "interval",
+    hours=6,
+    id="solde_dataforseo",
+    next_run_time=datetime.now() + timedelta(seconds=5),
 )
 planificateur.start()
 
