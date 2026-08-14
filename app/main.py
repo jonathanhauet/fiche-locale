@@ -2832,6 +2832,23 @@ def supprimer_client(client_id: int, request: Request, db: Session = Depends(obt
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/clients/supprimer-masse")
+def supprimer_clients_masse(
+    request: Request, client_ids: list[int] = Form(default=[]), db: Session = Depends(obtenir_session)
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    # Suppression via l'ORM (pas une requete DELETE en masse) : necessaire
+    # pour declencher les cascades (posts, photos, documents...) definies sur
+    # les relations de Client, comme pour la suppression d'un seul client.
+    for client in db.query(models.Client).filter(models.Client.id.in_(client_ids)).all():
+        db.delete(client)
+    db.commit()
+    return RedirectResponse("/", status_code=303)
+
+
 # --- Connexion Google (OAuth) ---------------------------------------------
 
 

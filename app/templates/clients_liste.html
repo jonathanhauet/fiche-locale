@@ -49,30 +49,63 @@
 </div>
 
 {% if clients %}
-<ul class="liste-clients">
-  {% for client in clients %}
-  <li>
-    <a href="/clients/{{ client.id }}">
-      <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
-      <span>{{ client.nom }}</span>
-    </a>
-    <div class="actions-avis">
-      {% if not client.account_id or not client.location_id %}
-        <span class="etiquette-avertissement">fiche Google non associée</span>
-      {% endif %}
-      {% if not client.prenom %}
-        <span class="etiquette-avertissement">prénom manquant</span>
-      {% endif %}
-      {% if not client.email %}
-        <span class="etiquette-avertissement">email manquant</span>
-      {% endif %}
-      {% if client.id not in ids_avec_connaissance %}
-        <span class="etiquette-avertissement">base de connaissance vide</span>
-      {% endif %}
-    </div>
-  </li>
-  {% endfor %}
-</ul>
+<form method="post" action="/clients/supprimer-masse" id="formulaire-suppression-masse"
+      onsubmit="return confirm(`Supprimer definitivement ${document.querySelectorAll('.case-client-suppression:checked').length} client(s) ? Leurs posts, photos et documents seront aussi supprimes. Cette action est irreversible.`);">
+  <div class="barre-outils-import-masse barre-outils-selection-clients">
+    <button type="button" id="bouton-tout-cocher-clients" class="bouton-secondaire">Tout cocher</button>
+    <button type="button" id="bouton-tout-decocher-clients" class="bouton-secondaire">Tout décocher</button>
+    <button type="submit" id="bouton-supprimer-selection" class="bouton-danger" disabled>🗑 Supprimer la sélection</button>
+  </div>
+
+  <ul class="liste-clients">
+    {% for client in clients %}
+    <li>
+      <input type="checkbox" name="client_ids" value="{{ client.id }}" class="case-client-suppression">
+      <a href="/clients/{{ client.id }}">
+        <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
+        <span>{{ client.nom }}</span>
+      </a>
+      <div class="actions-avis">
+        {% if not client.account_id or not client.location_id %}
+          <span class="etiquette-avertissement">fiche Google non associée</span>
+        {% endif %}
+        {% if not client.prenom %}
+          <span class="etiquette-avertissement">prénom manquant</span>
+        {% endif %}
+        {% if not client.email %}
+          <span class="etiquette-avertissement">email manquant</span>
+        {% endif %}
+        {% if client.id not in ids_avec_connaissance %}
+          <span class="etiquette-avertissement">base de connaissance vide</span>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</form>
+
+<script>
+(function () {
+  const cases = Array.from(document.querySelectorAll(".case-client-suppression"));
+  const boutonSupprimer = document.getElementById("bouton-supprimer-selection");
+
+  function actualiser() {
+    const nbCoches = cases.filter((c) => c.checked).length;
+    boutonSupprimer.disabled = nbCoches === 0;
+    boutonSupprimer.textContent = nbCoches ? `🗑 Supprimer la sélection (${nbCoches})` : "🗑 Supprimer la sélection";
+  }
+
+  cases.forEach((c) => c.addEventListener("change", actualiser));
+  document.getElementById("bouton-tout-cocher-clients").addEventListener("click", () => {
+    cases.forEach((c) => { c.checked = true; });
+    actualiser();
+  });
+  document.getElementById("bouton-tout-decocher-clients").addEventListener("click", () => {
+    cases.forEach((c) => { c.checked = false; });
+    actualiser();
+  });
+})();
+</script>
 {% else %}
 <p class="texte-vide">Aucun client pour l'instant.</p>
 {% endif %}
