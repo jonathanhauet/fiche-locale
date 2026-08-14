@@ -184,6 +184,10 @@ class Etiquette(Base):
 
     id = Column(Integer, primary_key=True)
     nom = Column(String, unique=True, nullable=False)
+    # Si vrai, les clients de cette etiquette sont exclus des vues generales
+    # (accueil, avis, alertes) et geres a part dans un "espace" dedie -
+    # voir /espaces et les parametres ?etiquette=... des routes concernees.
+    isolee = Column(Boolean, default=False)
 
     clients = relationship("Client", secondary=client_etiquettes, back_populates="etiquettes")
 

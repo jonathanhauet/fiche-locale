@@ -1,7 +1,11 @@
 {% extends "base.html" %}
-{% set page_actuelle = "clients" %}
-{% block titre %}Clients — Fiche Locale{% endblock %}
+{% set page_actuelle = "espaces" if espace else "clients" %}
+{% block titre %}{{ "Clients — " ~ espace.nom if espace else "Clients" }} — Fiche Locale{% endblock %}
 {% block contenu %}
+
+{% if espace %}
+<p class="fil-retour"><a href="/espaces">&larr; Retour aux espaces</a></p>
+{% endif %}
 
 {% if not google_connecte %}
 <div class="bandeau-avertissement">
@@ -16,11 +20,13 @@
 {% endif %}
 
 <div class="barre-titre">
-  <h1>Clients</h1>
+  <h1>{{ "Clients — " ~ espace.nom if espace else "Clients" }}</h1>
+  {% if not espace %}
   <div class="ligne-champs">
     <a class="bouton-secondaire" href="/clients/import-masse">+ Import multiple</a>
     <a class="bouton" href="/clients/nouveau">+ Ajouter un client</a>
   </div>
+  {% endif %}
 </div>
 
 <div class="grille-resume">

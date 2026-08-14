@@ -141,6 +141,11 @@ def _migrer_vers_multi_comptes():
             if "totp_secret" not in colonnes_utilisateurs:
                 connexion.execute(text("ALTER TABLE utilisateurs ADD COLUMN totp_secret TEXT"))
 
+        if "etiquettes" in inspecteur.get_table_names():
+            colonnes_etiquettes = [c["name"] for c in inspecteur.get_columns("etiquettes")]
+            if "isolee" not in colonnes_etiquettes:
+                connexion.execute(text("ALTER TABLE etiquettes ADD COLUMN isolee BOOLEAN DEFAULT FALSE"))
+
         if "config_google" in inspecteur.get_table_names():
             ancien = connexion.execute(text("SELECT refresh_token FROM config_google LIMIT 1")).fetchone()
             if ancien and ancien[0]:
@@ -626,20 +631,24 @@ def _donnees_calendrier(request: Request, db: Session, client: models.Client) ->
 
 
 @app.get("/avis", response_class=HTMLResponse)
-def liste_avis(request: Request, db: Session = Depends(obtenir_session)):
+def liste_avis(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
 
+    espace = db.get(models.Etiquette, etiquette_id) if etiquette_id else None
+
     google_connecte = google_oauth.google_est_connecte(db)
     clients = []
     if google_connecte:
-        clients = (
-            db.query(models.Client)
-            .filter(models.Client.account_id != "", models.Client.location_id != "")
-            .order_by(models.Client.nom)
-            .all()
+        base = db.query(models.Client).filter(
+            models.Client.account_id != "", models.Client.location_id != ""
         )
+        if espace:
+            base = base.filter(models.Client.etiquettes.any(models.Etiquette.id == espace.id))
+        else:
+            base = base.filter(~models.Client.etiquettes.any(models.Etiquette.isolee == True))  # noqa: E712
+        clients = base.order_by(models.Client.nom).all()
 
     clients_json = json.dumps([
         {"id": c.id, "nom": c.nom, "etiquettes": [e.id for e in c.etiquettes]} for c in clients
@@ -657,6 +666,7 @@ def liste_avis(request: Request, db: Session = Depends(obtenir_session)):
             "clients_json": clients_json,
             "etiquettes_disponibles": etiquettes_disponibles,
             "google_connecte": google_connecte,
+            "espace": espace,
         },
     )
 
@@ -1059,12 +1069,22 @@ def programmer_lot_posts(
 
 
 @app.get("/", response_class=HTMLResponse)
-def liste_clients(request: Request, db: Session = Depends(obtenir_session)):
+def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
 
-    clients = db.query(models.Client).order_by(models.Client.nom).all()
+    espace = db.get(models.Etiquette, etiquette_id) if etiquette_id else None
+    if espace:
+        clients = (
+            db.query(models.Client)
+            .filter(models.Client.etiquettes.any(models.Etiquette.id == espace.id))
+            .order_by(models.Client.nom)
+            .all()
+        )
+    else:
+        clients = _query_clients_non_isoles(db).order_by(models.Client.nom).all()
+
     ids_avec_connaissance = {
         client_id
         for (client_id,) in db.query(models.DocumentConnaissance.client_id).distinct().all()
@@ -1079,6 +1099,7 @@ def liste_clients(request: Request, db: Session = Depends(obtenir_session)):
             "nb_sans_email": sum(1 for c in clients if not c.email),
             "nb_sans_prenom": sum(1 for c in clients if not c.prenom),
             "nb_sans_connaissance": sum(1 for c in clients if c.id not in ids_avec_connaissance),
+            "espace": espace,
         },
     )
 
@@ -1089,7 +1110,7 @@ SEUIL_INACTIVITE_POSTS_JOURS = 30
 
 
 @app.get("/alertes", response_class=HTMLResponse)
-def alertes(request: Request, db: Session = Depends(obtenir_session)):
+def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
     """
     Tableau de bord regroupant deux signaux gratuits (pas d'appel DataForSEO
     payant ici) : fiches sans post recent publie via la plateforme, et avis
@@ -1101,8 +1122,13 @@ def alertes(request: Request, db: Session = Depends(obtenir_session)):
     if redirection:
         return redirection
 
+    espace = db.get(models.Etiquette, etiquette_id) if etiquette_id else None
+    if espace:
+        base = db.query(models.Client).filter(models.Client.etiquettes.any(models.Etiquette.id == espace.id))
+    else:
+        base = _query_clients_non_isoles(db)
     clients_avec_fiche = [
-        c for c in db.query(models.Client).order_by(models.Client.nom).all()
+        c for c in base.order_by(models.Client.nom).all()
         if c.account_id and c.location_id
     ]
 
@@ -1135,6 +1161,7 @@ def alertes(request: Request, db: Session = Depends(obtenir_session)):
             ).replace("</", "<\\/"),
             "clients_inactifs": clients_inactifs,
             "seuil_inactivite_jours": SEUIL_INACTIVITE_POSTS_JOURS,
+            "espace": espace,
         },
     )
 
@@ -1227,6 +1254,15 @@ def _fiches_google_non_liees(db: Session) -> list[dict]:
     ]
     fiches.sort(key=lambda f: f["nom_fiche"].lower())
     return fiches
+
+
+def _query_clients_non_isoles(db: Session):
+    """
+    Clients n'appartenant a aucune etiquette marquee "isolee" (espace separe,
+    voir /espaces) - c'est la base des vues generales (accueil, avis,
+    alertes) quand aucun ?etiquette=... n'est demande explicitement.
+    """
+    return db.query(models.Client).filter(~models.Client.etiquettes.any(models.Etiquette.isolee == True))  # noqa: E712
 
 
 def _toutes_etiquettes_json(db: Session) -> str:
@@ -2765,6 +2801,23 @@ def google_deconnecter_compte(compte_id: int, request: Request, db: Session = De
     return RedirectResponse("/google/comptes", status_code=303)
 
 
+# --- Espaces (etiquettes isolees des vues generales) ------------------------
+
+
+@app.get("/espaces", response_class=HTMLResponse)
+def liste_espaces(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes_isolees = (
+        db.query(models.Etiquette).filter_by(isolee=True).order_by(models.Etiquette.nom).all()
+    )
+    espaces = [{"etiquette": e, "nb_clients": len(e.clients)} for e in etiquettes_isolees]
+
+    return templates.TemplateResponse(request, "espaces.html", {"espaces": espaces})
+
+
 # --- Etiquettes --------------------------------------------------------------
 
 
@@ -2779,7 +2832,9 @@ def liste_etiquettes(request: Request, db: Session = Depends(obtenir_session)):
 
 
 @app.post("/etiquettes")
-def creer_etiquette(request: Request, nom: str = Form(...), db: Session = Depends(obtenir_session)):
+def creer_etiquette(
+    request: Request, nom: str = Form(...), isolee: bool = Form(False), db: Session = Depends(obtenir_session)
+):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -2791,7 +2846,7 @@ def creer_etiquette(request: Request, nom: str = Form(...), db: Session = Depend
     elif db.query(models.Etiquette).filter_by(nom=nom).first():
         erreur = f"L'étiquette « {nom} » existe déjà."
     else:
-        db.add(models.Etiquette(nom=nom))
+        db.add(models.Etiquette(nom=nom, isolee=isolee))
         db.commit()
 
     if erreur:
@@ -2799,6 +2854,24 @@ def creer_etiquette(request: Request, nom: str = Form(...), db: Session = Depend
         return templates.TemplateResponse(
             request, "etiquettes.html", {"etiquettes": etiquettes, "erreur": erreur}, status_code=400
         )
+    return RedirectResponse("/etiquettes", status_code=303)
+
+
+@app.post("/etiquettes/{etiquette_id}/isoler")
+def basculer_isolement_etiquette(etiquette_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Active/desactive l'isolement d'une etiquette (voir _query_clients_non_isoles
+    et /espaces) : ses clients sortent des vues generales (accueil, avis,
+    alertes) pour n'apparaitre que dans leur propre espace.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquette = db.get(models.Etiquette, etiquette_id)
+    if etiquette:
+        etiquette.isolee = not etiquette.isolee
+        db.commit()
     return RedirectResponse("/etiquettes", status_code=303)
 
 

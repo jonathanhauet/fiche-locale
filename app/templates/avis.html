@@ -1,11 +1,15 @@
 {% extends "base.html" %}
-{% set page_actuelle = "avis" %}
-{% block titre %}Avis — Fiche Locale{% endblock %}
+{% set page_actuelle = "espaces" if espace else "avis" %}
+{% block titre %}{{ "Avis — " ~ espace.nom if espace else "Avis" }} — Fiche Locale{% endblock %}
 {% block contenu %}
+{% if espace %}
+<p class="fil-retour"><a href="/espaces">&larr; Retour aux espaces</a></p>
+{% else %}
 <p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+{% endif %}
 
 <div class="barre-titre">
-  <h1>Avis Google (tous clients)</h1>
+  <h1>{{ "Avis Google — " ~ espace.nom if espace else "Avis Google (tous clients)" }}</h1>
   <div class="actions-avis">
     <select id="select-portee-suggestion">
       <option value="page">Suggestions IA : cette page</option>

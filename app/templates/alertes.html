@@ -1,10 +1,14 @@
 {% extends "base.html" %}
-{% set page_actuelle = "alertes" %}
-{% block titre %}Alertes — Fiche Locale{% endblock %}
+{% set page_actuelle = "espaces" if espace else "alertes" %}
+{% block titre %}{{ "Alertes — " ~ espace.nom if espace else "Alertes" }} — Fiche Locale{% endblock %}
 {% block contenu %}
 
+{% if espace %}
+<p class="fil-retour"><a href="/espaces">&larr; Retour aux espaces</a></p>
+{% endif %}
+
 <div class="barre-titre">
-  <h1>Alertes</h1>
+  <h1>{{ "Alertes — " ~ espace.nom if espace else "Alertes" }}</h1>
 </div>
 
 <p class="texte-discret">

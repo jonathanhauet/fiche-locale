@@ -373,6 +373,41 @@ a { color: var(--accent); }
 
 .ligne-fiche-masse td { vertical-align: middle; }
 
+.grille-espaces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.carte-espace {
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 1.1rem 1.3rem;
+}
+
+.carte-espace h2 { margin: 0 0 0.2rem; font-size: 1.05rem; }
+
+.actions-espace {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+}
+
+.case-isolement, .case-isolement-creation {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--texte-discret);
+}
+
+.case-isolement-creation { flex: 0 0 auto; align-self: center; }
+.case-isolement input, .case-isolement-creation input { width: auto; }
+
 /* ---------- Formulaires ---------- */
 
 label {

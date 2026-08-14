@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% set page_actuelle = "espaces" %}
+{% block titre %}Espaces — Fiche Locale{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Espaces</h1>
+</div>
+
+<p class="texte-discret">
+  Groupes de clients isolés des vues générales (Clients, Avis, Alertes),
+  pratique pour ne pas mélanger un client géré via de nombreuses fiches avec
+  le reste. Pour créer un espace, coche « Isoler dans un espace séparé »
+  depuis la page <a href="/etiquettes">Étiquettes</a>.
+</p>
+
+{% if not espaces %}
+<p class="texte-vide">Aucun espace pour l'instant.</p>
+{% else %}
+<div class="grille-espaces">
+  {% for espace in espaces %}
+  <div class="carte-espace">
+    <h2>{{ espace.etiquette.nom }}</h2>
+    <p class="texte-discret">{{ espace.nb_clients }} client{{ "s" if espace.nb_clients != 1 else "" }}</p>
+    <div class="actions-espace">
+      <a class="bouton-secondaire" href="/?etiquette_id={{ espace.etiquette.id }}">Clients</a>
+      <a class="bouton-secondaire" href="/avis?etiquette_id={{ espace.etiquette.id }}">Avis</a>
+      <a class="bouton-secondaire" href="/alertes?etiquette_id={{ espace.etiquette.id }}">Alertes</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
