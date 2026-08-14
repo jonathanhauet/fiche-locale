@@ -1305,6 +1305,41 @@ def modifier_photo_client(
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
+@app.post("/clients/{client_id}/photos_google/supprimer")
+async def supprimer_photo_fiche_google_route(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Supprime une photo directement sur la fiche Google (galerie "Deja sur la
+    fiche", lue en direct - pas un PhotoFiche local). A la difference de
+    /photos/{id}/supprimer ci-dessous, ceci retire vraiment la photo de la
+    fiche publique, pas seulement du suivi local.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    formulaire = await request.form()
+    nom_media = formulaire.get("nom_media", "").strip()
+    if not nom_media:
+        return JSONResponse({"erreur": "Photo introuvable."}, status_code=400)
+
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse(
+            {"erreur": "Compte Google non valide pour ce client (a reconnecter depuis Comptes Google)."},
+            status_code=400,
+        )
+
+    try:
+        google_business.supprimer_photo_fiche_google(identifiants, nom_media)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Echec de la suppression : {erreur}"}, status_code=500)
+
+    return JSONResponse({"ok": True})
+
+
 @app.post("/clients/{client_id}/photos/{photo_id}/supprimer")
 def supprimer_photo_client(client_id: int, photo_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -2034,6 +2069,37 @@ def stats_client(client_id: int, request: Request, db: Session = Depends(obtenir
     )
 
 
+@app.get("/clients/{client_id}/avis/historique-mensuel")
+def avis_historique_mensuel_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Historique des avis mois par mois (13 derniers mois, avec repartition par
+    etoile) pour le graphique de la page Statistiques. Charge cote navigateur
+    (voir client_stats.html) plutot qu'au rendu de la page : necessite de
+    relire tout l'historique de la fiche (toutes_les_pages=True), potentiellement
+    long sur une fiche tres commentee.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"historique": [], "erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"historique": [], "erreur": None})
+
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({
+            "historique": [],
+            "erreur": "Compte Google non valide pour ce client (a reconnecter depuis Comptes Google).",
+        })
+
+    try:
+        avis = google_reviews.lister_avis_complet_client(identifiants, client)
+        historique = google_reviews.historique_mensuel(avis)
+        return JSONResponse({"historique": historique, "erreur": None})
+    except Exception as erreur:
+        return JSONResponse({"historique": [], "erreur": str(erreur)})
+
+
 @app.get("/clients/{client_id}/stats/pdf")
 def stats_client_pdf(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -2440,11 +2506,21 @@ def supprimer_etiquette(etiquette_id: int, request: Request, db: Session = Depen
 
 
 def _photos_pour_client(db: Session, client: models.Client):
-    if client.account_id and client.location_id:
-        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-        if identifiants:
-            return google_business.lister_photos(identifiants, client.account_id, client.location_id)
-    return []
+    if not client.account_id or not client.location_id:
+        return []
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return []
+
+    photos = google_business.lister_photos(identifiants, client.account_id, client.location_id)
+    for photo in photos:
+        try:
+            photo["date_publication_affichee"] = (
+                datetime.fromisoformat(photo["date_publication"].replace("Z", "+00:00")).strftime("%d/%m/%Y")
+            )
+        except (ValueError, KeyError):
+            photo["date_publication_affichee"] = ""
+    return photos
 
 
 def _posts_en_ligne_pour_client(db: Session, client: models.Client, limite: int = 5) -> list:

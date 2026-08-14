@@ -82,6 +82,19 @@
   {% endif %}
 </ul>
 
+<h3>Historique des avis (13 derniers mois)</h3>
+<div class="bloc-historique-avis">
+  <div class="conteneur-graphique-comparatif">
+    <div id="graphique-historique-avis" style="width:100%;">
+      <p class="texte-discret" id="texte-chargement-historique">Chargement de l'historique…</p>
+    </div>
+  </div>
+  <div class="panneau-detail-mois-avis" id="panneau-detail-mois">
+    <p class="texte-discret">Sélectionne un point du graphique pour voir le détail du mois.</p>
+  </div>
+</div>
+<div id="erreur-historique-avis"></div>
+
 <h2>Publications Google (posts)</h2>
 <p class="texte-discret">
   {{ posts_publies|length }} post(s) publié(s) sur la période
@@ -122,5 +135,127 @@
 {% else %}
 <p class="texte-vide">Aucun mot-clé remonté par Google sur cette période.</p>
 {% endif %}
+
+<script>
+(function () {
+  const LIBELLES_MOIS = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+  ];
+  const conteneurGraphique = document.getElementById("graphique-historique-avis");
+  const panneauDetail = document.getElementById("panneau-detail-mois");
+  const conteneurErreur = document.getElementById("erreur-historique-avis");
+  let historiqueCourant = [];
+
+  function afficherDetailMois(index) {
+    const mois = historiqueCourant[index];
+    const moisPrecedent = index > 0 ? historiqueCourant[index - 1] : null;
+    if (!mois) return;
+
+    document.querySelectorAll(".point-graphique-historique").forEach((c) => c.classList.remove("point-selectionne"));
+    const pointActif = document.querySelector(`.point-graphique-historique[data-index="${index}"]`);
+    if (pointActif) pointActif.classList.add("point-selectionne");
+
+    const [annee, moisNum] = mois.mois.split("-");
+    const libelleMois = `${LIBELLES_MOIS[Number(moisNum) - 1]} ${annee}`;
+    const deltaTotal = moisPrecedent ? mois.total - moisPrecedent.total : null;
+
+    let html = `<h3>${libelleMois}</h3>`;
+    html += `<p class="detail-mois-chiffres"><strong>${mois.total}</strong> avis`;
+    if (deltaTotal !== null && deltaTotal !== 0) {
+      html += ` <span class="${deltaTotal > 0 ? "evolution-positive" : "evolution-negative"}">${deltaTotal > 0 ? "+" : ""}${deltaTotal}</span>`;
+    }
+    html += mois.moyenne !== null ? ` · moyenne ${mois.moyenne}/5` : ` · aucun avis ce mois`;
+    html += `</p>`;
+
+    html += `<ul class="detail-etoiles">`;
+    for (let etoile = 5; etoile >= 1; etoile--) {
+      const nombre = mois.par_etoile[String(etoile)];
+      const nombrePrecedent = moisPrecedent ? moisPrecedent.par_etoile[String(etoile)] : null;
+      const delta = nombrePrecedent !== null ? nombre - nombrePrecedent : null;
+      html += `<li>${"★".repeat(etoile)}${"☆".repeat(5 - etoile)} <strong>${nombre}</strong>`;
+      if (delta !== null && delta !== 0) {
+        html += ` <span class="${delta > 0 ? "evolution-positive" : "evolution-negative"}">${delta > 0 ? "+" : ""}${delta}</span>`;
+      }
+      html += `</li>`;
+    }
+    html += `</ul>`;
+    panneauDetail.innerHTML = html;
+  }
+
+  function construireGraphiqueHistorique(historique) {
+    const LARGEUR = 640;
+    const HAUTEUR = 190;
+    const PADDING_BAS = 26;
+    const PADDING_HAUT = 16;
+    const PADDING_COTE = 14;
+    const zoneHauteur = HAUTEUR - PADDING_BAS - PADDING_HAUT;
+    const zoneLargeur = LARGEUR - PADDING_COTE * 2;
+    const n = historique.length;
+    const maxValeur = Math.max(1, ...historique.map((m) => m.total));
+
+    const xPour = (i) => PADDING_COTE + (n === 1 ? zoneLargeur / 2 : (i / (n - 1)) * zoneLargeur);
+    const yPour = (total) => HAUTEUR - PADDING_BAS - (total / maxValeur) * zoneHauteur;
+
+    const points = historique.map((m, i) => `${xPour(i).toFixed(1)},${yPour(m.total).toFixed(1)}`).join(" ");
+
+    let cercles = "";
+    historique.forEach((m, i) => {
+      cercles += `<circle cx="${xPour(i).toFixed(1)}" cy="${yPour(m.total).toFixed(1)}" r="5" class="point-graphique-historique" data-index="${i}" tabindex="0"><title>${m.mois} : ${m.total} avis</title></circle>`;
+    });
+
+    const pas = Math.max(1, Math.ceil(n / 7));
+    let labels = "";
+    historique.forEach((m, i) => {
+      if (i % pas !== 0 && i !== n - 1) return;
+      const [annee, moisNum] = m.mois.split("-");
+      labels += `<text x="${xPour(i).toFixed(1)}" y="${HAUTEUR - 6}" class="texte-axe-graphique" text-anchor="middle">${moisNum}/${annee.slice(2)}</text>`;
+    });
+
+    conteneurGraphique.innerHTML = `
+      <svg viewBox="0 0 ${LARGEUR} ${HAUTEUR}" class="graphique-comparatif" role="img" aria-label="Évolution du nombre d'avis par mois">
+        <line x1="${PADDING_COTE}" y1="${HAUTEUR - PADDING_BAS}" x2="${LARGEUR - PADDING_COTE}" y2="${HAUTEUR - PADDING_BAS}" class="ligne-base-graphique" />
+        <polyline points="${points}" class="ligne-graphique-historique" fill="none" />
+        ${cercles}
+        ${labels}
+      </svg>`;
+
+    conteneurGraphique.querySelectorAll(".point-graphique-historique").forEach((cercle) => {
+      const activer = () => afficherDetailMois(Number(cercle.dataset.index));
+      cercle.addEventListener("mouseenter", activer);
+      cercle.addEventListener("click", activer);
+      cercle.addEventListener("focus", activer);
+    });
+  }
+
+  async function chargerHistoriqueAvis() {
+    try {
+      const reponse = await fetch(`/clients/{{ client.id }}/avis/historique-mensuel`);
+      const donnees = await reponse.json();
+      if (donnees.erreur) {
+        conteneurErreur.innerHTML = `<p class="message-erreur">${donnees.erreur}</p>`;
+      }
+      historiqueCourant = donnees.historique || [];
+      if (!historiqueCourant.length) {
+        conteneurGraphique.innerHTML = `<p class="texte-vide">Pas encore assez d'historique pour un graphique.</p>`;
+        return;
+      }
+      construireGraphiqueHistorique(historiqueCourant);
+      // Selectionne par defaut le dernier mois ayant reçu au moins un avis
+      // (sinon le tout dernier point, meme vide) - plus utile qu'un mois
+      // courant systematiquement vide si aucun avis n'est encore arrive.
+      let indexDefaut = historiqueCourant.length - 1;
+      for (let i = historiqueCourant.length - 1; i >= 0; i--) {
+        if (historiqueCourant[i].total > 0) { indexDefaut = i; break; }
+      }
+      afficherDetailMois(indexDefaut);
+    } catch (erreur) {
+      conteneurGraphique.innerHTML = `<p class="texte-vide">Historique indisponible.</p>`;
+    }
+  }
+
+  chargerHistoriqueAvis();
+})();
+</script>
 {% endif %}
 {% endblock %}

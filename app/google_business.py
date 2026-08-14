@@ -106,7 +106,10 @@ def lister_fiches_multi_comptes(comptes_avec_identifiants) -> list[dict]:
 
 
 def lister_photos(identifiants, account_id: str, location_id: str):
-    """Renvoie les photos deja presentes sur une fiche : [{"url": str, "categorie": str}, ...]"""
+    """
+    Renvoie les photos deja presentes sur une fiche :
+    [{"url": str, "miniature": str, "categorie": str, "nom_media": str, "date_publication": str}, ...]
+    """
     url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/media"
     reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"})
     if reponse.status_code != 200:
@@ -123,8 +126,25 @@ def lister_photos(identifiants, account_id: str, location_id: str):
                 # est generalement disponible plus vite et sert de repli a l'affichage.
                 "miniature": item.get("thumbnailUrl", ""),
                 "categorie": item.get("locationAssociation", {}).get("category", ""),
+                # "accounts/{a}/locations/{l}/media/{m}" - identifiant complet requis
+                # pour la suppression (voir supprimer_photo_fiche_google).
+                "nom_media": item.get("name", ""),
+                "date_publication": item.get("createTime", ""),
             })
     return resultats
+
+
+def supprimer_photo_fiche_google(identifiants, nom_media: str) -> None:
+    """
+    Supprime definitivement une photo de la fiche Google (pas seulement du
+    suivi local - contrairement a la suppression d'un brouillon en attente,
+    ceci retire la photo de la fiche publique). nom_media : valeur "nom_media"
+    renvoyee par lister_photos ("accounts/.../locations/.../media/...").
+    """
+    url = f"https://mybusiness.googleapis.com/v4/{nom_media}"
+    reponse = requests.delete(url, headers={"Authorization": f"Bearer {identifiants.token}"})
+    if reponse.status_code not in (200, 204):
+        raise RuntimeError(f"Echec de la suppression (code {reponse.status_code}) : {reponse.text}")
 
 
 def lister_posts(identifiants, account_id: str, location_id: str):

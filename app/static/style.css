@@ -877,7 +877,26 @@ button:active { transform: translateY(1px); }
   border-radius: var(--rayon-petit);
   box-shadow: var(--ombre);
   overflow: hidden;
+  position: relative;
 }
+
+.bouton-supprimer-photo-google {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: rgba(11, 11, 11, 0.6);
+  color: #ffffff;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bouton-supprimer-photo-google:hover { background: var(--danger); }
 
 .carte-photo img {
   width: 100%;
@@ -1274,6 +1293,65 @@ h3 { font-size: 0.95rem; margin: 1.3rem 0 0.8rem; color: var(--texte-discret); }
 .ligne-base-graphique { stroke: var(--carte-bordure); stroke-width: 1; }
 
 .texte-axe-graphique { fill: var(--texte-discret); font-size: 9px; }
+
+/* ---------- Historique mensuel des avis (ligne + panneau de detail) ---------- */
+
+.bloc-historique-avis {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin-bottom: 1.5rem;
+}
+
+.bloc-historique-avis .conteneur-graphique-comparatif {
+  flex: 2 1 380px;
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.panneau-detail-mois-avis {
+  flex: 1 1 220px;
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 1rem 1.2rem;
+}
+
+.panneau-detail-mois-avis h3 { margin: 0 0 0.4rem; text-transform: capitalize; }
+
+.detail-mois-chiffres { margin: 0 0 0.6rem; font-size: 0.92rem; }
+
+.detail-etoiles {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+}
+
+.detail-etoiles li { display: flex; align-items: center; gap: 0.4rem; }
+
+.ligne-graphique-historique { stroke: var(--accent); stroke-width: 2; }
+
+.point-graphique-historique {
+  fill: var(--accent);
+  stroke: var(--carte);
+  stroke-width: 2;
+  cursor: pointer;
+}
+
+.point-graphique-historique:hover, .point-graphique-historique.point-selectionne {
+  fill: var(--accent-fonce);
+  r: 7;
+}
+
+.evolution-positive { color: var(--succes); }
+.evolution-negative { color: var(--danger); }
 
 /* ---------- Avis ---------- */
 

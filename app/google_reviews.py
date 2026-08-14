@@ -5,7 +5,7 @@ posts (mybusiness.googleapis.com/v4), aucune donnee stockee localement :
 Google reste la source de verite, comme pour les photos.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 import requests
 
@@ -109,6 +109,49 @@ def lister_avis_complet_client(identifiants, client) -> list[dict]:
             "commentaire": avis.get("comment", ""),
             "date_avis": avis.get("createTime", ""),
             "reponse": reponse_existante.get("comment") if reponse_existante else None,
+        })
+    return resultats
+
+
+def historique_mensuel(avis: list[dict], nb_mois: int = 13) -> list[dict]:
+    """
+    Regroupe une liste d'avis (format note/date_avis - voir lister_avis_complet_client
+    ou lister_avis_multi_clients) par mois calendaire, sur les nb_mois derniers
+    mois (mois courant inclus, meme sans aucun avis - un mois vide reste dans
+    la liste pour que le graphique ne saute pas de points). Renvoie une liste
+    triee du plus ancien au plus recent :
+    [{"mois": "AAAA-MM", "total": int, "moyenne": float|None,
+      "par_etoile": {"1": int, ..., "5": int}}, ...]
+    """
+    aujourdhui = date.today()
+    annee, mois_courant = aujourdhui.year, aujourdhui.month
+    cles_mois = []
+    for _ in range(nb_mois):
+        cles_mois.append(f"{annee:04d}-{mois_courant:02d}")
+        mois_courant -= 1
+        if mois_courant == 0:
+            mois_courant = 12
+            annee -= 1
+    cles_mois.reverse()
+
+    buckets = {cle: {"notes": [], "par_etoile": {str(n): 0 for n in range(1, 6)}} for cle in cles_mois}
+    for a in avis:
+        cle = (a.get("date_avis") or "")[:7]
+        if cle not in buckets:
+            continue
+        note = a.get("note", 0)
+        if note:
+            buckets[cle]["notes"].append(note)
+            buckets[cle]["par_etoile"][str(note)] += 1
+
+    resultats = []
+    for cle in cles_mois:
+        notes = buckets[cle]["notes"]
+        resultats.append({
+            "mois": cle,
+            "total": len(notes),
+            "moyenne": round(sum(notes) / len(notes), 1) if notes else None,
+            "par_etoile": buckets[cle]["par_etoile"],
         })
     return resultats
 

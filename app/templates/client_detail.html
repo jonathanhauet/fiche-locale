@@ -253,9 +253,15 @@
 {% if photos %}
 <div class="grille-photos">
   {% for photo in photos %}
-  <figure class="carte-photo">
+  <figure class="carte-photo carte-photo-en-ligne">
     <img src="{{ photo.miniature or photo.url }}" data-secours="{{ photo.url }}" class="image-fiche-photo" alt="{{ photo.categorie or 'Photo' }}">
-    <figcaption>{{ photo.categorie or "—" }}</figcaption>
+    <figcaption>
+      {{ photo.categorie or "—" }}
+      {% if photo.date_publication_affichee %}<span class="texte-discret">· {{ photo.date_publication_affichee }}</span>{% endif %}
+    </figcaption>
+    {% if photo.nom_media %}
+    <button type="button" class="bouton-supprimer-photo-google" data-nom-media="{{ photo.nom_media }}" title="Supprimer cette photo de la fiche Google">✕</button>
+    {% endif %}
   </figure>
   {% endfor %}
 </div>
@@ -392,6 +398,27 @@
     div.textContent = texte == null ? "" : String(texte);
     return div.innerHTML;
   }
+
+  // Suppression d'une photo directement sur la fiche Google (galerie "Deja
+  // sur la fiche") - distincte de la suppression d'un brouillon en attente,
+  // celle-ci retire vraiment la photo de la fiche publique.
+  document.querySelectorAll(".bouton-supprimer-photo-google").forEach((bouton) => {
+    bouton.addEventListener("click", async () => {
+      if (!confirm("Supprimer definitivement cette photo de la fiche Google ? Cette action est irreversible.")) return;
+      const carte = bouton.closest(".carte-photo");
+      bouton.disabled = true;
+      try {
+        const donnees = new URLSearchParams({ nom_media: bouton.dataset.nomMedia });
+        const reponse = await fetch("/clients/{{ client.id }}/photos_google/supprimer", { method: "POST", body: donnees });
+        const resultat = await reponse.json();
+        if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+        carte.remove();
+      } catch (erreur) {
+        alert(`Echec de la suppression : ${erreur.message}`);
+        bouton.disabled = false;
+      }
+    });
+  });
 
   // Une photo tres recemment envoyee peut ne pas encore etre disponible cote
   // Google (delai de traitement). On tente la miniature, puis la pleine
