@@ -763,10 +763,21 @@ def liste_clients(request: Request, db: Session = Depends(obtenir_session)):
         return redirection
 
     clients = db.query(models.Client).order_by(models.Client.nom).all()
+    ids_avec_connaissance = {
+        client_id
+        for (client_id,) in db.query(models.DocumentConnaissance.client_id).distinct().all()
+    }
     return templates.TemplateResponse(
         request,
         "clients_liste.html",
-        {"clients": clients, "google_connecte": google_oauth.google_est_connecte(db)},
+        {
+            "clients": clients,
+            "google_connecte": google_oauth.google_est_connecte(db),
+            "ids_avec_connaissance": ids_avec_connaissance,
+            "nb_sans_email": sum(1 for c in clients if not c.email),
+            "nb_sans_prenom": sum(1 for c in clients if not c.prenom),
+            "nb_sans_connaissance": sum(1 for c in clients if c.id not in ids_avec_connaissance),
+        },
     )
 
 

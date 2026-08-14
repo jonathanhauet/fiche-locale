@@ -20,6 +20,25 @@
   <a class="bouton" href="/clients/nouveau">+ Ajouter un client</a>
 </div>
 
+<div class="grille-resume">
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre">{{ clients|length }}</span>
+    <span class="carte-resume-libelle">Client{{ "s" if clients|length != 1 else "" }}</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre{{ ' chiffre-attention' if nb_sans_email else '' }}">{{ nb_sans_email }}</span>
+    <span class="carte-resume-libelle">Email manquant</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre{{ ' chiffre-attention' if nb_sans_prenom else '' }}">{{ nb_sans_prenom }}</span>
+    <span class="carte-resume-libelle">Prénom manquant</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre{{ ' chiffre-attention' if nb_sans_connaissance else '' }}">{{ nb_sans_connaissance }}</span>
+    <span class="carte-resume-libelle">Base de connaissance vide</span>
+  </div>
+</div>
+
 {% if clients %}
 <ul class="liste-clients">
   {% for client in clients %}
@@ -38,7 +57,7 @@
       {% if not client.email %}
         <span class="etiquette-avertissement">email manquant</span>
       {% endif %}
-      {% if not client.documents_connaissance %}
+      {% if client.id not in ids_avec_connaissance %}
         <span class="etiquette-avertissement">base de connaissance vide</span>
       {% endif %}
     </div>

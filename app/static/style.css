@@ -497,6 +497,40 @@ button:active { transform: translateY(1px); }
 
 .barre-titre h1 { margin: 0; }
 
+/* ---------- Résumé (cartes de synthèse) ---------- */
+
+.grille-resume {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.carte-resume {
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 0.9rem 1rem;
+  text-align: center;
+}
+
+.carte-resume-chiffre {
+  display: block;
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--texte);
+}
+
+.carte-resume-chiffre.chiffre-attention { color: var(--attention); }
+
+.carte-resume-libelle {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--texte-discret);
+  margin-top: 0.2rem;
+}
+
 .texte-vide, .texte-discret {
   color: var(--texte-discret);
   font-size: 0.9rem;
