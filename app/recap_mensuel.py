@@ -227,7 +227,7 @@ def construire_email(
             f'<img src="{qr_code_avis}" width="130" height="130" alt="QR code pour laisser un avis" '
             f'style="display:block;margin:12px auto 0;border-radius:6px;">'
             f'<p style="margin:8px 0 0;color:{COULEUR_DISCRET};font-size:12px;">'
-            f"Ou fais-leur scanner ce QR code (par exemple affiché en caisse).</p>"
+            f"Ou fais-leur scanner ce QR code (à imprimer sur une facture, une carte de visite, en salle d'attente...).</p>"
             if qr_code_avis else ""
         )
         bloc_avis_a_partager = f"""
