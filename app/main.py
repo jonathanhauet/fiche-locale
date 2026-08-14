@@ -18,7 +18,7 @@ from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -777,6 +777,62 @@ def liste_clients(request: Request, db: Session = Depends(obtenir_session)):
             "nb_sans_email": sum(1 for c in clients if not c.email),
             "nb_sans_prenom": sum(1 for c in clients if not c.prenom),
             "nb_sans_connaissance": sum(1 for c in clients if c.id not in ids_avec_connaissance),
+        },
+    )
+
+
+# Seuil d'inactivite (en jours) au-dela duquel une fiche sans nouveau post
+# publie (via cette plateforme) remonte dans les alertes.
+SEUIL_INACTIVITE_POSTS_JOURS = 30
+
+
+@app.get("/alertes", response_class=HTMLResponse)
+def alertes(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Tableau de bord regroupant deux signaux gratuits (pas d'appel DataForSEO
+    payant ici) : fiches sans post recent publie via la plateforme, et avis
+    negatifs sans reponse (ces derniers sont charges cote navigateur, comme
+    sur la page Avis, pour ne pas bloquer le chargement de la page le temps
+    d'interroger l'API Google pour chaque client).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    clients_avec_fiche = [
+        c for c in db.query(models.Client).order_by(models.Client.nom).all()
+        if c.account_id and c.location_id
+    ]
+
+    derniers_posts = dict(
+        db.query(models.Post.client_id, func.max(models.EvenementPublication.horodatage))
+        .join(models.EvenementPublication, models.EvenementPublication.post_id == models.Post.id)
+        .filter(models.EvenementPublication.etat == "LIVE")
+        .group_by(models.Post.client_id)
+        .all()
+    )
+
+    seuil = datetime.utcnow() - timedelta(days=SEUIL_INACTIVITE_POSTS_JOURS)
+    clients_inactifs = []
+    for client in clients_avec_fiche:
+        dernier = derniers_posts.get(client.id)
+        if not dernier or dernier < seuil:
+            clients_inactifs.append({
+                "client": client,
+                "nb_jours": (datetime.utcnow() - dernier).days if dernier else None,
+            })
+    # Les plus preoccupants en premier : jamais publie, puis les plus anciens.
+    clients_inactifs.sort(key=lambda c: c["nb_jours"] if c["nb_jours"] is not None else float("inf"), reverse=True)
+
+    return templates.TemplateResponse(
+        request,
+        "alertes.html",
+        {
+            "clients_json": json.dumps(
+                [{"id": c.id, "nom": c.nom} for c in clients_avec_fiche]
+            ).replace("</", "<\\/"),
+            "clients_inactifs": clients_inactifs,
+            "seuil_inactivite_jours": SEUIL_INACTIVITE_POSTS_JOURS,
         },
     )
 

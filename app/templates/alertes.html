@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% set page_actuelle = "alertes" %}
+{% block titre %}Alertes — Fiche Locale{% endblock %}
+{% block contenu %}
+
+<div class="barre-titre">
+  <h1>Alertes</h1>
+</div>
+
+<p class="texte-discret">
+  Ce qui mérite ton attention sur l'ensemble des clients : fiches sans nouveau post depuis
+  {{ seuil_inactivite_jours }} jours, et avis négatifs restés sans réponse. Le suivi de position
+  n'est pas inclus ici (payant, il reste à la demande).
+</p>
+
+<div class="grille-resume">
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre{{ ' chiffre-attention' if clients_inactifs else '' }}">{{ clients_inactifs|length }}</span>
+    <span class="carte-resume-libelle">Fiche{{ "s" if clients_inactifs|length != 1 else "" }} sans post récent</span>
+  </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-avis-negatifs">…</span>
+    <span class="carte-resume-libelle">Avis négatifs sans réponse</span>
+  </div>
+</div>
+
+<h2>Fiches sans post depuis {{ seuil_inactivite_jours }}+ jours</h2>
+{% if clients_inactifs %}
+<ul class="liste-clients">
+  {% for item in clients_inactifs %}
+  <li>
+    <a href="/clients/{{ item.client.id }}">
+      <span class="avatar-client">{{ item.client.nom[:1]|upper }}</span>
+      <span>{{ item.client.nom }}</span>
+    </a>
+    <div class="actions-avis">
+      <span class="etiquette-avertissement">
+        {% if item.nb_jours is none %}jamais publié{% else %}dernier post il y a {{ item.nb_jours }} jours{% endif %}
+      </span>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Toutes les fiches ont un post récent.</p>
+{% endif %}
+
+<h2>Avis négatifs sans réponse</h2>
+<div id="conteneur-progression-alertes" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-alertes" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-alertes" class="texte-progression-avis"></span>
+</div>
+<div id="erreurs-alertes"></div>
+<ul id="liste-alertes-avis" class="liste-avis"></ul>
+<p id="texte-vide-alertes" class="texte-vide" hidden>Aucun avis négatif en attente de réponse.</p>
+
+<script id="donnees-clients-alertes" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-alertes").textContent);
+  // Un avis negatif tout juste poste (moins de 2 jours) n'est pas encore "en
+  // retard" de reponse : on laisse le temps normal de le voir et d'y repondre
+  // avant de le faire remonter ici.
+  const SEUIL_JOURS_AVIS_NEGATIF = 2;
+  const CONCURRENCE = 3;
+
+  const chiffreAvisNegatifs = document.getElementById("chiffre-avis-negatifs");
+  const conteneurProgression = document.getElementById("conteneur-progression-alertes");
+  const barreProgression = document.getElementById("barre-progression-alertes");
+  const texteProgression = document.getElementById("texte-progression-alertes");
+  const conteneurErreurs = document.getElementById("erreurs-alertes");
+  const listeAlertes = document.getElementById("liste-alertes-avis");
+  const texteVide = document.getElementById("texte-vide-alertes");
+
+  let avisSignales = [];
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function etoiles(note) {
+    return "★".repeat(note) + "☆".repeat(5 - note);
+  }
+
+  function joursDepuis(iso) {
+    const date = new Date(iso);
+    if (isNaN(date)) return 0;
+    return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  function formaterDateExacte(iso) {
+    const date = new Date(iso);
+    if (isNaN(date)) return "";
+    return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+  }
+
+  function ajusterHauteurTextarea(zone) {
+    zone.style.height = "auto";
+    zone.style.height = `${zone.scrollHeight}px`;
+  }
+
+  function carteAlerteHTML(item) {
+    return `
+      <li class="carte-avis carte-avis-sans-reponse"
+          data-client-id="${item.client_id}" data-review-id="${echapper(item.review_id)}"
+          data-account-id="${echapper(item.account_id)}" data-location-id="${echapper(item.location_id)}">
+        <div class="entete-avis">
+          <div>
+            <strong>${echapper(item.auteur)}</strong>
+            <span class="etoiles">${etoiles(item.note)}</span>
+            <span class="date-avis" title="${echapper(formaterDateExacte(item.date_avis))}">il y a ${joursDepuis(item.date_avis)} jours</span>
+          </div>
+          <span class="etiquette-statut">${echapper(item.client_nom)}</span>
+        </div>
+        <p class="commentaire-avis">${echapper(item.commentaire) || "(avis sans commentaire écrit)"}</p>
+        <form class="formulaire formulaire-avis formulaire-repondre">
+          <textarea name="texte_reponse" rows="3" placeholder="Votre réponse...">${echapper(item.texte_suggere || "")}</textarea>
+          <div class="actions-avis">
+            <button type="submit">Envoyer la réponse</button>
+          </div>
+        </form>
+        <div class="actions-avis">
+          <button type="button" class="bouton-secondaire bouton-suggerer">Suggérer une réponse (IA)</button>
+        </div>
+        <p class="message-erreur message-erreur-carte" hidden></p>
+      </li>`;
+  }
+
+  function trouverCarte(item) {
+    return listeAlertes.querySelector(
+      `.carte-avis[data-review-id="${CSS.escape(item.review_id)}"][data-account-id="${CSS.escape(item.account_id)}"]`
+    );
+  }
+
+  function afficherAlertes() {
+    chiffreAvisNegatifs.textContent = avisSignales.length;
+    chiffreAvisNegatifs.classList.toggle("chiffre-attention", avisSignales.length > 0);
+    listeAlertes.innerHTML = avisSignales.map(carteAlerteHTML).join("");
+    listeAlertes.querySelectorAll("textarea[name=texte_reponse]").forEach(ajusterHauteurTextarea);
+    texteVide.hidden = avisSignales.length > 0;
+  }
+
+  async function chargerAlertesAvis() {
+    if (!clients.length) {
+      afficherAlertes();
+      return;
+    }
+    conteneurProgression.hidden = false;
+    barreProgression.style.width = "0%";
+    texteProgression.textContent = `0 / ${clients.length} entreprises`;
+
+    let termines = 0;
+    const erreurs = [];
+    let tousLesAvis = [];
+    let curseur = 0;
+
+    async function traiterSuivant() {
+      while (curseur < clients.length) {
+        const client = clients[curseur++];
+        try {
+          const reponse = await fetch(`/avis/donnees/${client.id}`);
+          const donnees = await reponse.json();
+          if (donnees.erreur) erreurs.push(donnees.erreur);
+          if (donnees.avis) tousLesAvis.push(...donnees.avis);
+        } catch (erreur) {
+          erreurs.push(`${client.nom} : erreur réseau.`);
+        }
+        termines++;
+        barreProgression.style.width = `${Math.round((termines / clients.length) * 100)}%`;
+        texteProgression.textContent = `${termines} / ${clients.length} entreprises`;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCE, clients.length) }, traiterSuivant));
+
+    conteneurProgression.hidden = true;
+    if (erreurs.length) {
+      conteneurErreurs.innerHTML = erreurs.map((e) => `<p class="message-erreur">${echapper(e)}</p>`).join("");
+    }
+
+    avisSignales = tousLesAvis
+      .filter((a) => a.note > 0 && a.note <= 3 && !a.reponse && joursDepuis(a.date_avis) >= SEUIL_JOURS_AVIS_NEGATIF)
+      .sort((a, b) => (a.date_avis < b.date_avis ? -1 : 1));
+    afficherAlertes();
+  }
+
+  async function suggererPourItem(item) {
+    const carte = trouverCarte(item);
+    const zone = carte ? carte.querySelector("textarea[name=texte_reponse]") : null;
+    if (zone) {
+      zone.disabled = true;
+      zone.placeholder = "Génération de la suggestion IA...";
+    }
+    try {
+      const donnees = new URLSearchParams({
+        account_id: item.account_id,
+        location_id: item.location_id,
+        review_id: item.review_id,
+        commentaire: item.commentaire || "",
+        note: item.note || 0,
+        auteur: item.auteur || "",
+      });
+      const reponseHttp = await fetch("/avis/suggerer", { method: "POST", body: donnees });
+      const resultat = await reponseHttp.json();
+      if (!reponseHttp.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+      if (zone) {
+        zone.value = resultat.texte_suggere || "";
+        ajusterHauteurTextarea(zone);
+      }
+    } catch (erreur) {
+      const carteActuelle = trouverCarte(item);
+      const messageErreur = carteActuelle ? carteActuelle.querySelector(".message-erreur-carte") : null;
+      if (messageErreur) {
+        messageErreur.textContent = erreur.message;
+        messageErreur.hidden = false;
+      }
+    } finally {
+      if (zone) {
+        zone.disabled = false;
+        zone.placeholder = "Votre réponse...";
+      }
+    }
+  }
+
+  listeAlertes.addEventListener("input", (evenement) => {
+    if (evenement.target.matches("textarea[name=texte_reponse]")) {
+      ajusterHauteurTextarea(evenement.target);
+    }
+  });
+
+  listeAlertes.addEventListener("click", (evenement) => {
+    if (!evenement.target.matches(".bouton-suggerer")) return;
+    const carte = evenement.target.closest(".carte-avis");
+    const item = avisSignales.find(
+      (a) => a.review_id === carte.dataset.reviewId && a.account_id === carte.dataset.accountId
+    );
+    if (item) suggererPourItem(item);
+  });
+
+  listeAlertes.addEventListener("submit", async (evenement) => {
+    const formulaire = evenement.target;
+    if (!formulaire.classList.contains("formulaire-repondre")) return;
+    evenement.preventDefault();
+
+    const carte = formulaire.closest(".carte-avis");
+    const texteReponse = formulaire.querySelector("textarea[name=texte_reponse]").value;
+    const messageErreur = carte.querySelector(".message-erreur-carte");
+    messageErreur.hidden = true;
+
+    const donnees = new URLSearchParams({
+      account_id: carte.dataset.accountId,
+      location_id: carte.dataset.locationId,
+      review_id: carte.dataset.reviewId,
+      texte_reponse: texteReponse,
+    });
+
+    try {
+      const reponseHttp = await fetch("/avis/repondre", { method: "POST", body: donnees });
+      const resultat = await reponseHttp.json();
+      if (!reponseHttp.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+      // Repondu : l'avis n'est plus "sans reponse", on le retire de la liste.
+      avisSignales = avisSignales.filter(
+        (a) => !(a.review_id === carte.dataset.reviewId && a.account_id === carte.dataset.accountId)
+      );
+      afficherAlertes();
+    } catch (erreur) {
+      messageErreur.textContent = erreur.message;
+      messageErreur.hidden = false;
+    }
+  });
+
+  chargerAlertesAvis();
+})();
+</script>
+{% endblock %}
