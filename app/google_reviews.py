@@ -11,6 +11,22 @@ import requests
 
 NOTES = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5}
 
+# Marqueur insere par Google devant le texte original quand un avis est
+# affiche traduit (ex. "(Translated by Google) ... (Original) ..."). Le
+# prefixe "Translated by Google" varie selon la langue du compte connecte,
+# mais ce marqueur reste stable d'une langue a l'autre : on ne garde que ce
+# qui le suit, l'avis tel qu'ecrit par son auteur.
+MARQUEUR_TEXTE_ORIGINAL = "(Original)"
+
+
+def _texte_original(commentaire: str) -> str:
+    if not commentaire:
+        return commentaire
+    index = commentaire.rfind(MARQUEUR_TEXTE_ORIGINAL)
+    if index == -1:
+        return commentaire
+    return commentaire[index + len(MARQUEUR_TEXTE_ORIGINAL):].strip()
+
 
 def lister_avis_dune_fiche(identifiants, account_id: str, location_id: str, toutes_les_pages: bool = False):
     """
@@ -70,7 +86,7 @@ def lister_avis_multi_clients(identifiants_par_client: dict, clients: list) -> l
                 "review_id": review_id,
                 "auteur": avis.get("reviewer", {}).get("displayName", "Anonyme"),
                 "note": NOTES.get(avis.get("starRating"), 0),
-                "commentaire": avis.get("comment", ""),
+                "commentaire": _texte_original(avis.get("comment", "")),
                 "date_avis": avis.get("createTime", ""),
                 "reponse": reponse_existante.get("comment") if reponse_existante else None,
                 "date_reponse": reponse_existante.get("updateTime") if reponse_existante else None,
@@ -106,7 +122,7 @@ def lister_avis_complet_client(identifiants, client) -> list[dict]:
             "review_id": review_id,
             "auteur": avis.get("reviewer", {}).get("displayName", "Anonyme"),
             "note": NOTES.get(avis.get("starRating"), 0),
-            "commentaire": avis.get("comment", ""),
+            "commentaire": _texte_original(avis.get("comment", "")),
             "date_avis": avis.get("createTime", ""),
             "reponse": reponse_existante.get("comment") if reponse_existante else None,
         })
@@ -265,7 +281,7 @@ def avis_positifs_periode(
     return [
         {
             "auteur": a.get("reviewer", {}).get("displayName", "Anonyme"),
-            "commentaire": a.get("comment", ""),
+            "commentaire": _texte_original(a.get("comment", "")),
             "note": NOTES.get(a.get("starRating"), 0),
         }
         for _, a in candidats[:limite]
