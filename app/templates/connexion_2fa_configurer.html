@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titre %}Configurer la double authentification — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <form class="carte-connexion carte-connexion-2fa" method="post" action="/connexion/configurer-2fa">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    <p class="texte-explication-2fa">
+      Premiere connexion : protege ton compte avec la double authentification.
+      Scanne ce QR code avec une application comme <strong>Google Authenticator</strong>
+      ou <strong>Authy</strong>, puis saisis le code a 6 chiffres qu'elle affiche.
+    </p>
+    {% if erreur %}<p class="message-erreur">{{ erreur }}</p>{% endif %}
+    <img class="qr-code-2fa" src="{{ qr_code_data_uri }}" alt="QR code de configuration 2FA">
+    <details class="secret-manuel-2fa">
+      <summary>Impossible de scanner ? Saisir la cle manuellement</summary>
+      <code>{{ secret }}</code>
+    </details>
+    <label>Code a 6 chiffres
+      <input type="text" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autofocus autocomplete="one-time-code">
+    </label>
+    <button type="submit">Valider et activer</button>
+  </form>
+</div>
+{% endblock %}

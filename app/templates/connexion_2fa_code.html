@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block titre %}Code de sécurité — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <form class="carte-connexion" method="post" action="/connexion/code">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    <p class="texte-explication-2fa">Ouvre ton application d'authentification et saisis le code affiché.</p>
+    {% if erreur %}<p class="message-erreur">{{ erreur }}</p>{% endif %}
+    <label>Code a 6 chiffres
+      <input type="text" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autofocus autocomplete="one-time-code">
+    </label>
+    <button type="submit">Valider</button>
+  </form>
+</div>
+{% endblock %}

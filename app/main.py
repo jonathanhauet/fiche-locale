@@ -27,6 +27,7 @@ from . import (
     bilan_pdf,
     brevo_email,
     claude_generation,
+    deux_facteurs,
     documents,
     gemini_images,
     geocodage,
@@ -132,6 +133,11 @@ def _migrer_vers_multi_comptes():
             colonnes_points_grille = [c["name"] for c in inspecteur.get_columns("points_grille")]
             if "resultats_json" not in colonnes_points_grille:
                 connexion.execute(text("ALTER TABLE points_grille ADD COLUMN resultats_json TEXT DEFAULT ''"))
+
+        if "utilisateurs" in inspecteur.get_table_names():
+            colonnes_utilisateurs = [c["name"] for c in inspecteur.get_columns("utilisateurs")]
+            if "totp_secret" not in colonnes_utilisateurs:
+                connexion.execute(text("ALTER TABLE utilisateurs ADD COLUMN totp_secret TEXT"))
 
         if "config_google" in inspecteur.get_table_names():
             ancien = connexion.execute(text("SELECT refresh_token FROM config_google LIMIT 1")).fetchone()
@@ -273,6 +279,99 @@ def connexion(
             {"erreur": "Identifiant ou mot de passe incorrect."},
             status_code=401,
         )
+
+    request.session["utilisateur_en_attente_2fa"] = utilisateur.id
+    if utilisateur.totp_secret:
+        return RedirectResponse("/connexion/code", status_code=303)
+
+    request.session["secret_2fa_configuration"] = deux_facteurs.generer_secret()
+    return RedirectResponse("/connexion/configurer-2fa", status_code=303)
+
+
+def _utilisateur_en_attente_2fa(request: Request, db: Session):
+    id_utilisateur = request.session.get("utilisateur_en_attente_2fa")
+    if not id_utilisateur:
+        return None
+    return db.query(models.Utilisateur).filter_by(id=id_utilisateur).first()
+
+
+@app.get("/connexion/configurer-2fa", response_class=HTMLResponse)
+def page_configurer_2fa(request: Request, db: Session = Depends(obtenir_session)):
+    utilisateur = _utilisateur_en_attente_2fa(request, db)
+    secret = request.session.get("secret_2fa_configuration")
+    if not utilisateur or not secret:
+        return RedirectResponse("/connexion", status_code=303)
+    uri = deux_facteurs.uri_provisionnement(secret, utilisateur.identifiant)
+    return templates.TemplateResponse(
+        request,
+        "connexion_2fa_configurer.html",
+        {
+            "erreur": None,
+            "secret": secret,
+            "qr_code_data_uri": deux_facteurs.qr_code_data_uri(uri),
+        },
+    )
+
+
+@app.post("/connexion/configurer-2fa")
+def valider_configuration_2fa(
+    request: Request,
+    code: str = Form(...),
+    db: Session = Depends(obtenir_session),
+):
+    utilisateur = _utilisateur_en_attente_2fa(request, db)
+    secret = request.session.get("secret_2fa_configuration")
+    if not utilisateur or not secret:
+        return RedirectResponse("/connexion", status_code=303)
+
+    if not deux_facteurs.code_valide(secret, code):
+        uri = deux_facteurs.uri_provisionnement(secret, utilisateur.identifiant)
+        return templates.TemplateResponse(
+            request,
+            "connexion_2fa_configurer.html",
+            {
+                "erreur": "Code incorrect, reessaie.",
+                "secret": secret,
+                "qr_code_data_uri": deux_facteurs.qr_code_data_uri(uri),
+            },
+            status_code=401,
+        )
+
+    utilisateur.totp_secret = secret
+    db.commit()
+    request.session.pop("secret_2fa_configuration", None)
+    request.session.pop("utilisateur_en_attente_2fa", None)
+    request.session["user_id"] = utilisateur.id
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/connexion/code", response_class=HTMLResponse)
+def page_code_2fa(request: Request, db: Session = Depends(obtenir_session)):
+    utilisateur = _utilisateur_en_attente_2fa(request, db)
+    if not utilisateur or not utilisateur.totp_secret:
+        return RedirectResponse("/connexion", status_code=303)
+    return templates.TemplateResponse(request, "connexion_2fa_code.html", {"erreur": None})
+
+
+@app.post("/connexion/code")
+def valider_code_2fa(
+    request: Request,
+    code: str = Form(...),
+    db: Session = Depends(obtenir_session),
+):
+    utilisateur = _utilisateur_en_attente_2fa(request, db)
+    if not utilisateur or not utilisateur.totp_secret:
+        return RedirectResponse("/connexion", status_code=303)
+
+    if not deux_facteurs.code_valide(utilisateur.totp_secret, code):
+        return templates.TemplateResponse(
+            request,
+            "connexion_2fa_code.html",
+            {"erreur": "Code incorrect, reessaie."},
+            status_code=401,
+        )
+
+    request.session.pop("utilisateur_en_attente_2fa", None)
     request.session["user_id"] = utilisateur.id
     return RedirectResponse("/", status_code=303)
 

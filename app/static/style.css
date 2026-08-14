@@ -297,6 +297,42 @@ a { color: var(--accent); }
 
 .marque-connexion .marque-texte { color: var(--texte); }
 
+.carte-connexion-2fa { max-width: 400px; }
+
+.texte-explication-2fa {
+  font-size: 0.85rem;
+  color: var(--texte-discret);
+  text-align: center;
+  margin: 0;
+}
+
+.qr-code-2fa {
+  align-self: center;
+  width: 200px;
+  height: 200px;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--carte-bordure);
+  background: #fff;
+  padding: 0.5rem;
+}
+
+.secret-manuel-2fa {
+  font-size: 0.82rem;
+  color: var(--texte-discret);
+}
+
+.secret-manuel-2fa summary { cursor: pointer; }
+
+.secret-manuel-2fa code {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: var(--fond);
+  border-radius: var(--rayon-petit);
+  word-break: break-all;
+  text-align: center;
+}
+
 /* ---------- Formulaires ---------- */
 
 label {

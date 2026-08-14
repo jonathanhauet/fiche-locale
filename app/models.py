@@ -25,6 +25,9 @@ class Utilisateur(Base):
     id = Column(Integer, primary_key=True)
     identifiant = Column(String, unique=True, nullable=False)
     mot_de_passe_hash = Column(String, nullable=False)
+    # Cle secrete TOTP (double authentification) - vide tant que l'utilisateur
+    # n'a pas termine la configuration (voir deux_facteurs.py).
+    totp_secret = Column(String, nullable=True)
 
 
 class Client(Base):
