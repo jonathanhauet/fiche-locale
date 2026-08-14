@@ -1229,6 +1229,12 @@ def _fiches_google_non_liees(db: Session) -> list[dict]:
     return fiches
 
 
+def _toutes_etiquettes_json(db: Session) -> str:
+    return json.dumps(
+        [e.nom for e in db.query(models.Etiquette).order_by(models.Etiquette.nom).all()]
+    ).replace("</", "<\\/")
+
+
 @app.get("/clients/import-masse", response_class=HTMLResponse)
 def import_masse_formulaire(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -1241,7 +1247,12 @@ def import_masse_formulaire(request: Request, db: Session = Depends(obtenir_sess
     return templates.TemplateResponse(
         request,
         "clients_import_masse.html",
-        {"fiches": fiches, "google_connecte": google_connecte, "resultats": None},
+        {
+            "fiches": fiches,
+            "google_connecte": google_connecte,
+            "resultats": None,
+            "toutes_etiquettes_json": _toutes_etiquettes_json(db),
+        },
     )
 
 
@@ -1255,6 +1266,10 @@ async def creer_clients_masse(request: Request, db: Session = Depends(obtenir_se
     contenu_site = formulaire.get("contenu_site", "")
     consignes_avis = formulaire.get("consignes_avis", "")
     selection = [v.strip() for v in formulaire.getlist("selection") if v.strip()]
+    # Memes etiquettes appliquees a tous les clients crees dans ce lot (voir
+    # _obtenir_ou_creer_etiquettes, deja utilise par la modification d'un
+    # client) : resolues une seule fois plutot qu'une fois par client.
+    etiquettes_lot = _obtenir_ou_creer_etiquettes(db, formulaire.getlist("etiquettes"))
 
     # Le meme document est joint a chaque client cree : on extrait son texte
     # une seule fois plutot que de refaire l'extraction pour chacun.
@@ -1295,6 +1310,7 @@ async def creer_clients_masse(request: Request, db: Session = Depends(obtenir_se
             nom=nom, contenu_site=contenu_site, consignes_avis=consignes_avis,
             account_id=account_id, location_id=location_id, compte_google_id=compte_google_id,
         )
+        client.etiquettes = etiquettes_lot
         db.add(client)
         db.flush()
 
@@ -1318,6 +1334,7 @@ async def creer_clients_masse(request: Request, db: Session = Depends(obtenir_se
             "fiches": fiches,
             "google_connecte": google_connecte,
             "resultats": {"crees": nb_crees, "details_ignores": details_ignores},
+            "toutes_etiquettes_json": _toutes_etiquettes_json(db),
         },
     )
 
@@ -1352,9 +1369,7 @@ def _reponse_detail_client(
         .order_by(models.PhotoFiche.cree_le.desc())
         .all()
     )
-    toutes_etiquettes_json = json.dumps(
-        [e.nom for e in db.query(models.Etiquette).order_by(models.Etiquette.nom).all()]
-    ).replace("</", "<\\/")
+    toutes_etiquettes_json = _toutes_etiquettes_json(db)
     return templates.TemplateResponse(
         request,
         "client_detail.html",

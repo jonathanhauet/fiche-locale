@@ -6,8 +6,8 @@
 <h1>Créer plusieurs clients en une fois</h1>
 <p class="texte-discret">
   Sélectionne les fiches Google à importer, ajuste les noms si besoin : la
-  base de connaissances et les consignes ci-dessous sont appliquées à tous
-  les clients créés.
+  base de connaissances, les consignes et les étiquettes ci-dessous sont
+  appliquées à tous les clients créés.
 </p>
 
 {% if not google_connecte %}
@@ -47,6 +47,16 @@
     Consignes pour les réponses aux avis (IA, appliquées à tous les clients créés)
     <textarea name="consignes_avis" rows="4"></textarea>
   </label>
+
+  <div class="choix-image-bloc">
+    <span class="choix-image-titre">Étiquettes (appliquées à tous les clients créés)</span>
+    <div class="liste-etiquettes" id="liste-etiquettes-masse"></div>
+    <div class="recherche-ville">
+      <input type="text" id="champ-recherche-etiquette-masse" autocomplete="off" placeholder="Rechercher ou créer une étiquette...">
+    </div>
+    <ul id="resultats-recherche-etiquette-masse" class="resultats-recherche-ville" hidden></ul>
+    <script id="donnees-etiquettes-existantes-masse" type="application/json">{{ toutes_etiquettes_json|safe }}</script>
+  </div>
 
   <div class="barre-titre">
     <span class="choix-image-titre">{{ fiches|length }} fiche(s) Google disponible(s)</span>
@@ -104,6 +114,91 @@
     lignes.forEach((ligne) => {
       if (!ligne.hidden) ligne.querySelector('input[type="checkbox"]').checked = false;
     });
+  });
+})();
+</script>
+
+<script>
+(function () {
+  const listeEtiquettes = document.getElementById("liste-etiquettes-masse");
+  const champRecherche = document.getElementById("champ-recherche-etiquette-masse");
+  const resultats = document.getElementById("resultats-recherche-etiquette-masse");
+  if (!champRecherche) return;
+
+  const toutesEtiquettes = JSON.parse(document.getElementById("donnees-etiquettes-existantes-masse").textContent);
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function etiquettesDejaAjoutees() {
+    return new Set(
+      Array.from(listeEtiquettes.querySelectorAll("[data-etiquette-nom]")).map((c) => c.dataset.etiquetteNom)
+    );
+  }
+
+  function ajouterChip(nom) {
+    nom = nom.trim();
+    if (!nom || etiquettesDejaAjoutees().has(nom)) return;
+    const chip = document.createElement("span");
+    chip.className = "etiquette-supprimable";
+    chip.dataset.etiquetteNom = nom;
+    chip.innerHTML = `
+      <span class="etiquette-chip">${echapper(nom)}</span>
+      <input type="hidden" name="etiquettes" value="${echapper(nom)}">
+      <button type="button" class="bouton-retirer-etiquette" title="Retirer">×</button>
+    `;
+    listeEtiquettes.appendChild(chip);
+  }
+
+  function afficherResultats() {
+    const saisie = champRecherche.value.trim();
+    const dejaAjoutees = etiquettesDejaAjoutees();
+    const correspondances = toutesEtiquettes.filter(
+      (n) => !dejaAjoutees.has(n) && (!saisie || n.toLowerCase().includes(saisie.toLowerCase()))
+    );
+
+    let html = correspondances.slice(0, 8)
+      .map((n) => `<li><button type="button" class="bouton-resultat-ville bouton-etiquette-suggestion" data-nom="${echapper(n)}">${echapper(n)}</button></li>`)
+      .join("");
+
+    const correspondanceExacte = toutesEtiquettes.some((n) => n.toLowerCase() === saisie.toLowerCase());
+    if (saisie && !correspondanceExacte) {
+      html += `<li><button type="button" class="bouton-resultat-ville bouton-etiquette-suggestion" data-nom="${echapper(saisie)}">+ Créer « ${echapper(saisie)} »</button></li>`;
+    }
+
+    resultats.innerHTML = html || "<li class=\"texte-discret\">Aucune étiquette existante.</li>";
+    resultats.hidden = false;
+  }
+
+  champRecherche.addEventListener("focus", afficherResultats);
+  champRecherche.addEventListener("input", afficherResultats);
+  champRecherche.addEventListener("keydown", (evenement) => {
+    if (evenement.key === "Enter") {
+      evenement.preventDefault();
+      ajouterChip(champRecherche.value);
+      champRecherche.value = "";
+      resultats.hidden = true;
+    }
+  });
+  document.addEventListener("click", (evenement) => {
+    if (evenement.target !== champRecherche && !resultats.contains(evenement.target)) resultats.hidden = true;
+  });
+
+  resultats.addEventListener("click", (evenement) => {
+    const cible = evenement.target.closest(".bouton-etiquette-suggestion");
+    if (!cible) return;
+    ajouterChip(cible.dataset.nom);
+    champRecherche.value = "";
+    champRecherche.focus();
+    resultats.hidden = true;
+  });
+
+  listeEtiquettes.addEventListener("click", (evenement) => {
+    if (!evenement.target.classList.contains("bouton-retirer-etiquette")) return;
+    evenement.target.closest(".etiquette-supprimable").remove();
   });
 })();
 </script>
