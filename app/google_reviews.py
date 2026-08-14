@@ -86,6 +86,33 @@ def lister_avis_multi_clients(identifiants_par_client: dict, clients: list) -> l
     return resultats
 
 
+def lister_avis_complet_client(identifiants, client) -> list[dict]:
+    """
+    Tous les avis d'un client, toutes pages confondues (voir _lister_avis_dune_fiche,
+    toutes_les_pages=True), au meme format que lister_avis_multi_clients.
+    Utilise pour les statistiques comparatives multi-fiches (comparatif_avis),
+    ou un total exact est necessaire - contrairement a la page Avis courante,
+    qui se limite volontairement a la premiere page (50 avis) pour rester rapide.
+    """
+    resultats = []
+    for avis in _lister_avis_dune_fiche(identifiants, client.account_id, client.location_id, toutes_les_pages=True):
+        nom_ressource = avis["name"]
+        review_id = nom_ressource.split("/")[-1]
+        reponse_existante = avis.get("reviewReply")
+
+        resultats.append({
+            "client_id": client.id,
+            "client_nom": client.nom,
+            "review_id": review_id,
+            "auteur": avis.get("reviewer", {}).get("displayName", "Anonyme"),
+            "note": NOTES.get(avis.get("starRating"), 0),
+            "commentaire": avis.get("comment", ""),
+            "date_avis": avis.get("createTime", ""),
+            "reponse": reponse_existante.get("comment") if reponse_existante else None,
+        })
+    return resultats
+
+
 def repondre_avis(identifiants, account_id: str, location_id: str, review_id: str, texte: str):
     """Cree ou remplace la reponse a un avis (PUT = upsert cote API Google)."""
     url = (

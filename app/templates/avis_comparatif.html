@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% set page_actuelle = "avis_comparatif" %}
+{% block titre %}Comparatif avis — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Comparatif avis</h1>
+</div>
+
+<p class="texte-discret">
+  Statistiques d'avis regroupées sur plusieurs fiches (par exemple toutes les fiches d'un même client) :
+  total, moyenne, classement par fiche et évolution jour par jour sur la période choisie. Le total et la
+  moyenne « tout historique » demandent de relire tous les avis de chaque fiche (pas seulement les
+  derniers) — sur beaucoup de fiches, ça peut prendre un peu de temps.
+</p>
+
+{% if not etiquettes %}
+<p class="texte-discret">
+  Aucune étiquette pour l'instant — sélectionne directement les fiches ci-dessous, ou crée une étiquette
+  depuis la page <a href="/etiquettes">Étiquettes</a> pour en cocher plusieurs d'un coup la prochaine fois.
+</p>
+{% endif %}
+
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Fiches à comparer</span>
+
+  {% if etiquettes %}
+  <div class="filtre-entreprises">
+    <span class="filtre-titre">Cocher par étiquette :</span>
+    {% for etiquette in etiquettes %}
+    <label class="filtre-case">
+      <input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+    </label>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+  <p id="texte-aucun-client" class="texte-vide" hidden>Aucune fiche Google associée pour l'instant.</p>
+  <p id="texte-compte-clients" class="texte-discret" hidden></p>
+</div>
+
+<div class="formulaire-ligne">
+  <label>
+    Du
+    <input type="date" id="champ-debut" value="{{ debut }}">
+  </label>
+  <label>
+    Au
+    <input type="date" id="champ-fin" value="{{ fin }}">
+  </label>
+</div>
+
+<div class="actions-avis">
+  <button type="button" id="bouton-generer" disabled>Générer les statistiques</button>
+</div>
+
+<div id="conteneur-progression-comparatif" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-comparatif" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-comparatif" class="texte-progression-avis"></span>
+</div>
+<div id="erreurs-comparatif"></div>
+
+<div id="resultats-comparatif" hidden>
+  <div class="grille-resume">
+    <div class="carte-resume">
+      <span class="carte-resume-chiffre" id="chiffre-total-periode">0</span>
+      <span class="carte-resume-libelle">Avis reçus (période)</span>
+    </div>
+    <div class="carte-resume">
+      <span class="carte-resume-chiffre" id="chiffre-moyenne-periode">—</span>
+      <span class="carte-resume-libelle">Moyenne (période)</span>
+    </div>
+    <div class="carte-resume">
+      <span class="carte-resume-chiffre" id="chiffre-positifs-periode">0</span>
+      <span class="carte-resume-libelle">Avis positifs (période)</span>
+    </div>
+    <div class="carte-resume">
+      <span class="carte-resume-chiffre" id="chiffre-negatifs-periode">0</span>
+      <span class="carte-resume-libelle">Avis négatifs (période)</span>
+    </div>
+    <div class="carte-resume">
+      <span class="carte-resume-chiffre" id="chiffre-total-global">0</span>
+      <span class="carte-resume-libelle">Avis au total (tout historique)</span>
+    </div>
+    <div class="carte-resume">
+      <span class="carte-resume-chiffre" id="chiffre-moyenne-global">—</span>
+      <span class="carte-resume-libelle">Moyenne globale (tout historique)</span>
+    </div>
+  </div>
+
+  <h2>Évolution jour par jour (période)</h2>
+  <div id="conteneur-graphique-comparatif" class="conteneur-graphique-comparatif"></div>
+
+  <h2>Classement par fiche (période)</h2>
+  <div class="conteneur-tableau">
+    <table class="tableau-historique disposition-fixe">
+      <colgroup>
+        <col style="width: 28%;">
+        <col style="width: 14%;">
+        <col style="width: 15%;">
+        <col style="width: 13%;">
+        <col style="width: 13%;">
+        <col style="width: 17%;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Fiche</th>
+          <th>Avis (période)</th>
+          <th>Moyenne (période)</th>
+          <th>Positifs</th>
+          <th>Négatifs</th>
+          <th>Total (historique)</th>
+        </tr>
+      </thead>
+      <tbody id="corps-tableau-classement"></tbody>
+    </table>
+  </div>
+</div>
+
+<script id="donnees-clients-comparatif" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-comparatif").textContent);
+  const CONCURRENCE = 3;
+
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  const conteneurClients = document.getElementById("liste-clients-cibles");
+  const texteAucunClient = document.getElementById("texte-aucun-client");
+  const texteCompteClients = document.getElementById("texte-compte-clients");
+  const boutonGenerer = document.getElementById("bouton-generer");
+  const champDebut = document.getElementById("champ-debut");
+  const champFin = document.getElementById("champ-fin");
+
+  const conteneurProgression = document.getElementById("conteneur-progression-comparatif");
+  const barreProgression = document.getElementById("barre-progression-comparatif");
+  const texteProgression = document.getElementById("texte-progression-comparatif");
+  const conteneurErreurs = document.getElementById("erreurs-comparatif");
+  const resultats = document.getElementById("resultats-comparatif");
+  const corpsTableauClassement = document.getElementById("corps-tableau-classement");
+  const conteneurGraphique = document.getElementById("conteneur-graphique-comparatif");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function actualiserEtatBouton() {
+    const coches = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length;
+    boutonGenerer.disabled = coches === 0;
+    texteCompteClients.hidden = coches === 0;
+    if (coches > 0) texteCompteClients.textContent = `${coches} fiche(s) sélectionnée(s).`;
+  }
+
+  function rendreListeClients() {
+    if (!clients.length) {
+      texteAucunClient.hidden = false;
+      return;
+    }
+    conteneurClients.innerHTML = clients.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}"> ${echapper(c.nom)}
+      </label>
+    `).join("");
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((c) => c.addEventListener("change", actualiserEtatBouton));
+  }
+
+  function basculerParEtiquette(caseEtiquette) {
+    const idEtiquette = Number(caseEtiquette.value);
+    const idsCorrespondants = clients.filter((c) => c.etiquette_ids.includes(idEtiquette)).map((c) => c.id);
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((champ) => {
+      if (idsCorrespondants.includes(Number(champ.value))) champ.checked = caseEtiquette.checked;
+    });
+    actualiserEtatBouton();
+  }
+
+  rendreListeClients();
+  casesEtiquettes.forEach((c) => c.addEventListener("change", () => basculerParEtiquette(c)));
+
+  function joursEntre(debut, fin) {
+    const jours = [];
+    const curseur = new Date(`${debut}T00:00:00`);
+    const fin2 = new Date(`${fin}T00:00:00`);
+    while (curseur <= fin2) {
+      const iso = curseur.toISOString().slice(0, 10);
+      jours.push(iso);
+      curseur.setDate(curseur.getDate() + 1);
+    }
+    return jours;
+  }
+
+  function moyenne(avisListe) {
+    const notes = avisListe.map((a) => a.note).filter((n) => n > 0);
+    if (!notes.length) return null;
+    return Math.round((notes.reduce((s, n) => s + n, 0) / notes.length) * 10) / 10;
+  }
+
+  function construireGraphique(donneesParJour) {
+    const LARGEUR = 800;
+    const HAUTEUR = 180;
+    const PADDING_BAS = 22;
+    const PADDING_HAUT = 10;
+    const zoneHauteur = HAUTEUR - PADDING_BAS - PADDING_HAUT;
+    const n = donneesParJour.length;
+    const maxValeur = Math.max(1, ...donneesParJour.map((d) => d.total));
+    const largeurBande = LARGEUR / n;
+    const largeurBarre = Math.max(1, Math.min(24, largeurBande - 2));
+
+    let barres = "";
+    donneesParJour.forEach((jour, i) => {
+      const x = i * largeurBande + (largeurBande - largeurBarre) / 2;
+      const h = jour.total === 0 ? 0 : Math.max(2, (jour.total / maxValeur) * zoneHauteur);
+      const y = HAUTEUR - PADDING_BAS - h;
+      barres += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${largeurBarre.toFixed(1)}" height="${h.toFixed(1)}" rx="3" class="barre-graphique"><title>${jour.date} : ${jour.total} avis</title></rect>`;
+    });
+
+    const pasLabel = Math.max(1, Math.ceil(n / 8));
+    let labels = "";
+    donneesParJour.forEach((jour, i) => {
+      if (i % pasLabel !== 0 && i !== n - 1) return;
+      const x = i * largeurBande + largeurBande / 2;
+      const [, mois, jourNum] = jour.date.split("-");
+      labels += `<text x="${x.toFixed(1)}" y="${HAUTEUR - 6}" class="texte-axe-graphique" text-anchor="middle">${jourNum}/${mois}</text>`;
+    });
+
+    conteneurGraphique.innerHTML = `
+      <svg viewBox="0 0 ${LARGEUR} ${HAUTEUR}" class="graphique-comparatif" role="img" aria-label="Évolution du nombre d'avis par jour">
+        <line x1="0" y1="${HAUTEUR - PADDING_BAS}" x2="${LARGEUR}" y2="${HAUTEUR - PADDING_BAS}" class="ligne-base-graphique" />
+        ${barres}
+        ${labels}
+      </svg>`;
+  }
+
+  function ligneClassementHTML(stat) {
+    return `
+      <tr>
+        <td>${echapper(stat.client_nom)}</td>
+        <td>${stat.total_periode}</td>
+        <td>${stat.moyenne_periode !== null ? stat.moyenne_periode + "/5" : "—"}</td>
+        <td>${stat.positifs}</td>
+        <td>${stat.negatifs}</td>
+        <td>${stat.total_historique}</td>
+      </tr>`;
+  }
+
+  async function genererStatistiques() {
+    const idsCoches = Array.from(conteneurClients.querySelectorAll('input[name="client_ids"]:checked')).map((c) => Number(c.value));
+    const clientsCibles = clients.filter((c) => idsCoches.includes(c.id));
+    if (!clientsCibles.length) return;
+
+    const debut = champDebut.value;
+    const fin = champFin.value;
+    if (!debut || !fin || debut > fin) {
+      conteneurErreurs.innerHTML = `<p class="message-erreur">Vérifie les dates : « Du » doit être avant ou égal à « Au ».</p>`;
+      return;
+    }
+
+    boutonGenerer.disabled = true;
+    resultats.hidden = true;
+    conteneurErreurs.innerHTML = "";
+    conteneurProgression.hidden = false;
+    barreProgression.style.width = "0%";
+    texteProgression.textContent = `0 / ${clientsCibles.length} entreprises`;
+
+    let termines = 0;
+    const erreurs = [];
+    let tousLesAvis = [];
+    let curseur = 0;
+
+    async function traiterSuivant() {
+      while (curseur < clientsCibles.length) {
+        const client = clientsCibles[curseur++];
+        try {
+          const reponse = await fetch(`/avis/comparatif/donnees/${client.id}`);
+          const donnees = await reponse.json();
+          if (donnees.erreur) erreurs.push(donnees.erreur);
+          if (donnees.avis) tousLesAvis.push(...donnees.avis);
+        } catch (erreur) {
+          erreurs.push(`${client.nom} : erreur réseau.`);
+        }
+        termines++;
+        barreProgression.style.width = `${Math.round((termines / clientsCibles.length) * 100)}%`;
+        texteProgression.textContent = `${termines} / ${clientsCibles.length} entreprises`;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCE, clientsCibles.length) }, traiterSuivant));
+
+    conteneurProgression.hidden = true;
+    boutonGenerer.disabled = false;
+    if (erreurs.length) {
+      conteneurErreurs.innerHTML = erreurs.map((e) => `<p class="message-erreur">${echapper(e)}</p>`).join("");
+    }
+
+    // --- Global (tout historique) ---
+    document.getElementById("chiffre-total-global").textContent = tousLesAvis.length;
+    const moyenneGlobale = moyenne(tousLesAvis);
+    document.getElementById("chiffre-moyenne-global").textContent = moyenneGlobale !== null ? `${moyenneGlobale}/5` : "—";
+
+    // --- Periode ---
+    const avisPeriode = tousLesAvis.filter((a) => {
+      const dateAvis = (a.date_avis || "").slice(0, 10);
+      return dateAvis >= debut && dateAvis <= fin;
+    });
+    const positifsPeriode = avisPeriode.filter((a) => a.note >= 4);
+    const negatifsPeriode = avisPeriode.filter((a) => a.note > 0 && a.note <= 3);
+
+    document.getElementById("chiffre-total-periode").textContent = avisPeriode.length;
+    const moyennePeriode = moyenne(avisPeriode);
+    document.getElementById("chiffre-moyenne-periode").textContent = moyennePeriode !== null ? `${moyennePeriode}/5` : "—";
+    document.getElementById("chiffre-positifs-periode").textContent = positifsPeriode.length;
+    document.getElementById("chiffre-negatifs-periode").textContent = negatifsPeriode.length;
+
+    // --- Classement par fiche ---
+    const statsParClient = clientsCibles.map((client) => {
+      const avisClientPeriode = avisPeriode.filter((a) => a.client_id === client.id);
+      const avisClientTotal = tousLesAvis.filter((a) => a.client_id === client.id);
+      return {
+        client_nom: client.nom,
+        total_periode: avisClientPeriode.length,
+        moyenne_periode: moyenne(avisClientPeriode),
+        positifs: avisClientPeriode.filter((a) => a.note >= 4).length,
+        negatifs: avisClientPeriode.filter((a) => a.note > 0 && a.note <= 3).length,
+        total_historique: avisClientTotal.length,
+      };
+    });
+    statsParClient.sort((a, b) => b.total_periode - a.total_periode);
+    corpsTableauClassement.innerHTML = statsParClient.map(ligneClassementHTML).join("");
+
+    // --- Graphique jour par jour ---
+    const jours = joursEntre(debut, fin);
+    const compteParJour = {};
+    jours.forEach((j) => { compteParJour[j] = 0; });
+    avisPeriode.forEach((a) => {
+      const j = (a.date_avis || "").slice(0, 10);
+      if (j in compteParJour) compteParJour[j]++;
+    });
+    construireGraphique(jours.map((j) => ({ date: j, total: compteParJour[j] })));
+
+    resultats.hidden = false;
+  }
+
+  boutonGenerer.addEventListener("click", genererStatistiques);
+})();
+</script>
+{% endblock %}

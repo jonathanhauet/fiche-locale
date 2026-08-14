@@ -479,6 +479,59 @@ def avis_donnees_client(client_id: int, request: Request, db: Session = Depends(
         return JSONResponse({"avis": [], "erreur": f"{client.nom} : {erreur}"})
 
 
+@app.get("/avis/comparatif", response_class=HTMLResponse)
+def avis_comparatif_formulaire(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Statistiques d'avis comparees sur plusieurs fiches (typiquement toutes les
+    fiches d'un meme client final, regroupees par etiquette) : total, moyenne
+    globale, classement par fiche, evolution jour par jour sur une periode.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    debut, fin = _periode_depuis_requete(request)
+    return templates.TemplateResponse(
+        request,
+        "avis_comparatif.html",
+        {
+            "etiquettes": etiquettes,
+            "clients_json": _clients_json_avec_etiquettes(db),
+            "debut": debut,
+            "fin": fin,
+        },
+    )
+
+
+@app.get("/avis/comparatif/donnees/{client_id}")
+def avis_comparatif_donnees_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Renvoie l'historique COMPLET des avis d'un client (toutes les pages, pas
+    seulement les 50 premiers comme /avis/donnees) - necessaire pour un total
+    et une moyenne globale exacts sur les statistiques comparatives.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"avis": [], "erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"avis": [], "erreur": None})
+
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({
+            "avis": [],
+            "erreur": f"{client.nom} : compte Google non valide (a reconnecter depuis Comptes Google).",
+        })
+
+    try:
+        avis = google_reviews.lister_avis_complet_client(identifiants, client)
+        return JSONResponse({"avis": avis, "erreur": None})
+    except Exception as erreur:
+        return JSONResponse({"avis": [], "erreur": f"{client.nom} : {erreur}"})
+
+
 @app.get("/completude/donnees/{client_id}")
 def completude_donnees_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Renvoie en JSON le score de completude d'un seul client, pour le chargement progressif cote navigateur."""

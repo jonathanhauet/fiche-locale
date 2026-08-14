@@ -1255,6 +1255,26 @@ h3 { font-size: 0.95rem; margin: 1.3rem 0 0.8rem; color: var(--texte-discret); }
    tableau (voir recaps.html/etiquettes.html), quel que soit le contenu. */
 .tableau-historique.disposition-fixe { table-layout: fixed; }
 
+/* ---------- Graphique (comparatif avis) ---------- */
+
+.conteneur-graphique-comparatif {
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.graphique-comparatif { width: 100%; height: auto; display: block; }
+
+.barre-graphique { fill: var(--accent); transition: fill 0.15s ease; }
+.barre-graphique:hover { fill: var(--accent-fonce); }
+
+.ligne-base-graphique { stroke: var(--carte-bordure); stroke-width: 1; }
+
+.texte-axe-graphique { fill: var(--texte-discret); font-size: 9px; }
+
 /* ---------- Avis ---------- */
 
 .carte-avis {
