@@ -48,7 +48,10 @@ COULEUR_FOND_CARTE = "#f9fafb"
 
 
 def construire_sujet(client: models.Client, mois: int, annee: int) -> str:
-    return f"Le récap de {LIBELLES_MOIS[mois]} pour ta fiche Google"
+    # Le nom de la fiche est indispensable ici : un meme client peut recevoir
+    # plusieurs recaps le meme jour s'il gere plusieurs fiches (ex. plusieurs
+    # etablissements), et le sujet doit permettre de les distinguer sans ouvrir l'email.
+    return f"Le récap de {LIBELLES_MOIS[mois]} pour {client.nom}"
 
 
 def total_et_evolution(statistiques: dict, comparatif_visibilite, cles: list[str]) -> tuple[int, float]:
@@ -217,6 +220,7 @@ def construire_email(
                   <td style="vertical-align:middle;">
                     <p style="margin:0;color:#ffffff;font-size:13px;letter-spacing:0.5px;text-transform:uppercase;">Récap mensuel</p>
                     <h1 style="margin:4px 0 0;color:#ffffff;font-size:22px;">{nom_mois.capitalize()} {annee}</h1>
+                    <p style="margin:4px 0 0;color:#ffffff;font-size:14px;opacity:0.9;">{client.nom}</p>
                   </td>
                   {f'''<td style="width:52px;vertical-align:middle;text-align:right;">
                     <img src="{PHOTO_URL}" width="46" height="46" alt=""
@@ -229,7 +233,7 @@ def construire_email(
           <tr>
             <td style="padding:28px 32px;">
               <p style="color:{COULEUR_TEXTE};font-size:15px;">Bonjour {prenom_ou_nom},</p>
-              <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qui s'est passé sur ta fiche Google {en_mois} :</p>
+              <p style="color:{COULEUR_TEXTE};font-size:15px;">Voici ce qui s'est passé sur ta fiche <strong>{client.nom}</strong> {en_mois} :</p>
               {contenu_sections}
               {bouton_fiche}
             </td>
