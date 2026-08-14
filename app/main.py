@@ -52,7 +52,7 @@ from .planificateur import (
     verifier_et_publier_photos_programmees,
     verifier_et_publier_posts_programmes,
 )
-from .security import verifier_mot_de_passe
+from .security import hacher_mot_de_passe, verifier_mot_de_passe
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
 DOSSIER_PLATEFORME = os.path.dirname(DOSSIER_APP)
@@ -295,6 +295,16 @@ def _utilisateur_en_attente_2fa(request: Request, db: Session):
     return db.query(models.Utilisateur).filter_by(id=id_utilisateur).first()
 
 
+def _regenerer_codes_recuperation(db: Session, utilisateur) -> list[str]:
+    """Invalide les anciens codes de secours et en genere un nouveau lot."""
+    db.query(models.CodeRecuperation2FA).filter_by(utilisateur_id=utilisateur.id).delete()
+    codes = deux_facteurs.generer_codes_recuperation()
+    for code in codes:
+        db.add(models.CodeRecuperation2FA(utilisateur_id=utilisateur.id, code_hash=hacher_mot_de_passe(code)))
+    db.commit()
+    return codes
+
+
 @app.get("/connexion/configurer-2fa", response_class=HTMLResponse)
 def page_configurer_2fa(request: Request, db: Session = Depends(obtenir_session)):
     utilisateur = _utilisateur_en_attente_2fa(request, db)
@@ -338,11 +348,23 @@ def valider_configuration_2fa(
         )
 
     utilisateur.totp_secret = secret
-    db.commit()
+    codes_recuperation = _regenerer_codes_recuperation(db, utilisateur)
     request.session.pop("secret_2fa_configuration", None)
     request.session.pop("utilisateur_en_attente_2fa", None)
     request.session["user_id"] = utilisateur.id
-    return RedirectResponse("/", status_code=303)
+    request.session["codes_recuperation_a_afficher"] = codes_recuperation
+    return RedirectResponse("/connexion/codes-recuperation", status_code=303)
+
+
+@app.get("/connexion/codes-recuperation", response_class=HTMLResponse)
+def page_codes_recuperation(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    codes = request.session.pop("codes_recuperation_a_afficher", None)
+    if not codes:
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(request, "connexion_2fa_codes_recuperation.html", {"codes": codes})
 
 
 @app.get("/connexion/code", response_class=HTMLResponse)
@@ -374,6 +396,89 @@ def valider_code_2fa(
     request.session.pop("utilisateur_en_attente_2fa", None)
     request.session["user_id"] = utilisateur.id
     return RedirectResponse("/", status_code=303)
+
+
+@app.get("/connexion/recuperation", response_class=HTMLResponse)
+def page_recuperation_2fa(request: Request, db: Session = Depends(obtenir_session)):
+    utilisateur = _utilisateur_en_attente_2fa(request, db)
+    if not utilisateur or not utilisateur.totp_secret:
+        return RedirectResponse("/connexion", status_code=303)
+    return templates.TemplateResponse(request, "connexion_2fa_recuperation.html", {"erreur": None})
+
+
+@app.post("/connexion/recuperation")
+def valider_recuperation_2fa(
+    request: Request,
+    code: str = Form(...),
+    db: Session = Depends(obtenir_session),
+):
+    utilisateur = _utilisateur_en_attente_2fa(request, db)
+    if not utilisateur or not utilisateur.totp_secret:
+        return RedirectResponse("/connexion", status_code=303)
+
+    code_normalise = deux_facteurs.normaliser_code_recuperation(code)
+    correspondance = None
+    for ligne in db.query(models.CodeRecuperation2FA).filter_by(utilisateur_id=utilisateur.id, utilise=False):
+        if verifier_mot_de_passe(code_normalise, ligne.code_hash):
+            correspondance = ligne
+            break
+
+    if not correspondance:
+        return templates.TemplateResponse(
+            request,
+            "connexion_2fa_recuperation.html",
+            {"erreur": "Code invalide ou déjà utilisé."},
+            status_code=401,
+        )
+
+    correspondance.utilise = True
+    db.commit()
+    request.session.pop("utilisateur_en_attente_2fa", None)
+    request.session["user_id"] = utilisateur.id
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/parametres/securite", response_class=HTMLResponse)
+def page_securite(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    utilisateur = db.query(models.Utilisateur).filter_by(id=utilisateur_connecte(request)).first()
+    nb_codes_restants = (
+        db.query(models.CodeRecuperation2FA)
+        .filter_by(utilisateur_id=utilisateur.id, utilise=False)
+        .count()
+    )
+    return templates.TemplateResponse(
+        request,
+        "securite.html",
+        {
+            "page_actuelle": "securite",
+            "nb_codes_restants": nb_codes_restants,
+        },
+    )
+
+
+@app.post("/parametres/securite/regenerer-codes")
+def regenerer_codes_recuperation(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    utilisateur = db.query(models.Utilisateur).filter_by(id=utilisateur_connecte(request)).first()
+    request.session["codes_recuperation_a_afficher"] = _regenerer_codes_recuperation(db, utilisateur)
+    return RedirectResponse("/connexion/codes-recuperation", status_code=303)
+
+
+@app.post("/parametres/securite/reinitialiser-2fa")
+def reinitialiser_2fa(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    utilisateur = db.query(models.Utilisateur).filter_by(id=utilisateur_connecte(request)).first()
+    utilisateur.totp_secret = None
+    db.query(models.CodeRecuperation2FA).filter_by(utilisateur_id=utilisateur.id).delete()
+    db.commit()
+    return RedirectResponse("/parametres/securite", status_code=303)
 
 
 @app.get("/deconnexion")

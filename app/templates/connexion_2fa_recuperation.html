@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titre %}Code de récupération — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <form class="carte-connexion" method="post" action="/connexion/recuperation">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    <p class="texte-explication-2fa">Saisis l'un des codes de récupération notés lors de l'activation de la double authentification.</p>
+    {% if erreur %}<p class="message-erreur">{{ erreur }}</p>{% endif %}
+    <label>Code de récupération
+      <input type="text" name="code" placeholder="ABCDE-FGHJK" required autofocus autocomplete="off">
+    </label>
+    <button type="submit">Valider</button>
+    <a class="fil-retour" href="/connexion/code">&larr; Revenir au code de l'application</a>
+  </form>
+</div>
+{% endblock %}

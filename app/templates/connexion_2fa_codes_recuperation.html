@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titre %}Codes de récupération — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <div class="carte-connexion carte-connexion-2fa">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    <p class="texte-explication-2fa">
+      Voici tes <strong>codes de récupération</strong>. Chacun permet de te connecter
+      <strong>une seule fois</strong> si tu perds l'accès à ton application d'authentification.
+      Note-les et garde-les en lieu sûr : ils ne seront plus jamais affichés.
+    </p>
+    <div class="grille-codes-recuperation">
+      {% for c in codes %}
+      <code>{{ c }}</code>
+      {% endfor %}
+    </div>
+    <a class="bouton" href="/">J'ai noté mes codes, continuer</a>
+  </div>
+</div>
+{% endblock %}

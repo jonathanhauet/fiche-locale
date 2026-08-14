@@ -333,6 +333,35 @@ a { color: var(--accent); }
   text-align: center;
 }
 
+.grille-codes-recuperation {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.grille-codes-recuperation code {
+  display: block;
+  padding: 0.5rem;
+  background: var(--fond);
+  border-radius: var(--rayon-petit);
+  text-align: center;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+}
+
+.bloc-section {
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.bloc-section h2 { margin-top: 0; }
+
+.bloc-section .texte-explication-2fa { text-align: left; margin-bottom: 0.9rem; }
+
 /* ---------- Formulaires ---------- */
 
 label {

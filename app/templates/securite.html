@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% set page_actuelle = "securite" %}
+{% block titre %}Sécurité — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Sécurité du compte</h1>
+</div>
+
+<div class="grille-resume">
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre">{{ nb_codes_restants }}</span>
+    <span class="carte-resume-libelle">code(s) de récupération restant(s)</span>
+  </div>
+</div>
+
+<div class="bloc-section">
+  <h2>Codes de récupération</h2>
+  <p class="texte-explication-2fa">
+    Ces codes permettent de te connecter si tu perds l'accès à ton application
+    d'authentification. Régénérer un nouveau lot annule immédiatement tous les
+    anciens codes.
+  </p>
+  <form method="post" action="/parametres/securite/regenerer-codes"
+        onsubmit="return confirm('Régénérer les codes de récupération ? Les anciens codes ne fonctionneront plus.');">
+    <button type="submit" class="bouton">Régénérer mes codes de récupération</button>
+  </form>
+</div>
+
+<div class="bloc-section">
+  <h2>Application d'authentification</h2>
+  <p class="texte-explication-2fa">
+    Réinitialiser la double authentification si tu changes de téléphone : à ta
+    prochaine connexion, un nouveau QR code de configuration te sera proposé.
+  </p>
+  <form method="post" action="/parametres/securite/reinitialiser-2fa"
+        onsubmit="return confirm('Réinitialiser la double authentification ? Tu devras reconfigurer une application d\'authentification à ta prochaine connexion.');">
+    <button type="submit" class="bouton-danger">Réinitialiser la double authentification</button>
+  </form>
+</div>
+{% endblock %}

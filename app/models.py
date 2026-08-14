@@ -29,6 +29,28 @@ class Utilisateur(Base):
     # n'a pas termine la configuration (voir deux_facteurs.py).
     totp_secret = Column(String, nullable=True)
 
+    codes_recuperation = relationship(
+        "CodeRecuperation2FA", back_populates="utilisateur", cascade="all, delete-orphan"
+    )
+
+
+class CodeRecuperation2FA(Base):
+    """
+    Code de secours a usage unique permettant de se connecter sans code TOTP
+    (telephone perdu/casse). Genere par lot au moment de l'activation de la
+    2FA ou d'une regeneration manuelle (voir /parametres/securite).
+    """
+
+    __tablename__ = "codes_recuperation_2fa"
+
+    id = Column(Integer, primary_key=True)
+    utilisateur_id = Column(Integer, ForeignKey("utilisateurs.id"), nullable=False)
+    code_hash = Column(String, nullable=False)
+    utilise = Column(Boolean, default=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    utilisateur = relationship("Utilisateur", back_populates="codes_recuperation")
+
 
 class Client(Base):
     __tablename__ = "clients"
