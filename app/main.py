@@ -11,6 +11,7 @@ import json
 import os
 import uuid
 from datetime import date, datetime, timedelta
+from urllib.parse import urlparse
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import requests
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -2854,6 +2856,36 @@ async def modifier_statut_rapide_post(post_id: int, request: Request, db: Sessio
     db.commit()
 
     return RedirectResponse(f"/clients/{post.client_id}#post-{post_id}", status_code=303)
+
+
+HOTES_IMAGES_AUTORISES_PROXY = {"lh3.googleusercontent.com"}
+_hote_ovh = urlparse(ovh_upload.URL_PUBLIQUE_BASE).hostname if ovh_upload.URL_PUBLIQUE_BASE else None
+if _hote_ovh:
+    HOTES_IMAGES_AUTORISES_PROXY.add(_hote_ovh)
+
+
+@app.get("/image_proxy")
+def image_proxy(request: Request, url: str):
+    """
+    Relaie une image (fiche Google ou stockage OVH) en meme origine que la
+    plateforme, pour permettre son dessin sur un <canvas> (outil de recadrage)
+    sans etre bloque par les CORS du domaine d'origine.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    url_analysee = urlparse(url)
+    if url_analysee.scheme not in ("http", "https") or url_analysee.hostname not in HOTES_IMAGES_AUTORISES_PROXY:
+        return Response(status_code=400)
+
+    try:
+        reponse = requests.get(url, timeout=10)
+        reponse.raise_for_status()
+    except Exception:
+        return Response(status_code=404)
+
+    return Response(content=reponse.content, media_type=reponse.headers.get("Content-Type", "image/jpeg"))
 
 
 @app.post("/posts/{post_id}/generer_image")

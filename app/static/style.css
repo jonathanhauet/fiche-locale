@@ -919,11 +919,19 @@ button:active { transform: translateY(1px); }
 }
 
 .apercu-image {
-  max-width: 100%;
-  max-height: 320px;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   border-radius: var(--rayon-petit);
   border: 1px solid var(--carte-bordure);
   object-fit: cover;
+  display: block;
+  background: var(--fond);
+}
+
+.texte-legende-apercu {
+  font-size: 0.8rem;
+  color: var(--texte-discret);
+  margin: 0 0 0.4rem;
 }
 
 /* ---------- Photos de la fiche ---------- */
@@ -972,7 +980,94 @@ button:active { transform: translateY(1px); }
 
 .apercu-image-conteneur {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
+  max-width: 400px;
+}
+
+.bouton-recadrer-image {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  border: none;
+  border-radius: var(--rayon-petit);
+  background: rgba(20, 22, 31, 0.75);
+  color: white;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.bouton-recadrer-image:hover { background: rgba(20, 22, 31, 0.9); }
+
+/* ---------- Modale de recadrage ---------- */
+
+.modale-recadrage {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 14, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modale-recadrage[hidden] { display: none; }
+
+.modale-recadrage-contenu {
+  background: var(--carte);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 1.4rem;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.modale-recadrage-contenu h3 { margin: 0; }
+
+.cadre-recadrage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--carte-bordure);
+  background: #111318;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cadre-recadrage:active { cursor: grabbing; }
+
+.cadre-recadrage img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  transform-origin: top left;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.controle-zoom {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--texte-discret);
+}
+
+.controle-zoom input[type="range"] { flex: 1; }
+
+.actions-modale-recadrage {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
 }
 
 .bouton-retirer-image {
