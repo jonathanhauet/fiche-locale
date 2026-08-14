@@ -82,6 +82,7 @@ def _ligne_stat(libelle: str, valeur, evolution=None) -> str:
 def construire_email(
     client: models.Client, donnees: dict, mois: int, annee: int,
     avis_positifs: list[dict], resume_avis_texte: str = None, lien_fiche_google: str = "",
+    groupes_etiquette: list[dict] = None,
 ) -> str:
     statistiques = donnees.get("statistiques") or {}
     resume_avis = donnees.get("resume_avis") or {}
@@ -137,6 +138,24 @@ def construire_email(
           <p style="margin:6px 0 0;color:{COULEUR_DISCRET};font-size:13px;">— {a['auteur']}</p>
         </div>""" for a in avis_positifs[:2])
         sections.append(citations)
+
+    # --- Groupe(s) etiquette : total/moyenne de TOUTES les fiches du groupe,
+    # pas seulement celle-ci - utile pour un client gere via de nombreuses
+    # fiches regroupees sous une meme etiquette (ex. plusieurs etablissements
+    # de la meme enseigne), qui veut un chiffre global en plus de celui-ci.
+    # Omis si le groupe n'a recu aucun avis ce mois-ci (meme logique que la
+    # section "Tes avis" ci-dessus, qui masque aussi un compteur a zero).
+    for groupe in (groupes_etiquette or []):
+        if not groupe["total_avis"]:
+            continue
+        moyenne_texte = f", note moyenne {groupe['moyenne']}/5 ⭐" if groupe["moyenne"] else ""
+        sections.append(f"""
+        <div style="background:{COULEUR_FOND_CARTE};padding:12px 16px;margin:10px 0;border-radius:4px;">
+          <p style="margin:0;color:{COULEUR_TEXTE};font-size:14px;">
+            📊 Sur l'ensemble de tes <strong>{groupe['nb_fiches']} fiches</strong> ({groupe['etiquette_nom']}) :
+            <strong>{groupe['total_avis']} avis</strong> reçus {en_mois}{moyenne_texte}.
+          </p>
+        </div>""")
 
     # --- Visibilite ---
     lignes_visi = []

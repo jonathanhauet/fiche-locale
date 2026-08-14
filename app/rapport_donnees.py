@@ -167,6 +167,69 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
     }
 
 
+def resume_groupes_etiquette(
+    db: Session, client: models.Client, date_debut: date, date_fin: date, cache: dict = None,
+) -> list[dict]:
+    """
+    Pour chaque etiquette du client comptant au moins 2 fiches, le total
+    d'avis et la moyenne de TOUT le groupe sur la periode - pense pour un
+    client final gere via de nombreuses fiches regroupees sous une meme
+    etiquette (ex. une enseigne a plusieurs dizaines d'etablissements), qui
+    veut un chiffre global en plus de celui de cette fiche precise.
+
+    cache (optionnel, un dict partage entre plusieurs appels d'un meme lot
+    d'envoi - voir planificateur.envoyer_recaps_mensuels) evite de relire les
+    avis de tout le groupe a chaque fiche membre : sans lui, un groupe de 100
+    fiches ferait relire les avis des 100 fiches... 100 fois (une fois par
+    email envoye a ce groupe le meme jour).
+    """
+    if cache is None:
+        cache = {}
+
+    resultats = []
+    for etiquette in client.etiquettes:
+        if len(etiquette.clients) < 2:
+            continue  # groupe d'une seule fiche (elle-meme) : rien a additionner
+
+        cle_cache = (etiquette.id, date_debut, date_fin)
+        if cle_cache not in cache:
+            total_avis = 0
+            notes = []
+            for membre in etiquette.clients:
+                if not membre.account_id or not membre.location_id:
+                    continue
+                identifiants = google_oauth.obtenir_identifiants(db, membre.compte_google_id)
+                if not identifiants:
+                    continue
+                try:
+                    avis_membre = google_reviews.lister_avis_dune_fiche(
+                        identifiants, membre.account_id, membre.location_id, toutes_les_pages=True
+                    )
+                except Exception:
+                    continue
+                for avis in avis_membre:
+                    try:
+                        date_creation = datetime.fromisoformat(
+                            avis.get("createTime", "").replace("Z", "+00:00")
+                        ).date()
+                    except ValueError:
+                        continue
+                    if date_debut <= date_creation <= date_fin:
+                        total_avis += 1
+                        note = google_reviews.NOTES.get(avis.get("starRating"), 0)
+                        if note:
+                            notes.append(note)
+            cache[cle_cache] = {
+                "nb_fiches": len(etiquette.clients),
+                "total_avis": total_avis,
+                "moyenne": round(sum(notes) / len(notes), 1) if notes else None,
+            }
+
+        resultats.append({"etiquette_nom": etiquette.nom, **cache[cle_cache]})
+
+    return resultats
+
+
 def mois_precedent(aujourdhui: date) -> tuple[int, int]:
     """Renvoie (mois, annee) du mois calendaire qui vient de se terminer."""
     premier_du_mois = aujourdhui.replace(day=1)
@@ -174,11 +237,17 @@ def mois_precedent(aujourdhui: date) -> tuple[int, int]:
     return dernier_jour_precedent.month, dernier_jour_precedent.year
 
 
-def construire_contenu_recap(db: Session, client: models.Client, mois: int, annee: int) -> tuple[str, str]:
+def construire_contenu_recap(
+    db: Session, client: models.Client, mois: int, annee: int, cache_groupes: dict = None,
+) -> tuple[str, str]:
     """
     Assemble le sujet et le HTML du recap pour ce client/periode, sans rien
     envoyer. Utilise a la fois par l'apercu (main.py) et par l'envoi reel
     (envoyer_recap_client ci-dessous), pour que les deux restent identiques.
+
+    cache_groupes : voir resume_groupes_etiquette - a fournir (un dict partage)
+    depuis un envoi en lot pour eviter de recalculer le meme groupe a chaque
+    fiche membre ; laisse a None pour un appel isole (apercu, envoi manuel).
     """
     identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
     if not identifiants:
@@ -211,19 +280,25 @@ def construire_contenu_recap(db: Session, client: models.Client, mois: int, anne
     except Exception:
         lien_fiche_google = ""
 
+    groupes_etiquette = resume_groupes_etiquette(db, client, debut, fin, cache_groupes)
+
     sujet = recap_mensuel.construire_sujet(client, mois, annee)
     html = recap_mensuel.construire_email(
-        client, donnees, mois, annee, avis_positifs, resume_avis_texte, lien_fiche_google
+        client, donnees, mois, annee, avis_positifs, resume_avis_texte, lien_fiche_google, groupes_etiquette
     )
     return sujet, html
 
 
-def envoyer_recap_client(db: Session, client: models.Client, mois: int, annee: int) -> tuple[str, str]:
+def envoyer_recap_client(
+    db: Session, client: models.Client, mois: int, annee: int, cache_groupes: dict = None,
+) -> tuple[str, str]:
     """
     Envoie le recap mensuel a un client pour la periode mois/annee, puis
     enregistre le resultat (EnvoiRecap). N'envoie rien si un recap a deja ete
     envoye avec succes pour cette periode (evite les doublons, y compris
     depuis un declenchement manuel). Renvoie (etat, erreur).
+
+    cache_groupes : voir construire_contenu_recap / resume_groupes_etiquette.
     """
     deja_envoye = (
         db.query(models.EnvoiRecap)
@@ -236,7 +311,7 @@ def envoyer_recap_client(db: Session, client: models.Client, mois: int, annee: i
     try:
         if not client.email:
             raise RuntimeError("Aucun email renseigne pour ce client.")
-        sujet, html = construire_contenu_recap(db, client, mois, annee)
+        sujet, html = construire_contenu_recap(db, client, mois, annee, cache_groupes)
         brevo_email.envoyer_email(client.email, client.prenom or client.nom, sujet, html)
         etat, erreur = "ENVOYE", ""
     except Exception as e:

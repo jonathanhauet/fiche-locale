@@ -12,7 +12,7 @@ import requests
 NOTES = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5}
 
 
-def _lister_avis_dune_fiche(identifiants, account_id: str, location_id: str, toutes_les_pages: bool = False):
+def lister_avis_dune_fiche(identifiants, account_id: str, location_id: str, toutes_les_pages: bool = False):
     """
     Recupere les avis d'une fiche. Par defaut, une seule page (jusqu'a 50 avis,
     suffisant pour l'ecran de gestion des avis). Avec toutes_les_pages=True,
@@ -57,7 +57,7 @@ def lister_avis_multi_clients(identifiants_par_client: dict, clients: list) -> l
         if not identifiants:
             continue
 
-        for avis in _lister_avis_dune_fiche(identifiants, client.account_id, client.location_id):
+        for avis in lister_avis_dune_fiche(identifiants, client.account_id, client.location_id):
             nom_ressource = avis["name"]  # accounts/{a}/locations/{l}/reviews/{r}
             review_id = nom_ressource.split("/")[-1]
             reponse_existante = avis.get("reviewReply")
@@ -88,14 +88,14 @@ def lister_avis_multi_clients(identifiants_par_client: dict, clients: list) -> l
 
 def lister_avis_complet_client(identifiants, client) -> list[dict]:
     """
-    Tous les avis d'un client, toutes pages confondues (voir _lister_avis_dune_fiche,
+    Tous les avis d'un client, toutes pages confondues (voir lister_avis_dune_fiche,
     toutes_les_pages=True), au meme format que lister_avis_multi_clients.
     Utilise pour les statistiques comparatives multi-fiches (comparatif_avis),
     ou un total exact est necessaire - contrairement a la page Avis courante,
     qui se limite volontairement a la premiere page (50 avis) pour rester rapide.
     """
     resultats = []
-    for avis in _lister_avis_dune_fiche(identifiants, client.account_id, client.location_id, toutes_les_pages=True):
+    for avis in lister_avis_dune_fiche(identifiants, client.account_id, client.location_id, toutes_les_pages=True):
         nom_ressource = avis["name"]
         review_id = nom_ressource.split("/")[-1]
         reponse_existante = avis.get("reviewReply")
@@ -152,7 +152,7 @@ def resumer_avis(
     note_moyenne_periode_n1 - calcules a partir du meme releve d'avis, sans
     second appel a l'API.
     """
-    tous_les_avis = _lister_avis_dune_fiche(identifiants, account_id, location_id, toutes_les_pages=True)
+    tous_les_avis = lister_avis_dune_fiche(identifiants, account_id, location_id, toutes_les_pages=True)
 
     notes_globales = [NOTES.get(a.get("starRating"), 0) for a in tous_les_avis if a.get("starRating")]
     note_moyenne_globale = round(sum(notes_globales) / len(notes_globales), 1) if notes_globales else None
@@ -204,7 +204,7 @@ def avis_positifs_periode(
     quelques avis recus AVEC commentaire peuvent etre noyes au-dela de la
     premiere page parmi les avis recus SANS commentaire (etoiles seules).
     """
-    avis = _lister_avis_dune_fiche(identifiants, account_id, location_id, toutes_les_pages=True)
+    avis = lister_avis_dune_fiche(identifiants, account_id, location_id, toutes_les_pages=True)
 
     candidats = []
     for a in avis:

@@ -124,7 +124,12 @@ def envoyer_recaps_mensuels():
             .all()
         )
 
+        # Partage entre tous les envois de ce lot : une fiche appartenant a une
+        # etiquette de plusieurs dizaines de fiches ne fait recalculer le total
+        # du groupe qu'une fois pour tout le lot, pas une fois par fiche membre
+        # (voir rapport_donnees.resume_groupes_etiquette).
+        cache_groupes_etiquette = {}
         for client in clients_eligibles:
-            rapport_donnees.envoyer_recap_client(db, client, mois, annee)
+            rapport_donnees.envoyer_recap_client(db, client, mois, annee, cache_groupes_etiquette)
     finally:
         db.close()
