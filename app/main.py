@@ -243,15 +243,18 @@ planificateur.add_job(
     minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
     id="publication_photos_programmee",
 )
-# Verification quotidienne a heure fixe (plutot qu'un intervalle glissant
-# depuis le dernier redemarrage du serveur) : le recap du mois precedent part
-# donc toujours autour de la meme heure peu apres le 1er du mois, de facon
-# previsible. Le job reste idempotent (EnvoiRecap) et tourne chaque jour,
-# donc un echec un jour donne (token expire, etc.) est retente le lendemain
-# sans intervention manuelle.
+# Limite aux 5 premiers jours du mois (pas tout le mois) : le job reste
+# idempotent (EnvoiRecap) et tourne chaque jour dans cette fenetre, donc un
+# echec un jour donne (token expire, etc.) est retente le lendemain sans
+# intervention manuelle - mais un client devenant eligible APRES cette
+# fenetre (email ajoute le 15, par exemple) n'a pas ete rattrape et recoit un
+# recap du mois precedent avec deux semaines de retard, sujet+contenu ne
+# mentionnant pas ce delai. Borner la fenetre evite ce cas : ce client
+# recevra son premier recap au debut du mois suivant, comme les autres.
 planificateur.add_job(
     envoyer_recaps_mensuels,
     "cron",
+    day="1-5",
     hour=8,
     timezone="Europe/Brussels",
     id="recap_mensuel",

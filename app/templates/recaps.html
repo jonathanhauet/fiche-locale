@@ -53,6 +53,9 @@
           {% if ligne.dernier_envoi %}
           {{ ligne.dernier_envoi.mois }}/{{ ligne.dernier_envoi.annee }}
           <span class="etiquette-statut etiquette-{{ ligne.dernier_envoi.etat|lower }}">{{ ligne.dernier_envoi.etat }}</span>
+          <p class="texte-discret" style="margin:4px 0 0;">
+            envoyé le {{ ligne.dernier_envoi.horodatage.strftime("%d/%m/%Y à %H:%M") }}
+          </p>
           {% if ligne.dernier_envoi.etat == "ECHEC" and ligne.dernier_envoi.erreur %}
           <p class="texte-discret" style="color:var(--danger);margin:4px 0 0;white-space:normal;max-width:220px;">
             {{ ligne.dernier_envoi.erreur }}
