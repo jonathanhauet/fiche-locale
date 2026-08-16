@@ -32,6 +32,7 @@ from . import (
     comparatif_avis_pdf,
     deux_facteurs,
     documents,
+    export_clients_excel,
     gemini_images,
     geocodage,
     google_business,
@@ -1201,16 +1202,7 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
     if redirection:
         return redirection
 
-    espace = db.get(models.Etiquette, etiquette_id) if etiquette_id else None
-    if espace:
-        clients = (
-            db.query(models.Client)
-            .filter(models.Client.etiquettes.any(models.Etiquette.id == espace.id))
-            .order_by(models.Client.nom)
-            .all()
-        )
-    else:
-        clients = _query_clients_non_isoles(db).order_by(models.Client.nom).all()
+    espace, clients = _resoudre_espace_et_clients(db, etiquette_id)
 
     ids_avec_connaissance = {
         client_id
@@ -1228,6 +1220,31 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
             "nb_sans_connaissance": sum(1 for c in clients if c.id not in ids_avec_connaissance),
             "espace": espace,
         },
+    )
+
+
+@app.get("/clients/export.xlsx")
+def exporter_clients_excel(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
+    """
+    Export Excel des clients (accueil, ou un seul espace si etiquette_id est
+    fourni) avec les donnees disponibles gratuitement via les API Google deja
+    utilisees ailleurs dans la plateforme - jamais de donnee payante
+    (positions/DataForSEO). Peut prendre un moment sur beaucoup de fiches (3
+    appels Google par fiche), comme le rapport PDF ou le bilan.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    espace, clients = _resoudre_espace_et_clients(db, etiquette_id)
+
+    octets = export_clients_excel.generer_export(db, clients)
+    suffixe = espace.nom.replace(" ", "_") if espace else "tous"
+    nom_fichier = f"clients_{suffixe}_{date.today().isoformat()}.xlsx"
+    return Response(
+        content=octets,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
     )
 
 
@@ -1390,6 +1407,25 @@ def _query_clients_non_isoles(db: Session):
     alertes) quand aucun ?etiquette=... n'est demande explicitement.
     """
     return db.query(models.Client).filter(~models.Client.etiquettes.any(models.Etiquette.isolee == True))  # noqa: E712
+
+
+def _resoudre_espace_et_clients(db: Session, etiquette_id: int):
+    """
+    Utilise par les vues qui existent en version globale (clients non isoles)
+    et en version scopee a un espace (?etiquette_id=...) : accueil, avis,
+    alertes, export Excel. Renvoie (espace|None, clients tries par nom).
+    """
+    espace = db.get(models.Etiquette, etiquette_id) if etiquette_id else None
+    if espace:
+        clients = (
+            db.query(models.Client)
+            .filter(models.Client.etiquettes.any(models.Etiquette.id == espace.id))
+            .order_by(models.Client.nom)
+            .all()
+        )
+    else:
+        clients = _query_clients_non_isoles(db).order_by(models.Client.nom).all()
+    return espace, clients
 
 
 def _toutes_etiquettes_json(db: Session) -> str:

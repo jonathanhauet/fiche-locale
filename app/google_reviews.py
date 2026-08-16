@@ -198,6 +198,25 @@ def supprimer_reponse_avis(identifiants, account_id: str, location_id: str, revi
         raise RuntimeError(f"Echec de la suppression (code {reponse.status_code}) : {reponse.text}")
 
 
+def resume_rapide(identifiants, account_id: str, location_id: str) -> dict:
+    """
+    Note moyenne et nombre total d'avis, en un seul appel rapide : Google
+    renvoie ces totaux directement dans l'enveloppe de reponse (averageRating,
+    totalReviewCount), sans avoir besoin de lire toutes les pages comme
+    resumer_avis/lister_avis_complet_client - utilisable sur beaucoup de
+    fiches sans ralentir (voir export_clients_excel.py).
+    """
+    url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/reviews"
+    reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params={"pageSize": 1})
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la lecture des avis (code {reponse.status_code})")
+    donnees = reponse.json()
+    return {
+        "total_avis": donnees.get("totalReviewCount", 0),
+        "note_moyenne": donnees.get("averageRating"),
+    }
+
+
 def resumer_avis(
     identifiants, account_id: str, location_id: str, date_debut, date_fin,
     date_debut_n1=None, date_fin_n1=None,

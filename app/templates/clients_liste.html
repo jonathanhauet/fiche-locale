@@ -21,12 +21,13 @@
 
 <div class="barre-titre">
   <h1>{{ "Clients — " ~ espace.nom if espace else "Clients" }}</h1>
-  {% if not espace %}
-  <div class="ligne-champs">
+  <div class="barre-outils-import-masse">
+    <a class="bouton-secondaire" href="/clients/export.xlsx{{ '?etiquette_id=' ~ espace.id if espace else '' }}">📊 Exporter en Excel</a>
+    {% if not espace %}
     <a class="bouton-secondaire" href="/clients/import-masse">+ Import multiple</a>
     <a class="bouton" href="/clients/nouveau">+ Ajouter un client</a>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 
 <div class="grille-resume">

@@ -20,3 +20,4 @@ pypdf
 python-docx
 pyotp
 qrcode
+openpyxl
