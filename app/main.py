@@ -832,12 +832,14 @@ def voir_comparatif_avis(comparatif_id: int, request: Request, db: Session = Dep
     if not comparatif:
         return HTMLResponse("Comparatif introuvable.", status_code=404)
 
+    donnees = json.loads(comparatif.donnees_json)
     return templates.TemplateResponse(
         request,
         "avis_comparatif_detail.html",
         {
             "comparatif": comparatif,
-            "donnees_json": json.dumps(json.loads(comparatif.donnees_json)).replace("</", "<\\/"),
+            "donnees": donnees,
+            "donnees_json": json.dumps(donnees).replace("</", "<\\/"),
         },
     )
 

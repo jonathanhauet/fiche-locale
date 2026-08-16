@@ -42,6 +42,54 @@
   </div>
 </div>
 
+{% if donnees.insights %}
+{% set insights = donnees.insights %}
+<h2>Analyse</h2>
+<div class="grille-insights">
+  {% if insights.meilleure_fiche %}
+  <div class="carte-insight carte-insight-positive">
+    <span class="insight-icone">🏆</span>
+    <div><span class="insight-titre">Meilleure fiche</span><span class="insight-detail">{{ insights.meilleure_fiche.nom }} — {{ insights.meilleure_fiche.moyenne }}/5 ({{ insights.meilleure_fiche.total }} avis)</span></div>
+  </div>
+  {% endif %}
+  {% if insights.fiche_plus_active %}
+  <div class="carte-insight">
+    <span class="insight-icone">🔥</span>
+    <div><span class="insight-titre">Fiche la plus active</span><span class="insight-detail">{{ insights.fiche_plus_active.nom }} — {{ insights.fiche_plus_active.total }} avis</span></div>
+  </div>
+  {% endif %}
+  <div class="carte-insight{{ ' carte-insight-positive' if insights.periode_precedente.evolution_pct is not none and insights.periode_precedente.evolution_pct >= 0 else (' carte-insight-attention' if insights.periode_precedente.evolution_pct is not none else '') }}">
+    <span class="insight-icone">📈</span>
+    <div>
+      <span class="insight-titre">Tendance</span>
+      <span class="insight-detail">
+        {% if insights.periode_precedente.evolution_pct is not none %}
+        {{ "▲" if insights.periode_precedente.evolution_pct >= 0 else "▼" }} {{ insights.periode_precedente.evolution_pct|abs }}% vs période précédente ({{ insights.periode_precedente.total }} avis)
+        {% else %}
+        Pas de comparaison possible (aucun avis sur la période précédente).
+        {% endif %}
+      </span>
+    </div>
+  </div>
+</div>
+
+{% if insights.avis_negatifs_non_repondus or insights.fiches_sous_la_moyenne or insights.fiches_sans_avis %}
+<div class="bandeau-avertissement bloc-alertes-insights">
+  {% if insights.avis_negatifs_non_repondus %}
+  <p>🔔 <strong>{{ insights.avis_negatifs_non_repondus }}</strong> avis négatif(s) sans réponse dans le groupe sur la période — <a href="/avis">à traiter</a>.</p>
+  {% endif %}
+  {% if insights.fiches_sous_la_moyenne %}
+  <p>⚠️ <strong>{{ insights.fiches_sous_la_moyenne|length }}</strong> fiche(s) nettement sous la moyenne du groupe :
+    {{ insights.fiches_sous_la_moyenne|map(attribute='nom')|list|join(', ') }}.</p>
+  {% endif %}
+  {% if insights.fiches_sans_avis %}
+  <p>😴 <strong>{{ insights.fiches_sans_avis|length }}</strong> fiche(s) sans avis sur la période :
+    {{ insights.fiches_sans_avis[:10]|join(', ') }}{% if insights.fiches_sans_avis|length > 10 %}, et {{ insights.fiches_sans_avis|length - 10 }} autre(s){% endif %}.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
 <h2>Évolution jour par jour (période)</h2>
 <div id="conteneur-graphique-comparatif" class="conteneur-graphique-comparatif"></div>
 

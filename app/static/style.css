@@ -410,6 +410,38 @@ a { color: var(--accent); }
 
 .ligne-fiche-masse td { vertical-align: middle; }
 
+.grille-insights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 0.8rem;
+}
+
+.carte-insight {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 0.8rem 1rem;
+}
+
+.carte-insight-positive { border-color: var(--succes); background: var(--succes-clair); }
+.carte-insight-attention { border-color: var(--attention); background: var(--attention-clair); }
+
+.insight-icone { font-size: 1.5rem; line-height: 1; }
+
+.carte-insight > div { display: flex; flex-direction: column; gap: 0.15rem; }
+
+.insight-titre { font-size: 0.72rem; color: var(--texte-discret); text-transform: uppercase; letter-spacing: 0.03em; }
+.insight-detail { font-weight: 600; font-size: 0.9rem; }
+
+.bloc-alertes-insights p { margin: 0.3rem 0; }
+.bloc-alertes-insights p:first-child { margin-top: 0; }
+.bloc-alertes-insights p:last-child { margin-bottom: 0; }
+
 .grille-espaces {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

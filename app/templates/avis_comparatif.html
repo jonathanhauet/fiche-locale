@@ -92,6 +92,9 @@
     </div>
   </div>
 
+  <h2>Analyse</h2>
+  <div id="bloc-insights-comparatif"></div>
+
   <h2>Évolution jour par jour (période)</h2>
   <div id="conteneur-graphique-comparatif" class="conteneur-graphique-comparatif"></div>
 
@@ -248,6 +251,58 @@
       </tr>`;
   }
 
+  function rendreInsights(insights) {
+    const conteneur = document.getElementById("bloc-insights-comparatif");
+    if (!insights) { conteneur.innerHTML = ""; return; }
+
+    const cartes = [];
+    if (insights.meilleure_fiche) {
+      cartes.push(`<div class="carte-insight carte-insight-positive">
+        <span class="insight-icone">🏆</span>
+        <div><span class="insight-titre">Meilleure fiche</span><span class="insight-detail">${echapper(insights.meilleure_fiche.nom)} — ${insights.meilleure_fiche.moyenne}/5 (${insights.meilleure_fiche.total} avis)</span></div>
+      </div>`);
+    }
+    if (insights.fiche_plus_active) {
+      cartes.push(`<div class="carte-insight">
+        <span class="insight-icone">🔥</span>
+        <div><span class="insight-titre">Fiche la plus active</span><span class="insight-detail">${echapper(insights.fiche_plus_active.nom)} — ${insights.fiche_plus_active.total} avis</span></div>
+      </div>`);
+    }
+    const ev = insights.periode_precedente;
+    let texteTendance = "Pas de comparaison possible (aucun avis sur la période précédente).";
+    let classeTendance = "";
+    if (ev.evolution_pct !== null) {
+      const signe = ev.evolution_pct >= 0 ? "▲" : "▼";
+      classeTendance = ev.evolution_pct >= 0 ? "carte-insight-positive" : "carte-insight-attention";
+      texteTendance = `${signe} ${Math.abs(ev.evolution_pct)}% vs période précédente (${ev.total} avis)`;
+    }
+    cartes.push(`<div class="carte-insight ${classeTendance}">
+      <span class="insight-icone">📈</span>
+      <div><span class="insight-titre">Tendance</span><span class="insight-detail">${texteTendance}</span></div>
+    </div>`);
+
+    let html = `<div class="grille-insights">${cartes.join("")}</div>`;
+
+    const alertes = [];
+    if (insights.avis_negatifs_non_repondus > 0) {
+      alertes.push(`<p>🔔 <strong>${insights.avis_negatifs_non_repondus}</strong> avis négatif(s) sans réponse dans le groupe sur la période — <a href="/avis">à traiter</a>.</p>`);
+    }
+    if (insights.fiches_sous_la_moyenne.length) {
+      const liste = insights.fiches_sous_la_moyenne.map((f) => `${echapper(f.nom)} (${f.moyenne}/5, -${f.ecart} pt)`).join(", ");
+      alertes.push(`<p>⚠️ <strong>${insights.fiches_sous_la_moyenne.length}</strong> fiche(s) nettement sous la moyenne du groupe : ${liste}.</p>`);
+    }
+    if (insights.fiches_sans_avis.length) {
+      const liste = insights.fiches_sans_avis.slice(0, 10).join(", ")
+        + (insights.fiches_sans_avis.length > 10 ? `, et ${insights.fiches_sans_avis.length - 10} autre(s)` : "");
+      alertes.push(`<p>😴 <strong>${insights.fiches_sans_avis.length}</strong> fiche(s) sans avis sur la période : ${liste}.</p>`);
+    }
+    if (alertes.length) {
+      html += `<div class="bandeau-avertissement bloc-alertes-insights">${alertes.join("")}</div>`;
+    }
+
+    conteneur.innerHTML = html;
+  }
+
   function afficherResultats(payload) {
     document.getElementById("chiffre-total-periode").textContent = payload.total_periode;
     document.getElementById("chiffre-moyenne-periode").textContent = payload.moyenne_periode !== null ? `${payload.moyenne_periode}/5` : "—";
@@ -255,6 +310,8 @@
     document.getElementById("chiffre-negatifs-periode").textContent = payload.negatifs_periode;
     document.getElementById("chiffre-total-global").textContent = payload.total_historique;
     document.getElementById("chiffre-moyenne-global").textContent = payload.moyenne_historique !== null ? `${payload.moyenne_historique}/5` : "—";
+
+    rendreInsights(payload.insights);
 
     const classementTrie = [...payload.classement].sort((a, b) => b.total_periode - a.total_periode);
     corpsTableauClassement.innerHTML = classementTrie.map(ligneClassementHTML).join("");
@@ -372,6 +429,49 @@
       if (j in compteParJour) compteParJour[j]++;
     });
 
+    // --- Analyse (conclusions au-dela du simple classement) ---
+    const finPrecedente = new Date(`${debut}T00:00:00`);
+    finPrecedente.setDate(finPrecedente.getDate() - 1);
+    const debutPrecedente = new Date(finPrecedente);
+    debutPrecedente.setDate(debutPrecedente.getDate() - (jours.length - 1));
+    const debutPrecedenteIso = debutPrecedente.toISOString().slice(0, 10);
+    const finPrecedenteIso = finPrecedente.toISOString().slice(0, 10);
+    const totalPrecedent = tousLesAvis.filter((a) => {
+      const d = (a.date_avis || "").slice(0, 10);
+      return d >= debutPrecedenteIso && d <= finPrecedenteIso;
+    }).length;
+    const evolutionPct = totalPrecedent > 0
+      ? Math.round(((avisPeriode.length - totalPrecedent) / totalPrecedent) * 1000) / 10
+      : null;
+
+    const fichesAvecAvis = statsParClient.filter((s) => s.total_periode > 0);
+    const meilleureFiche = fichesAvecAvis.length
+      ? [...fichesAvecAvis].sort((a, b) => (b.moyenne_periode - a.moyenne_periode) || (b.total_periode - a.total_periode))[0]
+      : null;
+    const ficheLaPlusActive = fichesAvecAvis.length
+      ? [...fichesAvecAvis].sort((a, b) => b.total_periode - a.total_periode)[0]
+      : null;
+    const fichesSansAvis = statsParClient.filter((s) => s.total_periode === 0).map((s) => s.client_nom);
+    const seuilAlerte = moyennePeriode !== null ? moyennePeriode - 0.5 : null;
+    const fichesSousLaMoyenne = seuilAlerte !== null
+      ? fichesAvecAvis
+          .filter((s) => s.moyenne_periode !== null && s.moyenne_periode <= seuilAlerte)
+          .map((s) => ({ nom: s.client_nom, moyenne: s.moyenne_periode, ecart: Math.round((moyennePeriode - s.moyenne_periode) * 10) / 10 }))
+          .sort((a, b) => a.moyenne - b.moyenne)
+      : [];
+    const avisNegatifsNonRepondus = avisPeriode.filter((a) => a.note > 0 && a.note <= 3 && !a.reponse).length;
+
+    const insights = {
+      periode_precedente: { debut: debutPrecedenteIso, fin: finPrecedenteIso, total: totalPrecedent, evolution_pct: evolutionPct },
+      meilleure_fiche: meilleureFiche
+        ? { nom: meilleureFiche.client_nom, moyenne: meilleureFiche.moyenne_periode, total: meilleureFiche.total_periode }
+        : null,
+      fiche_plus_active: ficheLaPlusActive ? { nom: ficheLaPlusActive.client_nom, total: ficheLaPlusActive.total_periode } : null,
+      fiches_sans_avis: fichesSansAvis,
+      fiches_sous_la_moyenne: fichesSousLaMoyenne,
+      avis_negatifs_non_repondus: avisNegatifsNonRepondus,
+    };
+
     const payload = {
       total_periode: avisPeriode.length,
       moyenne_periode: moyennePeriode,
@@ -381,6 +481,7 @@
       moyenne_historique: moyenneGlobale,
       classement: statsParClient,
       evolution_jour: jours.map((j) => ({ date: j, total: compteParJour[j] })),
+      insights,
     };
 
     afficherResultats(payload);
