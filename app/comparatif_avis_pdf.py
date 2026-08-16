@@ -145,6 +145,12 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(*COULEUR_TEXTE)
             for alerte in alertes:
+                # multi_cell() laisse X au bord droit de la page quand le
+                # texte tient sur une seule ligne (pas de retour a la marge
+                # gauche comme cell()) : sans ce set_x, l'appel suivant
+                # hérite d'une largeur quasi nulle et fpdf2 plante des qu'il
+                # y a plusieurs alertes a la suite.
+                pdf.set_x(MARGE)
                 pdf.multi_cell(0, 5.5, _nettoyer(f"- {alerte}"))
             pdf.ln(1)
 
