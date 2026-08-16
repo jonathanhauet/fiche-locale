@@ -49,13 +49,13 @@
   {% if insights.meilleure_fiche %}
   <div class="carte-insight carte-insight-positive">
     <span class="insight-icone">🏆</span>
-    <div><span class="insight-titre">Meilleure fiche</span><span class="insight-detail">{{ insights.meilleure_fiche.nom }} — {{ insights.meilleure_fiche.moyenne }}/5 ({{ insights.meilleure_fiche.total }} avis)</span></div>
+    <div><span class="insight-titre">Meilleure fiche (note la plus haute)</span><span class="insight-detail">{{ insights.meilleure_fiche.nom }} — {{ insights.meilleure_fiche.moyenne }}/5 ({{ insights.meilleure_fiche.total }} avis)</span></div>
   </div>
   {% endif %}
   {% if insights.fiche_plus_active %}
   <div class="carte-insight">
     <span class="insight-icone">🔥</span>
-    <div><span class="insight-titre">Fiche la plus active</span><span class="insight-detail">{{ insights.fiche_plus_active.nom }} — {{ insights.fiche_plus_active.total }} avis</span></div>
+    <div><span class="insight-titre">Fiche la plus active (le plus d'avis reçus)</span><span class="insight-detail">{{ insights.fiche_plus_active.nom }} — {{ insights.fiche_plus_active.total }} avis</span></div>
   </div>
   {% endif %}
   <div class="carte-insight{{ ' carte-insight-positive' if insights.periode_precedente.evolution_pct is not none and insights.periode_precedente.evolution_pct >= 0 else (' carte-insight-attention' if insights.periode_precedente.evolution_pct is not none else '') }}">

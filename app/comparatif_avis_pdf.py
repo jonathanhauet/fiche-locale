@@ -99,11 +99,15 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
         if insights.get("meilleure_fiche"):
             mf = insights["meilleure_fiche"]
             _ligne_insight_titree(
-                pdf, "Meilleure fiche", f"{mf['nom']} - {mf['moyenne']}/5 ({mf['total']} avis)", COULEUR_SUCCES
+                pdf, "Meilleure fiche (note la plus haute)",
+                f"{mf['nom']} - {mf['moyenne']}/5 ({mf['total']} avis)", COULEUR_SUCCES,
             )
         if insights.get("fiche_plus_active"):
             fa = insights["fiche_plus_active"]
-            _ligne_insight_titree(pdf, "Fiche la plus active", f"{fa['nom']} - {fa['total']} avis", COULEUR_TEXTE)
+            _ligne_insight_titree(
+                pdf, "Fiche la plus active (le plus d'avis recus)",
+                f"{fa['nom']} - {fa['total']} avis", COULEUR_TEXTE,
+            )
 
         evolution = insights.get("periode_precedente") or {}
         if evolution.get("evolution_pct") is not None:
