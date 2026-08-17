@@ -61,7 +61,7 @@
   <div class="carte-insight{{ ' carte-insight-positive' if insights.periode_precedente.evolution_pct is not none and insights.periode_precedente.evolution_pct >= 0 else (' carte-insight-attention' if insights.periode_precedente.evolution_pct is not none else '') }}">
     <span class="insight-icone">📈</span>
     <div>
-      <span class="insight-titre">Tendance</span>
+      <span class="insight-titre">Tendance (volume)</span>
       <span class="insight-detail">
         {% if insights.periode_precedente.evolution_pct is not none %}
         {{ "▲" if insights.periode_precedente.evolution_pct >= 0 else "▼" }} {{ insights.periode_precedente.evolution_pct|abs }}% vs période précédente ({{ insights.periode_precedente.total }} avis)
@@ -71,6 +71,22 @@
       </span>
     </div>
   </div>
+  {% if insights.periode_precedente.evolution_note is defined %}
+  <div class="carte-insight{{ ' carte-insight-positive' if insights.periode_precedente.evolution_note is not none and insights.periode_precedente.evolution_note >= 0 else (' carte-insight-attention' if insights.periode_precedente.evolution_note is not none else '') }}">
+    <span class="insight-icone">⭐</span>
+    <div>
+      <span class="insight-titre">Évolution de la note</span>
+      <span class="insight-detail">
+        {% if insights.periode_precedente.evolution_note is not none %}
+        {{ "▲ +" if insights.periode_precedente.evolution_note > 0 else ("▼ " if insights.periode_precedente.evolution_note < 0 else "= ") }}{{ insights.periode_precedente.evolution_note }}
+        ({{ insights.periode_precedente.moyenne }}/5 → {{ donnees.moyenne_periode }}/5)
+        {% else %}
+        Pas de comparaison possible (aucun avis sur la période précédente).
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 {% if insights.avis_negatifs_non_repondus or insights.fiches_sous_la_moyenne or insights.fiches_sans_avis %}
@@ -97,12 +113,13 @@
 <div class="conteneur-tableau">
   <table class="tableau-historique disposition-fixe">
     <colgroup>
-      <col style="width: 28%;">
+      <col style="width: 24%;">
+      <col style="width: 11%;">
+      <col style="width: 18%;">
+      <col style="width: 10%;">
+      <col style="width: 10%;">
+      <col style="width: 13%;">
       <col style="width: 14%;">
-      <col style="width: 15%;">
-      <col style="width: 13%;">
-      <col style="width: 13%;">
-      <col style="width: 17%;">
     </colgroup>
     <thead>
       <tr>
@@ -111,6 +128,7 @@
         <th>Moyenne (période)</th>
         <th>Positifs</th>
         <th>Négatifs</th>
+        <th>Note globale</th>
         <th>Total (historique)</th>
       </tr>
     </thead>
@@ -131,14 +149,23 @@
     return div.innerHTML;
   }
 
+  function badgeEvolutionNote(stat) {
+    if (stat.moyenne_periode == null || stat.moyenne_precedente == null) return "";
+    const delta = Math.round((stat.moyenne_periode - stat.moyenne_precedente) * 10) / 10;
+    if (delta > 0) return ` <span class="badge-evolution-positive">▲ +${delta}</span>`;
+    if (delta < 0) return ` <span class="badge-evolution-negative">▼ ${delta}</span>`;
+    return ` <span class="badge-evolution-neutre">=</span>`;
+  }
+
   function ligneClassementHTML(stat) {
     return `
       <tr>
         <td>${echapper(stat.client_nom)}</td>
         <td>${stat.total_periode}</td>
-        <td>${stat.moyenne_periode !== null ? stat.moyenne_periode + "/5" : "—"}</td>
+        <td>${stat.moyenne_periode !== null ? stat.moyenne_periode + "/5" : "—"}${badgeEvolutionNote(stat)}</td>
         <td>${stat.positifs}</td>
         <td>${stat.negatifs}</td>
+        <td>${stat.moyenne_historique != null ? stat.moyenne_historique + "/5" : "—"}</td>
         <td>${stat.total_historique}</td>
       </tr>`;
   }

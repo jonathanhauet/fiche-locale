@@ -438,6 +438,17 @@ a { color: var(--accent); }
 .insight-titre { font-size: 0.72rem; color: var(--texte-discret); text-transform: uppercase; letter-spacing: 0.03em; }
 .insight-detail { font-weight: 600; font-size: 0.9rem; }
 
+.badge-evolution-positive, .badge-evolution-negative, .badge-evolution-neutre {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-evolution-positive { color: var(--succes); }
+.badge-evolution-negative { color: var(--attention); }
+.badge-evolution-neutre { color: var(--texte-discret); }
+
 .bloc-alertes-insights p { margin: 0.3rem 0; }
 .bloc-alertes-insights p:first-child { margin-top: 0; }
 .bloc-alertes-insights p:last-child { margin-bottom: 0; }

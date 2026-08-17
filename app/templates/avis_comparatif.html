@@ -102,12 +102,13 @@
   <div class="conteneur-tableau">
     <table class="tableau-historique disposition-fixe">
       <colgroup>
-        <col style="width: 28%;">
+        <col style="width: 24%;">
+        <col style="width: 11%;">
+        <col style="width: 18%;">
+        <col style="width: 10%;">
+        <col style="width: 10%;">
+        <col style="width: 13%;">
         <col style="width: 14%;">
-        <col style="width: 15%;">
-        <col style="width: 13%;">
-        <col style="width: 13%;">
-        <col style="width: 17%;">
       </colgroup>
       <thead>
         <tr>
@@ -116,6 +117,7 @@
           <th>Moyenne (période)</th>
           <th>Positifs</th>
           <th>Négatifs</th>
+          <th>Note globale</th>
           <th>Total (historique)</th>
         </tr>
       </thead>
@@ -239,19 +241,28 @@
       </svg>`;
   }
 
+  function badgeEvolutionNote(stat) {
+    if (stat.moyenne_periode == null || stat.moyenne_precedente == null) return "";
+    const delta = Math.round((stat.moyenne_periode - stat.moyenne_precedente) * 10) / 10;
+    if (delta > 0) return ` <span class="badge-evolution-positive">▲ +${delta}</span>`;
+    if (delta < 0) return ` <span class="badge-evolution-negative">▼ ${delta}</span>`;
+    return ` <span class="badge-evolution-neutre">=</span>`;
+  }
+
   function ligneClassementHTML(stat) {
     return `
       <tr>
         <td>${echapper(stat.client_nom)}</td>
         <td>${stat.total_periode}</td>
-        <td>${stat.moyenne_periode !== null ? stat.moyenne_periode + "/5" : "—"}</td>
+        <td>${stat.moyenne_periode !== null ? stat.moyenne_periode + "/5" : "—"}${badgeEvolutionNote(stat)}</td>
         <td>${stat.positifs}</td>
         <td>${stat.negatifs}</td>
+        <td>${stat.moyenne_historique != null ? stat.moyenne_historique + "/5" : "—"}</td>
         <td>${stat.total_historique}</td>
       </tr>`;
   }
 
-  function rendreInsights(insights) {
+  function rendreInsights(insights, moyennePeriode) {
     const conteneur = document.getElementById("bloc-insights-comparatif");
     if (!insights) { conteneur.innerHTML = ""; return; }
 
@@ -278,7 +289,19 @@
     }
     cartes.push(`<div class="carte-insight ${classeTendance}">
       <span class="insight-icone">📈</span>
-      <div><span class="insight-titre">Tendance</span><span class="insight-detail">${texteTendance}</span></div>
+      <div><span class="insight-titre">Tendance (volume)</span><span class="insight-detail">${texteTendance}</span></div>
+    </div>`);
+
+    let texteNote = "Pas de comparaison possible (aucun avis sur la période précédente).";
+    let classeNote = "";
+    if (ev.evolution_note != null) {
+      const signeNote = ev.evolution_note > 0 ? "▲ +" : ev.evolution_note < 0 ? "▼ " : "= ";
+      classeNote = ev.evolution_note >= 0 ? "carte-insight-positive" : "carte-insight-attention";
+      texteNote = `${signeNote}${ev.evolution_note} (${ev.moyenne}/5 → ${moyennePeriode}/5)`;
+    }
+    cartes.push(`<div class="carte-insight ${classeNote}">
+      <span class="insight-icone">⭐</span>
+      <div><span class="insight-titre">Évolution de la note</span><span class="insight-detail">${texteNote}</span></div>
     </div>`);
 
     let html = `<div class="grille-insights">${cartes.join("")}</div>`;
@@ -311,7 +334,7 @@
     document.getElementById("chiffre-total-global").textContent = payload.total_historique;
     document.getElementById("chiffre-moyenne-global").textContent = payload.moyenne_historique !== null ? `${payload.moyenne_historique}/5` : "—";
 
-    rendreInsights(payload.insights);
+    rendreInsights(payload.insights, payload.moyenne_periode);
 
     const classementTrie = [...payload.classement].sort((a, b) => b.total_periode - a.total_periode);
     corpsTableauClassement.innerHTML = classementTrie.map(ligneClassementHTML).join("");
@@ -406,20 +429,6 @@
     const negatifsPeriode = avisPeriode.filter((a) => a.note > 0 && a.note <= 3);
     const moyennePeriode = moyenne(avisPeriode);
 
-    // --- Classement par fiche ---
-    const statsParClient = clientsCibles.map((client) => {
-      const avisClientPeriode = avisPeriode.filter((a) => a.client_id === client.id);
-      const avisClientTotal = tousLesAvis.filter((a) => a.client_id === client.id);
-      return {
-        client_nom: client.nom,
-        total_periode: avisClientPeriode.length,
-        moyenne_periode: moyenne(avisClientPeriode),
-        positifs: avisClientPeriode.filter((a) => a.note >= 4).length,
-        negatifs: avisClientPeriode.filter((a) => a.note > 0 && a.note <= 3).length,
-        total_historique: avisClientTotal.length,
-      };
-    });
-
     // --- Graphique jour par jour ---
     const jours = joursEntre(debut, fin);
     const compteParJour = {};
@@ -429,20 +438,42 @@
       if (j in compteParJour) compteParJour[j]++;
     });
 
-    // --- Analyse (conclusions au-dela du simple classement) ---
+    // --- Periode precedente (meme duree, juste avant), pour les tendances ---
     const finPrecedente = new Date(`${debut}T00:00:00`);
     finPrecedente.setDate(finPrecedente.getDate() - 1);
     const debutPrecedente = new Date(finPrecedente);
     debutPrecedente.setDate(debutPrecedente.getDate() - (jours.length - 1));
     const debutPrecedenteIso = debutPrecedente.toISOString().slice(0, 10);
     const finPrecedenteIso = finPrecedente.toISOString().slice(0, 10);
-    const totalPrecedent = tousLesAvis.filter((a) => {
+    const avisPeriodePrecedente = tousLesAvis.filter((a) => {
       const d = (a.date_avis || "").slice(0, 10);
       return d >= debutPrecedenteIso && d <= finPrecedenteIso;
-    }).length;
+    });
+    const totalPrecedent = avisPeriodePrecedente.length;
+    const moyennePeriodePrecedente = moyenne(avisPeriodePrecedente);
     const evolutionPct = totalPrecedent > 0
       ? Math.round(((avisPeriode.length - totalPrecedent) / totalPrecedent) * 1000) / 10
       : null;
+    const evolutionNoteGroupe = (moyennePeriode !== null && moyennePeriodePrecedente !== null)
+      ? Math.round((moyennePeriode - moyennePeriodePrecedente) * 10) / 10
+      : null;
+
+    // --- Classement par fiche ---
+    const statsParClient = clientsCibles.map((client) => {
+      const avisClientPeriode = avisPeriode.filter((a) => a.client_id === client.id);
+      const avisClientTotal = tousLesAvis.filter((a) => a.client_id === client.id);
+      const avisClientPrecedent = avisPeriodePrecedente.filter((a) => a.client_id === client.id);
+      return {
+        client_nom: client.nom,
+        total_periode: avisClientPeriode.length,
+        moyenne_periode: moyenne(avisClientPeriode),
+        positifs: avisClientPeriode.filter((a) => a.note >= 4).length,
+        negatifs: avisClientPeriode.filter((a) => a.note > 0 && a.note <= 3).length,
+        total_historique: avisClientTotal.length,
+        moyenne_historique: moyenne(avisClientTotal),
+        moyenne_precedente: moyenne(avisClientPrecedent),
+      };
+    });
 
     const fichesAvecAvis = statsParClient.filter((s) => s.total_periode > 0);
     const meilleureFiche = fichesAvecAvis.length
@@ -462,7 +493,10 @@
     const avisNegatifsNonRepondus = avisPeriode.filter((a) => a.note > 0 && a.note <= 3 && !a.reponse).length;
 
     const insights = {
-      periode_precedente: { debut: debutPrecedenteIso, fin: finPrecedenteIso, total: totalPrecedent, evolution_pct: evolutionPct },
+      periode_precedente: {
+        debut: debutPrecedenteIso, fin: finPrecedenteIso, total: totalPrecedent, evolution_pct: evolutionPct,
+        moyenne: moyennePeriodePrecedente, evolution_note: evolutionNoteGroupe,
+      },
       meilleure_fiche: meilleureFiche
         ? { nom: meilleureFiche.client_nom, moyenne: meilleureFiche.moyenne_periode, total: meilleureFiche.total_periode }
         : null,

@@ -11,8 +11,8 @@ from .rapport_pdf import COULEUR_ACCENT, COULEUR_GRIS, COULEUR_TEXTE, RapportPDF
 COULEUR_SUCCES = (22, 163, 74)
 COULEUR_ATTENTION = (180, 95, 6)
 
-LARGEURS_COLONNES_CLASSEMENT = [58, 22, 22, 20, 20, 28]
-ENTETES_CLASSEMENT = ["Fiche", "Avis (per.)", "Moyenne", "Positifs", "Negatifs", "Total"]
+LARGEURS_COLONNES_CLASSEMENT = [46, 18, 30, 16, 16, 24, 20]
+ENTETES_CLASSEMENT = ["Fiche", "Avis (per.)", "Moyenne", "Positifs", "Negatifs", "Note globale", "Total"]
 
 MARGE = 10
 LARGEUR_PAGE_UTILE = 190
@@ -115,11 +115,27 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
             signe = "+" if pct >= 0 else ""
             couleur = COULEUR_SUCCES if pct >= 0 else COULEUR_ATTENTION
             _ligne_insight_titree(
-                pdf, "Tendance", f"{signe}{pct}% vs periode precedente ({evolution.get('total', 0)} avis)", couleur
+                pdf, "Tendance (volume)",
+                f"{signe}{pct}% vs periode precedente ({evolution.get('total', 0)} avis)", couleur,
             )
         else:
             _ligne_insight_titree(
-                pdf, "Tendance", "Pas de comparaison possible (aucun avis sur la periode precedente).", COULEUR_GRIS
+                pdf, "Tendance (volume)",
+                "Pas de comparaison possible (aucun avis sur la periode precedente).", COULEUR_GRIS,
+            )
+
+        if evolution.get("evolution_note") is not None:
+            delta_note = evolution["evolution_note"]
+            signe_note = "+" if delta_note > 0 else ("" if delta_note < 0 else "")
+            couleur_note = COULEUR_SUCCES if delta_note >= 0 else COULEUR_ATTENTION
+            _ligne_insight_titree(
+                pdf, "Evolution de la note",
+                f"{signe_note}{delta_note} ({evolution.get('moyenne')}/5 -> {moyenne_periode}/5)", couleur_note,
+            )
+        elif "evolution_note" in evolution:
+            _ligne_insight_titree(
+                pdf, "Evolution de la note",
+                "Pas de comparaison possible (aucun avis sur la periode precedente).", COULEUR_GRIS,
             )
 
         alertes = []
@@ -171,6 +187,14 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
             nom = ligne.get("client_nom", "")
             nom_affiche = _nettoyer(nom[:38] + "..." if len(nom) > 38 else nom)
             moyenne_ligne = ligne.get("moyenne_periode")
+            moyenne_hist_ligne = ligne.get("moyenne_historique")
+            moyenne_prec_ligne = ligne.get("moyenne_precedente")
+
+            texte_moyenne = f"{moyenne_ligne}/5" if moyenne_ligne else "-"
+            if moyenne_ligne is not None and moyenne_prec_ligne is not None:
+                delta_ligne = round(moyenne_ligne - moyenne_prec_ligne, 1)
+                if delta_ligne != 0:
+                    texte_moyenne += f" ({'+' if delta_ligne > 0 else ''}{delta_ligne})"
 
             remplissage = False
             if nom == nom_meilleure_fiche:
@@ -183,9 +207,10 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
             valeurs = [
                 nom_affiche,
                 str(ligne.get("total_periode", 0)),
-                f"{moyenne_ligne}/5" if moyenne_ligne else "-",
+                texte_moyenne,
                 str(ligne.get("positifs", 0)),
                 str(ligne.get("negatifs", 0)),
+                f"{moyenne_hist_ligne}/5" if moyenne_hist_ligne else "-",
                 str(ligne.get("total_historique", 0)),
             ]
             for indice, (largeur, valeur) in enumerate(zip(LARGEURS_COLONNES_CLASSEMENT, valeurs)):
