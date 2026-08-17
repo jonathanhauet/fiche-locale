@@ -35,6 +35,7 @@ from . import (
     export_clients_excel,
     gemini_images,
     geocodage,
+    google_autocomplete,
     google_business,
     google_location,
     google_oauth,
@@ -2406,6 +2407,55 @@ def supprimer_mot_cle(client_id: int, mot_cle_id: int, request: Request, db: Ses
     if mot_cle and mot_cle.client_id == client_id:
         db.delete(mot_cle)
         db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}/positions", status_code=303)
+
+
+@app.get("/mots-cles", response_class=HTMLResponse)
+def recherche_mots_cles(request: Request, q: str = "", db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    resultats, erreur = None, None
+    if q.strip():
+        try:
+            resultats = google_autocomplete.rechercher(q)
+        except Exception as e:
+            erreur = f"Impossible de recuperer des suggestions pour le moment : {e}"
+
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
+
+    return templates.TemplateResponse(
+        request,
+        "recherche_mots_cles.html",
+        {"q": q, "resultats": resultats, "erreur": erreur, "clients": clients},
+    )
+
+
+@app.post("/mots-cles/envoyer-positions")
+def envoyer_mots_cles_positions(
+    request: Request,
+    client_id: int = Form(...),
+    q: str = Form(""),
+    mots_cles: list[str] = Form(default=[]),
+    db: Session = Depends(obtenir_session),
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    deja_suivis = {m.texte.strip().lower() for m in client.mots_cles}
+    for texte in mots_cles:
+        texte = texte.strip()
+        if texte and texte.lower() not in deja_suivis:
+            db.add(models.MotCle(client_id=client_id, texte=texte))
+            deja_suivis.add(texte.lower())
+    db.commit()
 
     return RedirectResponse(f"/clients/{client_id}/positions", status_code=303)
 

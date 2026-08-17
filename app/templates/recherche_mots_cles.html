@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% set page_actuelle = "mots_cles" %}
+{% block titre %}Recherche de mots-clés — Fiche Locale{% endblock %}
+{% block contenu %}
+<h1>Recherche de mots-clés</h1>
+<p class="texte-discret">
+  Basé sur l'autocomplétion Google (gratuit) : des requêtes réellement tapées par les internautes autour
+  d'un mot-clé de départ. Pas de volume de recherche exact, mais de vraies idées de mots-clés et de contenu.
+</p>
+
+<form class="formulaire-ligne" method="get" action="/mots-cles">
+  <input type="text" name="q" value="{{ q }}" placeholder="Ex : plombier Lyon" required>
+  <button type="submit" class="bouton">🔎 Rechercher</button>
+</form>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+{% if resultats %}
+  {% if not resultats.suggestions and not resultats.questions %}
+  <p class="texte-vide">Aucune suggestion trouvée pour « {{ q }} ».</p>
+  {% else %}
+  <form method="post" action="/mots-cles/envoyer-positions">
+    <input type="hidden" name="q" value="{{ q }}">
+
+    {% if resultats.suggestions %}
+    <div class="choix-image-bloc">
+      <span class="choix-image-titre">Suggestions ({{ resultats.suggestions|length }})</span>
+      <div class="grille-mots-cles">
+        {% for suggestion in resultats.suggestions %}
+        <label class="filtre-case">
+          <input type="checkbox" name="mots_cles" value="{{ suggestion }}"> {{ suggestion }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if resultats.questions %}
+    <div class="choix-image-bloc">
+      <span class="choix-image-titre">Questions posées ({{ resultats.questions|length }})</span>
+      <p class="texte-discret">Des idées de contenu (posts, FAQ) en plus des mots-clés à suivre.</p>
+      <div class="grille-mots-cles">
+        {% for question in resultats.questions %}
+        <label class="filtre-case">
+          <input type="checkbox" name="mots_cles" value="{{ question }}"> {{ question }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if clients %}
+    <div class="choix-image-bloc">
+      <span class="choix-image-titre">Envoyer la sélection vers le suivi de positions</span>
+      <div class="formulaire-ligne">
+        <select name="client_id" required>
+          <option value="">— Choisir un client —</option>
+          {% for client in clients %}
+          <option value="{{ client.id }}">{{ client.nom }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="bouton">Envoyer la sélection</button>
+      </div>
+      <p class="texte-discret">Les mots-clés cochés ci-dessus seront ajoutés au suivi de positions du client choisi.</p>
+    </div>
+    {% endif %}
+  </form>
+  {% endif %}
+{% endif %}
+{% endblock %}

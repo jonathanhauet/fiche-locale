@@ -1775,6 +1775,13 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .filtre-case input { width: auto; padding: 0; }
 
+.grille-mots-cles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.5rem 1rem;
+  margin-top: 0.6rem;
+}
+
 .pagination-avis {
   display: flex;
   align-items: center;
