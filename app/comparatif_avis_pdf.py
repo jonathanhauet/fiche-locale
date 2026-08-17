@@ -37,8 +37,21 @@ def _ligne_insight_titree(pdf, titre, texte, couleur):
     pdf.cell(0, 5.5, _nettoyer(titre.upper()), new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.set_x(MARGE)
     pdf.multi_cell(0, 6, _nettoyer(texte))
     pdf.ln(1.5)
+
+
+def _top3_avec_repli(insights: dict, cle_liste: str, cle_singulier: str) -> list:
+    """
+    insights["meilleures_fiches"]/["fiches_plus_actives"] (jusqu'a 3) - ou, pour
+    un comparatif enregistre avant l'ajout du top 3, repli sur l'ancien champ
+    au singulier (insights["meilleure_fiche"]/["fiche_plus_active"]).
+    """
+    if cle_liste in insights:
+        return insights.get(cle_liste) or []
+    item = insights.get(cle_singulier)
+    return [item] if item else []
 
 
 def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donnees: dict) -> bytes:
@@ -91,23 +104,21 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
     # --- Analyse (conclusions au-dela du classement brut) ---
     insights = donnees.get("insights") or {}
     noms_sous_moyenne = {f["nom"] for f in (insights.get("fiches_sous_la_moyenne") or [])}
-    nom_meilleure_fiche = (insights.get("meilleure_fiche") or {}).get("nom")
+    top3_meilleures = _top3_avec_repli(insights, "meilleures_fiches", "meilleure_fiche")
+    top3_actives = _top3_avec_repli(insights, "fiches_plus_actives", "fiche_plus_active")
+    noms_top3_meilleures = {f["nom"] for f in top3_meilleures}
 
     if insights:
         _titre_section(pdf, "Analyse")
 
-        if insights.get("meilleure_fiche"):
-            mf = insights["meilleure_fiche"]
-            _ligne_insight_titree(
-                pdf, "Meilleure fiche (note la plus haute)",
-                f"{mf['nom']} - {mf['moyenne']}/5 ({mf['total']} avis)", COULEUR_SUCCES,
+        if top3_meilleures:
+            texte = "\n".join(
+                f"{i}. {f['nom']} - {f['moyenne']}/5 ({f['total']} avis)" for i, f in enumerate(top3_meilleures, 1)
             )
-        if insights.get("fiche_plus_active"):
-            fa = insights["fiche_plus_active"]
-            _ligne_insight_titree(
-                pdf, "Fiche la plus active (le plus d'avis recus)",
-                f"{fa['nom']} - {fa['total']} avis", COULEUR_TEXTE,
-            )
+            _ligne_insight_titree(pdf, "Top 3 - Meilleure note", texte, COULEUR_SUCCES)
+        if top3_actives:
+            texte = "\n".join(f"{i}. {f['nom']} - {f['total']} avis" for i, f in enumerate(top3_actives, 1))
+            _ligne_insight_titree(pdf, "Top 3 - Plus actives", texte, COULEUR_TEXTE)
 
         evolution = insights.get("periode_precedente") or {}
         if evolution.get("evolution_pct") is not None:
@@ -197,7 +208,7 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
                     texte_moyenne += f" ({'+' if delta_ligne > 0 else ''}{delta_ligne})"
 
             remplissage = False
-            if nom == nom_meilleure_fiche:
+            if nom in noms_top3_meilleures:
                 pdf.set_fill_color(224, 246, 233)
                 remplissage = True
             elif nom in noms_sous_moyenne:

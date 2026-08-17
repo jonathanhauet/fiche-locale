@@ -267,16 +267,20 @@
     if (!insights) { conteneur.innerHTML = ""; return; }
 
     const cartes = [];
-    if (insights.meilleure_fiche) {
-      cartes.push(`<div class="carte-insight carte-insight-positive">
+    if (insights.meilleures_fiches && insights.meilleures_fiches.length) {
+      const items = insights.meilleures_fiches
+        .map((f) => `<li>${echapper(f.nom)} — ${f.moyenne}/5 (${f.total} avis)</li>`).join("");
+      cartes.push(`<div class="carte-insight carte-insight-positive carte-insight-liste">
         <span class="insight-icone">🏆</span>
-        <div><span class="insight-titre">Meilleure fiche (note la plus haute)</span><span class="insight-detail">${echapper(insights.meilleure_fiche.nom)} — ${insights.meilleure_fiche.moyenne}/5 (${insights.meilleure_fiche.total} avis)</span></div>
+        <div><span class="insight-titre">Top 3 — Meilleure note</span><ol class="liste-insight-classement">${items}</ol></div>
       </div>`);
     }
-    if (insights.fiche_plus_active) {
-      cartes.push(`<div class="carte-insight">
+    if (insights.fiches_plus_actives && insights.fiches_plus_actives.length) {
+      const items = insights.fiches_plus_actives
+        .map((f) => `<li>${echapper(f.nom)} — ${f.total} avis</li>`).join("");
+      cartes.push(`<div class="carte-insight carte-insight-liste">
         <span class="insight-icone">🔥</span>
-        <div><span class="insight-titre">Fiche la plus active (le plus d'avis reçus)</span><span class="insight-detail">${echapper(insights.fiche_plus_active.nom)} — ${insights.fiche_plus_active.total} avis</span></div>
+        <div><span class="insight-titre">Top 3 — Plus actives</span><ol class="liste-insight-classement">${items}</ol></div>
       </div>`);
     }
     const ev = insights.periode_precedente;
@@ -476,12 +480,12 @@
     });
 
     const fichesAvecAvis = statsParClient.filter((s) => s.total_periode > 0);
-    const meilleureFiche = fichesAvecAvis.length
-      ? [...fichesAvecAvis].sort((a, b) => (b.moyenne_periode - a.moyenne_periode) || (b.total_periode - a.total_periode))[0]
-      : null;
-    const ficheLaPlusActive = fichesAvecAvis.length
-      ? [...fichesAvecAvis].sort((a, b) => b.total_periode - a.total_periode)[0]
-      : null;
+    const top3MeilleuresFiches = [...fichesAvecAvis]
+      .sort((a, b) => (b.moyenne_periode - a.moyenne_periode) || (b.total_periode - a.total_periode))
+      .slice(0, 3);
+    const top3FichesLesPlusActives = [...fichesAvecAvis]
+      .sort((a, b) => b.total_periode - a.total_periode)
+      .slice(0, 3);
     const fichesSansAvis = statsParClient.filter((s) => s.total_periode === 0).map((s) => s.client_nom);
     const seuilAlerte = moyennePeriode !== null ? moyennePeriode - 0.5 : null;
     const fichesSousLaMoyenne = seuilAlerte !== null
@@ -497,10 +501,8 @@
         debut: debutPrecedenteIso, fin: finPrecedenteIso, total: totalPrecedent, evolution_pct: evolutionPct,
         moyenne: moyennePeriodePrecedente, evolution_note: evolutionNoteGroupe,
       },
-      meilleure_fiche: meilleureFiche
-        ? { nom: meilleureFiche.client_nom, moyenne: meilleureFiche.moyenne_periode, total: meilleureFiche.total_periode }
-        : null,
-      fiche_plus_active: ficheLaPlusActive ? { nom: ficheLaPlusActive.client_nom, total: ficheLaPlusActive.total_periode } : null,
+      meilleures_fiches: top3MeilleuresFiches.map((s) => ({ nom: s.client_nom, moyenne: s.moyenne_periode, total: s.total_periode })),
+      fiches_plus_actives: top3FichesLesPlusActives.map((s) => ({ nom: s.client_nom, total: s.total_periode })),
       fiches_sans_avis: fichesSansAvis,
       fiches_sous_la_moyenne: fichesSousLaMoyenne,
       avis_negatifs_non_repondus: avisNegatifsNonRepondus,

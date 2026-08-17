@@ -438,6 +438,18 @@ a { color: var(--accent); }
 .insight-titre { font-size: 0.72rem; color: var(--texte-discret); text-transform: uppercase; letter-spacing: 0.03em; }
 .insight-detail { font-weight: 600; font-size: 0.9rem; }
 
+.carte-insight-liste { align-items: flex-start; }
+
+.liste-insight-classement {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .badge-evolution-positive, .badge-evolution-negative, .badge-evolution-neutre {
   display: inline-block;
   font-size: 0.78rem;
