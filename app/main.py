@@ -2024,39 +2024,6 @@ def fiche_client(client_id: int, request: Request, db: Session = Depends(obtenir
     return _reponse_fiche_client(request, client, db, infos=infos)
 
 
-@app.get("/clients/{client_id}/fiche/debug-validation")
-def fiche_client_debug_validation(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """
-    Diagnostic temporaire : affiche telles quelles les infos "metadata"
-    renvoyees par Google pour cette fiche (hasVoiceOfMerchant, etc.), pour
-    verifier manuellement quel champ correspond a "fiche non validee" sur des
-    fiches reelles non validees - a retirer une fois confirme.
-    """
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return redirection
-
-    client = db.get(models.Client, client_id)
-    if not client or not client.account_id or not client.location_id:
-        return JSONResponse({"erreur": "Ce client n'a pas de fiche Google associee."})
-
-    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-    if not identifiants:
-        return JSONResponse({"erreur": "Compte Google non valide pour ce client."})
-
-    try:
-        infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
-    except Exception as erreur:
-        return JSONResponse({"erreur": str(erreur)})
-
-    return JSONResponse({
-        "client_nom": client.nom,
-        "titre_fiche": infos.get("title"),
-        "metadata": infos.get("metadata"),
-        "fiche_validee_calculee": google_location.fiche_validee(infos),
-    })
-
-
 @app.post("/clients/{client_id}/fiche/modifier")
 async def modifier_fiche_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

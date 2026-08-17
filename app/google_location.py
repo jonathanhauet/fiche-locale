@@ -49,10 +49,19 @@ def fiche_validee(infos: dict) -> bool:
     """
     "Voice of Merchant" Google : la fiche est verifiee et le controle en est
     confirme (modification des infos, reponse aux avis... pleinement
-    fonctionnels). Si absent de la reponse API, on considere la fiche validee
-    par defaut plutot que de risquer une fausse alerte.
+    fonctionnels).
+
+    Constate sur une fiche reelle non validee : Google ne renvoie pas
+    hasVoiceOfMerchant=false explicitement, il renvoie un objet metadata
+    entierement VIDE (ni mapsUri, ni newReviewUri, ni hasVoiceOfMerchant) -
+    c'est ce vide qui signale l'absence de controle confirme sur la fiche. Un
+    metadata rempli mais sans la cle (cas non observe avec le readMask actuel)
+    reste considere valide par defaut, pour ne pas risquer de fausse alerte.
     """
-    return ((infos or {}).get("metadata") or {}).get("hasVoiceOfMerchant", True)
+    metadata = (infos or {}).get("metadata") or {}
+    if not metadata:
+        return False
+    return metadata.get("hasVoiceOfMerchant", True)
 
 
 def mettre_a_jour_fiche(identifiants, location_id: str, donnees: dict, champs: list[str]) -> dict:
