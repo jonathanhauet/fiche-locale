@@ -42,6 +42,22 @@ def _ligne_insight_titree(pdf, titre, texte, couleur):
     pdf.ln(1.5)
 
 
+def _bloc_legende(pdf):
+    """Rappelle brievement le sens des chiffres, pour un lecteur qui n'a pas suivi la construction du document."""
+    pdf.set_x(MARGE)
+    pdf.set_font("Helvetica", "I", 7.5)
+    pdf.set_text_color(*COULEUR_GRIS)
+    pdf.multi_cell(
+        0, 3.6,
+        "Comment lire ce document : \"periode\" = uniquement les avis recus entre les dates ci-dessus. "
+        "\"Tout historique\" / \"Note globale\" = moyenne sur l'ensemble des avis de la fiche, depuis toujours "
+        "(pas seulement la periode). \"Positifs\" = avis notes 4 ou 5 etoiles, \"Negatifs\" = avis notes 1 a 3 "
+        "etoiles. Fleches/evolution = comparaison avec la periode precedente, de meme duree que la periode choisie.",
+    )
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.ln(2)
+
+
 def _top3_avec_repli(insights: dict, cle_liste: str, cle_singulier: str) -> list:
     """
     insights["meilleures_fiches"]/["fiches_plus_actives"] (jusqu'a 3) - ou, pour
@@ -78,6 +94,8 @@ def generer_comparatif_pdf(libelle: str, date_debut: date, date_fin: date, donne
     )
     pdf.set_text_color(*COULEUR_TEXTE)
     pdf.set_y(38)
+
+    _bloc_legende(pdf)
 
     # --- Resume, en cartes plutot qu'en lignes texte ---
     moyenne_periode = donnees.get("moyenne_periode")
