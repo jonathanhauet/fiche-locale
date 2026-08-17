@@ -1324,7 +1324,12 @@ def nouveau_client_formulaire(request: Request, db: Session = Depends(obtenir_se
     return templates.TemplateResponse(
         request,
         "client_nouveau.html",
-        {"fiches": fiches, "google_connecte": google_connecte, "erreur": None},
+        {
+            "fiches": fiches,
+            "google_connecte": google_connecte,
+            "erreur": None,
+            "toutes_etiquettes_json": _toutes_etiquettes_json(db),
+        },
     )
 
 
@@ -1335,6 +1340,7 @@ def creer_client(
     contenu_site: str = Form(""),
     consignes_avis: str = Form(""),
     fiche_google: str = Form(""),
+    etiquettes: list[str] = Form(default=[]),
     fichiers: list[UploadFile] = File(default=[]),
     db: Session = Depends(obtenir_session),
 ):
@@ -1353,6 +1359,7 @@ def creer_client(
         location_id=location_id,
         compte_google_id=int(compte_google_id) if compte_google_id else None,
     )
+    client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     db.add(client)
     db.commit()
 
