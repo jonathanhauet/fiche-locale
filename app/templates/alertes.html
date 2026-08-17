@@ -27,6 +27,10 @@
     <span class="carte-resume-libelle">Fiches incomplètes</span>
   </div>
   <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-fiches-non-validees">…</span>
+    <span class="carte-resume-libelle">Fiches non validées</span>
+  </div>
+  <div class="carte-resume">
     <span class="carte-resume-chiffre" id="chiffre-avis-negatifs">…</span>
     <span class="carte-resume-libelle">Avis négatifs sans réponse</span>
   </div>
@@ -58,6 +62,11 @@
 <ul id="liste-alertes-completude" class="liste-clients"></ul>
 <p id="texte-vide-completude" class="texte-vide" hidden>Toutes les fiches ont ces cinq informations renseignées.</p>
 
+<h2>Fiches non validées par Google</h2>
+<p class="texte-discret">Tant qu'une fiche n'est pas vérifiée par Google (Voice of Merchant), la réponse aux avis, la modification des informations et certaines statistiques peuvent être limitées.</p>
+<ul id="liste-alertes-non-validees" class="liste-clients"></ul>
+<p id="texte-vide-non-validees" class="texte-vide" hidden>Toutes les fiches sont validées par Google.</p>
+
 <h2>Avis négatifs sans réponse</h2>
 <div id="conteneur-progression-alertes" class="conteneur-progression-avis" hidden>
   <div class="barre-progression-fond"><div id="barre-progression-alertes" class="barre-progression-remplissage"></div></div>
@@ -87,9 +96,13 @@
   const texteVide = document.getElementById("texte-vide-alertes");
   const listeCompletude = document.getElementById("liste-alertes-completude");
   const texteVideCompletude = document.getElementById("texte-vide-completude");
+  const chiffreFichesNonValidees = document.getElementById("chiffre-fiches-non-validees");
+  const listeNonValidees = document.getElementById("liste-alertes-non-validees");
+  const texteVideNonValidees = document.getElementById("texte-vide-non-validees");
 
   let avisSignales = [];
   let fichesIncompletes = [];
+  let fichesNonValidees = [];
 
   function echapper(texte) {
     const div = document.createElement("div");
@@ -179,10 +192,31 @@
     texteVideCompletude.hidden = fichesIncompletes.length > 0;
   }
 
+  function carteNonValideeHTML(item) {
+    return `
+      <li class="ligne-client-non-validee">
+        <a href="/clients/${item.client_id}/fiche">
+          <span class="avatar-client">${echapper(item.client_nom[0] || "?").toUpperCase()}</span>
+          <span>${echapper(item.client_nom)}</span>
+        </a>
+        <div class="actions-avis">
+          <span class="etiquette-avertissement etiquette-danger">non validée par Google</span>
+        </div>
+      </li>`;
+  }
+
+  function afficherNonValidees() {
+    chiffreFichesNonValidees.textContent = fichesNonValidees.length;
+    chiffreFichesNonValidees.classList.toggle("chiffre-attention", fichesNonValidees.length > 0);
+    listeNonValidees.innerHTML = fichesNonValidees.map(carteNonValideeHTML).join("");
+    texteVideNonValidees.hidden = fichesNonValidees.length > 0;
+  }
+
   async function chargerAlertes() {
     if (!clients.length) {
       afficherAlertes();
       afficherCompletude();
+      afficherNonValidees();
       return;
     }
     conteneurProgression.hidden = false;
@@ -230,6 +264,9 @@
       .filter((r) => r.manquants.length > 0)
       .sort((a, b) => a.score - b.score);
     afficherCompletude();
+
+    fichesNonValidees = tousLesScores.filter((r) => r.fiche_validee === false);
+    afficherNonValidees();
 
     avisSignales = tousLesAvis
       .filter((a) => a.note > 0 && a.note <= 3 && !a.reponse && joursDepuis(a.date_avis) >= SEUIL_JOURS_AVIS_NEGATIF)

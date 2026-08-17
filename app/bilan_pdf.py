@@ -10,7 +10,10 @@ rapport_pdf.py (classe RapportPDF, cellules, nettoyage des caracteres).
 from datetime import date
 
 from . import recap_mensuel
-from .rapport_pdf import COULEUR_ACCENT, COULEUR_GRIS, COULEUR_TEXTE, RapportPDF, _ligne_valeur, _nettoyer, _titre_section
+from .rapport_pdf import (
+    COULEUR_ACCENT, COULEUR_GRIS, COULEUR_TEXTE, RapportPDF,
+    _bandeau_fiche_non_validee, _ligne_valeur, _nettoyer, _titre_section,
+)
 
 
 def _ligne_evolution_positive(pdf: RapportPDF, evolution: float) -> None:
@@ -45,6 +48,10 @@ def _section_fiche(pdf: RapportPDF, section: dict) -> None:
     pdf.set_text_color(*COULEUR_ACCENT)
     pdf.cell(0, 10, _nettoyer(section["nom"]), new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*COULEUR_TEXTE)
+
+    if donnees.get("fiche_validee") is False:
+        pdf.ln(1)
+        _bandeau_fiche_non_validee(pdf)
 
     # --- Avis ---
     # Le titre de section s'affiche des qu'il y a des stats OU une citation a

@@ -12,6 +12,13 @@
 <div class="bandeau-info">{{ succes }}</div>
 {% endif %}
 
+{% if fiche_validee is sameas false %}
+<div class="bandeau-avertissement bandeau-danger">
+  ⚠️ Cette fiche n'est pas validée (vérifiée) par Google. Tant qu'elle ne l'est pas, la réponse aux avis,
+  la modification des informations et certaines statistiques peuvent être limitées.
+</div>
+{% endif %}
+
 {% if infos %}
 <form class="formulaire" method="post" action="/clients/{{ client.id }}/fiche/modifier"
       onsubmit="return confirm('Enregistrer ces informations directement sur la fiche Google, publiquement visible ?');">

@@ -900,6 +900,7 @@ def completude_donnees_client(client_id: int, request: Request, db: Session = De
         resultat = google_location.score_completude(infos)
         resultat["client_id"] = client.id
         resultat["client_nom"] = client.nom
+        resultat["fiche_validee"] = google_location.fiche_validee(infos)
         return JSONResponse({"resultat": resultat, "erreur": None})
     except Exception as erreur:
         return JSONResponse({"resultat": None, "erreur": f"{client.nom} : {erreur}"})
@@ -1978,6 +1979,7 @@ def _reponse_fiche_client(
         {
             "client": client,
             "infos": infos,
+            "fiche_validee": google_location.fiche_validee(infos) if infos else None,
             "valeurs": _valeurs_formulaire_fiche(infos),
             "erreur": erreur,
             "succes": succes,
@@ -2645,7 +2647,7 @@ def stats_client_pdf(client_id: int, request: Request, db: Session = Depends(obt
     octets_pdf = rapport_pdf.generer_rapport_pdf(
         client.nom, debut, fin, donnees["statistiques"], donnees["resume_avis"], donnees["posts_publies"],
         mots_cles=donnees["mots_cles"], comparatif_visibilite=donnees["comparatif_visibilite"],
-        evolution_avis=donnees["evolution_avis"], sections=sections,
+        evolution_avis=donnees["evolution_avis"], sections=sections, fiche_validee=donnees["fiche_validee"],
     )
 
     nom_fichier = f"rapport_{client.nom.replace(' ', '_')}_{debut.isoformat()}_{fin.isoformat()}.pdf"

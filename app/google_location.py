@@ -9,7 +9,7 @@ import requests
 
 CHAMPS_LECTURE = (
     "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,specialHours,"
-    "profile,latlng,categories,metadata.mapsUri,metadata.newReviewUri"
+    "profile,latlng,categories,metadata.mapsUri,metadata.newReviewUri,metadata.hasVoiceOfMerchant"
 )
 
 JOURS_SEMAINE = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
@@ -43,6 +43,16 @@ def obtenir_infos_fiche(identifiants, location_id: str) -> dict:
     if reponse.status_code != 200:
         raise RuntimeError(f"Echec de la lecture de la fiche (code {reponse.status_code}) : {reponse.text}")
     return reponse.json()
+
+
+def fiche_validee(infos: dict) -> bool:
+    """
+    "Voice of Merchant" Google : la fiche est verifiee et le controle en est
+    confirme (modification des infos, reponse aux avis... pleinement
+    fonctionnels). Si absent de la reponse API, on considere la fiche validee
+    par defaut plutot que de risquer une fausse alerte.
+    """
+    return ((infos or {}).get("metadata") or {}).get("hasVoiceOfMerchant", True)
 
 
 def mettre_a_jour_fiche(identifiants, location_id: str, donnees: dict, champs: list[str]) -> dict:

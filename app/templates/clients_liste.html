@@ -62,7 +62,8 @@
 
   <ul class="liste-clients">
     {% for client in clients %}
-    <li class="ligne-client-filtrable" data-recherche="{{ client.nom|lower }}">
+    <li class="ligne-client-filtrable" data-recherche="{{ client.nom|lower }}"
+        {% if client.account_id and client.location_id %}data-client-id-validation="{{ client.id }}"{% endif %}>
       <input type="checkbox" name="client_ids" value="{{ client.id }}" class="case-client-suppression">
       <a href="/clients/{{ client.id }}">
         <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
@@ -81,6 +82,7 @@
         {% if client.id not in ids_avec_connaissance %}
           <span class="etiquette-avertissement">base de connaissance vide</span>
         {% endif %}
+        <span class="etiquette-avertissement etiquette-danger etiquette-non-validee" hidden>non validée par Google</span>
       </div>
     </li>
     {% endfor %}
@@ -124,6 +126,35 @@
     });
     texteAucunResultat.hidden = visibles > 0;
   });
+})();
+</script>
+
+<script>
+(function () {
+  // Chargement progressif du statut de validation Google (liseré rouge sur
+  // les fiches non validees) - un appel API par fiche, donc fait apres coup
+  // plutot qu'au rendu de la page, avec concurrence limitee comme sur Alertes.
+  const CONCURRENCE = 3;
+  const lignesAVerifier = Array.from(document.querySelectorAll("[data-client-id-validation]"));
+  if (!lignesAVerifier.length) return;
+
+  let curseur = 0;
+  async function traiterSuivant() {
+    while (curseur < lignesAVerifier.length) {
+      const ligne = lignesAVerifier[curseur++];
+      try {
+        const reponse = await fetch(`/completude/donnees/${ligne.dataset.clientIdValidation}`).then((r) => r.json());
+        if (reponse.resultat && reponse.resultat.fiche_validee === false) {
+          ligne.classList.add("ligne-client-non-validee");
+          const badge = ligne.querySelector(".etiquette-non-validee");
+          if (badge) badge.hidden = false;
+        }
+      } catch (erreur) {
+        // Echec silencieux : ne bloque pas l'affichage de la liste pour un statut secondaire.
+      }
+    }
+  }
+  Promise.all(Array.from({ length: Math.min(CONCURRENCE, lignesAVerifier.length) }, traiterSuivant));
 })();
 </script>
 {% else %}

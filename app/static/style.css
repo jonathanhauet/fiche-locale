@@ -733,6 +733,10 @@ button:active { transform: translateY(1px); }
 
 .bandeau-avertissement { background: var(--attention-clair); border-color: var(--attention); color: var(--texte); }
 .bandeau-info { background: var(--accent-clair); border-color: var(--accent); color: var(--texte); }
+.bandeau-avertissement.bandeau-danger { background: var(--danger-clair); border-color: var(--danger); color: var(--texte); }
+
+.etiquette-avertissement.etiquette-danger { background: var(--danger-clair); color: var(--danger); }
+.liste-clients li.ligne-client-non-validee { border-left: 3px solid var(--danger); }
 
 /* ---------- Barre de titre ---------- */
 

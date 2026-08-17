@@ -7,6 +7,8 @@ from fpdf import FPDF
 COULEUR_ACCENT = (37, 99, 235)
 COULEUR_TEXTE = (28, 30, 33)
 COULEUR_GRIS = (110, 118, 129)
+COULEUR_DANGER = (220, 38, 38)
+COULEUR_DANGER_CLAIR = (253, 236, 236)
 
 REMPLACEMENTS_CARACTERES = {
     "–": "-",  # tiret demi-cadratin (–)
@@ -54,6 +56,25 @@ def _ligne_valeur(pdf: RapportPDF, libelle: str, valeur: str):
     pdf.cell(0, 8, str(valeur), new_x="LMARGIN", new_y="NEXT")
 
 
+def _bandeau_fiche_non_validee(pdf: RapportPDF):
+    """Encadre rouge signalant qu'une fiche n'est pas validee (verifiee) par Google."""
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_draw_color(*COULEUR_DANGER)
+    pdf.set_fill_color(*COULEUR_DANGER_CLAIR)
+    pdf.set_text_color(*COULEUR_DANGER)
+    pdf.multi_cell(
+        0, 6.5,
+        _nettoyer(
+            "Fiche non validee par Google : tant qu'elle n'est pas verifiee, la reponse aux avis, "
+            "la modification des informations et certaines statistiques peuvent etre limitees."
+        ),
+        border=1, fill=True,
+    )
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.ln(3)
+
+
 def _ligne_evolution(pdf: RapportPDF, valeur_n1, evolution):
     """Petite ligne grise italique sous une metrique, pour le comparatif N-1."""
     texte_evolution = f" ({evolution:+.1f}%)" if evolution is not None else ""
@@ -77,6 +98,7 @@ def generer_rapport_pdf(
     comparatif_visibilite: dict = None,
     evolution_avis: float = None,
     sections: set = None,
+    fiche_validee: bool = None,
 ) -> bytes:
     """
     Construit le rapport PDF et renvoie ses octets.
@@ -112,6 +134,10 @@ def generer_rapport_pdf(
         new_x="LMARGIN", new_y="NEXT",
     )
     pdf.set_text_color(*COULEUR_TEXTE)
+
+    if fiche_validee is False:
+        pdf.ln(2)
+        _bandeau_fiche_non_validee(pdf)
 
     inclure_comparatif = "comparatif" in sections
 

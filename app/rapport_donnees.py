@@ -55,7 +55,7 @@ def donnees_rapport_vides() -> dict:
         "statistiques": {}, "resume_avis": {}, "posts_publies": [],
         "mots_cles": [], "erreur_mots_cles": None,
         "comparatif_visibilite": None, "evolution_avis": None,
-        "photos_publiees": 0,
+        "photos_publiees": 0, "fiche_validee": None,
     }
 
 
@@ -68,6 +68,15 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
         )
 
     debut_n1, fin_n1 = _date_n1(debut), _date_n1(fin)
+
+    # Statut de validation Google (Voice of Merchant) : facultatif, on ne fait
+    # jamais echouer tout le rapport pour ca si l'appel rate.
+    try:
+        fiche_validee = google_location.fiche_validee(
+            google_location.obtenir_infos_fiche(identifiants, client.location_id)
+        )
+    except Exception:
+        fiche_validee = None
 
     statistiques = google_performance.recuperer_statistiques(identifiants, client.location_id, debut, fin)
     resume_avis = google_reviews.resumer_avis(
@@ -165,6 +174,7 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
         "comparatif_visibilite": comparatif_visibilite,
         "evolution_avis": evolution_avis,
         "photos_publiees": photos_publiees,
+        "fiche_validee": fiche_validee,
     }
 
 
