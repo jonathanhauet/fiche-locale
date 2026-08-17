@@ -301,3 +301,20 @@ class CompteGoogle(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     clients = relationship("Client", back_populates="compte_google")
+
+
+class ParametreGoogleAds(Base):
+    """
+    Configuration Google Ads (Keyword Planner) - un seul compte pour toute
+    l'agence (pas un par client comme CompteGoogle), une seule ligne attendue
+    en base. refresh_token reste vide tant que la connexion OAuth (scope
+    adwords, distinct du scope Business Profile) n'a pas ete faite.
+    """
+
+    __tablename__ = "parametre_google_ads"
+
+    id = Column(Integer, primary_key=True)
+    developer_token = Column(String, default="")
+    customer_id = Column(String, default="")  # 10 chiffres, sans tirets
+    refresh_token = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)

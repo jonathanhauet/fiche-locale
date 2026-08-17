@@ -17,6 +17,43 @@
 <p class="message-erreur">{{ erreur }}</p>
 {% endif %}
 
+{% if not ads_configure %}
+<div class="bandeau-info">
+  Pas de volume de recherche réel pour l'instant. <a href="/google/comptes">Connecter Google Ads</a>
+  pour voir combien de fois chaque mot-clé est recherché par mois.
+</div>
+{% endif %}
+
+{% if erreur_volume %}
+<p class="message-erreur">{{ erreur_volume }}</p>
+{% endif %}
+
+{% if idees_volume %}
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Volumes de recherche (Google Ads) — triés du plus recherché au moins recherché</span>
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead>
+        <tr>
+          <th>Mot-clé</th>
+          <th>Recherches / mois (moyenne)</th>
+          <th>Concurrence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for idee in idees_volume %}
+        <tr>
+          <td>{{ idee.mot_cle }}</td>
+          <td>{{ idee.volume_moyen_mensuel if idee.volume_moyen_mensuel is not none else "—" }}</td>
+          <td>{{ idee.concurrence|title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {% if resultats %}
   {% if not resultats.suggestions and not resultats.questions %}
   <p class="texte-vide">Aucune suggestion trouvée pour « {{ q }} ».</p>

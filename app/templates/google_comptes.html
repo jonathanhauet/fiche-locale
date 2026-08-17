@@ -42,4 +42,31 @@
 {% else %}
 <p class="texte-vide">Aucun compte Google connecté pour l'instant.</p>
 {% endif %}
+
+<h2>Google Ads (Keyword Planner)</h2>
+<p class="texte-discret">
+  Utilisé pour afficher un volume de recherche réel dans l'onglet <a href="/mots-cles">Mots-clés</a> —
+  compte séparé des comptes Business Profile ci-dessus, un seul pour toute l'agence.
+</p>
+
+<form class="formulaire" method="post" action="/google-ads/parametres">
+  <label>
+    Jeton développeur (developer token)
+    <input type="text" name="developer_token" value="{{ parametre_ads.developer_token }}" required>
+  </label>
+  <label>
+    Identifiant client Google Ads (customer ID)
+    <input type="text" name="customer_id" value="{{ parametre_ads.customer_id }}" placeholder="669-130-6801" required>
+  </label>
+  <button type="submit" class="bouton">Enregistrer</button>
+</form>
+
+<div class="bandeau-info" style="margin-top:1rem;">
+  {% if parametre_ads.refresh_token %}
+    ✅ Connecté.
+  {% else %}
+    Pas encore connecté — enregistre d'abord le jeton et l'identifiant ci-dessus, puis
+  {% endif %}
+  <a href="/google-ads/connecter">{{ "Reconnecter" if parametre_ads.refresh_token else "Connecter Google Ads" }}</a>
+</div>
 {% endblock %}

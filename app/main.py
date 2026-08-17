@@ -35,6 +35,7 @@ from . import (
     export_clients_excel,
     gemini_images,
     geocodage,
+    google_ads_keywords,
     google_autocomplete,
     google_business,
     google_location,
@@ -2418,18 +2419,33 @@ def recherche_mots_cles(request: Request, q: str = "", db: Session = Depends(obt
         return redirection
 
     resultats, erreur = None, None
+    idees_volume, erreur_volume = None, None
+    ads_configure = google_oauth.ads_configure(db)
     if q.strip():
         try:
             resultats = google_autocomplete.rechercher(q)
         except Exception as e:
             erreur = f"Impossible de recuperer des suggestions pour le moment : {e}"
 
+        if ads_configure:
+            try:
+                idees_volume = sorted(
+                    google_ads_keywords.idees_mots_cles(google_oauth.obtenir_parametre_ads(db), [q]),
+                    key=lambda i: i["volume_moyen_mensuel"] or 0,
+                    reverse=True,
+                )
+            except Exception as e:
+                erreur_volume = f"Impossible de recuperer les volumes Google Ads pour le moment : {e}"
+
     clients = db.query(models.Client).order_by(models.Client.nom).all()
 
     return templates.TemplateResponse(
         request,
         "recherche_mots_cles.html",
-        {"q": q, "resultats": resultats, "erreur": erreur, "clients": clients},
+        {
+            "q": q, "resultats": resultats, "erreur": erreur, "clients": clients,
+            "ads_configure": ads_configure, "idees_volume": idees_volume, "erreur_volume": erreur_volume,
+        },
     )
 
 
@@ -3010,7 +3026,56 @@ def google_comptes(request: Request, db: Session = Depends(obtenir_session)):
         return redirection
 
     comptes = google_oauth.lister_comptes(db)
-    return templates.TemplateResponse(request, "google_comptes.html", {"comptes": comptes})
+    return templates.TemplateResponse(
+        request, "google_comptes.html",
+        {"comptes": comptes, "parametre_ads": google_oauth.obtenir_parametre_ads(db)},
+    )
+
+
+@app.post("/google-ads/parametres")
+def enregistrer_parametres_ads(
+    request: Request, developer_token: str = Form(...), customer_id: str = Form(...),
+    db: Session = Depends(obtenir_session),
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    google_oauth.enregistrer_identifiants_ads(db, developer_token, customer_id)
+    return RedirectResponse("/google/comptes", status_code=303)
+
+
+@app.get("/google-ads/connecter")
+def google_ads_connecter(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    redirect_uri = str(request.url_for("google_ads_callback"))
+    flow = google_oauth.construire_flow_ads(redirect_uri)
+    url_autorisation, state = flow.authorization_url(access_type="offline", prompt="consent")
+    request.session["oauth_ads_state"] = state
+    request.session["oauth_ads_code_verifier"] = flow.code_verifier
+    return RedirectResponse(url_autorisation)
+
+
+@app.get("/google-ads/callback", name="google_ads_callback")
+def google_ads_callback(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    state_attendu = request.session.get("oauth_ads_state")
+    if state_attendu and request.query_params.get("state") != state_attendu:
+        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /google-ads/connecter.", status_code=400)
+
+    redirect_uri = str(request.url_for("google_ads_callback"))
+    code_verifier = request.session.get("oauth_ads_code_verifier")
+    flow = google_oauth.construire_flow_ads(redirect_uri, code_verifier=code_verifier)
+    flow.fetch_token(authorization_response=str(request.url))
+
+    google_oauth.enregistrer_refresh_token_ads(db, flow.credentials.refresh_token)
+    return RedirectResponse("/google/comptes", status_code=303)
 
 
 @app.post("/google/comptes/{compte_id}/deconnecter")

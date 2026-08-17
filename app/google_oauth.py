@@ -22,6 +22,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
 ]
 
+# Scope Google Ads (Keyword Planner) : autorisation separee de celle des
+# fiches Business Profile ci-dessus, un seul compte pour toute l'agence
+# (voir models.ParametreGoogleAds).
+SCOPES_ADS = ["https://www.googleapis.com/auth/adwords"]
+
 # Libelle place sur le compte cree automatiquement lors de la migration depuis
 # l'ancien modele mono-compte (voir main.py, _migrer_vers_multi_comptes). Son
 # refresh token a ete emis avant l'ajout des scopes openid/userinfo.email et ne
@@ -65,6 +70,15 @@ def construire_flow(redirect_uri: str, code_verifier: str = None) -> Flow:
     # transiter par la session).
     return Flow.from_client_config(
         _configuration_client(), scopes=SCOPES, redirect_uri=redirect_uri, code_verifier=code_verifier
+    )
+
+
+def construire_flow_ads(redirect_uri: str, code_verifier: str = None) -> Flow:
+    if redirect_uri.startswith("http://localhost") or redirect_uri.startswith("http://127.0.0.1"):
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+    return Flow.from_client_config(
+        _configuration_client(), scopes=SCOPES_ADS, redirect_uri=redirect_uri, code_verifier=code_verifier
     )
 
 
@@ -146,3 +160,36 @@ def obtenir_identifiants(db: Session, compte_google_id: int = None):
         # reconnecte) : on traite comme "non connecte" plutot que de planter.
         return None
     return identifiants
+
+
+def obtenir_parametre_ads(db: Session) -> "models.ParametreGoogleAds":
+    """Une seule ligne attendue - la cree si absente pour simplifier les appelants."""
+    parametre = db.query(models.ParametreGoogleAds).first()
+    if not parametre:
+        parametre = models.ParametreGoogleAds()
+        db.add(parametre)
+        db.commit()
+        db.refresh(parametre)
+    return parametre
+
+
+def enregistrer_identifiants_ads(db: Session, developer_token: str, customer_id: str) -> "models.ParametreGoogleAds":
+    parametre = obtenir_parametre_ads(db)
+    parametre.developer_token = developer_token.strip()
+    parametre.customer_id = customer_id.strip().replace("-", "").replace(" ", "")
+    db.commit()
+    db.refresh(parametre)
+    return parametre
+
+
+def enregistrer_refresh_token_ads(db: Session, refresh_token: str) -> "models.ParametreGoogleAds":
+    parametre = obtenir_parametre_ads(db)
+    parametre.refresh_token = refresh_token
+    db.commit()
+    db.refresh(parametre)
+    return parametre
+
+
+def ads_configure(db: Session) -> bool:
+    parametre = db.query(models.ParametreGoogleAds).first()
+    return bool(parametre and parametre.developer_token and parametre.customer_id and parametre.refresh_token)

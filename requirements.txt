@@ -21,3 +21,4 @@ python-docx
 pyotp
 qrcode
 openpyxl
+google-ads
