@@ -219,11 +219,12 @@
             {%- if photo.latitude is not none %}{{ "%.4f"|format(photo.latitude) }}, {{ "%.4f"|format(photo.longitude) }}{% endif -%}
           </span>
           <button type="button" class="lien-retirer-geotag">Retirer</button>
+          <span class="texte-discret texte-enregistrement-geotag" hidden></span>
         </p>
         <input type="hidden" name="latitude" value="{{ photo.latitude if photo.latitude is not none else '' }}">
         <input type="hidden" name="longitude" value="{{ photo.longitude if photo.longitude is not none else '' }}">
       </div>
-      <button type="submit" class="bouton-secondaire">Enregistrer</button>
+      <button type="submit" class="bouton-secondaire">Enregistrer (légende / catégorie)</button>
     </form>
     <form method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/supprimer"
           onsubmit="return confirm('Retirer cette photo de la préparation ?');">
@@ -585,14 +586,35 @@
       bloc.querySelector(".ville-selectionnee").hidden = false;
       bloc.querySelector(".resultats-recherche-ville").hidden = true;
       bloc.querySelector(".champ-recherche-ville").value = "";
+      enregistrerGeotag(bloc);
     }
 
     if (evenement.target.classList.contains("lien-retirer-geotag")) {
       bloc.querySelector("input[name=latitude]").value = "";
       bloc.querySelector("input[name=longitude]").value = "";
       bloc.querySelector(".ville-selectionnee").hidden = true;
+      enregistrerGeotag(bloc);
     }
   });
+
+  // Le geotag s'enregistre immediatement des qu'on choisit/retire une ville,
+  // sans attendre le bouton "Enregistrer" (reserve a legende/categorie) -
+  // evite une etape manuelle a chaque photo lors d'un import en masse.
+  async function enregistrerGeotag(bloc) {
+    const formulaire = bloc.closest("form");
+    const texteEtat = bloc.querySelector(".texte-enregistrement-geotag");
+    texteEtat.hidden = false;
+    texteEtat.textContent = "Enregistrement...";
+    try {
+      const reponse = await fetch(formulaire.action, { method: "POST", body: new FormData(formulaire) });
+      if (!reponse.ok) throw new Error();
+      texteEtat.textContent = "✓ Enregistré";
+    } catch (erreur) {
+      texteEtat.textContent = "Erreur lors de l'enregistrement, reessayez.";
+    } finally {
+      setTimeout(() => { texteEtat.hidden = true; }, 2000);
+    }
+  }
 
   document.addEventListener("keydown", (evenement) => {
     if (evenement.key === "Enter" && evenement.target.classList.contains("champ-recherche-ville")) {
