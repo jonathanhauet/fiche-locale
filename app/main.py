@@ -1651,6 +1651,49 @@ def generer_posts_client(
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
+@app.post("/clients/{client_id}/posts/brouillons/programmer_masse")
+def programmer_brouillons_masse(
+    client_id: int,
+    request: Request,
+    date_debut: str = Form(...),
+    intervalle_jours: int = Form(3),
+    heure_mode: str = Form("0830"),
+    heure_h: str = Form(""),
+    heure_m: str = Form(""),
+    db: Session = Depends(obtenir_session),
+):
+    """
+    Programme tous les brouillons d'un client en une seule action, avec des
+    dates espacees automatiquement (ex : tous les 3 jours a partir de la date
+    de depart) - evite d'ouvrir chaque post un par un pour lui donner sa date.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    try:
+        premiere_date = date.fromisoformat(date_debut)
+    except ValueError:
+        return HTMLResponse("Date invalide.", status_code=400)
+
+    intervalle_jours = max(1, intervalle_jours)
+    heure_programmee = _heure_depuis_formulaire({"heure_mode": heure_mode, "heure_h": heure_h, "heure_m": heure_m})
+
+    brouillons = (
+        db.query(models.Post)
+        .filter(models.Post.client_id == client_id, models.Post.statut == "BROUILLON")
+        .order_by(models.Post.id)
+        .all()
+    )
+    for index, post in enumerate(brouillons):
+        post.date_prevue = premiere_date + timedelta(days=index * intervalle_jours)
+        post.heure_prevue = heure_programmee
+        post.statut = "A_PUBLIER"
+    db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
 @app.post("/clients/{client_id}/posts/creer")
 def creer_post_manuel(
     client_id: int, request: Request, titre: str = Form(""), texte: str = Form(...),
@@ -3375,8 +3418,15 @@ def image_proxy(request: Request, url: str):
     return Response(content=reponse.content, media_type=reponse.headers.get("Content-Type", "image/jpeg"))
 
 
+def _redirection_apres_image_post(post: "models.Post", retour: str) -> RedirectResponse:
+    """retour="client" : reste sur la fiche client (workflow de generation en masse) plutot que d'ouvrir le post."""
+    if retour == "client":
+        return RedirectResponse(f"/clients/{post.client_id}#post-{post.id}", status_code=303)
+    return RedirectResponse(f"/posts/{post.id}", status_code=303)
+
+
 @app.post("/posts/{post_id}/generer_image")
-def generer_image_post(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+def generer_image_post(post_id: int, request: Request, retour: str = Form("post"), db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -3401,12 +3451,13 @@ def generer_image_post(post_id: int, request: Request, db: Session = Depends(obt
     post.image_url = url_publique
     db.commit()
 
-    return RedirectResponse(f"/posts/{post_id}", status_code=303)
+    return _redirection_apres_image_post(post, retour)
 
 
 @app.post("/posts/{post_id}/televerser_image")
 def televerser_image_post(
-    post_id: int, request: Request, fichier: UploadFile = File(...), db: Session = Depends(obtenir_session)
+    post_id: int, request: Request, fichier: UploadFile = File(...), retour: str = Form("post"),
+    db: Session = Depends(obtenir_session),
 ):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -3428,7 +3479,7 @@ def televerser_image_post(
     post.image_url = url_publique
     db.commit()
 
-    return RedirectResponse(f"/posts/{post_id}", status_code=303)
+    return _redirection_apres_image_post(post, retour)
 
 
 @app.post("/posts/{post_id}/publier")

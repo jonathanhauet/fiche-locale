@@ -351,6 +351,38 @@
 <p class="texte-vide">Aucun post actuellement visible sur cette fiche.</p>
 {% endif %}
 
+{% set brouillons = posts|selectattr("statut", "equalto", "BROUILLON")|list %}
+{% if brouillons|length > 1 %}
+<div class="carte-ia" id="carte-programmation-masse">
+  <div class="carte-ia-entete">
+    <span class="carte-ia-icone">🗓</span>
+    <span class="carte-ia-libelles">
+      <span class="carte-ia-titre">Programmer tous les brouillons ({{ brouillons|length }})</span>
+      <span class="carte-ia-sous-titre">Des dates espacées automatiquement, sans ouvrir chaque post un par un</span>
+    </span>
+  </div>
+  <div class="carte-ia-corps">
+    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/posts/brouillons/programmer_masse"
+          onsubmit="return confirm('Programmer les {{ brouillons|length }} brouillons avec des dates espacées ?');">
+      <label>
+        Première date
+        <input type="date" name="date_debut" required>
+      </label>
+      <label>
+        Espacer de
+        <input type="number" name="intervalle_jours" value="3" min="1" max="30" style="width:4.5rem;"> jours
+      </label>
+      <div class="choix-heure choix-heure-compact">
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
+      </div>
+      <button type="submit" class="bouton">✓ Tout programmer</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <h2>Posts ({{ posts|length }})</h2>
 {% if posts %}
 <ul class="liste-posts">
@@ -366,6 +398,21 @@
     <p class="texte-complet-post">{{ post.texte }}</p>
 
     {% if post.statut == "BROUILLON" %}
+    {% if not post.image_url %}
+    <div class="ligne-actions-rapides actions-image-rapides">
+      {% if post.prompt_image %}
+      <form method="post" action="/posts/{{ post.id }}/generer_image" class="formulaire-image-rapide">
+        <input type="hidden" name="retour" value="client">
+        <button type="submit" class="bouton-secondaire">🎨 Générer l'image (IA)</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/posts/{{ post.id }}/televerser_image" enctype="multipart/form-data" class="formulaire-image-rapide">
+        <input type="hidden" name="retour" value="client">
+        <input type="file" name="fichier" accept="image/*" required>
+        <button type="submit" class="bouton-secondaire">Téléverser</button>
+      </form>
+    </div>
+    {% endif %}
     <form method="post" action="/posts/{{ post.id }}/statut_rapide" class="formulaire-validation-rapide">
       <div class="choix-heure choix-heure-compact">
         <input type="date" name="date_prevue" required>
