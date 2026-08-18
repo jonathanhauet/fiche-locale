@@ -236,7 +236,18 @@
 <div class="actions-avis">
   <button type="button" id="bouton-publier-photos" class="bouton-publier">Publier maintenant sur la fiche</button>
   <form class="formulaire-ligne formulaire-programmer-photos" method="post" action="/clients/{{ client.id }}/photos/programmer">
-    <input type="date" name="date_prevue" required>
+    <label>
+      Première date
+      <input type="date" name="date_prevue" required>
+    </label>
+    <label>
+      Par lot de
+      <input type="number" name="taille_lot" value="{{ photos_en_preparation|length }}" min="1" style="width:4.5rem;">
+    </label>
+    <label>
+      Tous les
+      <input type="number" name="intervalle_jours" value="3" min="1" max="30" style="width:4.5rem;"> jours
+    </label>
     <button type="submit" class="bouton-secondaire">Programmer l'envoi</button>
   </form>
 </div>

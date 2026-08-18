@@ -1953,9 +1953,19 @@ def publier_photo_client(client_id: int, photo_id: int, request: Request, db: Se
 
 @app.post("/clients/{client_id}/photos/programmer")
 def programmer_photos_client(
-    client_id: int, request: Request, date_prevue: str = Form(...), db: Session = Depends(obtenir_session)
+    client_id: int, request: Request,
+    date_prevue: str = Form(...),
+    taille_lot: int = Form(...),
+    intervalle_jours: int = Form(1),
+    db: Session = Depends(obtenir_session),
 ):
-    """Programme l'envoi de toutes les photos actuellement en BROUILLON pour ce client."""
+    """
+    Programme l'envoi de toutes les photos actuellement en BROUILLON pour ce
+    client, par lots espaces (ex : 10 photos tous les 3 jours) plutot que
+    toutes a la meme date - utile pour un import en masse (ex : une
+    trentaine de photos d'un coup) qu'on ne veut pas voir arriver toutes le
+    meme jour sur la fiche Google.
+    """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -1965,13 +1975,23 @@ def programmer_photos_client(
         return HTMLResponse("Client introuvable.", status_code=404)
 
     try:
-        date_programmee = date.fromisoformat(date_prevue)
+        date_debut = date.fromisoformat(date_prevue)
     except ValueError:
         return _reponse_detail_client(request, db, client, erreur_photo="Date invalide.")
 
-    db.query(models.PhotoFiche).filter(
-        models.PhotoFiche.client_id == client_id, models.PhotoFiche.statut == "BROUILLON"
-    ).update({"statut": "A_PUBLIER", "date_prevue": date_programmee})
+    taille_lot = max(1, taille_lot)
+    intervalle_jours = max(1, intervalle_jours)
+
+    photos = (
+        db.query(models.PhotoFiche)
+        .filter(models.PhotoFiche.client_id == client_id, models.PhotoFiche.statut == "BROUILLON")
+        .order_by(models.PhotoFiche.id)
+        .all()
+    )
+    for index, photo in enumerate(photos):
+        groupe = index // taille_lot
+        photo.date_prevue = date_debut + timedelta(days=groupe * intervalle_jours)
+        photo.statut = "A_PUBLIER"
     db.commit()
 
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
