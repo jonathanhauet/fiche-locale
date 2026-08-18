@@ -412,6 +412,23 @@
         <button type="submit" class="bouton-secondaire">Téléverser</button>
       </form>
     </div>
+    {% if photos %}
+    <details class="bloc-repliable">
+      <summary>Ou choisir une photo déjà présente sur la fiche ({{ photos|length }})</summary>
+      <div class="grille-photos grille-photos-choix">
+        {% for photo in photos %}
+        <form method="post" action="/posts/{{ post.id }}/choisir_image_fiche">
+          <input type="hidden" name="retour" value="client">
+          <input type="hidden" name="image_url" value="{{ photo.url }}">
+          <button type="submit" class="carte-photo-choix">
+            <img src="{{ photo.miniature or photo.url }}" data-secours="{{ photo.url }}" class="image-fiche-photo" alt="{{ photo.categorie or 'Photo' }}">
+            <span class="etiquette-categorie-photo">{{ photo.categorie or "Photo" }}</span>
+          </button>
+        </form>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
     {% endif %}
     <form method="post" action="/posts/{{ post.id }}/statut_rapide" class="formulaire-validation-rapide">
       <div class="choix-heure choix-heure-compact">

@@ -3425,6 +3425,26 @@ def _redirection_apres_image_post(post: "models.Post", retour: str) -> RedirectR
     return RedirectResponse(f"/posts/{post.id}", status_code=303)
 
 
+@app.post("/posts/{post_id}/choisir_image_fiche")
+def choisir_image_fiche_post(
+    post_id: int, request: Request, image_url: str = Form(...), retour: str = Form("post"),
+    db: Session = Depends(obtenir_session),
+):
+    """Reprend directement une photo deja presente sur la fiche Google du client, sans televersement ni generation IA."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post = db.get(models.Post, post_id)
+    if not post:
+        return HTMLResponse("Post introuvable.", status_code=404)
+
+    post.image_url = image_url
+    db.commit()
+
+    return _redirection_apres_image_post(post, retour)
+
+
 @app.post("/posts/{post_id}/generer_image")
 def generer_image_post(post_id: int, request: Request, retour: str = Form("post"), db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
