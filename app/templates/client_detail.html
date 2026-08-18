@@ -202,8 +202,8 @@
       </span>
     </figcaption>
     <form class="formulaire-photo-details" method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/modifier">
-      <input type="text" name="legende" value="{{ photo.legende }}" placeholder="Légende (optionnel)">
-      <select name="categorie">
+      <input type="text" name="legende" value="{{ photo.legende }}" placeholder="Légende (optionnel)" class="champ-enregistrement-auto">
+      <select name="categorie" class="champ-enregistrement-auto">
         {% for valeur, libelle in categories_photo %}
         <option value="{{ valeur }}" {% if valeur == photo.categorie %}selected{% endif %}>{{ libelle }}</option>
         {% endfor %}
@@ -219,12 +219,11 @@
             {%- if photo.latitude is not none %}{{ "%.4f"|format(photo.latitude) }}, {{ "%.4f"|format(photo.longitude) }}{% endif -%}
           </span>
           <button type="button" class="lien-retirer-geotag">Retirer</button>
-          <span class="texte-discret texte-enregistrement-geotag" hidden></span>
         </p>
         <input type="hidden" name="latitude" value="{{ photo.latitude if photo.latitude is not none else '' }}">
         <input type="hidden" name="longitude" value="{{ photo.longitude if photo.longitude is not none else '' }}">
       </div>
-      <button type="submit" class="bouton-secondaire">Enregistrer (légende / catégorie)</button>
+      <span class="texte-discret texte-enregistrement-photo" hidden></span>
     </form>
     <form method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/supprimer"
           onsubmit="return confirm('Retirer cette photo de la préparation ?');">
@@ -586,23 +585,27 @@
       bloc.querySelector(".ville-selectionnee").hidden = false;
       bloc.querySelector(".resultats-recherche-ville").hidden = true;
       bloc.querySelector(".champ-recherche-ville").value = "";
-      enregistrerGeotag(bloc);
+      enregistrerPhotoDetails(bloc.closest("form"));
     }
 
     if (evenement.target.classList.contains("lien-retirer-geotag")) {
       bloc.querySelector("input[name=latitude]").value = "";
       bloc.querySelector("input[name=longitude]").value = "";
       bloc.querySelector(".ville-selectionnee").hidden = true;
-      enregistrerGeotag(bloc);
+      enregistrerPhotoDetails(bloc.closest("form"));
     }
   });
 
-  // Le geotag s'enregistre immediatement des qu'on choisit/retire une ville,
-  // sans attendre le bouton "Enregistrer" (reserve a legende/categorie) -
-  // evite une etape manuelle a chaque photo lors d'un import en masse.
-  async function enregistrerGeotag(bloc) {
-    const formulaire = bloc.closest("form");
-    const texteEtat = bloc.querySelector(".texte-enregistrement-geotag");
+  // Legende, categorie et geotag s'enregistrent tous immediatement (blur pour
+  // le texte, change pour le select et le geotag) - plus de bouton
+  // "Enregistrer" a cliquer pour chaque photo lors d'un import en masse.
+  document.querySelectorAll(".formulaire-photo-details .champ-enregistrement-auto").forEach((champ) => {
+    const evenement = champ.tagName === "SELECT" ? "change" : "blur";
+    champ.addEventListener(evenement, () => enregistrerPhotoDetails(champ.closest("form")));
+  });
+
+  async function enregistrerPhotoDetails(formulaire) {
+    const texteEtat = formulaire.querySelector(".texte-enregistrement-photo");
     texteEtat.hidden = false;
     texteEtat.textContent = "Enregistrement...";
     try {
