@@ -777,6 +777,17 @@ button:active { transform: translateY(1px); }
 
 .carte-resume-chiffre.chiffre-attention { color: var(--attention); }
 
+.carte-resume-compacte {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.carte-resume-compacte .carte-resume-chiffre { font-size: 1.15rem; }
+.carte-resume-compacte .carte-resume-libelle { font-size: 0.85rem; color: var(--texte-discret); }
+
 .carte-resume-libelle {
   display: block;
   font-size: 0.78rem;

@@ -33,6 +33,11 @@
   <span id="texte-progression-avis" class="texte-progression-avis"></span>
 </div>
 
+<div class="carte-resume carte-resume-compacte">
+  <span class="carte-resume-chiffre" id="chiffre-avis-filtres">…</span>
+  <span class="carte-resume-libelle">avis correspondent aux filtres actuels</span>
+</div>
+
 <div class="filtre-entreprises">
   <span class="filtre-titre">Statut :</span>
   <label class="filtre-case"><input type="radio" name="filtre-statut" value="tous"> Tous</label>
@@ -104,6 +109,7 @@
   const etiquettesParClient = new Map(clients.map((c) => [c.id, new Set(c.etiquettes || [])]));
   const casesStatut = Array.from(document.querySelectorAll('input[name=filtre-statut]'));
   const casesAnciennete = Array.from(document.querySelectorAll('input[name=filtre-anciennete]'));
+  const chiffreAvisFiltres = document.getElementById("chiffre-avis-filtres");
   const conteneurPagination = document.getElementById("pagination-avis");
   const texteAffichagePagination = document.getElementById("texte-pagination");
   const boutonPagePrecedente = document.getElementById("bouton-page-precedente");
@@ -237,6 +243,7 @@
 
   function afficherAvis() {
     const avisFiltresListe = avisFiltres();
+    chiffreAvisFiltres.textContent = chargementEnCours ? "…" : avisFiltresListe.length;
     const totalPages = Math.max(1, Math.ceil(avisFiltresListe.length / TAILLE_PAGE));
     pageActuelle = Math.min(Math.max(1, pageActuelle), totalPages);
     const debut = (pageActuelle - 1) * TAILLE_PAGE;
