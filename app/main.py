@@ -903,7 +903,6 @@ def completude_donnees_client(client_id: int, request: Request, db: Session = De
         resultat["client_id"] = client.id
         resultat["client_nom"] = client.nom
         resultat["fiche_validee"] = google_location.fiche_validee(infos)
-        resultat["modification_en_attente"] = google_location.modification_en_attente(infos)
         return JSONResponse({"resultat": resultat, "erreur": None})
     except Exception as erreur:
         return JSONResponse({"resultat": None, "erreur": f"{client.nom} : {erreur}"})

@@ -9,8 +9,7 @@ import requests
 
 CHAMPS_LECTURE = (
     "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,specialHours,"
-    "profile,latlng,categories,metadata.mapsUri,metadata.newReviewUri,metadata.hasVoiceOfMerchant,"
-    "metadata.hasGoogleUpdated,metadata.hasPendingEdits"
+    "profile,latlng,categories,metadata.mapsUri,metadata.newReviewUri,metadata.hasVoiceOfMerchant"
 )
 
 JOURS_SEMAINE = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
@@ -63,20 +62,6 @@ def fiche_validee(infos: dict) -> bool:
     if not metadata:
         return False
     return metadata.get("hasVoiceOfMerchant", True)
-
-
-def modification_en_attente(infos: dict) -> bool:
-    """
-    hasGoogleUpdated : Google a applique une modification (issue d'une
-    suggestion Maps ou d'une mise a jour automatique) pas encore
-    acceptee/refusee par le proprietaire. hasPendingEdits : une modification
-    est en cours de traitement, pas encore repercutee sur Maps. Champs
-    valides via l'API (readMask accepte, pas d'erreur), mais pas encore
-    observes a `true` sur un cas reel - a confirmer sur une fiche ayant
-    effectivement une suggestion en attente.
-    """
-    metadata = (infos or {}).get("metadata") or {}
-    return bool(metadata.get("hasGoogleUpdated") or metadata.get("hasPendingEdits"))
 
 
 def mettre_a_jour_fiche(identifiants, location_id: str, donnees: dict, champs: list[str]) -> dict:
