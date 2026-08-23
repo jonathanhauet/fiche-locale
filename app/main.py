@@ -2090,40 +2090,6 @@ def fiche_client(client_id: int, request: Request, db: Session = Depends(obtenir
     return _reponse_fiche_client(request, client, db, infos=infos)
 
 
-@app.get("/clients/{client_id}/fiche/debug-metadata")
-def fiche_client_debug_metadata(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """
-    Diagnostic temporaire : affiche l'objet metadata COMPLET (readMask non
-    restreint) renvoye par Google pour cette fiche, pour identifier le
-    champ correspondant a "modification en attente de validation" (aucun
-    des champs testes jusqu'ici - hasGoogleUpdated/hasPendingEdits - ne
-    l'a detecte sur un cas reel connu) - a retirer une fois confirme.
-    """
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return redirection
-
-    client = db.get(models.Client, client_id)
-    if not client or not client.account_id or not client.location_id:
-        return JSONResponse({"erreur": "Ce client n'a pas de fiche Google associee."})
-
-    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-    if not identifiants:
-        return JSONResponse({"erreur": "Compte Google non valide pour ce client."})
-
-    try:
-        reponse = requests.get(
-            f"https://mybusinessbusinessinformation.googleapis.com/v1/locations/{client.location_id}",
-            headers={"Authorization": f"Bearer {identifiants.token}"},
-            params={"readMask": "title,metadata"},
-        )
-        reponse.raise_for_status()
-    except Exception as erreur:
-        return JSONResponse({"erreur": str(erreur)})
-
-    return JSONResponse({"client_nom": client.nom, **reponse.json()})
-
-
 @app.post("/clients/{client_id}/fiche/modifier")
 async def modifier_fiche_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
