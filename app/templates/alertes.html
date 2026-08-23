@@ -31,6 +31,10 @@
     <span class="carte-resume-libelle">Fiches non validées</span>
   </div>
   <div class="carte-resume">
+    <span class="carte-resume-chiffre" id="chiffre-modifications-attente">…</span>
+    <span class="carte-resume-libelle">Modifications Google en attente</span>
+  </div>
+  <div class="carte-resume">
     <span class="carte-resume-chiffre" id="chiffre-avis-negatifs">…</span>
     <span class="carte-resume-libelle">Avis négatifs sans réponse</span>
   </div>
@@ -67,6 +71,11 @@
 <ul id="liste-alertes-non-validees" class="liste-clients"></ul>
 <p id="texte-vide-non-validees" class="texte-vide" hidden>Toutes les fiches sont validées par Google.</p>
 
+<h2>Modifications Google en attente de validation</h2>
+<p class="texte-discret">Une modification proposée par Google (ou suggérée par un internaute sur Maps) attend ta confirmation — sinon Google l'envoie par email fiche par fiche.</p>
+<ul id="liste-alertes-modifications" class="liste-clients"></ul>
+<p id="texte-vide-modifications" class="texte-vide" hidden>Aucune modification en attente pour l'instant.</p>
+
 <h2>Avis négatifs sans réponse</h2>
 <div id="conteneur-progression-alertes" class="conteneur-progression-avis" hidden>
   <div class="barre-progression-fond"><div id="barre-progression-alertes" class="barre-progression-remplissage"></div></div>
@@ -99,10 +108,14 @@
   const chiffreFichesNonValidees = document.getElementById("chiffre-fiches-non-validees");
   const listeNonValidees = document.getElementById("liste-alertes-non-validees");
   const texteVideNonValidees = document.getElementById("texte-vide-non-validees");
+  const chiffreModificationsAttente = document.getElementById("chiffre-modifications-attente");
+  const listeModificationsAttente = document.getElementById("liste-alertes-modifications");
+  const texteVideModificationsAttente = document.getElementById("texte-vide-modifications");
 
   let avisSignales = [];
   let fichesIncompletes = [];
   let fichesNonValidees = [];
+  let fichesModificationsAttente = [];
 
   function echapper(texte) {
     const div = document.createElement("div");
@@ -212,11 +225,32 @@
     texteVideNonValidees.hidden = fichesNonValidees.length > 0;
   }
 
+  function carteModificationAttenteHTML(item) {
+    return `
+      <li class="ligne-client-non-validee">
+        <a href="/clients/${item.client_id}/fiche">
+          <span class="avatar-client">${echapper(item.client_nom[0] || "?").toUpperCase()}</span>
+          <span>${echapper(item.client_nom)}</span>
+        </a>
+        <div class="actions-avis">
+          <span class="etiquette-avertissement etiquette-danger">modification en attente</span>
+        </div>
+      </li>`;
+  }
+
+  function afficherModificationsAttente() {
+    chiffreModificationsAttente.textContent = fichesModificationsAttente.length;
+    chiffreModificationsAttente.classList.toggle("chiffre-attention", fichesModificationsAttente.length > 0);
+    listeModificationsAttente.innerHTML = fichesModificationsAttente.map(carteModificationAttenteHTML).join("");
+    texteVideModificationsAttente.hidden = fichesModificationsAttente.length > 0;
+  }
+
   async function chargerAlertes() {
     if (!clients.length) {
       afficherAlertes();
       afficherCompletude();
       afficherNonValidees();
+      afficherModificationsAttente();
       return;
     }
     conteneurProgression.hidden = false;
@@ -267,6 +301,9 @@
 
     fichesNonValidees = tousLesScores.filter((r) => r.fiche_validee === false);
     afficherNonValidees();
+
+    fichesModificationsAttente = tousLesScores.filter((r) => r.modification_en_attente === true);
+    afficherModificationsAttente();
 
     avisSignales = tousLesAvis
       .filter((a) => a.note > 0 && a.note <= 3 && !a.reponse && joursDepuis(a.date_avis) >= SEUIL_JOURS_AVIS_NEGATIF)
