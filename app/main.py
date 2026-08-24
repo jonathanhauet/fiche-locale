@@ -1873,6 +1873,46 @@ def modifier_photo_client(
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
+@app.post("/clients/{client_id}/photos/appliquer_masse")
+def appliquer_masse_photos_client(
+    client_id: int, request: Request,
+    legende: str = Form(""), latitude: str = Form(""), longitude: str = Form(""),
+    db: Session = Depends(obtenir_session),
+):
+    """
+    Applique la meme legende et/ou le meme geotag a toutes les photos
+    actuellement en preparation (BROUILLON) pour ce client - evite de
+    ressaisir photo par photo quand un import en masse partage les memes
+    informations (ex : 28 photos d'une meme intervention). Un champ laisse
+    vide n'ecrase pas ce qui existe deja sur chaque photo.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    valeurs = {}
+    if legende.strip():
+        valeurs["legende"] = legende.strip()
+    if latitude.strip() and longitude.strip():
+        try:
+            valeurs["latitude"] = float(latitude.replace(",", "."))
+            valeurs["longitude"] = float(longitude.replace(",", "."))
+        except ValueError:
+            return _reponse_detail_client(request, db, client, erreur_photo="Coordonnees GPS invalides.")
+
+    if valeurs:
+        db.query(models.PhotoFiche).filter(
+            models.PhotoFiche.client_id == client_id, models.PhotoFiche.statut == "BROUILLON"
+        ).update(valeurs)
+        db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
 @app.post("/clients/{client_id}/photos_google/supprimer")
 async def supprimer_photo_fiche_google_route(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """

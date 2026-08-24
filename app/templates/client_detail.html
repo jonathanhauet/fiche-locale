@@ -190,6 +190,37 @@
 
 {% if photos_en_preparation %}
 <h3>En préparation ({{ photos_en_preparation|length }})</h3>
+
+<div class="carte-ia" id="carte-application-masse-photos">
+  <div class="carte-ia-entete">
+    <span class="carte-ia-icone">🏷️</span>
+    <span class="carte-ia-libelles">
+      <span class="carte-ia-titre">Appliquer à toutes les photos en préparation</span>
+      <span class="carte-ia-sous-titre">Même légende et/ou même géotag pour les {{ photos_en_preparation|length }} photos d'un coup, plutôt que photo par photo</span>
+    </span>
+  </div>
+  <div class="carte-ia-corps">
+    <form class="formulaire" method="post" action="/clients/{{ client.id }}/photos/appliquer_masse"
+          onsubmit="return confirm('Appliquer ces informations aux {{ photos_en_preparation|length }} photos en préparation ? (un champ laissé vide n\'écrase rien)');">
+      <input type="text" name="legende" placeholder="Légende à appliquer à toutes (laisser vide pour ne pas y toucher)">
+      <div class="bloc-geotag-masse">
+        <div class="recherche-ville">
+          <input type="text" id="champ-recherche-ville-masse" autocomplete="off" placeholder="Géotag à appliquer à toutes : rechercher une ville (optionnel)">
+          <button type="button" class="bouton-secondaire" id="bouton-rechercher-ville-masse">Rechercher</button>
+        </div>
+        <ul id="resultats-recherche-ville-masse" class="resultats-recherche-ville" hidden></ul>
+        <p id="ville-selectionnee-masse" class="ville-selectionnee" hidden>
+          📍 <span id="texte-ville-selectionnee-masse"></span>
+          <button type="button" id="lien-retirer-geotag-masse">Retirer</button>
+        </p>
+        <input type="hidden" name="latitude" id="latitude-masse">
+        <input type="hidden" name="longitude" id="longitude-masse">
+      </div>
+      <button type="submit" class="bouton">Appliquer à toutes les photos en préparation</button>
+    </form>
+  </div>
+</div>
+
 <div class="grille-photos grille-photos-preparation" id="grille-photos-preparation">
   {% for photo in photos_en_preparation %}
   <figure class="carte-photo carte-photo-preparation" data-photo-id="{{ photo.id }}" data-statut="{{ photo.statut }}">
@@ -625,6 +656,62 @@
       evenement.target.closest(".bloc-geotag").querySelector(".bouton-rechercher-ville").click();
     }
   });
+
+  // Recherche de ville pour le geotag applique en masse (carte "Appliquer a
+  // toutes les photos en preparation") - widget independant du geotag par
+  // photo ci-dessus, avec ses propres ids, pour ne pas declencher
+  // l'enregistrement automatique individuel.
+  const champRechercheMasse = document.getElementById("champ-recherche-ville-masse");
+  if (champRechercheMasse) {
+    const boutonRechercherMasse = document.getElementById("bouton-rechercher-ville-masse");
+    const resultatsMasse = document.getElementById("resultats-recherche-ville-masse");
+    const villeSelectionneeMasse = document.getElementById("ville-selectionnee-masse");
+    const texteVilleSelectionneeMasse = document.getElementById("texte-ville-selectionnee-masse");
+    const lienRetirerMasse = document.getElementById("lien-retirer-geotag-masse");
+    const champLatitudeMasse = document.getElementById("latitude-masse");
+    const champLongitudeMasse = document.getElementById("longitude-masse");
+
+    async function rechercherVilleMasse() {
+      if (!champRechercheMasse.value.trim()) return;
+      boutonRechercherMasse.disabled = true;
+      try {
+        const reponse = await fetch(`/geocodage?q=${encodeURIComponent(champRechercheMasse.value.trim())}`);
+        const donnees = await reponse.json();
+        const items = donnees.resultats || [];
+        resultatsMasse.innerHTML = items.length
+          ? items.map((r) => `<li><button type="button" class="bouton-resultat-ville-masse" data-lat="${r.latitude}" data-lng="${r.longitude}">${echapper(r.nom)}</button></li>`).join("")
+          : "<li class=\"texte-discret\">Aucun résultat.</li>";
+        resultatsMasse.hidden = false;
+      } finally {
+        boutonRechercherMasse.disabled = false;
+      }
+    }
+
+    boutonRechercherMasse.addEventListener("click", rechercherVilleMasse);
+    champRechercheMasse.addEventListener("keydown", (evenement) => {
+      if (evenement.key === "Enter") {
+        evenement.preventDefault();
+        rechercherVilleMasse();
+      }
+    });
+
+    resultatsMasse.addEventListener("click", (evenement) => {
+      const cible = evenement.target.closest(".bouton-resultat-ville-masse");
+      if (!cible) return;
+      champLatitudeMasse.value = cible.dataset.lat;
+      champLongitudeMasse.value = cible.dataset.lng;
+      texteVilleSelectionneeMasse.textContent = `${Number(cible.dataset.lat).toFixed(4)}, ${Number(cible.dataset.lng).toFixed(4)}`;
+      villeSelectionneeMasse.hidden = false;
+      resultatsMasse.hidden = true;
+      champRechercheMasse.value = "";
+    });
+
+    lienRetirerMasse.addEventListener("click", () => {
+      champLatitudeMasse.value = "";
+      champLongitudeMasse.value = "";
+      villeSelectionneeMasse.hidden = true;
+    });
+  }
 })();
 </script>
 
