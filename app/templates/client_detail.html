@@ -58,7 +58,15 @@
             <a href="/posts/{{ post.id }}" class="ligne-evenement-jour">
               <span class="pastille {{ 'pastille-offre' if post.type_post == 'OFFER' else 'pastille-publication' }} {% if post.statut != 'PUBLIE_LIVE' %}pastille-creuse{% endif %}"></span>
               <span>{{ post.titre or "(sans titre)" }}</span>
-              <span class="etiquette-statut etiquette-{{ post.statut|lower }}">{{ post.statut }}</span>
+              <span class="etiquette-statut etiquette-{{ post.statut|lower }}">
+                {% if post.statut == "A_PUBLIER" %}Programmé
+                {% elif post.statut == "BROUILLON" %}Brouillon
+                {% elif post.statut == "ECHEC_PUBLICATION" %}Échec
+                {% elif post.statut == "PUBLIE_LIVE" %}Publié
+                {% elif post.statut == "IGNORE" %}Rejeté
+                {% elif post.statut == "PUBLIE_REJECTED" %}Rejeté par Google
+                {% else %}{{ post.statut }}{% endif %}
+              </span>
             </a>
             {% endfor %}
             {% for photo in evenements.photos %}
@@ -439,7 +447,15 @@
   <li class="carte-post-revue" id="post-{{ post.id }}">
     <div class="ligne-post-titre">
       <strong>{{ post.titre }}</strong>
-      <span class="etiquette-statut etiquette-{{ post.statut|lower }}">{{ post.statut }}</span>
+      <span class="etiquette-statut etiquette-{{ post.statut|lower }}">
+        {% if post.statut == "A_PUBLIER" and post.date_prevue %}Programmé {{ post.date_prevue.strftime("%d/%m/%Y") }}
+        {% elif post.statut == "BROUILLON" %}Brouillon
+        {% elif post.statut == "ECHEC_PUBLICATION" %}Échec
+        {% elif post.statut == "PUBLIE_LIVE" %}Publié
+        {% elif post.statut == "IGNORE" %}Rejeté
+        {% elif post.statut == "PUBLIE_REJECTED" %}Rejeté par Google
+        {% else %}{{ post.statut }}{% endif %}
+      </span>
     </div>
     {% if post.image_url %}
     <img src="{{ post.image_url }}" alt="" class="apercu-image-post-revue">

@@ -12,7 +12,15 @@
     <a class="lien-post" href="/posts/{{ post.id }}">
       <div class="ligne-post-titre">
         <strong>{{ post.client.nom }}</strong>
-        <span class="etiquette-statut etiquette-{{ post.statut|lower }}" data-badge-statut>{{ post.statut }}</span>
+        <span class="etiquette-statut etiquette-{{ post.statut|lower }}" data-badge-statut>
+          {% if post.statut == "A_PUBLIER" and post.date_prevue %}Programmé {{ post.date_prevue.strftime("%d/%m/%Y") }}
+          {% elif post.statut == "BROUILLON" %}Brouillon
+          {% elif post.statut == "ECHEC_PUBLICATION" %}Échec
+          {% elif post.statut == "PUBLIE_LIVE" %}Publié
+          {% elif post.statut == "IGNORE" %}Rejeté
+          {% elif post.statut == "PUBLIE_REJECTED" %}Rejeté par Google
+          {% else %}{{ post.statut }}{% endif %}
+        </span>
       </div>
       <p class="apercu-texte">{{ post.texte[:180] }}{% if post.texte|length > 180 %}…{% endif %}</p>
     </a>
@@ -79,7 +87,7 @@
           erreurs.push(`${element.querySelector("strong").textContent} : erreur lors de la publication.`);
         } else {
           const badge = element.querySelector("[data-badge-statut]");
-          badge.textContent = "PUBLIE";
+          badge.textContent = "Publié";
         }
       } catch (e) {
         erreurs.push(`${element.querySelector("strong").textContent} : erreur réseau.`);
