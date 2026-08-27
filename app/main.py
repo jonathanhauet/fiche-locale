@@ -2202,46 +2202,6 @@ def fiche_client(client_id: int, request: Request, db: Session = Depends(obtenir
     return _reponse_fiche_client(request, client, db, infos=infos)
 
 
-@app.get("/clients/{client_id}/posts-en-ligne/debug-brut")
-def posts_en_ligne_debug_brut(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """
-    Diagnostic temporaire : renvoie la reponse BRUTE de l'API Google
-    (localPosts), sans le filtrage de champs fait par google_business.lister_posts,
-    pour comprendre pourquoi createTime semble incorrect sur certains posts
-    (ex : AMG Store 92) - a retirer une fois confirme.
-    """
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return redirection
-
-    client = db.get(models.Client, client_id)
-    if not client or not client.account_id or not client.location_id:
-        return JSONResponse({"erreur": "Ce client n'a pas de fiche Google associee."})
-
-    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-    if not identifiants:
-        return JSONResponse({"erreur": "Compte Google non valide pour ce client."})
-
-    try:
-        reponse = requests.get(
-            f"https://mybusiness.googleapis.com/v4/accounts/{client.account_id}/locations/{client.location_id}/localPosts",
-            headers={"Authorization": f"Bearer {identifiants.token}"},
-            params={"pageSize": 100},
-        )
-        reponse.raise_for_status()
-    except Exception as erreur:
-        return JSONResponse({"erreur": str(erreur)})
-
-    donnees = reponse.json()
-    tous = donnees.get("localPosts", [])
-    # Items complets et bruts (tous les champs, sans filtrage) pour les
-    # premiers posts "SCHEDULED" en priorite (potentiel champ de date de
-    # publication prevue non capture par google_business.lister_posts),
-    # sinon les tout premiers de la liste.
-    prioritaires = [p for p in tous if p.get("state") == "SCHEDULED"][:3] or tous[:3]
-    return JSONResponse({"client_nom": client.nom, "nombre_posts": len(tous), "exemples_bruts_complets": prioritaires})
-
-
 @app.post("/clients/{client_id}/fiche/modifier")
 async def modifier_fiche_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

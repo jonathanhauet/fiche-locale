@@ -148,7 +148,7 @@ def supprimer_photo_fiche_google(identifiants, nom_media: str) -> None:
 
 
 def lister_posts(identifiants, account_id: str, location_id: str):
-    """Renvoie les posts actuellement presents sur la fiche (Google les fait expirer au bout de 7 jours)."""
+    """Renvoie les posts actuellement presents sur la fiche (live ou encore programmes)."""
     url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/localPosts"
     resultats = []
     page_token = None
@@ -165,16 +165,22 @@ def lister_posts(identifiants, account_id: str, location_id: str):
 
         for item in donnees.get("localPosts", []):
             media = item.get("media") or []
-            cree_le = item.get("createTime", "")
+            # scheduledTime (date de publication reellement prevue/effective)
+            # est bien plus fiable que createTime : un outil tiers (ex. Localo)
+            # peut soumettre plusieurs posts a Google en quelques minutes tout
+            # en les programmant a des dates differentes - createTime ne
+            # refleterait alors que l'instant de soumission groupee, pas les
+            # vraies dates de publication etalees dans le temps.
+            date_pertinente = item.get("scheduledTime") or item.get("createTime", "")
             try:
-                date_affichee = datetime.fromisoformat(cree_le.replace("Z", "+00:00")).strftime("%d/%m/%Y %H:%M")
+                date_affichee = datetime.fromisoformat(date_pertinente.replace("Z", "+00:00")).strftime("%d/%m/%Y %H:%M")
             except ValueError:
-                date_affichee = cree_le
+                date_affichee = date_pertinente
             resultats.append({
                 "texte": item.get("summary", ""),
                 "etat": item.get("state", ""),
                 "date_creation": date_affichee,
-                "date_creation_brute": cree_le,
+                "date_creation_brute": date_pertinente,
                 "id_post_google": item.get("name", ""),
                 "url_image": media[0].get("googleUrl") if media else "",
                 "url_recherche": item.get("searchUrl", ""),
