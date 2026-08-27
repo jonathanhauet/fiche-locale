@@ -708,16 +708,24 @@ button:active { transform: translateY(1px); }
 
 /* ---------- Boutons ---------- */
 
-.bouton {
+/* Forme commune a toutes les variantes de bouton (y compris sur un <a>, qui
+   n'a pas de padding/box natif contrairement a <button> - sans cette regle
+   partagee, un lien avec juste .bouton-secondaire etc. rendait un petit
+   texte colle, sans les marges/coins arrondis des vrais boutons). */
+.bouton, .bouton-secondaire, .bouton-danger, .bouton-fantome, .bouton-publier {
   display: inline-flex;
   align-items: center;
-  background: var(--accent);
-  color: white;
   text-decoration: none;
   padding: 0.6rem 1.05rem;
   border-radius: var(--rayon-petit);
   font-weight: 600;
   font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.bouton {
+  background: var(--accent);
+  color: white;
 }
 
 .bouton:hover { background: var(--accent-fonce); }
