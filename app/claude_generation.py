@@ -119,7 +119,15 @@ def generer_posts_pour_client(contenu_site: str, nombre_posts: int) -> list[dict
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
     donnees = json.loads(bloc_texte)
-    return donnees["posts"]
+    posts = donnees["posts"]
+    for post in posts:
+        # Filet de securite : il est arrive que l'IA inverse les deux champs
+        # (le corps complet du post dans "titre", un mot-cle comme "texte")
+        # malgre les consignes - un titre nettement plus long que le texte
+        # trahit cette inversion.
+        if len(post["titre"]) > len(post["texte"]):
+            post["titre"], post["texte"] = post["texte"], post["titre"]
+    return posts
 
 
 SCHEMA_POST_UNIQUE = {

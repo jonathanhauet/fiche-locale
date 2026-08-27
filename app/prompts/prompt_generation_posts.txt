@@ -17,6 +17,7 @@ Tu peux intégrer un contexte saisonnier si c'est cohérent et naturel avec l'ac
 
 Format de sortie :
 
-Présente les posts directement dans la conversation, en texte clair, prêts à copier-coller.
-Pour chaque post, indique : un titre de repère, le corps du post.
+Chaque post est structuré en deux champs bien distincts, à ne jamais confondre ni inverser :
+- "titre" : un titre court (quelques mots), uniquement pour repérer le post dans une liste — il n'est jamais publié sur Google.
+- "texte" : le corps complet du post (1200-1400 caractères, voir contraintes ci-dessus) — c'est le seul texte réellement publié sur la fiche Google.
 Ne pose aucune question, rédige les posts immédiatement.
