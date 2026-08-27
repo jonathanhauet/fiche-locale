@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% set page_actuelle = "posts" %}
+{% block titre %}Posts générés en masse — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/posts">&larr; Retour à Posts multi-fiches</a></p>
+<h1>Posts générés ({{ groupes|length }})</h1>
+<p class="texte-discret">Chaque post ci-dessous sera publié sur {{ clients_du_groupe|length }} fiche{{ "s" if clients_du_groupe|length > 1 else "" }}. Ajustez l'image, la date et le bouton d'appel à l'action, puis validez pour programmer l'envoi — ou rejetez ceux que vous ne souhaitez pas utiliser.</p>
+
+{% if not groupes %}
+<p class="texte-vide">Aucun post à relire (lot introuvable ou déjà traité).</p>
+{% else %}
+<ul class="liste-posts">
+  {% for groupe in groupes %}
+  <li class="carte-post-revue" id="lot-{{ groupe.lot_id }}">
+    <div class="ligne-post-titre">
+      <strong>{{ groupe.titre }}</strong>
+      <span class="etiquette-statut etiquette-{{ groupe.statut|lower }}">
+        {% if groupe.statut == "A_PUBLIER" %}Programmé
+        {% elif groupe.statut == "BROUILLON" %}Brouillon
+        {% elif groupe.statut == "IGNORE" %}Rejeté
+        {% else %}{{ groupe.statut }}{% endif %}
+      </span>
+    </div>
+    <p class="texte-discret">{{ groupe.nb_fiches }} fiche{{ "s" if groupe.nb_fiches > 1 else "" }}</p>
+    {% if groupe.image_url %}
+    <img src="{{ groupe.image_url }}" alt="" class="apercu-image-post-revue">
+    {% endif %}
+    <p class="texte-complet-post">{{ groupe.texte }}</p>
+
+    {% if groupe.en_attente %}
+    {% if not groupe.image_url %}
+    <div class="ligne-actions-rapides actions-image-rapides">
+      {% if groupe.prompt_image %}
+      <form method="post" action="/posts/lot/{{ groupe.lot_id }}/generer_image_masse" class="formulaire-image-rapide">
+        <input type="hidden" name="lots_param" value="{{ lots_param }}">
+        <button type="submit" class="bouton-secondaire">🎨 Générer l'image (IA)</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/posts/lot/{{ groupe.lot_id }}/televerser_image_masse" enctype="multipart/form-data" class="formulaire-image-rapide">
+        <input type="hidden" name="lots_param" value="{{ lots_param }}">
+        <input type="file" name="fichier" accept="image/*" required>
+        <button type="submit" class="bouton-secondaire">Téléverser</button>
+      </form>
+    </div>
+    <details class="bloc-repliable">
+      <summary>Ou choisir une photo d'une fiche du groupe</summary>
+      <label>
+        Fiche
+        <select class="select-client-photos-lot" data-lot-id="{{ groupe.lot_id }}">
+          <option value="">— Choisir un client —</option>
+          {% for c in clients_du_groupe %}
+          <option value="{{ c.id }}">{{ c.nom }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="texte-vide texte-photos-lot-vide" data-lot-id="{{ groupe.lot_id }}" hidden>Aucune photo disponible sur cette fiche.</p>
+      <div class="grille-photos grille-photos-choix conteneur-photos-lot" data-lot-id="{{ groupe.lot_id }}"></div>
+      <form method="post" action="/posts/lot/{{ groupe.lot_id }}/choisir_image_fiche_masse" class="formulaire-image-fiche-lot" data-lot-id="{{ groupe.lot_id }}">
+        <input type="hidden" name="lots_param" value="{{ lots_param }}">
+        <input type="hidden" name="image_url" class="champ-image-url-lot">
+      </form>
+    </details>
+    {% endif %}
+    <form method="post" action="/posts/lot/{{ groupe.lot_id }}/statut_rapide_masse" class="formulaire-validation-rapide">
+      <input type="hidden" name="lots_param" value="{{ lots_param }}">
+      <details class="bloc-repliable">
+        <summary>Bouton d'appel à l'action (optionnel)</summary>
+        <div class="ligne-appel-action-rapide formulaire-ligne">
+          <select name="type_appel_action" class="select-appel-action-rapide">
+            {% for valeur, libelle in options_appel_action %}
+            <option value="{{ valeur }}">{{ libelle }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="url_appel_action" class="champ-url-appel-action-rapide" placeholder="https://...">
+          <p class="texte-discret texte-appel-telephone-rapide" hidden>Le numéro de chaque fiche sera utilisé automatiquement.</p>
+        </div>
+      </details>
+      <div class="choix-heure choix-heure-compact">
+        <div class="champ-date-personnalise" data-requis="1">
+          <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+          <input type="hidden" class="champ-date-valeur" name="date_prevue">
+        </div>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
+        <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
+      </div>
+      <div class="ligne-actions-rapides">
+        <button type="submit" name="statut" value="A_PUBLIER" class="bouton">✓ Valider et programmer sur {{ groupe.nb_fiches }} fiche{{ "s" if groupe.nb_fiches > 1 else "" }}</button>
+        <button type="submit" name="statut" value="IGNORE" class="bouton-danger" formnovalidate>✕ Rejeter pour tout le groupe</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="ligne-actions-rapides">
+      <span class="texte-discret">{{ "Programmé, en attente d'envoi." if groupe.statut == "A_PUBLIER" else "Rejeté." }}</span>
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<script src="/static/calendrier_champ.js"></script>
+<script>
+(function () {
+  document.querySelectorAll(".select-client-photos-lot").forEach((select) => {
+    const lotId = select.dataset.lotId;
+    const conteneur = document.querySelector(`.conteneur-photos-lot[data-lot-id="${lotId}"]`);
+    const texteVide = document.querySelector(`.texte-photos-lot-vide[data-lot-id="${lotId}"]`);
+    const formulaire = document.querySelector(`.formulaire-image-fiche-lot[data-lot-id="${lotId}"]`);
+    const champUrl = formulaire ? formulaire.querySelector(".champ-image-url-lot") : null;
+
+    select.addEventListener("change", async () => {
+      conteneur.innerHTML = "";
+      texteVide.hidden = true;
+      if (!select.value) return;
+      conteneur.innerHTML = '<p class="texte-discret">Chargement…</p>';
+      try {
+        const reponse = await fetch(`/posts/lots-generes/photos-client/${select.value}`);
+        const resultat = await reponse.json();
+        if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+        const photos = resultat.photos || [];
+        if (!photos.length) {
+          conteneur.innerHTML = "";
+          texteVide.hidden = false;
+          return;
+        }
+        conteneur.innerHTML = photos.map((photo, index) => `
+          <button type="button" class="carte-photo-choix" data-index="${index}">
+            <img src="${photo.miniature || photo.url}" data-secours="${photo.url}" class="image-fiche-photo" alt="${photo.categorie || 'Photo'}" onerror="if(this.src!==this.dataset.secours){this.src=this.dataset.secours}">
+            <span class="etiquette-categorie-photo">${photo.categorie || "Photo"}</span>
+          </button>
+        `).join("");
+        conteneur.querySelectorAll(".carte-photo-choix").forEach((bouton) => {
+          bouton.addEventListener("click", () => {
+            if (!champUrl) return;
+            champUrl.value = photos[Number(bouton.dataset.index)].url;
+            formulaire.requestSubmit();
+          });
+        });
+      } catch (erreur) {
+        conteneur.innerHTML = `<p class="message-erreur">${erreur.message}</p>`;
+      }
+    });
+  });
+
+  document.querySelectorAll(".select-appel-action-rapide").forEach((select) => {
+    const bloc = select.closest(".ligne-appel-action-rapide");
+    const champUrl = bloc.querySelector(".champ-url-appel-action-rapide");
+    const noteTelephone = bloc.querySelector(".texte-appel-telephone-rapide");
+    function actualiser() {
+      champUrl.hidden = select.value === "" || select.value === "CALL";
+      noteTelephone.hidden = select.value !== "CALL";
+    }
+    select.addEventListener("change", actualiser);
+    actualiser();
+  });
+})();
+</script>
+{% endblock %}

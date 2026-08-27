@@ -2,8 +2,7 @@
 {% set page_actuelle = "posts" %}
 {% block titre %}Posts multi-fiches — Fiche Locale{% endblock %}
 {% block contenu %}
-<h1>Publier un post sur plusieurs fiches</h1>
-<p class="texte-discret">Le même texte et la même image seront envoyés sur chaque fiche sélectionnée.</p>
+<h1>Publier des posts sur plusieurs fiches</h1>
 
 {% if erreur %}
 <p class="message-erreur">{{ erreur }}</p>
@@ -14,6 +13,56 @@
   Aucune étiquette pour l'instant. Ajoutez-en depuis la fiche d'un client ("Informations du client" → Étiquettes), puis revenez ici.
 </div>
 {% endif %}
+
+<details class="carte-ia" open>
+  <summary class="carte-ia-entete">
+    <span class="carte-ia-icone">✨</span>
+    <span class="carte-ia-libelles">
+      <span class="carte-ia-titre">Générer plusieurs posts et les publier tous</span>
+      <span class="carte-ia-sous-titre">L'IA rédige plusieurs posts différents à partir d'un thème ; chacun est publié sur toutes les fiches sélectionnées (pas un seul à choisir)</span>
+    </span>
+  </summary>
+  <div class="carte-ia-corps">
+    <form class="formulaire" method="post" action="/posts/generer_masse_et_creer_lots">
+      <div class="choix-image-bloc">
+        <span class="choix-image-titre">Destinataires</span>
+        {% if etiquettes %}
+        <div class="filtre-entreprises">
+          <span class="filtre-titre">Étiquettes :</span>
+          {% for etiquette in etiquettes %}
+          <label class="filtre-case">
+            <input type="checkbox" class="case-filtre-etiquette-masse" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+          </label>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div id="liste-clients-cibles-masse" class="liste-clients-cibles"></div>
+        <p id="texte-aucun-client-masse" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+        <p id="texte-compte-clients-masse" class="texte-discret" hidden></p>
+      </div>
+      <div class="carte-ia-ligne">
+        <input type="text" name="theme" placeholder="Ex : l'importance de répondre aux avis Google" required>
+        <input type="number" name="nombre_posts" value="5" min="1" max="10" style="width:4.5rem;" title="Nombre de posts à générer">
+      </div>
+      <label class="carte-ia-option">
+        Ou reprendre le contenu d'une fiche existante comme inspiration (les détails géographiques sont automatiquement retirés)
+        <select name="client_reference_id">
+          <option value="">— Aucune —</option>
+          {% for c in clients_reference %}
+          <option value="{{ c.id }}">{{ c.nom }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="texte-discret">Les posts sont créés sans image ni date — vous les choisirez sur la page suivante, pour chaque post généré.</p>
+      <div class="actions-avis">
+        <button type="submit" class="bouton">✨ Générer les posts</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+<h2>Ou publier un seul post rédigé à la main</h2>
+<p class="texte-discret">Le même texte et la même image seront envoyés sur chaque fiche sélectionnée.</p>
 
 <form class="formulaire" method="post" action="/posts/creer_multi" enctype="multipart/form-data">
   <div class="choix-image-bloc">
@@ -209,6 +258,32 @@
   }
 
   casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+
+  const casesEtiquettesMasse = Array.from(document.querySelectorAll(".case-filtre-etiquette-masse"));
+  const conteneurClientsMasse = document.getElementById("liste-clients-cibles-masse");
+  const texteAucunClientMasse = document.getElementById("texte-aucun-client-masse");
+  const texteCompteClientsMasse = document.getElementById("texte-compte-clients-masse");
+
+  function actualiserListeMasse() {
+    const etiquettesActives = casesEtiquettesMasse.filter((c) => c.checked).map((c) => Number(c.value));
+    if (!etiquettesActives.length) {
+      conteneurClientsMasse.innerHTML = "";
+      texteAucunClientMasse.hidden = false;
+      texteCompteClientsMasse.hidden = true;
+      return;
+    }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
+    texteAucunClientMasse.hidden = true;
+    texteCompteClientsMasse.hidden = false;
+    texteCompteClientsMasse.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    conteneurClientsMasse.innerHTML = correspondants.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      </label>
+    `).join("");
+  }
+
+  casesEtiquettesMasse.forEach((c) => c.addEventListener("change", actualiserListeMasse));
 
   const champTheme = document.getElementById("champ-theme-ia");
   const champNombrePostsIa = document.getElementById("champ-nombre-posts-ia");

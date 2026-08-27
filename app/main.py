@@ -1146,6 +1146,62 @@ def generer_posts_generiques_route(
     return JSONResponse({"posts": posts_generes})
 
 
+@app.post("/posts/generer_masse_et_creer_lots")
+async def generer_masse_et_creer_lots(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Genere plusieurs posts differents avec l'IA et cree un lot (un exemplaire
+    par client selectionne, voir creer_posts_multi) pour CHACUN - contrairement
+    a /posts/generer_generique_masse (une seule proposition choisie parmi
+    plusieurs), ici tous les posts generes sont bien crees et programmables.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    formulaire = await request.form()
+    theme = formulaire.get("theme", "").strip()
+    client_reference_id = formulaire.get("client_reference_id", "").strip()
+    try:
+        nombre_posts = int(formulaire.get("nombre_posts", "5"))
+    except ValueError:
+        nombre_posts = 5
+    client_ids = [int(v) for v in formulaire.getlist("client_ids") if v.strip()]
+
+    if not client_ids:
+        return _reponse_posts_multi(request, db, erreur="Selectionnez au moins un client.")
+
+    contenu_reference = ""
+    if client_reference_id:
+        client_reference = db.get(models.Client, int(client_reference_id))
+        if client_reference:
+            contenu_reference = _contexte_ia_client(client_reference)
+
+    try:
+        posts_generes = claude_generation.generer_posts_generiques(theme, contenu_reference, nombre_posts)
+    except Exception as erreur:
+        return _reponse_posts_multi(request, db, erreur=str(erreur))
+
+    clients_valides = [db.get(models.Client, cid) for cid in client_ids]
+    clients_valides = [c for c in clients_valides if c]
+
+    lot_ids = []
+    for post_genere in posts_generes:
+        lot_id = uuid.uuid4().hex[:12]
+        for client in clients_valides:
+            db.add(models.Post(
+                client_id=client.id,
+                titre=post_genere.get("titre", ""),
+                texte=post_genere.get("texte", ""),
+                prompt_image=post_genere.get("prompt_image", ""),
+                statut="BROUILLON",
+                lot_id=lot_id,
+            ))
+        lot_ids.append(lot_id)
+    db.commit()
+
+    return RedirectResponse(f"/posts/lots-generes?lots={','.join(lot_ids)}", status_code=303)
+
+
 @app.post("/posts/creer_multi")
 async def creer_posts_multi(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -1234,6 +1290,205 @@ def posts_lot(lot_id: str, request: Request, db: Session = Depends(obtenir_sessi
         return HTMLResponse("Lot introuvable.", status_code=404)
 
     return templates.TemplateResponse(request, "posts_lot.html", {"lot_id": lot_id, "posts": posts})
+
+
+@app.get("/posts/lots-generes", response_class=HTMLResponse)
+def lots_generes(request: Request, lots: str = "", db: Session = Depends(obtenir_session)):
+    """
+    Page de relecture apres /posts/generer_masse_et_creer_lots : un lot par
+    post genere, chacun avec sa propre image/date/heure/CTA a valider
+    independamment (les autres exemplaires du meme lot, un par client
+    selectionne, suivent automatiquement une fois le lot valide).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    lot_ids = [l.strip() for l in lots.split(",") if l.strip()]
+    groupes = []
+    ids_clients_du_groupe = set()
+    for lot_id in lot_ids:
+        posts = db.query(models.Post).filter(models.Post.lot_id == lot_id).all()
+        posts_brouillon = [p for p in posts if p.statut == "BROUILLON"]
+        if not posts:
+            continue
+        premier = posts[0]
+        groupes.append({
+            "lot_id": lot_id,
+            "titre": premier.titre,
+            "texte": premier.texte,
+            "prompt_image": premier.prompt_image,
+            "image_url": premier.image_url,
+            "statut": premier.statut,
+            "nb_fiches": len(posts),
+            "en_attente": len(posts_brouillon) > 0,
+        })
+        ids_clients_du_groupe.update(p.client_id for p in posts)
+
+    clients_du_groupe = (
+        db.query(models.Client)
+        .filter(models.Client.id.in_(ids_clients_du_groupe))
+        .order_by(models.Client.nom)
+        .all()
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "posts_lots_generes.html",
+        {
+            "lots_param": lots,
+            "groupes": groupes,
+            "clients_du_groupe": clients_du_groupe,
+            "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
+        },
+    )
+
+
+def _tous_posts_du_lot(db: Session, lot_id: str) -> list:
+    return db.query(models.Post).filter(models.Post.lot_id == lot_id).all()
+
+
+def _redirection_apres_action_lot(lot_id: str, lots_param: str) -> RedirectResponse:
+    parametres = lots_param if lots_param else lot_id
+    return RedirectResponse(f"/posts/lots-generes?lots={parametres}#lot-{lot_id}", status_code=303)
+
+
+@app.post("/posts/lot/{lot_id}/generer_image_masse")
+def generer_image_lot(
+    lot_id: str, request: Request, lots_param: str = Form(""), db: Session = Depends(obtenir_session)
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    posts = _tous_posts_du_lot(db, lot_id)
+    if not posts:
+        return HTMLResponse("Lot introuvable.", status_code=404)
+    if not posts[0].prompt_image.strip():
+        return HTMLResponse("Aucun prompt image renseigne pour ce lot.", status_code=400)
+
+    try:
+        octets_image = gemini_images.generer_image(posts[0].prompt_image)
+        horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nom_fichier = f"lot_{lot_id}_{horodatage}.png"
+        url_publique = ovh_upload.envoyer_octets(octets_image, nom_fichier)
+    except Exception as erreur:
+        return HTMLResponse(f"Erreur lors de la generation de l'image : {erreur}", status_code=500)
+
+    for post in posts:
+        post.image_url = url_publique
+    db.commit()
+
+    return _redirection_apres_action_lot(lot_id, lots_param)
+
+
+@app.post("/posts/lot/{lot_id}/televerser_image_masse")
+async def televerser_image_lot(
+    lot_id: str, request: Request, db: Session = Depends(obtenir_session)
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    formulaire = await request.form()
+    lots_param = formulaire.get("lots_param", "")
+    fichier = formulaire.get("fichier")
+
+    posts = _tous_posts_du_lot(db, lot_id)
+    if not posts:
+        return HTMLResponse("Lot introuvable.", status_code=404)
+    if fichier is None or not getattr(fichier, "filename", ""):
+        return HTMLResponse("Aucun fichier fourni.", status_code=400)
+
+    try:
+        octets = await fichier.read()
+        extension = os.path.splitext(fichier.filename)[1] or ".jpg"
+        horodatage = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        url_publique = ovh_upload.envoyer_octets(octets, f"lot_{lot_id}_{horodatage}{extension}")
+    except Exception as erreur:
+        return HTMLResponse(f"Erreur lors du televersement : {erreur}", status_code=500)
+
+    for post in posts:
+        post.image_url = url_publique
+    db.commit()
+
+    return _redirection_apres_action_lot(lot_id, lots_param)
+
+
+@app.post("/posts/lot/{lot_id}/choisir_image_fiche_masse")
+def choisir_image_fiche_lot(
+    lot_id: str, request: Request, image_url: str = Form(...), lots_param: str = Form(""),
+    db: Session = Depends(obtenir_session),
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    posts = _tous_posts_du_lot(db, lot_id)
+    if not posts:
+        return HTMLResponse("Lot introuvable.", status_code=404)
+
+    for post in posts:
+        post.image_url = image_url
+    db.commit()
+
+    return _redirection_apres_action_lot(lot_id, lots_param)
+
+
+@app.get("/posts/lots-generes/photos-client/{client_id}")
+def photos_client_pour_lot(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Chargement a la demande des photos d'UN client du groupe (JSON), pour eviter d'interroger l'API Google pour chaque client du groupe au chargement de la page."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    try:
+        photos = _photos_pour_client(db, client)
+    except Exception as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=500)
+
+    return JSONResponse({"photos": photos})
+
+
+@app.post("/posts/lot/{lot_id}/statut_rapide_masse")
+async def statut_rapide_lot(lot_id: str, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Equivalent, pour un lot genere en masse, de /posts/{post_id}/statut_rapide :
+    valide (avec date/heure/CTA) ou rejette d'un coup tous les exemplaires du
+    lot (un par client selectionne), sans passer par chaque post individuellement.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    posts = _tous_posts_du_lot(db, lot_id)
+    if not posts:
+        return HTMLResponse("Lot introuvable.", status_code=404)
+
+    formulaire = await request.form()
+    statut = formulaire.get("statut", "")
+    if statut not in ("A_PUBLIER", "IGNORE"):
+        return HTMLResponse("Statut invalide.", status_code=400)
+
+    for post in posts:
+        post.statut = statut
+        if statut == "A_PUBLIER":
+            date_prevue = formulaire.get("date_prevue", "")
+            post.date_prevue = date.fromisoformat(date_prevue) if date_prevue.strip() else None
+            post.heure_prevue = _heure_depuis_formulaire(formulaire)
+            type_appel_action = formulaire.get("type_appel_action", "")
+            post.type_appel_action = type_appel_action
+            post.url_appel_action = (
+                formulaire.get("url_appel_action", "").strip()
+                if type_appel_action and type_appel_action != "CALL"
+                else ""
+            )
+    db.commit()
+
+    return _redirection_apres_action_lot(lot_id, formulaire.get("lots_param", ""))
 
 
 @app.post("/posts/lot/{lot_id}/programmer")
