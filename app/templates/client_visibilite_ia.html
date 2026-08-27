@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Visibilité IA — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+<h1>Visibilité IA — {{ client.nom }}</h1>
+<p class="texte-discret">
+  Vérifie si {{ client.nom }} est cité par ChatGPT et Gemini en réponse à des questions de recherche locale
+  ("GEO" — visibilité dans les réponses IA — en complément du suivi de positions Google classique).
+  Les suggestions d'amélioration sont une estimation plausible de l'IA, pas une certitude sur son fonctionnement interne.
+</p>
+
+{% if not openai_configure or not gemini_configure %}
+<div class="bandeau-avertissement">
+  {% if not openai_configure %}OPENAI_API_KEY manquant dans .env.{% endif %}
+  {% if not gemini_configure %}GEMINI_API_KEY manquant dans .env.{% endif %}
+</div>
+{% endif %}
+
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Questions suivies</span>
+  {% if requetes %}
+  <div class="liste-etiquettes">
+    {% for requete in requetes %}
+    <form method="post" action="/clients/{{ client.id }}/visibilite-ia/requetes/{{ requete.id }}/supprimer" class="etiquette-supprimable" onsubmit="return confirm('Retirer cette question suivie ?');">
+      <span class="etiquette-chip">{{ requete.texte }}</span>
+      <button type="submit" class="lien-retirer-geotag" title="Retirer">×</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="texte-vide">Aucune question suivie pour l'instant.</p>
+  {% endif %}
+  <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/visibilite-ia/requetes">
+    <input type="text" name="texte" placeholder="Ex : meilleur serrurier à Ath" required>
+    <button type="submit" class="bouton-secondaire">Ajouter</button>
+  </form>
+</div>
+
+{% if requetes %}
+<div class="actions-avis">
+  <button type="button" id="bouton-verifier-visibilite" class="bouton">🔍 Vérifier maintenant ({{ requetes|length * modeles_disponibles|length }} appels)</button>
+</div>
+<div id="conteneur-progression-visibilite" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-visibilite" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-visibilite" class="texte-progression-avis"></span>
+</div>
+{% endif %}
+
+<h2>Derniers résultats</h2>
+<div id="conteneur-resultats-visibilite">
+  <p id="texte-vide-resultats-visibilite" class="texte-vide" {% if derniers_resultats %}hidden{% endif %}>
+    Aucune vérification effectuée pour l'instant.
+  </p>
+  <div class="conteneur-tableau" id="tableau-resultats-visibilite" {% if not derniers_resultats %}hidden{% endif %}>
+    <table class="tableau-historique">
+      <thead>
+        <tr>
+          <th>Question</th>
+          <th>Modèle</th>
+          <th>Cité ?</th>
+          <th>Concurrents cités</th>
+          <th>Suggestion</th>
+          <th>Vérifié le</th>
+        </tr>
+      </thead>
+      <tbody id="corps-tableau-resultats-visibilite"></tbody>
+    </table>
+  </div>
+</div>
+
+<script id="donnees-resultats-visibilite" type="application/json">{{ derniers_resultats_json|safe }}</script>
+<script id="donnees-requetes-visibilite" type="application/json">{{ requetes_json|safe }}</script>
+<script id="donnees-modeles-visibilite" type="application/json">{{ modeles_disponibles_json|safe }}</script>
+<script>
+(function () {
+  const modeles = JSON.parse(document.getElementById("donnees-modeles-visibilite").textContent);
+  const requetes = JSON.parse(document.getElementById("donnees-requetes-visibilite").textContent);
+  let resultats = new Map();
+  JSON.parse(document.getElementById("donnees-resultats-visibilite").textContent).forEach((r) => {
+    resultats.set(`${r.requete_texte}||${r.modele}`, r);
+  });
+
+  const bouton = document.getElementById("bouton-verifier-visibilite");
+  const conteneurProgression = document.getElementById("conteneur-progression-visibilite");
+  const barreProgression = document.getElementById("barre-progression-visibilite");
+  const texteProgression = document.getElementById("texte-progression-visibilite");
+  const corpsTableau = document.getElementById("corps-tableau-resultats-visibilite");
+  const tableauConteneur = document.getElementById("tableau-resultats-visibilite");
+  const texteVide = document.getElementById("texte-vide-resultats-visibilite");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function ligneHTML(r) {
+    const cite = r.erreur
+      ? `<span class="message-erreur">${echapper(r.erreur)}</span>`
+      : r.client_cite
+        ? `<span class="etiquette-statut etiquette-a_publier">Oui${r.position ? " (position " + r.position + ")" : ""}</span>`
+        : `<span class="etiquette-avertissement etiquette-danger">Non</span>`;
+    return `
+      <tr>
+        <td>${echapper(r.requete_texte)}</td>
+        <td>${modeles[r.modele] || echapper(r.modele)}</td>
+        <td>${cite}</td>
+        <td>${(r.concurrents_cites || []).map(echapper).join(", ") || "—"}</td>
+        <td>${echapper(r.suggestion) || "—"}</td>
+        <td>${echapper(r.cree_le)}</td>
+      </tr>`;
+  }
+
+  function afficherResultats() {
+    const lignes = Array.from(resultats.values());
+    corpsTableau.innerHTML = lignes.map(ligneHTML).join("");
+    tableauConteneur.hidden = lignes.length === 0;
+    texteVide.hidden = lignes.length > 0;
+  }
+
+  async function verifierUne(requeteId, modele) {
+    const donnees = new URLSearchParams({ requete_id: requeteId, modele });
+    const reponseHttp = await fetch("/clients/{{ client.id }}/visibilite-ia/verifier-une", { method: "POST", body: donnees });
+    const donneesReponse = await reponseHttp.json();
+    if (donneesReponse.resultat) {
+      resultats.set(`${donneesReponse.resultat.requete_texte}||${donneesReponse.resultat.modele}`, donneesReponse.resultat);
+    }
+  }
+
+  if (bouton) {
+    bouton.addEventListener("click", async () => {
+      const taches = [];
+      requetes.forEach((r) => Object.keys(modeles).forEach((m) => taches.push([r.id, m])));
+
+      bouton.disabled = true;
+      conteneurProgression.hidden = false;
+      barreProgression.style.width = "0%";
+      let termines = 0;
+      texteProgression.textContent = `0 / ${taches.length}`;
+
+      const CONCURRENCE = 2;
+      let curseur = 0;
+      async function traiterSuivant() {
+        while (curseur < taches.length) {
+          const [requeteId, modele] = taches[curseur++];
+          try {
+            await verifierUne(requeteId, modele);
+          } catch (erreur) {
+            // Erreur reseau : on continue les autres taches plutot que de tout arreter.
+          }
+          termines++;
+          barreProgression.style.width = `${Math.round((termines / taches.length) * 100)}%`;
+          texteProgression.textContent = `${termines} / ${taches.length}`;
+          afficherResultats();
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCE, taches.length) }, traiterSuivant));
+
+      conteneurProgression.hidden = true;
+      bouton.disabled = false;
+    });
+  }
+
+  afficherResultats();
+})();
+</script>
+{% endblock %}

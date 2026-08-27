@@ -83,6 +83,8 @@ class Client(Base):
     releves_position = relationship("ReleveDePosition", back_populates="client", cascade="all, delete-orphan")
     documents_connaissance = relationship("DocumentConnaissance", back_populates="client", cascade="all, delete-orphan")
     envois_recap = relationship("EnvoiRecap", back_populates="client", cascade="all, delete-orphan")
+    requetes_visibilite_ia = relationship("RequeteVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
+    resultats_visibilite_ia = relationship("ResultatVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
 
 
 class Post(Base):
@@ -221,6 +223,49 @@ class MotCle(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="mots_cles")
+
+
+class RequeteVisibiliteIA(Base):
+    """
+    Question suivie pour verifier si le client est cite par les IA
+    generatives (ChatGPT, Gemini) - equivalent de MotCle mais pour le
+    suivi de visibilite IA ("GEO") plutot que le classement Google
+    classique (voir rank_tracking.py).
+    """
+
+    __tablename__ = "requetes_visibilite_ia"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    texte = Column(String, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="requetes_visibilite_ia")
+
+
+class ResultatVisibiliteIA(Base):
+    """
+    Un releve de visibilite IA pour une requete donnee, sur un modele donne
+    (chatgpt/gemini), a une date donnee. La requete est copiee ici (comme
+    ReleveDePosition.mot_cle_texte) pour garder l'historique meme si la
+    requete suivie est supprimee ensuite.
+    """
+
+    __tablename__ = "resultats_visibilite_ia"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    requete_texte = Column(String, nullable=False)
+    modele = Column(String, nullable=False)  # "chatgpt" ou "gemini"
+    client_cite = Column(Boolean, default=False)
+    position = Column(Integer, nullable=True)  # rang approximatif si cite (1 = premier mentionne)
+    concurrents_cites = Column(Text, default="")  # JSON: liste de noms
+    suggestion = Column(Text, default="")
+    reponse_brute = Column(Text, default="")
+    erreur = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="resultats_visibilite_ia")
 
 
 class DocumentConnaissance(Base):

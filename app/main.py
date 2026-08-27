@@ -44,6 +44,7 @@ from . import (
     google_place_actions,
     google_publish,
     google_reviews,
+    ia_visibilite,
     models,
     ovh_upload,
     rank_tracking,
@@ -2577,6 +2578,139 @@ def envoyer_mots_cles_positions(
     db.commit()
 
     return RedirectResponse(f"/clients/{client_id}/positions", status_code=303)
+
+
+def _derniers_resultats_visibilite_ia(db: Session, client_id: int) -> list:
+    """Un seul resultat par (requete, modele) - le plus recent - pour l'affichage synthese."""
+    tous = (
+        db.query(models.ResultatVisibiliteIA)
+        .filter_by(client_id=client_id)
+        .order_by(models.ResultatVisibiliteIA.cree_le.desc())
+        .all()
+    )
+    derniers_par_cle = {}
+    for resultat in tous:
+        cle = (resultat.requete_texte, resultat.modele)
+        derniers_par_cle.setdefault(cle, resultat)
+    return list(derniers_par_cle.values())
+
+
+@app.get("/clients/{client_id}/visibilite-ia", response_class=HTMLResponse)
+def visibilite_ia_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    derniers_resultats = []
+    for resultat in _derniers_resultats_visibilite_ia(db, client_id):
+        derniers_resultats.append({
+            "requete_texte": resultat.requete_texte,
+            "modele": resultat.modele,
+            "client_cite": resultat.client_cite,
+            "position": resultat.position,
+            "concurrents_cites": json.loads(resultat.concurrents_cites or "[]"),
+            "suggestion": resultat.suggestion,
+            "erreur": resultat.erreur,
+            "cree_le": resultat.cree_le.strftime("%d/%m/%Y %H:%M"),
+        })
+
+    return templates.TemplateResponse(
+        request,
+        "client_visibilite_ia.html",
+        {
+            "client": client,
+            "requetes": client.requetes_visibilite_ia,
+            "requetes_json": json.dumps([{"id": r.id, "texte": r.texte} for r in client.requetes_visibilite_ia]).replace("</", "<\\/"),
+            "derniers_resultats_json": json.dumps(derniers_resultats).replace("</", "<\\/"),
+            "modeles_disponibles": ia_visibilite.MODELES_DISPONIBLES,
+            "modeles_disponibles_json": json.dumps(ia_visibilite.MODELES_DISPONIBLES).replace("</", "<\\/"),
+            "openai_configure": bool(ia_visibilite.CLE_OPENAI),
+            "gemini_configure": bool(ia_visibilite.CLE_GEMINI),
+        },
+    )
+
+
+@app.post("/clients/{client_id}/visibilite-ia/requetes")
+def ajouter_requete_visibilite_ia(
+    client_id: int, request: Request, texte: str = Form(...), db: Session = Depends(obtenir_session)
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    if texte.strip():
+        db.add(models.RequeteVisibiliteIA(client_id=client_id, texte=texte.strip()))
+        db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}/visibilite-ia", status_code=303)
+
+
+@app.post("/clients/{client_id}/visibilite-ia/requetes/{requete_id}/supprimer")
+def supprimer_requete_visibilite_ia(
+    client_id: int, requete_id: int, request: Request, db: Session = Depends(obtenir_session)
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    requete = db.get(models.RequeteVisibiliteIA, requete_id)
+    if requete and requete.client_id == client_id:
+        db.delete(requete)
+        db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}/visibilite-ia", status_code=303)
+
+
+@app.post("/clients/{client_id}/visibilite-ia/verifier-une")
+def verifier_une_visibilite_ia(
+    client_id: int, request: Request, requete_id: int = Form(...), modele: str = Form(...),
+    db: Session = Depends(obtenir_session),
+):
+    """
+    Verifie UNE requete sur UN modele et enregistre le resultat - appelee en
+    JS en boucle (une requete x deux modeles a la fois) pour permettre une
+    barre de progression reelle, comme /avis/suggerer en boucle sur la page Avis.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    requete = db.get(models.RequeteVisibiliteIA, requete_id)
+    if not client or not requete or requete.client_id != client_id or modele not in ia_visibilite.MODELES_DISPONIBLES:
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+
+    resultat = ia_visibilite.verifier_une_requete(client.nom, modele, requete.texte)
+
+    ligne = models.ResultatVisibiliteIA(
+        client_id=client_id,
+        requete_texte=requete.texte,
+        modele=modele,
+        client_cite=resultat["client_cite"],
+        position=resultat["position"],
+        concurrents_cites=json.dumps(resultat["concurrents_cites"]),
+        suggestion=resultat["suggestion"],
+        reponse_brute=resultat["reponse_brute"],
+        erreur=resultat["erreur"],
+    )
+    db.add(ligne)
+    db.commit()
+
+    return JSONResponse({
+        "resultat": {
+            "requete_texte": ligne.requete_texte,
+            "modele": ligne.modele,
+            "client_cite": ligne.client_cite,
+            "position": ligne.position,
+            "concurrents_cites": resultat["concurrents_cites"],
+            "suggestion": ligne.suggestion,
+            "erreur": ligne.erreur,
+            "cree_le": ligne.cree_le.strftime("%d/%m/%Y %H:%M"),
+        }
+    })
 
 
 @app.post("/clients/{client_id}/positions/releve/{releve_id}/supprimer")
