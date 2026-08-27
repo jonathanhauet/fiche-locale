@@ -84,7 +84,10 @@
     </label>
     <label>
       Date de publication prévue (laisser vide pour publier immédiatement)
-      <input type="date" name="date_prevue" id="champ-date-prevue" value="{{ post.date_prevue or '' }}">
+      <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}">
+        <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+        <input type="hidden" class="champ-date-valeur" name="date_prevue" id="champ-date-prevue" value="{{ post.date_prevue or '' }}">
+      </div>
     </label>
   </div>
 
@@ -118,7 +121,7 @@
     <div class="formulaire">
       <p class="texte-legende-apercu">Aperçu au format utilisé par Google pour les posts (4:3).</p>
       <div class="apercu-image-conteneur" {% if not post.image_url %}hidden{% endif %} id="apercu-image-conteneur">
-        <img id="apercu-image-principal" class="apercu-image" src="{{ post.image_url }}" alt="Image du post">
+        <img id="apercu-image-principal" class="apercu-image" src="{{ post.image_url or '' }}" alt="Image du post">
         <button type="button" id="bouton-retirer-image" class="bouton-retirer-image" title="Retirer l'image">×</button>
         <button type="button" id="bouton-recadrer-image" class="bouton-recadrer-image">🖉 Recadrer</button>
       </div>
@@ -462,4 +465,5 @@
   });
 })();
 </script>
+<script src="/static/calendrier_champ.js"></script>
 {% endblock %}

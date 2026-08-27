@@ -270,7 +270,10 @@
   <form class="formulaire-ligne formulaire-programmer-photos" method="post" action="/clients/{{ client.id }}/photos/programmer">
     <label>
       Première date
-      <input type="date" name="date_prevue" required>
+      <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
+        <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+        <input type="hidden" class="champ-date-valeur" name="date_prevue">
+      </div>
     </label>
     <label>
       Par lot de
@@ -409,7 +412,10 @@
           onsubmit="return confirm('Programmer les {{ brouillons|length }} brouillons avec des dates espacées ?');">
       <label>
         Première date
-        <input type="date" name="date_debut" required>
+        <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
+          <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+          <input type="hidden" class="champ-date-valeur" name="date_debut">
+        </div>
       </label>
       <label>
         Espacer de
@@ -475,7 +481,10 @@
     {% endif %}
     <form method="post" action="/posts/{{ post.id }}/statut_rapide" class="formulaire-validation-rapide">
       <div class="choix-heure choix-heure-compact">
-        <input type="date" name="date_prevue" required>
+        <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
+          <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+          <input type="hidden" class="champ-date-valeur" name="date_prevue">
+        </div>
         <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
         <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
         <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
@@ -800,4 +809,5 @@
   });
 })();
 </script>
+<script src="/static/calendrier_champ.js"></script>
 {% endblock %}

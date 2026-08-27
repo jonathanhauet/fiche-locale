@@ -1973,6 +1973,124 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .legende-item { display: flex; align-items: center; gap: 0.4rem; }
 
+/* ---------- Champ date personnalise (remplace <input type="date">) ---------- */
+
+.champ-date-personnalise { position: relative; }
+
+.champ-date-affichage { cursor: pointer; background: var(--fond); }
+.champ-date-affichage.champ-invalide { border-color: var(--danger); }
+
+.popup-calendrier-champ {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 250px;
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  padding: 0.7rem;
+}
+
+.popup-calendrier-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.popup-calendrier-nav {
+  background: none;
+  border: none;
+  color: var(--texte);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.2rem 0.5rem;
+  width: auto;
+}
+
+.popup-calendrier-jours-semaine, .popup-calendrier-grille {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.popup-calendrier-jours-semaine {
+  font-size: 0.68rem;
+  color: var(--texte-discret);
+  text-align: center;
+  margin-bottom: 0.2rem;
+}
+
+.popup-calendrier-grille { gap: 2px; }
+
+.popup-calendrier-jour {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--texte);
+  position: relative;
+  width: auto;
+  padding: 0;
+}
+
+.popup-calendrier-jour:hover { background: var(--fond); }
+.popup-calendrier-jour-hors-mois { color: var(--texte-discret); opacity: 0.4; }
+.popup-calendrier-jour-aujourdhui { box-shadow: inset 0 0 0 2px var(--accent); }
+.popup-calendrier-jour-selectionne { background: var(--accent); color: white; }
+
+.popup-calendrier-jour-occupe::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--attention);
+}
+
+.popup-calendrier-jour-selectionne.popup-calendrier-jour-occupe::after { background: white; }
+
+.popup-calendrier-pied {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--carte-bordure);
+}
+
+.popup-calendrier-legende {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--texte-discret);
+}
+
+.pastille-occupe { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--attention); }
+
+.popup-calendrier-effacer {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 0.72rem;
+  cursor: pointer;
+  width: auto;
+  padding: 0;
+}
+
 @media (max-width: 800px) {
   .disposition { flex-direction: column; }
   .barre-laterale {

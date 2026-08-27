@@ -1565,6 +1565,29 @@ def _contexte_ia_client(client: models.Client) -> str:
     return "\n\n".join(morceaux)
 
 
+def _jours_occupes_client(db: Session, client_id: int) -> str:
+    """
+    Toutes les dates (posts + photos) deja programmees ou publiees pour ce
+    client, en JSON (liste de "AAAA-MM-JJ") - utilise par le calendrier
+    personnalise (voir static/calendrier_champ.js) pour signaler visuellement
+    les jours deja occupes avant de choisir une nouvelle date.
+    """
+    dates_posts = (
+        db.query(models.Post.date_prevue)
+        .filter(models.Post.client_id == client_id, models.Post.date_prevue.isnot(None), models.Post.statut != "SUPPRIME")
+        .distinct()
+        .all()
+    )
+    dates_photos = (
+        db.query(models.PhotoFiche.date_prevue)
+        .filter(models.PhotoFiche.client_id == client_id, models.PhotoFiche.date_prevue.isnot(None), models.PhotoFiche.statut != "SUPPRIME")
+        .distinct()
+        .all()
+    )
+    toutes_dates = sorted({d.isoformat() for (d,) in dates_posts} | {d.isoformat() for (d,) in dates_photos})
+    return json.dumps(toutes_dates).replace("</", "<\\/")
+
+
 def _reponse_detail_client(
     request: Request, db: Session, client: models.Client, erreur_generation: str = None,
     erreur_photo: str = None, erreur_document: str = None, erreur_post_manuel: str = None, code: int = 200,
@@ -1600,6 +1623,7 @@ def _reponse_detail_client(
             "erreur_document": erreur_document,
             "erreur_post_manuel": erreur_post_manuel,
             "toutes_etiquettes_json": toutes_etiquettes_json,
+            "jours_occupes_json": _jours_occupes_client(db, client.id),
             **_donnees_calendrier(request, db, client),
         },
         status_code=code,
@@ -3485,6 +3509,7 @@ def _reponse_post_detail(request: Request, db: Session, post: models.Post, erreu
             "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
             "types_post": google_publish.TYPES_POST,
             "erreur": erreur,
+            "jours_occupes_json": _jours_occupes_client(db, post.client_id),
         },
         status_code=code,
     )
