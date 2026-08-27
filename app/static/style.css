@@ -1923,13 +1923,13 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .pastilles-jour {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0.35rem;
 }
 
 .pastille {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -1937,7 +1937,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .pastille-offre { background: var(--succes); }
 .pastille-publication { background: var(--accent); }
 .pastille-photo { background: var(--attention); }
-.pastille-creuse { background: none; border: 2px solid currentColor; width: 6px; height: 6px; }
+.pastille-creuse { background: none; border: 3px solid currentColor; width: 10px; height: 10px; }
 .pastille-creuse.pastille-offre { color: var(--succes); }
 .pastille-creuse.pastille-publication { color: var(--accent); }
 .pastille-creuse.pastille-photo { color: var(--attention); }
