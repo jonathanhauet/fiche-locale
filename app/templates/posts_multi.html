@@ -50,12 +50,13 @@
       <span class="carte-ia-icone">✨</span>
       <span class="carte-ia-libelles">
         <span class="carte-ia-titre">Générer le texte avec l'IA</span>
-        <span class="carte-ia-sous-titre">Décrivez un thème, l'IA rédige le post pour vous</span>
+        <span class="carte-ia-sous-titre">Décrivez un thème, l'IA rédige plusieurs propositions parmi lesquelles choisir</span>
       </span>
     </summary>
     <div class="carte-ia-corps">
       <div class="carte-ia-ligne">
         <input type="text" id="champ-theme-ia" placeholder="Ex : l'importance de répondre aux avis Google">
+        <input type="number" id="champ-nombre-posts-ia" value="5" min="1" max="10" style="width:4.5rem;" title="Nombre de propositions">
         <button type="button" id="bouton-generer-theme" class="bouton">✨ Générer</button>
       </div>
       <label class="carte-ia-option">
@@ -68,6 +69,7 @@
         </select>
       </label>
       <p id="erreur-generation-theme" class="message-erreur" hidden></p>
+      <div id="conteneur-propositions-ia" class="liste-propositions-ia" hidden></div>
     </div>
   </details>
 
@@ -209,27 +211,54 @@
   casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
 
   const champTheme = document.getElementById("champ-theme-ia");
+  const champNombrePostsIa = document.getElementById("champ-nombre-posts-ia");
   const selectClientReference = document.getElementById("select-client-reference");
   const boutonGenererTheme = document.getElementById("bouton-generer-theme");
   const erreurGenerationTheme = document.getElementById("erreur-generation-theme");
+  const conteneurPropositions = document.getElementById("conteneur-propositions-ia");
+
+  function echapperTexte(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function afficherPropositions(posts) {
+    conteneurPropositions.innerHTML = posts.map((post, index) => `
+      <button type="button" class="carte-proposition-ia" data-index="${index}">
+        <strong>${echapperTexte(post.titre)}</strong>
+        <p>${echapperTexte((post.texte || "").slice(0, 220))}${(post.texte || "").length > 220 ? "…" : ""}</p>
+      </button>
+    `).join("");
+    conteneurPropositions.hidden = posts.length === 0;
+    conteneurPropositions.querySelectorAll(".carte-proposition-ia").forEach((bouton) => {
+      bouton.addEventListener("click", () => {
+        const post = posts[Number(bouton.dataset.index)];
+        document.querySelector('input[name=titre]').value = post.titre || "";
+        document.querySelector('textarea[name=texte]').value = post.texte || "";
+        document.querySelector('textarea[name=prompt_image]').value = post.prompt_image || "";
+        conteneurPropositions.hidden = true;
+      });
+    });
+  }
 
   boutonGenererTheme.addEventListener("click", async () => {
     if (!champTheme.value.trim() && !selectClientReference.value) return;
     erreurGenerationTheme.hidden = true;
+    conteneurPropositions.hidden = true;
     boutonGenererTheme.disabled = true;
     try {
-      const reponse = await fetch("/posts/generer_generique", {
+      const reponse = await fetch("/posts/generer_generique_masse", {
         method: "POST",
         body: new URLSearchParams({
           theme: champTheme.value.trim(),
           client_reference_id: selectClientReference.value,
+          nombre_posts: champNombrePostsIa.value || "5",
         }),
       });
       const resultat = await reponse.json();
       if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
-      document.querySelector('input[name=titre]').value = resultat.titre || "";
-      document.querySelector('textarea[name=texte]').value = resultat.texte || "";
-      document.querySelector('textarea[name=prompt_image]').value = resultat.prompt_image || "";
+      afficherPropositions(resultat.posts || []);
     } catch (erreur) {
       erreurGenerationTheme.textContent = erreur.message;
       erreurGenerationTheme.hidden = false;

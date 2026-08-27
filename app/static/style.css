@@ -674,6 +674,38 @@ button:active { transform: translateY(1px); }
 
 .carte-ia-option select { background: var(--carte); }
 
+.liste-propositions-ia {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.carte-proposition-ia {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  background: var(--carte);
+  color: inherit;
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  cursor: pointer;
+  font: inherit;
+}
+
+.carte-proposition-ia:hover { border-color: var(--accent); }
+
+.carte-proposition-ia strong { display: block; margin-bottom: 0.25rem; }
+
+.carte-proposition-ia p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--texte-discret);
+  white-space: pre-wrap;
+}
+
 /* ---------- Boutons ---------- */
 
 .bouton {

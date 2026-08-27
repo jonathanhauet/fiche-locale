@@ -1120,6 +1120,32 @@ def generer_post_generique_route(
     return JSONResponse(post_genere)
 
 
+@app.post("/posts/generer_generique_masse")
+def generer_posts_generiques_route(
+    request: Request,
+    theme: str = Form(""),
+    client_reference_id: str = Form(""),
+    nombre_posts: int = Form(5),
+    db: Session = Depends(obtenir_session),
+):
+    """Variante en lot de /posts/generer_generique : plusieurs propositions parmi lesquelles choisir."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+
+    contenu_reference = ""
+    if client_reference_id.strip():
+        client_reference = db.get(models.Client, int(client_reference_id))
+        if client_reference:
+            contenu_reference = _contexte_ia_client(client_reference)
+
+    try:
+        posts_generes = claude_generation.generer_posts_generiques(theme, contenu_reference, nombre_posts)
+    except Exception as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=500)
+
+    return JSONResponse({"posts": posts_generes})
+
+
 @app.post("/posts/creer_multi")
 async def creer_posts_multi(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

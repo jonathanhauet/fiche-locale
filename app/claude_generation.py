@@ -134,6 +134,18 @@ SCHEMA_POST_UNIQUE = {
 }
 
 
+def _blocs_theme_et_reference(theme: str, contenu_site_reference: str) -> tuple[str, str]:
+    bloc_theme = f"\nTheme demande :\n« {theme.strip()} »\n" if theme.strip() else ""
+    bloc_reference = (
+        "\nContenu du site d'une fiche existante, fourni comme source d'inspiration "
+        "pour le fond uniquement (expertise, ton, type de conseils) — jamais pour des "
+        "details geographiques ou le nom de l'entreprise :\n"
+        f"{contenu_site_reference.strip()}\n"
+        if contenu_site_reference.strip() else ""
+    )
+    return bloc_theme, bloc_reference
+
+
 def generer_post_generique(theme: str = "", contenu_site_reference: str = "") -> dict:
     """
     Genere un post unique destine a etre publie tel quel sur plusieurs fiches a la
@@ -148,14 +160,7 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     if not theme.strip() and not contenu_site_reference.strip():
         raise RuntimeError("Fournissez un theme ou une fiche de reference.")
 
-    bloc_theme = f"\nTheme demande :\n« {theme.strip()} »\n" if theme.strip() else ""
-    bloc_reference = (
-        "\nContenu du site d'une fiche existante, fourni comme source d'inspiration "
-        "pour le fond uniquement (expertise, ton, type de conseils) — jamais pour des "
-        "details geographiques ou le nom de l'entreprise :\n"
-        f"{contenu_site_reference.strip()}\n"
-        if contenu_site_reference.strip() else ""
-    )
+    bloc_theme, bloc_reference = _blocs_theme_et_reference(theme, contenu_site_reference)
 
     prompt = (
         "Tu rediges un post Google Business Profile (Google Posts) destine a etre publie "
@@ -188,6 +193,56 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
     return json.loads(bloc_texte)
+
+
+def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", nombre_posts: int = 5) -> list[dict]:
+    """
+    Variante de generer_post_generique() qui produit plusieurs propositions
+    differentes en un seul appel (page "Posts en masse" : Jonathan choisit
+    ensuite celle qu'il prefere), plutot qu'une seule redaction imposee -
+    meme logique de neutralite geographique que la version unique.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not theme.strip() and not contenu_site_reference.strip():
+        raise RuntimeError("Fournissez un theme ou une fiche de reference.")
+
+    bloc_theme, bloc_reference = _blocs_theme_et_reference(theme, contenu_site_reference)
+
+    prompt = (
+        f"Redige {nombre_posts} propositions DIFFERENTES de post Google Business Profile "
+        "(Google Posts), chacune destinee a etre publiee telle quelle sur plusieurs fiches "
+        "d'etablissements differents, potentiellement situes dans des villes ou regions "
+        "differentes (pas un seul client precis).\n"
+        f"{bloc_theme}"
+        f"{bloc_reference}\n"
+        "Consignes :\n"
+        "- Reste generique et geographiquement neutre : n'inclus AUCUN nom de ville, region, "
+        "adresse ou reference locale, meme si la source d'inspiration en contient. N'invente "
+        "aucun detail specifique a une entreprise en particulier (pas de nom d'entreprise, "
+        "pas d'offre commerciale precise).\n"
+        "- Chaque proposition doit traiter le theme sous un angle different (accroche, conseil "
+        "pratique, question, chiffre-cle, temoignage generique...), pour offrir un vrai choix.\n"
+        "- Ton professionnel, clair, engageant. Pas de jargon inutile.\n"
+        "- Longueur adaptee a un Google Post (quelques phrases, pas un roman).\n"
+        "- Pour chaque proposition, redige aussi un titre court et un prompt en anglais pour un "
+        "generateur d'images (illustration adaptee au theme, sans texte incruste ni logo, sans "
+        "reference geographique)."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=8192,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_REPONSE}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    return json.loads(bloc_texte)["posts"]
 
 
 def suggerer_reponse_avis(
