@@ -55,9 +55,11 @@
           </summary>
           <div class="panneau-jour">
             {% for post in evenements.posts %}
-            <a href="/posts/{{ post.id }}" class="ligne-evenement-jour">
+            <a href="{{ post.url_recherche if post.hors_plateforme else '/posts/' ~ post.id }}"
+               {% if post.hors_plateforme %}target="_blank" rel="noopener"{% endif %}
+               class="ligne-evenement-jour">
               <span class="pastille {{ 'pastille-offre' if post.type_post == 'OFFER' else 'pastille-publication' }} {% if post.statut != 'PUBLIE_LIVE' %}pastille-creuse{% endif %}"></span>
-              <span>{{ post.titre or "(sans titre)" }}</span>
+              <span>{{ post.titre or "(sans titre)" }}{% if post.hors_plateforme %} <span class="texte-discret">(hors plateforme)</span>{% endif %}</span>
               <span class="etiquette-statut etiquette-{{ post.statut|lower }}">
                 {% if post.statut == "A_PUBLIER" %}Programmé
                 {% elif post.statut == "BROUILLON" %}Brouillon

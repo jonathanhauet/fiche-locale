@@ -11,6 +11,7 @@ import json
 import os
 import uuid
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -588,8 +589,24 @@ LIBELLES_MOIS = {
 }
 
 
-def _donnees_calendrier(request: Request, db: Session, client: models.Client) -> dict:
-    """Grille du mois (calendrier de contenu, affiche directement sur la fiche client)."""
+def _parser_date_iso_calendrier(chaine: str):
+    if not chaine:
+        return None
+    try:
+        return datetime.fromisoformat(chaine.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def _donnees_calendrier(request: Request, db: Session, client: models.Client, posts_en_ligne: list = None) -> dict:
+    """
+    Grille du mois (calendrier de contenu, affiche directement sur la fiche
+    client). posts_en_ligne (voir _posts_en_ligne_pour_client, sans limite) :
+    complete la grille avec les posts publies directement sur Google (hors
+    plateforme), pour ne pas les rendre invisibles ici - Google ne les garde
+    accessibles par l'API qu'environ 7 jours, donc uniquement pertinent pour
+    le mois courant/recent.
+    """
     aujourdhui = date.today()
     try:
         annee = int(request.query_params.get("annee", aujourdhui.year))
@@ -622,6 +639,29 @@ def _donnees_calendrier(request: Request, db: Session, client: models.Client) ->
         )
         .all()
     )
+
+    if posts_en_ligne:
+        ids_deja_suivis = {
+            id_google for (id_google,) in db.query(models.Post.id_post_google)
+            .filter(models.Post.client_id == client.id, models.Post.id_post_google.isnot(None))
+            .all()
+            if id_google
+        }
+        for post_google in posts_en_ligne:
+            if post_google.get("id_post_google") in ids_deja_suivis:
+                continue
+            jour = _parser_date_iso_calendrier(post_google.get("date_creation_brute", ""))
+            if not jour or not (premier_jour_grille <= jour <= dernier_jour_grille):
+                continue
+            posts.append(SimpleNamespace(
+                id=None,
+                titre=(post_google.get("texte", "").strip()[:80] or "(sans titre)"),
+                type_post="STANDARD",
+                statut="PUBLIE_LIVE",
+                date_prevue=jour,
+                url_recherche=post_google.get("url_recherche", ""),
+                hors_plateforme=True,
+            ))
 
     evenements_par_jour = {}
     for post in posts:
@@ -1605,13 +1645,14 @@ def _reponse_detail_client(
         .all()
     )
     toutes_etiquettes_json = _toutes_etiquettes_json(db)
+    tous_posts_en_ligne = _posts_en_ligne_pour_client(db, client)
     return templates.TemplateResponse(
         request,
         "client_detail.html",
         {
             "client": client,
             "posts": posts,
-            "posts_en_ligne": _posts_en_ligne_pour_client(db, client),
+            "posts_en_ligne": tous_posts_en_ligne[:5],
             "erreur_generation": erreur_generation,
             "photos": _photos_pour_client(db, client),
             "photos_en_preparation": photos_en_preparation,
@@ -1624,7 +1665,7 @@ def _reponse_detail_client(
             "erreur_post_manuel": erreur_post_manuel,
             "toutes_etiquettes_json": toutes_etiquettes_json,
             "jours_occupes_json": _jours_occupes_client(db, client.id),
-            **_donnees_calendrier(request, db, client),
+            **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
     )
@@ -3477,10 +3518,12 @@ def _photos_pour_client(db: Session, client: models.Client):
     return photos
 
 
-def _posts_en_ligne_pour_client(db: Session, client: models.Client, limite: int = 5) -> list:
+def _posts_en_ligne_pour_client(db: Session, client: models.Client, limite: int = None) -> list:
     """
-    Les derniers posts reellement presents sur la fiche Google (lecture directe,
-    pas seulement ceux publies via cette plateforme - voir google_business.lister_posts).
+    Les posts reellement presents sur la fiche Google (lecture directe, pas
+    seulement ceux publies via cette plateforme - voir google_business.lister_posts).
+    Google fait expirer ces posts de son API au bout d'environ 7 jours : cette
+    liste ne remonte donc pas plus loin, meme sans limite explicite.
     """
     if not client.account_id or not client.location_id:
         return []
@@ -3492,7 +3535,7 @@ def _posts_en_ligne_pour_client(db: Session, client: models.Client, limite: int 
     except Exception:
         return []
     posts.sort(key=lambda p: p.get("date_creation_brute", ""), reverse=True)
-    return posts[:limite]
+    return posts[:limite] if limite else posts
 
 
 def _photos_pour_post(db: Session, post: models.Post):
