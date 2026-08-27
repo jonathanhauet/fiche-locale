@@ -63,7 +63,7 @@ SCHEMA_REPONSE = {
 }
 
 
-def _construire_prompt(contenu_site: str, nombre_posts: int) -> str:
+def _construire_prompt(contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None) -> str:
     with open(FICHIER_PROMPT, "r", encoding="utf-8") as f:
         gabarit_prompt = f.read()
 
@@ -83,6 +83,16 @@ def _construire_prompt(contenu_site: str, nombre_posts: int) -> str:
         f"une fete ou un evenement temporel, base-toi exclusivement sur cette periode-la."
     )
 
+    instruction_deja_traites = ""
+    if sujets_deja_traites:
+        liste = "\n".join(f"- {s}" for s in sujets_deja_traites)
+        instruction_deja_traites = (
+            "\n\n---\n\n"
+            "Posts deja generes precedemment pour cette entreprise (sujet et angle) - "
+            f"ne repete AUCUN de ces sujets ni angles, chaque nouveau post doit apporter "
+            f"quelque chose de reellement nouveau :\n{liste}"
+        )
+
     return (
         "Voici le contenu du site web de l'entreprise (base de connaissance) :\n\n"
         f"{contenu_site}\n\n"
@@ -90,20 +100,26 @@ def _construire_prompt(contenu_site: str, nombre_posts: int) -> str:
         f"{instructions}"
         f"{instruction_prompt_image}"
         f"{instruction_periode}"
+        f"{instruction_deja_traites}"
     )
 
 
-def generer_posts_pour_client(contenu_site: str, nombre_posts: int) -> list[dict]:
+def generer_posts_pour_client(
+    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None
+) -> list[dict]:
     """
     Appelle l'API Claude et renvoie une liste de dictionnaires :
     [{"titre": str, "texte": str, "prompt_image": str}, ...]
+    sujets_deja_traites : sujets des posts precedents de ce client, pour que
+    l'IA evite de repeter les memes themes d'une generation a l'autre (voir
+    _sujets_deja_traites_client dans main.py).
     """
     if not CLE_API:
         raise RuntimeError(
             "ANTHROPIC_API_KEY manquant dans plateforme_web/.env."
         )
 
-    prompt_complet = _construire_prompt(contenu_site, nombre_posts)
+    prompt_complet = _construire_prompt(contenu_site, nombre_posts, sujets_deja_traites)
 
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(

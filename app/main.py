@@ -1872,6 +1872,24 @@ async def creer_clients_masse(request: Request, db: Session = Depends(obtenir_se
     )
 
 
+def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -> list[str]:
+    """
+    Titre + debut du texte des posts deja generes pour ce client (tous statuts
+    sauf SUPPRIME), les plus recents d'abord - fourni a l'IA pour qu'elle
+    evite de reprendre les memes sujets d'un mois sur l'autre (voir
+    generer_posts_pour_client). Limite a 40 pour ne pas alourdir le prompt sur
+    un client avec un long historique.
+    """
+    posts = (
+        db.query(models.Post)
+        .filter(models.Post.client_id == client_id, models.Post.statut != "SUPPRIME")
+        .order_by(models.Post.cree_le.desc())
+        .limit(limite)
+        .all()
+    )
+    return [f"{post.titre} — {post.texte[:150].strip()}" for post in posts if post.texte.strip()]
+
+
 def _contexte_ia_client(client: models.Client) -> str:
     """
     Contexte complet fourni a l'IA pour ce client : le champ libre
@@ -1988,7 +2006,9 @@ def generer_posts_client(
         return HTMLResponse("Client introuvable.", status_code=404)
 
     try:
-        posts_generes = claude_generation.generer_posts_pour_client(_contexte_ia_client(client), nombre_posts)
+        posts_generes = claude_generation.generer_posts_pour_client(
+            _contexte_ia_client(client), nombre_posts, _sujets_deja_traites_client(db, client.id)
+        )
     except Exception as erreur:
         return _reponse_detail_client(request, db, client, erreur_generation=str(erreur), code=500)
 
