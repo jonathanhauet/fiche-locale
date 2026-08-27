@@ -97,7 +97,9 @@ class Post(Base):
     image_url = Column(String, default="")
     prompt_image = Column(Text, default="")
     # "", BOOK, CALL, LEARN_MORE, ORDER, SHOP, SIGN_UP (bouton "appel a l'action" Google)
-    type_appel_action = Column(String, default="")
+    # CALL par defaut : Jonathan le laisse tel quel la plupart du temps et le
+    # change manuellement au besoin plutot que de le selectionner a chaque post.
+    type_appel_action = Column(String, default="CALL")
     url_appel_action = Column(String, default="")
     # STANDARD, EVENT, OFFER (format du post Google)
     type_post = Column(String, default="STANDARD")

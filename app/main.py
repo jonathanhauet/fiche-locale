@@ -1076,7 +1076,7 @@ def _reponse_posts_multi(request: Request, db: Session, erreur: str = None, vale
             "erreur": erreur,
             "valeurs": valeurs or {
                 "titre": "", "texte": "", "prompt_image": "", "image_url": "",
-                "type_appel_action": "", "url_appel_action": "",
+                "type_appel_action": "CALL", "url_appel_action": "",
                 "type_post": "STANDARD", "evenement_titre": "",
                 "evenement_date_debut": "", "evenement_heure_debut": "",
                 "evenement_date_fin": "", "evenement_heure_fin": "",

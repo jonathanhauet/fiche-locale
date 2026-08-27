@@ -503,7 +503,7 @@
         <div class="ligne-appel-action-rapide formulaire-ligne">
           <select name="type_appel_action" class="select-appel-action-rapide">
             {% for valeur, libelle in options_appel_action %}
-            <option value="{{ valeur }}">{{ libelle }}</option>
+            <option value="{{ valeur }}" {% if valeur == "CALL" %}selected{% endif %}>{{ libelle }}</option>
             {% endfor %}
           </select>
           <input type="text" name="url_appel_action" class="champ-url-appel-action-rapide" placeholder="https://...">
