@@ -354,15 +354,25 @@
     {% if erreur_generation %}
     <p class="message-erreur">Erreur lors de la génération : {{ erreur_generation }}</p>
     {% endif %}
-    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/generer">
+    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/generer" id="formulaire-generation-posts-ia">
       <label>
         Nombre de posts
-        <input type="number" name="nombre_posts" value="7" min="1" max="20">
+        <input type="number" name="nombre_posts" id="champ-nombre-posts-generation" value="7" min="1" max="20">
       </label>
       <button type="submit" class="bouton">✨ Générer</button>
     </form>
+    <div id="progression-generation-posts" class="conteneur-progression-avis" hidden>
+      <div class="barre-progression-fond"><div class="barre-progression-remplissage"></div></div>
+      <span class="texte-progression-avis"></span>
+    </div>
   </div>
 </div>
+<script>
+document.getElementById("formulaire-generation-posts-ia").addEventListener("submit", () => {
+  const nombrePosts = Number(document.getElementById("champ-nombre-posts-generation").value) || 7;
+  demarrerProgressionEstimee("progression-generation-posts", 8 + nombrePosts * 6);
+});
+</script>
 
 <details class="bloc-repliable">
   <summary>Écrire un post soi-même (sans IA)</summary>

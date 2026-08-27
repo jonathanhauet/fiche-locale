@@ -42,7 +42,7 @@
       </div>
       <div class="carte-ia-ligne">
         <input type="text" name="theme" id="champ-theme-masse" placeholder="Ex : l'importance de répondre aux avis Google">
-        <input type="number" name="nombre_posts" value="5" min="1" max="10" style="width:4.5rem;" title="Nombre de posts à générer">
+        <input type="number" name="nombre_posts" id="champ-nombre-posts-masse" value="5" min="1" max="10" style="width:4.5rem;" title="Nombre de posts à générer">
       </div>
       <label class="carte-ia-option">
         Ou reprendre le contenu d'une fiche existante comme inspiration (les détails géographiques sont automatiquement retirés)
@@ -58,6 +58,10 @@
         <button type="submit" class="bouton">✨ Générer les posts</button>
       </div>
     </form>
+    <div id="progression-generation-masse" class="conteneur-progression-avis" hidden>
+      <div class="barre-progression-fond"><div class="barre-progression-remplissage"></div></div>
+      <span class="texte-progression-avis"></span>
+    </div>
   </div>
 </details>
 
@@ -293,7 +297,10 @@
       evenement.preventDefault();
       champThemeMasse.setCustomValidity("Indiquez un thème ou choisissez une fiche de référence ci-dessous.");
       champThemeMasse.reportValidity();
+      return;
     }
+    const nombrePosts = Number(document.getElementById("champ-nombre-posts-masse").value) || 5;
+    demarrerProgressionEstimee("progression-generation-masse", 8 + nombrePosts * 6);
   });
   champThemeMasse.addEventListener("input", () => champThemeMasse.setCustomValidity(""));
   selectReferenceMasse.addEventListener("change", () => champThemeMasse.setCustomValidity(""));

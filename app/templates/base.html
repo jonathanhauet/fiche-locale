@@ -137,6 +137,32 @@
     });
   </script>
   <script>
+    // Barre de progression estimee pour les appels IA longs (generation de
+    // posts...) : la duree reelle depend du nombre d'elements demandes et
+    // n'est pas connue a l'avance (une seule requete bloquante, pas de flux
+    // de progression reel cote serveur), donc on affiche une estimation qui
+    // avance jusqu'a ~92% au temps prevu puis ralentit, plutot que de laisser
+    // "En cours..." sans aucune indication de duree.
+    window.demarrerProgressionEstimee = function (conteneurId, dureeSecondesEstimee) {
+      const conteneur = document.getElementById(conteneurId);
+      if (!conteneur) return;
+      conteneur.hidden = false;
+      const remplissage = conteneur.querySelector(".barre-progression-remplissage");
+      const texte = conteneur.querySelector(".texte-progression-avis");
+      const debut = Date.now();
+      setInterval(() => {
+        const ecoule = (Date.now() - debut) / 1000;
+        const ratio = ecoule / dureeSecondesEstimee;
+        const pourcentage = ratio < 1 ? ratio * 92 : Math.min(92 + (ratio - 1) * 3, 97);
+        remplissage.style.width = pourcentage + "%";
+        const restant = Math.max(Math.round(dureeSecondesEstimee - ecoule), 0);
+        texte.textContent = restant > 0
+          ? `Environ ${restant}s restantes...`
+          : "Ça prend un peu plus longtemps que prévu, presque fini...";
+      }, 300);
+    };
+  </script>
+  <script>
     // Recherche rapide d'un client depuis n'importe quelle page (barre laterale).
     (function () {
       const champ = document.getElementById("champ-recherche-globale-clients");
