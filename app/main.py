@@ -1605,12 +1605,14 @@ def _contexte_ia_client(client: models.Client) -> str:
     return "\n\n".join(morceaux)
 
 
-def _jours_occupes_client(db: Session, client_id: int) -> str:
+def _jours_occupes_client(db: Session, client_id: int, posts_en_ligne: list = None) -> str:
     """
     Toutes les dates (posts + photos) deja programmees ou publiees pour ce
     client, en JSON (liste de "AAAA-MM-JJ") - utilise par le calendrier
     personnalise (voir static/calendrier_champ.js) pour signaler visuellement
-    les jours deja occupes avant de choisir une nouvelle date.
+    les jours deja occupes avant de choisir une nouvelle date. posts_en_ligne
+    (voir _posts_en_ligne_pour_client) : inclut aussi les posts publies
+    directement sur Google, hors plateforme - sinon invisibles ici.
     """
     dates_posts = (
         db.query(models.Post.date_prevue)
@@ -1624,8 +1626,12 @@ def _jours_occupes_client(db: Session, client_id: int) -> str:
         .distinct()
         .all()
     )
-    toutes_dates = sorted({d.isoformat() for (d,) in dates_posts} | {d.isoformat() for (d,) in dates_photos})
-    return json.dumps(toutes_dates).replace("</", "<\\/")
+    toutes_dates = {d.isoformat() for (d,) in dates_posts} | {d.isoformat() for (d,) in dates_photos}
+    for post_google in posts_en_ligne or []:
+        jour = _parser_date_iso_calendrier(post_google.get("date_creation_brute", ""))
+        if jour:
+            toutes_dates.add(jour.isoformat())
+    return json.dumps(sorted(toutes_dates)).replace("</", "<\\/")
 
 
 def _reponse_detail_client(
@@ -1664,7 +1670,7 @@ def _reponse_detail_client(
             "erreur_document": erreur_document,
             "erreur_post_manuel": erreur_post_manuel,
             "toutes_etiquettes_json": toutes_etiquettes_json,
-            "jours_occupes_json": _jours_occupes_client(db, client.id),
+            "jours_occupes_json": _jours_occupes_client(db, client.id, posts_en_ligne=tous_posts_en_ligne),
             "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
@@ -3553,7 +3559,7 @@ def _reponse_post_detail(request: Request, db: Session, post: models.Post, erreu
             "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
             "types_post": google_publish.TYPES_POST,
             "erreur": erreur,
-            "jours_occupes_json": _jours_occupes_client(db, post.client_id),
+            "jours_occupes_json": _jours_occupes_client(db, post.client_id, posts_en_ligne=_posts_en_ligne_pour_client(db, post.client)),
         },
         status_code=code,
     )
