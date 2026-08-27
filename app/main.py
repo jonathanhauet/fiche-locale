@@ -2233,17 +2233,13 @@ def posts_en_ligne_debug_brut(client_id: int, request: Request, db: Session = De
         return JSONResponse({"erreur": str(erreur)})
 
     donnees = reponse.json()
-    resume = [
-        {
-            "resume_texte": (item.get("summary", "") or "")[:60],
-            "createTime": item.get("createTime"),
-            "updateTime": item.get("updateTime"),
-            "state": item.get("state"),
-            "name": item.get("name"),
-        }
-        for item in donnees.get("localPosts", [])
-    ]
-    return JSONResponse({"client_nom": client.nom, "nombre_posts": len(resume), "posts": resume})
+    tous = donnees.get("localPosts", [])
+    # Items complets et bruts (tous les champs, sans filtrage) pour les
+    # premiers posts "SCHEDULED" en priorite (potentiel champ de date de
+    # publication prevue non capture par google_business.lister_posts),
+    # sinon les tout premiers de la liste.
+    prioritaires = [p for p in tous if p.get("state") == "SCHEDULED"][:3] or tous[:3]
+    return JSONResponse({"client_nom": client.nom, "nombre_posts": len(tous), "exemples_bruts_complets": prioritaires})
 
 
 @app.post("/clients/{client_id}/fiche/modifier")
