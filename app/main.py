@@ -1665,6 +1665,7 @@ def _reponse_detail_client(
             "erreur_post_manuel": erreur_post_manuel,
             "toutes_etiquettes_json": toutes_etiquettes_json,
             "jours_occupes_json": _jours_occupes_client(db, client.id),
+            "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -3624,8 +3625,9 @@ async def modifier_post(post_id: int, request: Request, db: Session = Depends(ob
 async def modifier_statut_rapide_post(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
     Validation/rejet rapide depuis la liste des posts d'une fiche (sans passer
-    par la page de detail) : ne touche qu'au statut et, si valide, a la date de
-    publication - laisse tous les autres champs du post intacts.
+    par la page de detail) : ne touche qu'au statut, et si valide, a la date
+    de publication et au bouton d'appel a l'action - laisse tous les autres
+    champs du post (texte, image...) intacts.
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -3645,6 +3647,13 @@ async def modifier_statut_rapide_post(post_id: int, request: Request, db: Sessio
         date_prevue = formulaire.get("date_prevue", "")
         post.date_prevue = date.fromisoformat(date_prevue) if date_prevue.strip() else None
         post.heure_prevue = _heure_depuis_formulaire(formulaire)
+        type_appel_action = formulaire.get("type_appel_action", "")
+        post.type_appel_action = type_appel_action
+        post.url_appel_action = (
+            formulaire.get("url_appel_action", "").strip()
+            if type_appel_action and type_appel_action != "CALL"
+            else ""
+        )
     db.commit()
 
     return RedirectResponse(f"/clients/{post.client_id}#post-{post_id}", status_code=303)

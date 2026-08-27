@@ -13,7 +13,7 @@ Varie les angles : chaque post traite d'une prestation ou d'une situation diffé
 
 Contexte temporel :
 
-Tu peux intégrer un contexte saisonnier si c'est cohérent et naturel avec la période de publication et l'activité, mais ce n'est pas obligatoire.
+Tu peux intégrer un contexte saisonnier si c'est cohérent et naturel avec l'activité, mais ce n'est pas obligatoire. Si tu le fais, base-toi uniquement sur la période réelle de publication précisée plus bas (jamais sur une saison générique ou une autre période).
 
 Format de sortie :
 

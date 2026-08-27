@@ -6,6 +6,7 @@ en JSON), adaptee en fonction pure pour la plateforme web.
 
 import json
 import os
+from datetime import date
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -15,6 +16,25 @@ DOSSIER_PLATEFORME = os.path.dirname(DOSSIER_APP)
 FICHIER_PROMPT = os.path.join(DOSSIER_APP, "prompts", "prompt_generation_posts.txt")
 
 MODELE_CLAUDE = "claude-sonnet-5"
+
+LIBELLES_MOIS = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def _periode_publication_cible() -> str:
+    """
+    Mois suivant le mois courant : Jonathan genere systematiquement ses posts
+    vers la fin d'un mois pour les programmer sur le mois suivant (voir la
+    carte "Programmer tous les brouillons" sur la fiche client) - c'est donc
+    cette periode-la, et non la date du jour, qui doit guider un eventuel
+    contexte saisonnier dans les textes generes.
+    """
+    aujourdhui = date.today()
+    mois_suivant = aujourdhui.month + 1 if aujourdhui.month < 12 else 1
+    annee_suivante = aujourdhui.year if aujourdhui.month < 12 else aujourdhui.year + 1
+    return f"{LIBELLES_MOIS[mois_suivant - 1]} {annee_suivante}"
 
 # Chaque module qui a besoin de .env le charge lui-meme : on ne peut pas
 # compter sur l'ordre des imports pour garantir que main.py l'a deja fait.
@@ -56,12 +76,20 @@ def _construire_prompt(contenu_site: str, nombre_posts: int) -> str:
         "adaptee au post, sans texte incruste ni logo), a fournir en plus du titre et du texte."
     )
 
+    instruction_periode = (
+        "\n\n---\n\n"
+        f"Periode reelle de publication : ces posts seront programmes et publies courant "
+        f"{_periode_publication_cible()} (pas a la date d'aujourd'hui). Si tu evoques une saison, "
+        f"une fete ou un evenement temporel, base-toi exclusivement sur cette periode-la."
+    )
+
     return (
         "Voici le contenu du site web de l'entreprise (base de connaissance) :\n\n"
         f"{contenu_site}\n\n"
         "---\n\n"
         f"{instructions}"
         f"{instruction_prompt_image}"
+        f"{instruction_periode}"
     )
 
 

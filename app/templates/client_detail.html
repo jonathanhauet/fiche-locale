@@ -498,6 +498,18 @@
     {% endif %}
     {% endif %}
     <form method="post" action="/posts/{{ post.id }}/statut_rapide" class="formulaire-validation-rapide">
+      <details class="bloc-repliable">
+        <summary>Bouton d'appel à l'action (optionnel)</summary>
+        <div class="ligne-appel-action-rapide formulaire-ligne">
+          <select name="type_appel_action" class="select-appel-action-rapide">
+            {% for valeur, libelle in options_appel_action %}
+            <option value="{{ valeur }}">{{ libelle }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="url_appel_action" class="champ-url-appel-action-rapide" placeholder="https://...">
+          <p class="texte-discret texte-appel-telephone-rapide" hidden>Le numéro de la fiche sera utilisé automatiquement.</p>
+        </div>
+      </details>
       <div class="choix-heure choix-heure-compact">
         <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
           <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
@@ -824,6 +836,21 @@
   listeEtiquettes.addEventListener("click", (evenement) => {
     if (!evenement.target.classList.contains("bouton-retirer-etiquette")) return;
     evenement.target.closest(".etiquette-supprimable").remove();
+  });
+
+  // Bouton d'appel a l'action (validation rapide d'un brouillon) : le champ
+  // URL n'a de sens que pour un type de bouton autre que "Aucun" ou "Appeler"
+  // (le numero de la fiche est utilise automatiquement pour ce dernier).
+  document.querySelectorAll(".select-appel-action-rapide").forEach((select) => {
+    const bloc = select.closest(".ligne-appel-action-rapide");
+    const champUrl = bloc.querySelector(".champ-url-appel-action-rapide");
+    const noteTelephone = bloc.querySelector(".texte-appel-telephone-rapide");
+    function actualiser() {
+      champUrl.hidden = select.value === "" || select.value === "CALL";
+      noteTelephone.hidden = select.value !== "CALL";
+    }
+    select.addEventListener("change", actualiser);
+    actualiser();
   });
 })();
 </script>
