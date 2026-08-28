@@ -2017,6 +2017,21 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .champ-date-personnalise { position: relative; }
 
+.grille-dates-generation {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.ligne-date-generation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--texte-discret);
+}
+
 .champ-date-affichage { cursor: pointer; background: var(--fond); }
 .champ-date-affichage.champ-invalide { border-color: var(--danger); }
 

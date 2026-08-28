@@ -1991,12 +1991,7 @@ def detail_client(client_id: int, request: Request, db: Session = Depends(obteni
 
 
 @app.post("/clients/{client_id}/generer")
-def generer_posts_client(
-    client_id: int,
-    request: Request,
-    nombre_posts: int = Form(7),
-    db: Session = Depends(obtenir_session),
-):
+async def generer_posts_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -2005,6 +2000,19 @@ def generer_posts_client(
     if not client:
         return HTMLResponse("Client introuvable.", status_code=404)
 
+    formulaire = await request.form()
+    try:
+        nombre_posts = int(formulaire.get("nombre_posts", "7"))
+    except ValueError:
+        nombre_posts = 7
+
+    # Dates optionnelles preselectionnees (une par post, dans l'ordre) : le
+    # champ de date de chaque post est prerempli avec, mais le post reste en
+    # BROUILLON - juste un gain de temps a la relecture, pas une programmation
+    # automatique (voir aussi programmer_brouillons_masse, qui lui programme
+    # reellement avec des dates espacees automatiquement).
+    dates_brutes = [d for d in formulaire.getlist("dates_prevues")[:nombre_posts]]
+
     try:
         posts_generes = claude_generation.generer_posts_pour_client(
             _contexte_ia_client(client), nombre_posts, _sujets_deja_traites_client(db, client.id)
@@ -2012,13 +2020,20 @@ def generer_posts_client(
     except Exception as erreur:
         return _reponse_detail_client(request, db, client, erreur_generation=str(erreur), code=500)
 
-    for post_genere in posts_generes:
+    for index, post_genere in enumerate(posts_generes):
+        date_prevue = None
+        if index < len(dates_brutes) and dates_brutes[index].strip():
+            try:
+                date_prevue = date.fromisoformat(dates_brutes[index].strip())
+            except ValueError:
+                date_prevue = None
         db.add(models.Post(
             client_id=client.id,
             titre=post_genere["titre"],
             texte=post_genere["texte"],
             prompt_image=post_genere["prompt_image"],
             statut="BROUILLON",
+            date_prevue=date_prevue,
         ))
     db.commit()
 

@@ -354,12 +354,29 @@
     {% if erreur_generation %}
     <p class="message-erreur">Erreur lors de la génération : {{ erreur_generation }}</p>
     {% endif %}
-    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/generer" id="formulaire-generation-posts-ia">
-      <label>
-        Nombre de posts
-        <input type="number" name="nombre_posts" id="champ-nombre-posts-generation" value="7" min="1" max="20">
-      </label>
-      <button type="submit" class="bouton">✨ Générer</button>
+    <form class="formulaire" method="post" action="/clients/{{ client.id }}/generer" id="formulaire-generation-posts-ia">
+      <div class="formulaire-ligne">
+        <label>
+          Nombre de posts
+          <input type="number" name="nombre_posts" id="champ-nombre-posts-generation" value="7" min="1" max="20">
+        </label>
+        <button type="submit" class="bouton">✨ Générer</button>
+      </div>
+      <details class="bloc-repliable">
+        <summary>Préremplir les dates de publication (optionnel)</summary>
+        <p class="texte-discret">Les posts générés restent des brouillons à relire et valider un par un — ces dates sont juste préremplies pour vous éviter de les ressaisir à chaque fois.</p>
+        <div class="grille-dates-generation" id="liste-dates-generation">
+          {% for i in range(1, 21) %}
+          <label class="ligne-date-generation" data-index="{{ i }}" {% if i > 7 %}hidden{% endif %}>
+            Post {{ i }}
+            <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}">
+              <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+              <input type="hidden" class="champ-date-valeur" name="dates_prevues">
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </details>
     </form>
     <div id="progression-generation-posts" class="conteneur-progression-avis" hidden>
       <div class="barre-progression-fond"><div class="barre-progression-remplissage"></div></div>
@@ -368,10 +385,24 @@
   </div>
 </div>
 <script>
-document.getElementById("formulaire-generation-posts-ia").addEventListener("submit", () => {
-  const nombrePosts = Number(document.getElementById("champ-nombre-posts-generation").value) || 7;
-  demarrerProgressionEstimee("progression-generation-posts", 8 + nombrePosts * 6);
-});
+(function () {
+  const champNombrePosts = document.getElementById("champ-nombre-posts-generation");
+  const lignesDates = Array.from(document.querySelectorAll("#liste-dates-generation .ligne-date-generation"));
+
+  function actualiserLignesDates() {
+    const nombre = Number(champNombrePosts.value) || 0;
+    lignesDates.forEach((ligne) => {
+      ligne.hidden = Number(ligne.dataset.index) > nombre;
+    });
+  }
+  champNombrePosts.addEventListener("input", actualiserLignesDates);
+  actualiserLignesDates();
+
+  document.getElementById("formulaire-generation-posts-ia").addEventListener("submit", () => {
+    const nombrePosts = Number(champNombrePosts.value) || 7;
+    demarrerProgressionEstimee("progression-generation-posts", 8 + nombrePosts * 6);
+  });
+})();
 </script>
 
 <details class="bloc-repliable">
@@ -461,6 +492,7 @@ document.getElementById("formulaire-generation-posts-ia").addEventListener("subm
       <strong>{{ post.titre }}</strong>
       <span class="etiquette-statut etiquette-{{ post.statut|lower }}">
         {% if post.statut == "A_PUBLIER" and post.date_prevue %}Programmé {{ post.date_prevue.strftime("%d/%m/%Y") }}
+        {% elif post.statut == "BROUILLON" and post.date_prevue %}Brouillon — {{ post.date_prevue.strftime("%d/%m/%Y") }}
         {% elif post.statut == "BROUILLON" %}Brouillon
         {% elif post.statut == "ECHEC_PUBLICATION" %}Échec
         {% elif post.statut == "PUBLIE_LIVE" %}Publié
@@ -523,7 +555,7 @@ document.getElementById("formulaire-generation-posts-ia").addEventListener("subm
       <div class="choix-heure choix-heure-compact">
         <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
           <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
-          <input type="hidden" class="champ-date-valeur" name="date_prevue">
+          <input type="hidden" class="champ-date-valeur" name="date_prevue" value="{{ post.date_prevue.isoformat() if post.date_prevue else '' }}">
         </div>
         <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
         <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
