@@ -9,7 +9,7 @@ import requests
 
 CHAMPS_LECTURE = (
     "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,specialHours,"
-    "profile,latlng,categories,metadata.mapsUri,metadata.newReviewUri,metadata.hasVoiceOfMerchant"
+    "profile,latlng,categories,serviceItems,metadata.mapsUri,metadata.newReviewUri,metadata.hasVoiceOfMerchant"
 )
 
 JOURS_SEMAINE = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
@@ -195,6 +195,55 @@ def score_completude(infos: dict) -> dict:
         "total": len(CRITERES_COMPLETUDE),
         "manquants": manquants,
     }
+
+
+def etiquette_service(item: dict) -> str:
+    """
+    Libelle lisible pour un ServiceItem. Deux formes possibles cote Google :
+    freeFormServiceItem (service redige librement par l'etablissement - c'est
+    le seul type que cette plateforme permet de creer) ou structuredServiceItem
+    (type standard du vocabulaire ferme de Google, identifie seulement par un
+    serviceTypeId sans libellé humain accessible sans appel API supplementaire -
+    affiche tel quel, mais reste supprimable comme n'importe quel service).
+    """
+    freeform = item.get("freeFormServiceItem")
+    if freeform:
+        return (freeform.get("label") or {}).get("displayName", "(sans nom)")
+    structure = item.get("structuredServiceItem")
+    if structure:
+        return f"Type standard Google : {structure.get('serviceTypeId', '?')}"
+    return "(service)"
+
+
+def description_service(item: dict) -> str:
+    freeform = item.get("freeFormServiceItem")
+    if freeform:
+        return (freeform.get("label") or {}).get("description", "")
+    structure = item.get("structuredServiceItem")
+    if structure:
+        return structure.get("description", "")
+    return ""
+
+
+def prix_service(item: dict) -> str:
+    prix = item.get("price")
+    if not prix:
+        return ""
+    devise = prix.get("currencyCode", "EUR")
+    unites = prix.get("units", "0")
+    return f"{unites} €" if devise == "EUR" else f"{unites} {devise}"
+
+
+def construire_service_libre(categorie_id: str, nom: str, description: str, prix_euros: str) -> dict:
+    """Construit un ServiceItem freeFormServiceItem (seul type creable ici, voir etiquette_service)."""
+    label = {"displayName": nom.strip()}
+    if description.strip():
+        label["description"] = description.strip()
+    item = {"freeFormServiceItem": {"category": categorie_id, "label": label}}
+    prix_euros = prix_euros.strip()
+    if prix_euros:
+        item["price"] = {"currencyCode": "EUR", "units": str(int(float(prix_euros))), "nanos": 0}
+    return item
 
 
 def horaires_par_jour(regular_hours: dict):

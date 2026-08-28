@@ -78,6 +78,30 @@
     <ul id="resultats-recherche-categorie" class="resultats-recherche-ville" hidden></ul>
   </fieldset>
 
+  <fieldset class="bloc-image" id="bloc-services">
+    <legend>Services</legend>
+    <p class="texte-discret">Liste affichée sur la fiche Google, sous "Services". Les types standards Google (repérés par un identifiant technique) restent modifiables ici uniquement par suppression.</p>
+
+    <div class="liste-etiquettes" id="liste-services">
+      {% for service in services %}
+      <span class="etiquette-supprimable" title="{{ service.description }}">
+        <span class="etiquette-chip">{{ service.libelle }}{% if service.prix %} — {{ service.prix }}{% endif %}</span>
+        <input type="hidden" name="services_json" value="{{ service.json }}">
+        <button type="button" class="bouton-retirer-service" title="Retirer">×</button>
+      </span>
+      {% endfor %}
+    </div>
+    <p id="texte-aucun-service" class="texte-vide" {% if services %}hidden{% endif %}>Aucun service pour l'instant.</p>
+
+    <div class="formulaire-ligne" id="ligne-ajout-service">
+      <input type="text" id="champ-service-nom" placeholder="Nom du service (ex : Ouverture de porte claquée)">
+      <input type="text" id="champ-service-description" placeholder="Description (optionnel)">
+      <input type="number" id="champ-service-prix" placeholder="Prix € (optionnel)" min="0" style="width:7rem;">
+      <button type="button" id="bouton-ajouter-service" class="bouton-secondaire">+ Ajouter</button>
+    </div>
+    <p id="erreur-ajout-service" class="message-erreur" hidden>Définissez d'abord une catégorie principale ci-dessus avant d'ajouter un service.</p>
+  </fieldset>
+
   <fieldset class="bloc-image">
     <legend>Adresse</legend>
     <div class="ligne-champs">
@@ -318,6 +342,66 @@ document.querySelectorAll(".ligne-horaire-jour").forEach((jourEl) => {
   listeComplementaires.addEventListener("click", (evenement) => {
     if (!evenement.target.classList.contains("bouton-retirer-categorie")) return;
     evenement.target.closest(".etiquette-supprimable").remove();
+  });
+
+  const listeServices = document.getElementById("liste-services");
+  const texteAucunService = document.getElementById("texte-aucun-service");
+  const champServiceNom = document.getElementById("champ-service-nom");
+  const champServiceDescription = document.getElementById("champ-service-description");
+  const champServicePrix = document.getElementById("champ-service-prix");
+  const erreurAjoutService = document.getElementById("erreur-ajout-service");
+
+  document.getElementById("bouton-ajouter-service").addEventListener("click", () => {
+    const nom = champServiceNom.value.trim();
+    if (!nom) return;
+    erreurAjoutService.hidden = true;
+    if (!champCategoriePrincipaleId.value) {
+      erreurAjoutService.hidden = false;
+      return;
+    }
+    const item = {
+      freeFormServiceItem: {
+        category: champCategoriePrincipaleId.value,
+        label: { displayName: nom },
+      },
+    };
+    if (champServiceDescription.value.trim()) {
+      item.freeFormServiceItem.label.description = champServiceDescription.value.trim();
+    }
+    let libelleAffiche = echapper(nom);
+    if (champServicePrix.value.trim()) {
+      const prix = parseInt(champServicePrix.value.trim(), 10);
+      if (!Number.isNaN(prix)) {
+        item.price = { currencyCode: "EUR", units: String(prix), nanos: 0 };
+        libelleAffiche += ` — ${prix} €`;
+      }
+    }
+    const chip = document.createElement("span");
+    chip.className = "etiquette-supprimable";
+    chip.title = champServiceDescription.value.trim();
+    chip.innerHTML = `
+      <span class="etiquette-chip">${libelleAffiche}</span>
+      <button type="button" class="bouton-retirer-service" title="Retirer">×</button>
+    `;
+    // Construit via le DOM plutot qu'un template HTML : un nom/description
+    // contenant une apostrophe (tres frequent en francais) casserait sinon
+    // l'attribut value si le JSON etait injecte comme texte dans le HTML.
+    const champCache = document.createElement("input");
+    champCache.type = "hidden";
+    champCache.name = "services_json";
+    champCache.value = JSON.stringify(item);
+    chip.appendChild(champCache);
+    listeServices.appendChild(chip);
+    texteAucunService.hidden = true;
+    champServiceNom.value = "";
+    champServiceDescription.value = "";
+    champServicePrix.value = "";
+  });
+
+  listeServices.addEventListener("click", (evenement) => {
+    if (!evenement.target.classList.contains("bouton-retirer-service")) return;
+    evenement.target.closest(".etiquette-supprimable").remove();
+    texteAucunService.hidden = listeServices.children.length > 0;
   });
 })();
 </script>

@@ -2437,6 +2437,18 @@ def _valeurs_formulaire_fiche(infos: dict) -> dict:
     }
 
 
+def _services_fiche(infos: dict) -> list[dict]:
+    services = []
+    for item in (infos or {}).get("serviceItems", []):
+        services.append({
+            "libelle": google_location.etiquette_service(item),
+            "description": google_location.description_service(item),
+            "prix": google_location.prix_service(item),
+            "json": json.dumps(item),
+        })
+    return services
+
+
 def _reponse_fiche_client(
     request: Request, client: models.Client, db: Session, infos: dict = None,
     erreur: str = None, succes: str = None, code: int = 200,
@@ -2470,6 +2482,7 @@ def _reponse_fiche_client(
             "types_action": google_place_actions.TYPES_ACTION,
             "liens_action": liens_action,
             "erreur_liens_action": erreur_liens_action,
+            "services": _services_fiche(infos),
         },
         status_code=code,
     )
@@ -2593,6 +2606,18 @@ async def modifier_fiche_client(client_id: int, request: Request, db: Session = 
             "additionalCategories": [{"name": cid} for cid in categories_complementaires_id],
         }
         champs.append("categories")
+
+    # Un service invalide (JSON corrompu cote client, ne devrait pas arriver
+    # via l'UI normale) ne doit pas faire echouer tout l'enregistrement de la
+    # fiche - on l'ignore silencieusement plutot que de bloquer le reste.
+    services = []
+    for brut in formulaire.getlist("services_json"):
+        try:
+            services.append(json.loads(brut))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    donnees["serviceItems"] = services
+    champs.append("serviceItems")
 
     try:
         google_location.mettre_a_jour_fiche(identifiants, client.location_id, donnees, champs)
