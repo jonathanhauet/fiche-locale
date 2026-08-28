@@ -80,7 +80,7 @@
 
   <fieldset class="bloc-image" id="bloc-services">
     <legend>Services</legend>
-    <p class="texte-discret">Liste affichée sur la fiche Google, sous "Services". Les types standards Google (repérés par un identifiant technique) restent modifiables ici uniquement par suppression.</p>
+    <p class="texte-discret">Liste affichée sur la fiche Google, sous "Services".</p>
 
     <div class="liste-etiquettes" id="liste-services">
       {% for service in services %}
@@ -93,6 +93,18 @@
     </div>
     <p id="texte-aucun-service" class="texte-vide" {% if services %}hidden{% endif %}>Aucun service pour l'instant.</p>
 
+    <label>
+      Type de service
+      <select id="select-service-type-standard">
+        <option value="">— Service libre (nom personnalisé) —</option>
+        {% for type in types_service_disponibles %}
+        <option value="{{ type.id }}">{{ type.libelle }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if not types_service_disponibles %}
+    <p class="texte-discret">Aucun type standard Google disponible (dépend de la catégorie principale de la fiche — enregistrez d'abord une catégorie, puis rechargez la page).</p>
+    {% endif %}
     <div class="formulaire-ligne" id="ligne-ajout-service">
       <input type="text" id="champ-service-nom" placeholder="Nom du service (ex : Ouverture de porte claquée)">
       <input type="text" id="champ-service-description" placeholder="Description (optionnel)">
@@ -346,29 +358,52 @@ document.querySelectorAll(".ligne-horaire-jour").forEach((jourEl) => {
 
   const listeServices = document.getElementById("liste-services");
   const texteAucunService = document.getElementById("texte-aucun-service");
+  const selectTypeStandard = document.getElementById("select-service-type-standard");
   const champServiceNom = document.getElementById("champ-service-nom");
   const champServiceDescription = document.getElementById("champ-service-description");
   const champServicePrix = document.getElementById("champ-service-prix");
   const erreurAjoutService = document.getElementById("erreur-ajout-service");
 
+  function actualiserChampNomService() {
+    const typeChoisi = !!selectTypeStandard.value;
+    champServiceNom.disabled = typeChoisi;
+    champServiceNom.placeholder = typeChoisi
+      ? "Nom automatique (défini par Google pour ce type)"
+      : "Nom du service (ex : Ouverture de porte claquée)";
+  }
+  selectTypeStandard.addEventListener("change", actualiserChampNomService);
+  actualiserChampNomService();
+
   document.getElementById("bouton-ajouter-service").addEventListener("click", () => {
+    const typeStandardId = selectTypeStandard.value;
     const nom = champServiceNom.value.trim();
-    if (!nom) return;
+    if (!typeStandardId && !nom) return;
     erreurAjoutService.hidden = true;
-    if (!champCategoriePrincipaleId.value) {
+    if (!typeStandardId && !champCategoriePrincipaleId.value) {
       erreurAjoutService.hidden = false;
       return;
     }
-    const item = {
-      freeFormServiceItem: {
-        category: champCategoriePrincipaleId.value,
-        label: { displayName: nom },
-      },
-    };
-    if (champServiceDescription.value.trim()) {
-      item.freeFormServiceItem.label.description = champServiceDescription.value.trim();
+
+    let item, libelleAffiche;
+    if (typeStandardId) {
+      const libelleType = selectTypeStandard.options[selectTypeStandard.selectedIndex].textContent;
+      item = { structuredServiceItem: { serviceTypeId: typeStandardId } };
+      if (champServiceDescription.value.trim()) {
+        item.structuredServiceItem.description = champServiceDescription.value.trim();
+      }
+      libelleAffiche = echapper(libelleType);
+    } else {
+      item = {
+        freeFormServiceItem: {
+          category: champCategoriePrincipaleId.value,
+          label: { displayName: nom },
+        },
+      };
+      if (champServiceDescription.value.trim()) {
+        item.freeFormServiceItem.label.description = champServiceDescription.value.trim();
+      }
+      libelleAffiche = echapper(nom);
     }
-    let libelleAffiche = echapper(nom);
     if (champServicePrix.value.trim()) {
       const prix = parseInt(champServicePrix.value.trim(), 10);
       if (!Number.isNaN(prix)) {
@@ -393,9 +428,11 @@ document.querySelectorAll(".ligne-horaire-jour").forEach((jourEl) => {
     chip.appendChild(champCache);
     listeServices.appendChild(chip);
     texteAucunService.hidden = true;
+    selectTypeStandard.value = "";
     champServiceNom.value = "";
     champServiceDescription.value = "";
     champServicePrix.value = "";
+    actualiserChampNomService();
   });
 
   listeServices.addEventListener("click", (evenement) => {

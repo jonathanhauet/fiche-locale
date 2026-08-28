@@ -197,21 +197,72 @@ def score_completude(infos: dict) -> dict:
     }
 
 
-def etiquette_service(item: dict) -> str:
+def types_service_categories(
+    identifiants, categorie_ids: list[str], langue: str = "fr", region: str = "FR"
+) -> dict[str, list[dict]]:
+    """
+    Vocabulaire ferme des types de service standard Google pour une ou
+    plusieurs categories (format "categories/gcid:xxx"). Renvoie
+    {categorie_id: [{"id": serviceTypeId, "libelle": displayName}, ...]}.
+    Necessite view=FULL (categories.batchGet en view=BASIC, utilise ailleurs
+    pour la recherche de categorie, ne renvoie pas serviceTypes).
+
+    Constate empiriquement : cet endpoint renvoie parfois, de facon
+    intermittente (meme requete, meme categorie), une entree serviceTypes
+    vide ({} sans serviceTypeId ni displayName) a la place du vrai contenu -
+    ces entrees inexploitables sont filtrees plutot que remontees telles
+    quelles (un type de service sans nom ni id n'a aucun sens cote UI).
+    """
+    categorie_ids = [c for c in categorie_ids if c]
+    if not categorie_ids:
+        return {}
+    url = "https://mybusinessbusinessinformation.googleapis.com/v1/categories:batchGet"
+    params = [("names", cid) for cid in categorie_ids]
+    params += [("languageCode", langue), ("regionCode", region), ("view", "FULL")]
+    reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params=params)
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la lecture des types de service (code {reponse.status_code}) : {reponse.text}")
+    resultat = {}
+    for categorie in reponse.json().get("categories", []):
+        resultat[categorie.get("name", "")] = [
+            {"id": t.get("serviceTypeId", ""), "libelle": t.get("displayName", "")}
+            for t in categorie.get("serviceTypes", [])
+            if t.get("serviceTypeId") and t.get("displayName")
+        ]
+    return resultat
+
+
+def libelles_types_service(
+    identifiants, categorie_ids: list[str], langue: str = "fr", region: str = "FR"
+) -> dict[str, str]:
+    """{serviceTypeId: displayName} a plat, toutes categories donnees confondues - pour etiqueter les structuredServiceItem deja presents sur une fiche (voir etiquette_service)."""
+    par_categorie = types_service_categories(identifiants, categorie_ids, langue, region)
+    plat = {}
+    for types in par_categorie.values():
+        for t in types:
+            plat[t["id"]] = t["libelle"]
+    return plat
+
+
+def etiquette_service(item: dict, libelles_types: dict = None) -> str:
     """
     Libelle lisible pour un ServiceItem. Deux formes possibles cote Google :
-    freeFormServiceItem (service redige librement par l'etablissement - c'est
-    le seul type que cette plateforme permet de creer) ou structuredServiceItem
-    (type standard du vocabulaire ferme de Google, identifie seulement par un
-    serviceTypeId sans libellé humain accessible sans appel API supplementaire -
-    affiche tel quel, mais reste supprimable comme n'importe quel service).
+    freeFormServiceItem (service redige librement par l'etablissement) ou
+    structuredServiceItem (type standard du vocabulaire ferme de Google,
+    identifie seulement par un serviceTypeId sans libelle humain dans la
+    reponse de lecture de la fiche - libelles_types (voir
+    libelles_types_service) permet de le retrouver ; a defaut, l'id technique
+    brut est affiche).
     """
     freeform = item.get("freeFormServiceItem")
     if freeform:
         return (freeform.get("label") or {}).get("displayName", "(sans nom)")
     structure = item.get("structuredServiceItem")
     if structure:
-        return f"Type standard Google : {structure.get('serviceTypeId', '?')}"
+        service_type_id = structure.get("serviceTypeId", "?")
+        if libelles_types and service_type_id in libelles_types:
+            return libelles_types[service_type_id]
+        return f"Type standard Google : {service_type_id}"
     return "(service)"
 
 

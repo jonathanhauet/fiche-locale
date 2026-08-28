@@ -2437,11 +2437,20 @@ def _valeurs_formulaire_fiche(infos: dict) -> dict:
     }
 
 
-def _services_fiche(infos: dict) -> list[dict]:
+def _categorie_ids_fiche(infos: dict) -> list[str]:
+    categories = (infos or {}).get("categories") or {}
+    ids = []
+    if categories.get("primaryCategory"):
+        ids.append(categories["primaryCategory"]["name"])
+    ids += [c["name"] for c in categories.get("additionalCategories", [])]
+    return ids
+
+
+def _services_fiche(infos: dict, libelles_types: dict = None) -> list[dict]:
     services = []
     for item in (infos or {}).get("serviceItems", []):
         services.append({
-            "libelle": google_location.etiquette_service(item),
+            "libelle": google_location.etiquette_service(item, libelles_types),
             "description": google_location.description_service(item),
             "prix": google_location.prix_service(item),
             "json": json.dumps(item),
@@ -2455,14 +2464,32 @@ def _reponse_fiche_client(
 ):
     horaires_par_jour, jours_verrouilles = google_location.horaires_par_jour(infos.get("regularHours") if infos else None)
 
-    liens_action, erreur_liens_action = [], None
+    identifiants = None
     if client.account_id and client.location_id:
         identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-        if identifiants:
-            try:
-                liens_action = google_place_actions.lister_liens(identifiants, client.location_id)
-            except Exception as e:
-                erreur_liens_action = str(e)
+
+    liens_action, erreur_liens_action = [], None
+    if identifiants:
+        try:
+            liens_action = google_place_actions.lister_liens(identifiants, client.location_id)
+        except Exception as e:
+            erreur_liens_action = str(e)
+
+    # Types de service standard (vocabulaire ferme) pour les categories de la
+    # fiche : utilise a la fois pour etiqueter les structuredServiceItem deja
+    # presents (sinon affiches avec leur id technique brut) et pour proposer
+    # un type standard a l'ajout d'un nouveau service.
+    categorie_ids = _categorie_ids_fiche(infos)
+    libelles_types_service, types_service_disponibles = {}, []
+    if identifiants and categorie_ids:
+        try:
+            types_par_categorie = google_location.types_service_categories(identifiants, categorie_ids)
+            for types in types_par_categorie.values():
+                for t in types:
+                    libelles_types_service[t["id"]] = t["libelle"]
+            types_service_disponibles = types_par_categorie.get(categorie_ids[0], [])
+        except Exception:
+            pass
 
     return templates.TemplateResponse(
         request,
@@ -2482,7 +2509,8 @@ def _reponse_fiche_client(
             "types_action": google_place_actions.TYPES_ACTION,
             "liens_action": liens_action,
             "erreur_liens_action": erreur_liens_action,
-            "services": _services_fiche(infos),
+            "services": _services_fiche(infos, libelles_types_service),
+            "types_service_disponibles": types_service_disponibles,
         },
         status_code=code,
     )
