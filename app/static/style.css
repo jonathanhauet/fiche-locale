@@ -1057,8 +1057,7 @@ button:active { transform: translateY(1px); }
 
 .texte-complet-post {
   margin: 0;
-  font-size: 1rem;
-  line-height: 1.5;
+  font-size: 0.9rem;
   color: var(--texte);
   white-space: pre-wrap;
 }
