@@ -53,7 +53,22 @@
           {% endfor %}
         </select>
       </label>
-      <p class="texte-discret">Les posts sont créés sans image ni date — vous les choisirez sur la page suivante, pour chaque post généré.</p>
+      <details class="bloc-repliable">
+        <summary>Préremplir les dates de publication (optionnel)</summary>
+        <p class="texte-discret">Chaque post généré reste un brouillon à relire et valider — cette date est juste préremplie sur toutes les fiches concernées par ce post, pour vous éviter de la ressaisir à chaque fois.</p>
+        <div class="grille-dates-generation" id="liste-dates-generation-masse">
+          {% for i in range(1, 11) %}
+          <label class="ligne-date-generation" data-index="{{ i }}" {% if i > 5 %}hidden{% endif %}>
+            Post {{ i }}
+            <div class="champ-date-personnalise">
+              <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+              <input type="hidden" class="champ-date-valeur" name="dates_prevues">
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </details>
+      <p class="texte-discret">Les posts sont créés sans image — vous la choisirez sur la page suivante, pour chaque post généré.</p>
       <div class="actions-avis">
         <button type="submit" class="bouton">✨ Générer les posts</button>
       </div>
@@ -292,6 +307,18 @@
   const formulaireGenerationMasse = document.getElementById("formulaire-generation-masse");
   const champThemeMasse = document.getElementById("champ-theme-masse");
   const selectReferenceMasse = document.getElementById("select-reference-masse");
+  const champNombrePostsMasse = document.getElementById("champ-nombre-posts-masse");
+  const lignesDatesMasse = Array.from(document.querySelectorAll("#liste-dates-generation-masse .ligne-date-generation"));
+
+  function actualiserLignesDatesMasse() {
+    const nombre = Number(champNombrePostsMasse.value) || 0;
+    lignesDatesMasse.forEach((ligne) => {
+      ligne.hidden = Number(ligne.dataset.index) > nombre;
+    });
+  }
+  champNombrePostsMasse.addEventListener("input", actualiserLignesDatesMasse);
+  actualiserLignesDatesMasse();
+
   formulaireGenerationMasse.addEventListener("submit", (evenement) => {
     if (!champThemeMasse.value.trim() && !selectReferenceMasse.value) {
       evenement.preventDefault();

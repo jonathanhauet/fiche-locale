@@ -1176,6 +1176,12 @@ async def generer_masse_et_creer_lots(request: Request, db: Session = Depends(ob
         if client_reference:
             contenu_reference = _contexte_ia_client(client_reference)
 
+    # Dates optionnelles preselectionnees (une par post genere, dans l'ordre) :
+    # prereplit le champ de date de TOUS les exemplaires du lot correspondant
+    # (un par client selectionne), mais chaque lot reste en BROUILLON - juste
+    # un gain de temps a la relecture, pas une programmation automatique.
+    dates_brutes = [d for d in formulaire.getlist("dates_prevues")[:nombre_posts]]
+
     try:
         posts_generes = claude_generation.generer_posts_generiques(theme, contenu_reference, nombre_posts)
     except Exception as erreur:
@@ -1185,7 +1191,13 @@ async def generer_masse_et_creer_lots(request: Request, db: Session = Depends(ob
     clients_valides = [c for c in clients_valides if c]
 
     lot_ids = []
-    for post_genere in posts_generes:
+    for index, post_genere in enumerate(posts_generes):
+        date_prevue = None
+        if index < len(dates_brutes) and dates_brutes[index].strip():
+            try:
+                date_prevue = date.fromisoformat(dates_brutes[index].strip())
+            except ValueError:
+                date_prevue = None
         lot_id = uuid.uuid4().hex[:12]
         for client in clients_valides:
             db.add(models.Post(
@@ -1195,6 +1207,7 @@ async def generer_masse_et_creer_lots(request: Request, db: Session = Depends(ob
                 prompt_image=post_genere.get("prompt_image", ""),
                 statut="BROUILLON",
                 lot_id=lot_id,
+                date_prevue=date_prevue,
             ))
         lot_ids.append(lot_id)
     db.commit()

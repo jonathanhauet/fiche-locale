@@ -17,6 +17,7 @@
       <span class="etiquette-statut etiquette-{{ groupe.statut|lower }}">
         {% if groupe.statut == "A_PUBLIER" and groupe.date_prevue %}Programmé {{ groupe.date_prevue.strftime("%d/%m/%Y") }}
         {% elif groupe.statut == "A_PUBLIER" %}Programmé
+        {% elif groupe.statut == "BROUILLON" and groupe.date_prevue %}Brouillon — {{ groupe.date_prevue.strftime("%d/%m/%Y") }}
         {% elif groupe.statut == "BROUILLON" %}Brouillon
         {% elif groupe.statut == "IGNORE" %}Rejeté
         {% else %}{{ groupe.statut }}{% endif %}
@@ -79,7 +80,7 @@
       <div class="choix-heure choix-heure-compact">
         <div class="champ-date-personnalise" data-requis="1">
           <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
-          <input type="hidden" class="champ-date-valeur" name="date_prevue">
+          <input type="hidden" class="champ-date-valeur" name="date_prevue" value="{{ groupe.date_prevue.isoformat() if groupe.date_prevue else '' }}">
         </div>
         <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
         <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
