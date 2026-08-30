@@ -47,6 +47,10 @@
     <span class="carte-resume-chiffre{{ ' chiffre-attention' if nb_sans_connaissance else '' }}">{{ nb_sans_connaissance }}</span>
     <span class="carte-resume-libelle">Base de connaissance vide</span>
   </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre{{ ' chiffre-attention' if nb_sans_post_mois_prochain else '' }}">{{ nb_sans_post_mois_prochain }}</span>
+    <span class="carte-resume-libelle">Sans post programmé le mois prochain</span>
+  </div>
 </div>
 
 {% if clients %}
@@ -62,7 +66,7 @@
 
   <ul class="liste-clients">
     {% for client in clients %}
-    <li class="ligne-client-filtrable" data-recherche="{{ client.nom|lower }}"
+    <li class="ligne-client-filtrable{{ ' ligne-client-alerte' if client.id in ids_sans_post_mois_prochain else '' }}" data-recherche="{{ client.nom|lower }}"
         {% if client.account_id and client.location_id %}data-client-id-validation="{{ client.id }}"{% endif %}>
       <input type="checkbox" name="client_ids" value="{{ client.id }}" class="case-client-suppression">
       <a href="/clients/{{ client.id }}">
@@ -81,6 +85,9 @@
         {% endif %}
         {% if client.id not in ids_avec_connaissance %}
           <span class="etiquette-avertissement">base de connaissance vide</span>
+        {% endif %}
+        {% if client.id in ids_sans_post_mois_prochain %}
+          <span class="etiquette-avertissement etiquette-danger">aucun post programmé le mois prochain</span>
         {% endif %}
         <span class="etiquette-avertissement etiquette-danger etiquette-non-validee" hidden>non validée par Google</span>
       </div>

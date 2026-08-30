@@ -777,6 +777,7 @@ button:active { transform: translateY(1px); }
 
 .etiquette-avertissement.etiquette-danger { background: var(--danger-clair); color: var(--danger); }
 .liste-clients li.ligne-client-non-validee { border-left: 3px solid var(--danger); }
+.liste-clients li.ligne-client-alerte { border-left: 3px solid var(--danger); }
 
 /* ---------- Barre de titre ---------- */
 

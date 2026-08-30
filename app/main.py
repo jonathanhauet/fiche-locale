@@ -1524,6 +1524,17 @@ def programmer_lot_posts(
 # --- Liste et gestion des clients -----------------------------------------
 
 
+def _plage_mois_prochain() -> tuple[date, date]:
+    aujourdhui = date.today()
+    if aujourdhui.month == 12:
+        annee, mois = aujourdhui.year + 1, 1
+    else:
+        annee, mois = aujourdhui.year, aujourdhui.month + 1
+    premier_jour = date(annee, mois, 1)
+    dernier_jour = date(annee, mois, calendar.monthrange(annee, mois)[1])
+    return premier_jour, dernier_jour
+
+
 @app.get("/", response_class=HTMLResponse)
 def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -1536,6 +1547,24 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
         client_id
         for (client_id,) in db.query(models.DocumentConnaissance.client_id).distinct().all()
     }
+
+    # Fiches sans aucun post programme (A_PUBLIER) sur le mois qui suit le
+    # mois en cours - seules les fiches reellement liees a Google sont
+    # concernees, une fiche non associee ne pouvant de toute facon rien
+    # publier.
+    debut_mois_prochain, fin_mois_prochain = _plage_mois_prochain()
+    ids_clients_avec_fiche = {c.id for c in clients if c.account_id and c.location_id}
+    ids_avec_post_mois_prochain = {
+        client_id
+        for (client_id,) in db.query(models.Post.client_id).filter(
+            models.Post.client_id.in_(ids_clients_avec_fiche),
+            models.Post.statut == "A_PUBLIER",
+            models.Post.date_prevue >= debut_mois_prochain,
+            models.Post.date_prevue <= fin_mois_prochain,
+        ).distinct().all()
+    }
+    ids_sans_post_mois_prochain = ids_clients_avec_fiche - ids_avec_post_mois_prochain
+
     return templates.TemplateResponse(
         request,
         "clients_liste.html",
@@ -1546,6 +1575,8 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
             "nb_sans_email": sum(1 for c in clients if not c.email),
             "nb_sans_prenom": sum(1 for c in clients if not c.prenom),
             "nb_sans_connaissance": sum(1 for c in clients if c.id not in ids_avec_connaissance),
+            "ids_sans_post_mois_prochain": ids_sans_post_mois_prochain,
+            "nb_sans_post_mois_prochain": len(ids_sans_post_mois_prochain),
             "espace": espace,
         },
     )
