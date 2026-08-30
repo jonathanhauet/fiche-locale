@@ -79,8 +79,14 @@ def _construire_prompt(contenu_site: str, nombre_posts: int, sujets_deja_traites
     instruction_periode = (
         "\n\n---\n\n"
         f"Periode reelle de publication : ces posts seront programmes et publies courant "
-        f"{_periode_publication_cible()} (pas a la date d'aujourd'hui). Si tu evoques une saison, "
-        f"une fete ou un evenement temporel, base-toi exclusivement sur cette periode-la."
+        f"{_periode_publication_cible()} (pas a la date d'aujourd'hui). C'est une information "
+        f"de contexte pour toi uniquement : si tu evoques une saison, une fete ou un evenement "
+        f"temporel, base-toi exclusivement sur cette periode-la. Ne cite en revanche JAMAIS "
+        f"le mois ni l'annee de facon litterale dans le texte (proscrit : « en ce mois de "
+        f"septembre 2026 », « en septembre 2026 »...) - ca sonne artificiel. Prefere des "
+        f"formulations naturelles et indirectes (« cette rentree », « a l'approche de "
+        f"l'hiver », « ces prochaines semaines »...), ou n'evoque tout simplement aucune "
+        f"periode si ce n'est pas naturel pour ce post."
     )
 
     instruction_deja_traites = ""
