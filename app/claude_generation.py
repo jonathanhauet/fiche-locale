@@ -199,6 +199,8 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
         "pas d'offre commerciale precise).\n"
         "- Ton professionnel, clair, engageant. Pas de jargon inutile.\n"
         "- Longueur : entre 1200 et 1500 caracteres (espaces compris), comme un vrai Google Post developpe.\n"
+        "- Passe des lignes entre les idees pour aerer le texte (pas un seul bloc compact) : "
+        "utilise des sauts de ligne (\\n\\n) entre les paragraphes.\n"
         "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images "
         "(illustration adaptee au theme, sans texte incruste ni logo, sans reference geographique)."
     )
@@ -249,6 +251,8 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
         "pratique, question, chiffre-cle, temoignage generique...), pour offrir un vrai choix.\n"
         "- Ton professionnel, clair, engageant. Pas de jargon inutile.\n"
         "- Longueur : entre 1200 et 1500 caracteres (espaces compris), comme un vrai Google Post developpe.\n"
+        "- Passe des lignes entre les idees pour aerer le texte (pas un seul bloc compact) : "
+        "utilise des sauts de ligne (\\n\\n) entre les paragraphes.\n"
         "- Pour chaque proposition, redige aussi un titre court et un prompt en anglais pour un "
         "generateur d'images (illustration adaptee au theme, sans texte incruste ni logo, sans "
         "reference geographique)."
