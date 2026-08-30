@@ -1320,6 +1320,7 @@ def lots_generes(request: Request, lots: str = "", db: Session = Depends(obtenir
             "prompt_image": premier.prompt_image,
             "image_url": premier.image_url,
             "statut": premier.statut,
+            "date_prevue": premier.date_prevue,
             "nb_fiches": len(posts),
             "en_attente": len(posts_brouillon) > 0,
         })

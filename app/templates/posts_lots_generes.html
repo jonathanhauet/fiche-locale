@@ -15,7 +15,8 @@
     <div class="ligne-post-titre">
       <strong>{{ groupe.titre }}</strong>
       <span class="etiquette-statut etiquette-{{ groupe.statut|lower }}">
-        {% if groupe.statut == "A_PUBLIER" %}Programmé
+        {% if groupe.statut == "A_PUBLIER" and groupe.date_prevue %}Programmé {{ groupe.date_prevue.strftime("%d/%m/%Y") }}
+        {% elif groupe.statut == "A_PUBLIER" %}Programmé
         {% elif groupe.statut == "BROUILLON" %}Brouillon
         {% elif groupe.statut == "IGNORE" %}Rejeté
         {% else %}{{ groupe.statut }}{% endif %}
