@@ -6,6 +6,7 @@ en JSON), adaptee en fonction pure pour la plateforme web.
 
 import json
 import os
+import re
 from datetime import date
 
 from anthropic import Anthropic
@@ -110,6 +111,26 @@ def _construire_prompt(contenu_site: str, nombre_posts: int, sujets_deja_traites
     )
 
 
+_CARACTERES_INDESIRABLES = re.compile(r"[`　-〿＀-￯]+")
+
+
+def _nettoyer_texte_genere(texte: str) -> str:
+    """
+    Filet de securite contre de rares artefacts de generation (ex. suites de
+    backticks ou de ponctuation/caracteres CJK isoles, sans lien avec le
+    contenu demande, qui se glissent occasionnellement dans la sortie du
+    modele) - jamais legitimes dans un post en francais, retires sans risque.
+    """
+    return _CARACTERES_INDESIRABLES.sub("", texte).strip()
+
+
+def _nettoyer_champs_post(post: dict) -> dict:
+    for cle in ("titre", "texte"):
+        if post.get(cle):
+            post[cle] = _nettoyer_texte_genere(post[cle])
+    return post
+
+
 def generer_posts_pour_client(
     contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None
 ) -> list[dict]:
@@ -149,6 +170,7 @@ def generer_posts_pour_client(
         # trahit cette inversion.
         if len(post["titre"]) > len(post["texte"]):
             post["titre"], post["texte"] = post["texte"], post["titre"]
+        _nettoyer_champs_post(post)
     return posts
 
 
@@ -224,7 +246,7 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
-    return json.loads(bloc_texte)
+    return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
 def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", nombre_posts: int = 5) -> list[dict]:
@@ -276,7 +298,7 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
     bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
-    return json.loads(bloc_texte)["posts"]
+    return [_nettoyer_champs_post(post) for post in json.loads(bloc_texte)["posts"]]
 
 
 def suggerer_reponse_avis(
