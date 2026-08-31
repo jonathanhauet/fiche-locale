@@ -589,6 +589,14 @@ LIBELLES_MOIS = {
 }
 
 
+# Statuts de post a exclure de tout affichage lie au calendrier (grille de
+# contenu et jours "deja occupes" du widget de date) : un post rejete
+# (IGNORE, ou PUBLIE_REJECTED par Google) ne va plus etre publie, au meme
+# titre qu'un post SUPPRIME - le laisser apparaitre donnerait l'impression
+# trompeuse que quelque chose est encore programme ce jour-la.
+STATUTS_POST_EXCLUS_CALENDRIER = ["SUPPRIME", "IGNORE", "PUBLIE_REJECTED"]
+
+
 def _parser_date_iso_calendrier(chaine: str):
     if not chaine:
         return None
@@ -625,7 +633,7 @@ def _donnees_calendrier(request: Request, db: Session, client: models.Client, po
             models.Post.client_id == client.id,
             models.Post.date_prevue >= premier_jour_grille,
             models.Post.date_prevue <= dernier_jour_grille,
-            models.Post.statut != "SUPPRIME",
+            models.Post.statut.notin_(STATUTS_POST_EXCLUS_CALENDRIER),
         )
         .all()
     )
@@ -1960,7 +1968,11 @@ def _jours_occupes_client(db: Session, client_id: int, posts_en_ligne: list = No
     """
     dates_posts = (
         db.query(models.Post.date_prevue)
-        .filter(models.Post.client_id == client_id, models.Post.date_prevue.isnot(None), models.Post.statut != "SUPPRIME")
+        .filter(
+            models.Post.client_id == client_id,
+            models.Post.date_prevue.isnot(None),
+            models.Post.statut.notin_(STATUTS_POST_EXCLUS_CALENDRIER),
+        )
         .distinct()
         .all()
     )
