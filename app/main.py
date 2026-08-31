@@ -98,6 +98,16 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN prenom TEXT DEFAULT ''"))
         if "recap_actif" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN recap_actif BOOLEAN DEFAULT TRUE"))
+        if "localisation_active" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN localisation_active BOOLEAN DEFAULT FALSE"))
+        if "localisation_ville" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN localisation_ville TEXT DEFAULT ''"))
+        if "localisation_latitude" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN localisation_latitude REAL"))
+        if "localisation_longitude" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN localisation_longitude REAL"))
+        if "localisation_rayon_km" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN localisation_rayon_km INTEGER DEFAULT 15"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -2070,9 +2080,18 @@ async def generer_posts_client(client_id: int, request: Request, db: Session = D
     # reellement avec des dates espacees automatiquement).
     dates_brutes = [d for d in formulaire.getlist("dates_prevues")[:nombre_posts]]
 
+    localisation = None
+    if client.localisation_active and client.localisation_latitude is not None:
+        localisation = {
+            "ville": client.localisation_ville,
+            "latitude": client.localisation_latitude,
+            "longitude": client.localisation_longitude,
+            "rayon_km": client.localisation_rayon_km,
+        }
+
     try:
         posts_generes = claude_generation.generer_posts_pour_client(
-            _contexte_ia_client(client), nombre_posts, _sujets_deja_traites_client(db, client.id)
+            _contexte_ia_client(client), nombre_posts, _sujets_deja_traites_client(db, client.id), localisation
         )
     except Exception as erreur:
         return _reponse_detail_client(request, db, client, erreur_generation=str(erreur), code=500)
@@ -3666,6 +3685,11 @@ def modifier_client(
     email: str = Form(""),
     prenom: str = Form(""),
     etiquettes: list[str] = Form(default=[]),
+    localisation_active: bool = Form(False),
+    localisation_ville: str = Form(""),
+    localisation_latitude: str = Form(""),
+    localisation_longitude: str = Form(""),
+    localisation_rayon_km: int = Form(15),
     db: Session = Depends(obtenir_session),
 ):
     redirection = rediriger_si_non_connecte(request)
@@ -3684,6 +3708,11 @@ def modifier_client(
     client.email = email.strip()
     client.prenom = prenom.strip()
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
+    client.localisation_active = localisation_active
+    client.localisation_ville = localisation_ville.strip()
+    client.localisation_latitude = float(localisation_latitude) if localisation_latitude.strip() else None
+    client.localisation_longitude = float(localisation_longitude) if localisation_longitude.strip() else None
+    client.localisation_rayon_km = max(1, localisation_rayon_km)
     db.commit()
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 

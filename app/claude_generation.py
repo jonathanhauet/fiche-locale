@@ -64,7 +64,9 @@ SCHEMA_REPONSE = {
 }
 
 
-def _construire_prompt(contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None) -> str:
+def _construire_prompt(
+    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None
+) -> str:
     with open(FICHIER_PROMPT, "r", encoding="utf-8") as f:
         gabarit_prompt = f.read()
 
@@ -100,6 +102,21 @@ def _construire_prompt(contenu_site: str, nombre_posts: int, sujets_deja_traites
             f"quelque chose de reellement nouveau :\n{liste}"
         )
 
+    instruction_localisation = ""
+    if localisation:
+        instruction_localisation = (
+            "\n\n---\n\n"
+            "Zone geographique ciblee (parametre explicitement choisi pour cette fiche, "
+            f"prioritaire sur toute autre indication de localisation dans le contenu ci-dessus) : "
+            f"un rayon d'environ {localisation['rayon_km']} km autour de "
+            f"{localisation['ville']} (latitude {localisation['latitude']}, longitude "
+            f"{localisation['longitude']}). Si tu cites une ou plusieurs localites (ville, "
+            "quartier, commune...) dans un post, elles doivent obligatoirement se situer dans "
+            "cette zone - jamais au-dela. En cas de doute sur la distance reelle d'une localite, "
+            "ne la cite pas : reste generique (« la region », « votre secteur », « a proximite »...) "
+            "plutot que de risquer de mentionner un lieu trop eloigne."
+        )
+
     return (
         "Voici le contenu du site web de l'entreprise (base de connaissance) :\n\n"
         f"{contenu_site}\n\n"
@@ -108,6 +125,7 @@ def _construire_prompt(contenu_site: str, nombre_posts: int, sujets_deja_traites
         f"{instruction_prompt_image}"
         f"{instruction_periode}"
         f"{instruction_deja_traites}"
+        f"{instruction_localisation}"
     )
 
 
@@ -132,7 +150,7 @@ def _nettoyer_champs_post(post: dict) -> dict:
 
 
 def generer_posts_pour_client(
-    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None
+    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None
 ) -> list[dict]:
     """
     Appelle l'API Claude et renvoie une liste de dictionnaires :
@@ -140,13 +158,16 @@ def generer_posts_pour_client(
     sujets_deja_traites : sujets des posts precedents de ce client, pour que
     l'IA evite de repeter les memes themes d'une generation a l'autre (voir
     _sujets_deja_traites_client dans main.py).
+    localisation : {"ville": str, "latitude": float, "longitude": float, "rayon_km": int}
+    optionnel (voir Client.localisation_active) - restreint les localites que
+    l'IA peut citer a ce rayon, au lieu de se fier uniquement au contenu_site.
     """
     if not CLE_API:
         raise RuntimeError(
             "ANTHROPIC_API_KEY manquant dans plateforme_web/.env."
         )
 
-    prompt_complet = _construire_prompt(contenu_site, nombre_posts, sujets_deja_traites)
+    prompt_complet = _construire_prompt(contenu_site, nombre_posts, sujets_deja_traites, localisation)
 
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(

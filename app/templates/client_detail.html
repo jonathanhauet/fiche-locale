@@ -130,6 +130,32 @@
       <textarea name="contenu_site" rows="14">{{ client.contenu_site }}</textarea>
     </label>
 
+    <div class="choix-image-bloc" id="bloc-localisation-ia">
+      <span class="choix-image-titre">Localisation ciblée pour les posts IA (optionnel)</span>
+      <label class="filtre-case">
+        <input type="checkbox" name="localisation_active" id="case-localisation-active" value="true" {% if client.localisation_active %}checked{% endif %}>
+        Activer une zone géographique cible
+      </label>
+      <p class="texte-discret">Si activé, l'IA ne citera dans les posts que des localités situées dans le rayon choisi autour de la commune de référence. Si désactivé, elle continue de se baser uniquement sur le contenu de la fiche/du site ci-dessus, comme avant.</p>
+      <div id="details-localisation-ia" {% if not client.localisation_active %}hidden{% endif %}>
+        <div class="recherche-ville">
+          <input type="text" id="champ-recherche-localisation" autocomplete="off" placeholder="Rechercher la commune de référence...">
+          <button type="button" id="bouton-rechercher-localisation" class="bouton-secondaire">Rechercher</button>
+        </div>
+        <ul id="resultats-recherche-localisation" class="resultats-recherche-ville" hidden></ul>
+        <p id="texte-ville-localisation-selectionnee" class="texte-discret" {% if not client.localisation_ville %}hidden{% endif %}>
+          📍 <span id="texte-nom-ville-localisation">{{ client.localisation_ville }}</span>
+        </p>
+        <input type="hidden" name="localisation_ville" id="champ-localisation-ville" value="{{ client.localisation_ville }}">
+        <input type="hidden" name="localisation_latitude" id="champ-localisation-latitude" value="{{ client.localisation_latitude if client.localisation_latitude is not none else '' }}">
+        <input type="hidden" name="localisation_longitude" id="champ-localisation-longitude" value="{{ client.localisation_longitude if client.localisation_longitude is not none else '' }}">
+        <label>
+          Rayon autour de cette commune
+          <input type="number" name="localisation_rayon_km" value="{{ client.localisation_rayon_km or 15 }}" min="1" max="200" style="width:6rem;"> km
+        </label>
+      </div>
+    </div>
+
     <label>
       Consignes pour les réponses aux avis (IA)
       <textarea name="consignes_avis" rows="4" placeholder="Ex : tutoyer les clients, ton chaleureux et légèrement humoristique, toujours signer par le prénom...">{{ client.consignes_avis }}</textarea>
@@ -794,6 +820,67 @@
       villeSelectionneeMasse.hidden = true;
     });
   }
+})();
+</script>
+
+<script>
+(function () {
+  const caseLocalisationActive = document.getElementById("case-localisation-active");
+  if (!caseLocalisationActive) return;
+
+  const detailsLocalisation = document.getElementById("details-localisation-ia");
+  caseLocalisationActive.addEventListener("change", () => {
+    detailsLocalisation.hidden = !caseLocalisationActive.checked;
+  });
+
+  const champRechercheLocalisation = document.getElementById("champ-recherche-localisation");
+  const boutonRechercherLocalisation = document.getElementById("bouton-rechercher-localisation");
+  const resultatsLocalisation = document.getElementById("resultats-recherche-localisation");
+  const champVilleLocalisation = document.getElementById("champ-localisation-ville");
+  const champLatLocalisation = document.getElementById("champ-localisation-latitude");
+  const champLonLocalisation = document.getElementById("champ-localisation-longitude");
+  const texteVilleLocalisationSelectionnee = document.getElementById("texte-ville-localisation-selectionnee");
+  const texteNomVilleLocalisation = document.getElementById("texte-nom-ville-localisation");
+
+  function echapperLocalisation(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  async function rechercherLocalisation() {
+    if (!champRechercheLocalisation.value.trim()) return;
+    boutonRechercherLocalisation.disabled = true;
+    try {
+      const reponse = await fetch(`/geocodage?q=${encodeURIComponent(champRechercheLocalisation.value.trim())}`);
+      const donnees = await reponse.json();
+      const liste = donnees.resultats || [];
+      resultatsLocalisation.innerHTML = liste.length
+        ? liste.map((r) => `<li><button type="button" class="bouton-resultat-ville" data-nom="${echapperLocalisation(r.nom)}" data-lat="${r.latitude}" data-lng="${r.longitude}">${echapperLocalisation(r.nom)}</button></li>`).join("")
+        : "<li class=\"texte-discret\">Aucun résultat.</li>";
+      resultatsLocalisation.hidden = false;
+    } finally {
+      boutonRechercherLocalisation.disabled = false;
+    }
+  }
+  boutonRechercherLocalisation.addEventListener("click", rechercherLocalisation);
+  champRechercheLocalisation.addEventListener("keydown", (evenement) => {
+    if (evenement.key === "Enter") {
+      evenement.preventDefault();
+      rechercherLocalisation();
+    }
+  });
+
+  resultatsLocalisation.addEventListener("click", (evenement) => {
+    if (!evenement.target.classList.contains("bouton-resultat-ville")) return;
+    champVilleLocalisation.value = evenement.target.dataset.nom;
+    champLatLocalisation.value = evenement.target.dataset.lat;
+    champLonLocalisation.value = evenement.target.dataset.lng;
+    texteNomVilleLocalisation.textContent = evenement.target.dataset.nom;
+    texteVilleLocalisationSelectionnee.hidden = false;
+    resultatsLocalisation.hidden = true;
+    champRechercheLocalisation.value = "";
+  });
 })();
 </script>
 

@@ -73,6 +73,17 @@ class Client(Base):
     # pour centrer la grille de la carte de positions.
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    # Zone geographique ciblee pour la generation de posts IA (voir
+    # claude_generation.py) - distincte de latitude/longitude ci-dessus (adresse
+    # reelle de la fiche) : une commune de reference choisie librement, avec un
+    # rayon, pour que l'IA ne cite pas de localites trop eloignees dans les
+    # posts. Optionnel - si desactive, la generation se base uniquement sur le
+    # contenu de la fiche/site comme avant.
+    localisation_active = Column(Boolean, default=False)
+    localisation_ville = Column(String, default="")
+    localisation_latitude = Column(Float, nullable=True)
+    localisation_longitude = Column(Float, nullable=True)
+    localisation_rayon_km = Column(Integer, default=15)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
