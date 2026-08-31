@@ -25,7 +25,13 @@
     </div>
     <p class="texte-discret">{{ groupe.nb_fiches }} fiche{{ "s" if groupe.nb_fiches > 1 else "" }}</p>
     {% if groupe.image_url %}
-    <img src="{{ groupe.image_url }}" alt="" class="apercu-image-post-revue">
+    <p class="texte-legende-apercu">Aperçu au format utilisé par Google pour les posts (4:3).</p>
+    <div class="apercu-image-conteneur">
+      <img src="{{ groupe.image_url }}" alt="" class="apercu-image">
+      {% if groupe.en_attente %}
+      <button type="button" class="bouton-recadrer-image bouton-recadrer-lot" data-lot-id="{{ groupe.lot_id }}" data-url="{{ groupe.image_url }}">🖉 Recadrer</button>
+      {% endif %}
+    </div>
     {% endif %}
     <p class="texte-complet-post">{{ groupe.texte }}</p>
 
@@ -101,6 +107,25 @@
 </ul>
 {% endif %}
 
+<div class="modale-recadrage" id="modale-recadrage" data-lots-param="{{ lots_param }}" hidden>
+  <div class="modale-recadrage-contenu">
+    <h3>Recadrer l'image</h3>
+    <p class="texte-discret">Fais glisser l'image et ajuste le zoom pour choisir le cadrage utilisé sur le post (format 4:3, comme affiché par Google). Le recadrage s'applique à toutes les fiches de ce post.</p>
+    <p class="message-erreur" id="message-erreur-recadrage" hidden>Impossible de charger cette image pour le recadrage.</p>
+    <div class="cadre-recadrage" id="cadre-recadrage">
+      <img id="image-recadrage" alt="Image à recadrer" draggable="false">
+    </div>
+    <label class="controle-zoom">
+      Zoom
+      <input type="range" id="curseur-zoom-recadrage" min="1" max="3" step="0.01" value="1">
+    </label>
+    <div class="actions-modale-recadrage">
+      <button type="button" id="bouton-annuler-recadrage" class="bouton-secondaire">Annuler</button>
+      <button type="button" id="bouton-appliquer-recadrage" class="bouton">Appliquer le recadrage</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/calendrier_champ.js"></script>
 <script>
 (function () {
@@ -155,6 +180,148 @@
     }
     select.addEventListener("change", actualiser);
     actualiser();
+  });
+
+  // --- Outil de recadrage de l'image (format 4:3), applique a tout le lot ---
+  const modaleRecadrage = document.getElementById("modale-recadrage");
+  const cadreRecadrage = document.getElementById("cadre-recadrage");
+  const imageRecadrage = document.getElementById("image-recadrage");
+  const curseurZoom = document.getElementById("curseur-zoom-recadrage");
+  const boutonAnnulerRecadrage = document.getElementById("bouton-annuler-recadrage");
+  const boutonAppliquerRecadrage = document.getElementById("bouton-appliquer-recadrage");
+  const messageErreurRecadrage = document.getElementById("message-erreur-recadrage");
+  const lotsParam = modaleRecadrage.dataset.lotsParam;
+
+  let etatRecadrage = null;
+  let glissementEnCours = null;
+  let lotIdActif = null;
+
+  function appliquerTransformRecadrage() {
+    imageRecadrage.style.width = `${imageRecadrage.naturalWidth * etatRecadrage.echelle}px`;
+    imageRecadrage.style.height = `${imageRecadrage.naturalHeight * etatRecadrage.echelle}px`;
+    imageRecadrage.style.transform = `translate(${etatRecadrage.posX}px, ${etatRecadrage.posY}px)`;
+  }
+
+  function clamperPositionRecadrage() {
+    const rectCadre = cadreRecadrage.getBoundingClientRect();
+    const largeurAffichee = imageRecadrage.naturalWidth * etatRecadrage.echelle;
+    const hauteurAffichee = imageRecadrage.naturalHeight * etatRecadrage.echelle;
+    etatRecadrage.posX = Math.min(0, Math.max(rectCadre.width - largeurAffichee, etatRecadrage.posX));
+    etatRecadrage.posY = Math.min(0, Math.max(rectCadre.height - hauteurAffichee, etatRecadrage.posY));
+  }
+
+  document.querySelectorAll(".bouton-recadrer-lot").forEach((bouton) => {
+    bouton.addEventListener("click", () => {
+      lotIdActif = bouton.dataset.lotId;
+      messageErreurRecadrage.hidden = true;
+      imageRecadrage.hidden = false;
+      boutonAppliquerRecadrage.disabled = true;
+      etatRecadrage = null;
+      curseurZoom.value = "1";
+      modaleRecadrage.hidden = false;
+      imageRecadrage.src = `/image_proxy?url=${encodeURIComponent(bouton.dataset.url)}`;
+    });
+  });
+
+  imageRecadrage.addEventListener("load", () => {
+    if (!imageRecadrage.naturalWidth) return;
+    const rectCadre = cadreRecadrage.getBoundingClientRect();
+    const echelleBase = Math.max(
+      rectCadre.width / imageRecadrage.naturalWidth,
+      rectCadre.height / imageRecadrage.naturalHeight
+    );
+    const largeurAffichee = imageRecadrage.naturalWidth * echelleBase;
+    const hauteurAffichee = imageRecadrage.naturalHeight * echelleBase;
+    etatRecadrage = {
+      echelleBase,
+      echelle: echelleBase,
+      posX: (rectCadre.width - largeurAffichee) / 2,
+      posY: (rectCadre.height - hauteurAffichee) / 2,
+    };
+    appliquerTransformRecadrage();
+    boutonAppliquerRecadrage.disabled = false;
+  });
+
+  imageRecadrage.addEventListener("error", () => {
+    messageErreurRecadrage.hidden = false;
+    imageRecadrage.hidden = true;
+  });
+
+  curseurZoom.addEventListener("input", () => {
+    if (!etatRecadrage) return;
+    const rectCadre = cadreRecadrage.getBoundingClientRect();
+    const centreNaturelX = (rectCadre.width / 2 - etatRecadrage.posX) / etatRecadrage.echelle;
+    const centreNaturelY = (rectCadre.height / 2 - etatRecadrage.posY) / etatRecadrage.echelle;
+    etatRecadrage.echelle = etatRecadrage.echelleBase * parseFloat(curseurZoom.value);
+    etatRecadrage.posX = rectCadre.width / 2 - centreNaturelX * etatRecadrage.echelle;
+    etatRecadrage.posY = rectCadre.height / 2 - centreNaturelY * etatRecadrage.echelle;
+    clamperPositionRecadrage();
+    appliquerTransformRecadrage();
+  });
+
+  cadreRecadrage.addEventListener("pointerdown", (evenement) => {
+    if (!etatRecadrage) return;
+    cadreRecadrage.setPointerCapture(evenement.pointerId);
+    glissementEnCours = {
+      pointerId: evenement.pointerId,
+      startX: evenement.clientX,
+      startY: evenement.clientY,
+      startPosX: etatRecadrage.posX,
+      startPosY: etatRecadrage.posY,
+    };
+  });
+
+  cadreRecadrage.addEventListener("pointermove", (evenement) => {
+    if (!glissementEnCours || glissementEnCours.pointerId !== evenement.pointerId) return;
+    etatRecadrage.posX = glissementEnCours.startPosX + (evenement.clientX - glissementEnCours.startX);
+    etatRecadrage.posY = glissementEnCours.startPosY + (evenement.clientY - glissementEnCours.startY);
+    clamperPositionRecadrage();
+    appliquerTransformRecadrage();
+  });
+
+  function finGlissementRecadrage() { glissementEnCours = null; }
+  cadreRecadrage.addEventListener("pointerup", finGlissementRecadrage);
+  cadreRecadrage.addEventListener("pointercancel", finGlissementRecadrage);
+
+  boutonAnnulerRecadrage.addEventListener("click", () => { modaleRecadrage.hidden = true; });
+
+  boutonAppliquerRecadrage.addEventListener("click", () => {
+    if (!etatRecadrage || !lotIdActif) return;
+    const rectCadre = cadreRecadrage.getBoundingClientRect();
+    const sourceX = -etatRecadrage.posX / etatRecadrage.echelle;
+    const sourceY = -etatRecadrage.posY / etatRecadrage.echelle;
+    const sourceLargeur = rectCadre.width / etatRecadrage.echelle;
+    const sourceHauteur = rectCadre.height / etatRecadrage.echelle;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 900;
+    const contexte = canvas.getContext("2d");
+    contexte.drawImage(imageRecadrage, sourceX, sourceY, sourceLargeur, sourceHauteur, 0, 0, canvas.width, canvas.height);
+
+    boutonAppliquerRecadrage.disabled = true;
+    boutonAppliquerRecadrage.textContent = "⏳ Enregistrement...";
+
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        messageErreurRecadrage.hidden = false;
+        boutonAppliquerRecadrage.disabled = false;
+        boutonAppliquerRecadrage.textContent = "Appliquer le recadrage";
+        return;
+      }
+      const donnees = new FormData();
+      donnees.append("fichier", blob, "recadrage.jpg");
+      donnees.append("lots_param", lotsParam);
+      try {
+        const reponse = await fetch(`/posts/lot/${lotIdActif}/televerser_image_masse`, { method: "POST", body: donnees });
+        if (!reponse.ok) throw new Error("echec");
+        window.location.reload();
+      } catch (erreur) {
+        messageErreurRecadrage.hidden = false;
+        boutonAppliquerRecadrage.disabled = false;
+        boutonAppliquerRecadrage.textContent = "Appliquer le recadrage";
+      }
+    }, "image/jpeg", 0.9);
   });
 })();
 </script>
