@@ -893,6 +893,11 @@ button:active { transform: translateY(1px); }
   flex-shrink: 0;
 }
 
+.icone-localisation-active {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
 .etiquette-avertissement {
   font-size: 0.72rem;
   background: var(--attention-clair);

@@ -72,6 +72,9 @@
       <a href="/clients/{{ client.id }}">
         <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
         <span>{{ client.nom }}</span>
+        {% if client.localisation_active %}
+        <span class="icone-localisation-active" title="Localisation ciblée activée : {{ client.localisation_ville }} ({{ client.localisation_rayon_km }} km)">📍</span>
+        {% endif %}
       </a>
       <div class="actions-avis">
         {% if not client.account_id or not client.location_id %}
