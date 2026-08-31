@@ -75,12 +75,14 @@
         const jour = new Date(debutGrille);
         jour.setDate(debutGrille.getDate() + i);
         const iso = versISO(jour);
+        const estPasse = iso < aujourdhuiISO;
         const classes = ["popup-calendrier-jour"];
         if (jour.getMonth() !== mois) classes.push("popup-calendrier-jour-hors-mois");
         if (iso === aujourdhuiISO) classes.push("popup-calendrier-jour-aujourdhui");
         if (iso === valeurActuelle) classes.push("popup-calendrier-jour-selectionne");
         if (joursOccupes.has(iso)) classes.push("popup-calendrier-jour-occupe");
-        joursHtml += `<button type="button" class="${classes.join(" ")}" data-iso="${iso}">${jour.getDate()}</button>`;
+        if (estPasse) classes.push("popup-calendrier-jour-passe");
+        joursHtml += `<button type="button" class="${classes.join(" ")}" data-iso="${iso}" ${estPasse ? "disabled" : ""}>${jour.getDate()}</button>`;
       }
 
       panneau.innerHTML = `

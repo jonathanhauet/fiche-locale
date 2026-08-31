@@ -213,10 +213,16 @@ app.add_middleware(SessionMiddleware, secret_key=CLE_SESSION)
 app.mount("/static", StaticFiles(directory=os.path.join(DOSSIER_APP, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(DOSSIER_APP, "templates"))
 
-# Casse le cache navigateur du CSS a chaque modification du fichier (evite de
-# servir une feuille de style perimee apres une mise a jour de la plateforme).
+# Casse le cache navigateur du CSS/JS statique a chaque modification du
+# fichier (evite de servir une version perimee apres une mise a jour de la
+# plateforme - calendrier_champ.js notamment, sans quoi un onglet deja
+# ouvert peut continuer a executer une ancienne version indefiniment, meme
+# apres un rechargement simple de la page).
 templates.env.globals["version_css"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "style.css"))
+)
+templates.env.globals["version_calendrier_js"] = int(
+    os.path.getmtime(os.path.join(DOSSIER_APP, "static", "calendrier_champ.js"))
 )
 # Fonctions appelables directement depuis les templates (barre laterale,
 # affichee sur toutes les pages) : voir soldes_api.py pour le detail du cache.

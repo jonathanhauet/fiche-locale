@@ -2108,6 +2108,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .popup-calendrier-jour-hors-mois { color: var(--texte-discret); opacity: 0.4; }
 .popup-calendrier-jour-aujourdhui { box-shadow: inset 0 0 0 2px var(--accent); }
 .popup-calendrier-jour-selectionne { background: var(--accent); color: white; }
+.popup-calendrier-jour-passe { color: var(--texte-discret); opacity: 0.35; cursor: not-allowed; }
+.popup-calendrier-jour-passe:hover { background: none; }
 
 .popup-calendrier-jour-occupe::after {
   content: "";
