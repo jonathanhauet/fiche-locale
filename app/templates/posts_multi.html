@@ -55,18 +55,24 @@
       </label>
       <details class="bloc-repliable" open>
         <summary>Préremplir les dates de publication (optionnel)</summary>
-        <p class="texte-discret">Chaque post généré reste un brouillon à relire et valider — cette date est juste préremplie sur toutes les fiches concernées par ce post, pour vous éviter de la ressaisir à chaque fois.</p>
-        <div class="grille-dates-generation" id="liste-dates-generation-masse">
-          {% for i in range(1, 11) %}
-          <label class="ligne-date-generation" data-index="{{ i }}" {% if i > 5 %}hidden{% endif %}>
-            Post {{ i }}
-            <div class="champ-date-personnalise">
-              <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
-              <input type="hidden" class="champ-date-valeur" name="dates_prevues">
-            </div>
-          </label>
-          {% endfor %}
+        <p class="texte-discret">Chaque post généré reste un brouillon à relire et valider — cette date est juste préremplie sur toutes les fiches concernées par ce post, pour vous éviter de la ressaisir à chaque fois. Cliquez sur les jours souhaités (dans l'ordre chronologique, le 1er post généré prendra la date la plus proche).</p>
+        <div class="calendrier-multi-dates" id="calendrier-dates-generation-masse">
+          <div class="popup-calendrier-entete">
+            <button type="button" class="popup-calendrier-nav" data-sens="-1">‹</button>
+            <span class="calendrier-multi-titre"></span>
+            <button type="button" class="popup-calendrier-nav" data-sens="1">›</button>
+          </div>
+          <div class="popup-calendrier-jours-semaine">
+            <span>Lu</span><span>Ma</span><span>Me</span><span>Je</span><span>Ve</span><span>Sa</span><span>Di</span>
+          </div>
+          <div class="popup-calendrier-grille calendrier-multi-grille"></div>
+          <div class="popup-calendrier-pied">
+            <span></span>
+            <button type="button" class="popup-calendrier-effacer calendrier-multi-effacer">Tout effacer</button>
+          </div>
+          <p class="calendrier-multi-compteur texte-discret"></p>
         </div>
+        <div id="calendrier-dates-generation-masse-inputs"></div>
       </details>
       <p class="texte-discret">Les posts sont créés sans image — vous la choisirez sur la page suivante, pour chaque post généré.</p>
       <div class="actions-avis">
@@ -243,6 +249,7 @@
 </form>
 
 <script id="donnees-clients-posts" type="application/json">{{ clients_json|safe }}</script>
+<script src="/static/calendrier_multi.js?v={{ version_calendrier_multi_js }}"></script>
 <script>
 (function () {
   const clients = JSON.parse(document.getElementById("donnees-clients-posts").textContent);
@@ -307,17 +314,12 @@
   const formulaireGenerationMasse = document.getElementById("formulaire-generation-masse");
   const champThemeMasse = document.getElementById("champ-theme-masse");
   const selectReferenceMasse = document.getElementById("select-reference-masse");
-  const champNombrePostsMasse = document.getElementById("champ-nombre-posts-masse");
-  const lignesDatesMasse = Array.from(document.querySelectorAll("#liste-dates-generation-masse .ligne-date-generation"));
-
-  function actualiserLignesDatesMasse() {
-    const nombre = Number(champNombrePostsMasse.value) || 0;
-    lignesDatesMasse.forEach((ligne) => {
-      ligne.hidden = Number(ligne.dataset.index) > nombre;
-    });
-  }
-  champNombrePostsMasse.addEventListener("input", actualiserLignesDatesMasse);
-  actualiserLignesDatesMasse();
+  initCalendrierMulti({
+    conteneurId: "calendrier-dates-generation-masse",
+    champNombreId: "champ-nombre-posts-masse",
+    conteneurInputsId: "calendrier-dates-generation-masse-inputs",
+    joursOccupes: [],
+  });
 
   formulaireGenerationMasse.addEventListener("submit", (evenement) => {
     if (!champThemeMasse.value.trim() && !selectReferenceMasse.value) {
@@ -433,5 +435,4 @@
   actualiserTypePost();
 })();
 </script>
-<script src="/static/calendrier_champ.js?v={{ version_calendrier_js }}"></script>
 {% endblock %}

@@ -224,6 +224,9 @@ templates.env.globals["version_css"] = int(
 templates.env.globals["version_calendrier_js"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "calendrier_champ.js"))
 )
+templates.env.globals["version_calendrier_multi_js"] = int(
+    os.path.getmtime(os.path.join(DOSSIER_APP, "static", "calendrier_multi.js"))
+)
 # Fonctions appelables directement depuis les templates (barre laterale,
 # affichee sur toutes les pages) : voir soldes_api.py pour le detail du cache.
 templates.env.globals["solde_dataforseo"] = soldes_api.solde_dataforseo

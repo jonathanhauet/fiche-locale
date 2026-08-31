@@ -390,18 +390,24 @@
       </div>
       <details class="bloc-repliable" open>
         <summary>Préremplir les dates de publication (optionnel)</summary>
-        <p class="texte-discret">Les posts générés restent des brouillons à relire et valider un par un — ces dates sont juste préremplies pour vous éviter de les ressaisir à chaque fois.</p>
-        <div class="grille-dates-generation" id="liste-dates-generation">
-          {% for i in range(1, 21) %}
-          <label class="ligne-date-generation" data-index="{{ i }}" {% if i > 7 %}hidden{% endif %}>
-            Post {{ i }}
-            <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}">
-              <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
-              <input type="hidden" class="champ-date-valeur" name="dates_prevues">
-            </div>
-          </label>
-          {% endfor %}
+        <p class="texte-discret">Les posts générés restent des brouillons à relire et valider un par un — ces dates sont juste préremplies pour vous éviter de les ressaisir à chaque fois. Cliquez sur les jours souhaités (dans l'ordre chronologique, le 1er post generé prendra la date la plus proche).</p>
+        <div class="calendrier-multi-dates" id="calendrier-dates-generation">
+          <div class="popup-calendrier-entete">
+            <button type="button" class="popup-calendrier-nav" data-sens="-1">‹</button>
+            <span class="calendrier-multi-titre"></span>
+            <button type="button" class="popup-calendrier-nav" data-sens="1">›</button>
+          </div>
+          <div class="popup-calendrier-jours-semaine">
+            <span>Lu</span><span>Ma</span><span>Me</span><span>Je</span><span>Ve</span><span>Sa</span><span>Di</span>
+          </div>
+          <div class="popup-calendrier-grille calendrier-multi-grille"></div>
+          <div class="popup-calendrier-pied">
+            <span class="popup-calendrier-legende"><span class="pastille-occupe"></span> déjà programmé</span>
+            <button type="button" class="popup-calendrier-effacer calendrier-multi-effacer">Tout effacer</button>
+          </div>
+          <p class="calendrier-multi-compteur texte-discret"></p>
         </div>
+        <div id="calendrier-dates-generation-inputs"></div>
       </details>
     </form>
     <div id="progression-generation-posts" class="conteneur-progression-avis" hidden>
@@ -410,22 +416,18 @@
     </div>
   </div>
 </div>
+<script src="/static/calendrier_multi.js?v={{ version_calendrier_multi_js }}"></script>
 <script>
 (function () {
-  const champNombrePosts = document.getElementById("champ-nombre-posts-generation");
-  const lignesDates = Array.from(document.querySelectorAll("#liste-dates-generation .ligne-date-generation"));
-
-  function actualiserLignesDates() {
-    const nombre = Number(champNombrePosts.value) || 0;
-    lignesDates.forEach((ligne) => {
-      ligne.hidden = Number(ligne.dataset.index) > nombre;
-    });
-  }
-  champNombrePosts.addEventListener("input", actualiserLignesDates);
-  actualiserLignesDates();
+  initCalendrierMulti({
+    conteneurId: "calendrier-dates-generation",
+    champNombreId: "champ-nombre-posts-generation",
+    conteneurInputsId: "calendrier-dates-generation-inputs",
+    joursOccupes: {{ jours_occupes_json|safe }},
+  });
 
   document.getElementById("formulaire-generation-posts-ia").addEventListener("submit", () => {
-    const nombrePosts = Number(champNombrePosts.value) || 7;
+    const nombrePosts = Number(document.getElementById("champ-nombre-posts-generation").value) || 7;
     demarrerProgressionEstimee("progression-generation-posts", 8 + nombrePosts * 6);
   });
 })();

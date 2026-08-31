@@ -2154,6 +2154,23 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   padding: 0;
 }
 
+.calendrier-multi-dates {
+  max-width: 300px;
+  background: var(--carte);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon);
+  padding: 0.7rem;
+  margin-top: 0.6rem;
+}
+
+.calendrier-multi-titre { font-weight: 600; font-size: 0.85rem; }
+
+.calendrier-multi-compteur {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
 @media (max-width: 800px) {
   .disposition { flex-direction: column; }
   .barre-laterale {
