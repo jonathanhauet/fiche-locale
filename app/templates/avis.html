@@ -38,6 +38,18 @@
   <span class="carte-resume-libelle">avis correspondent aux filtres actuels</span>
 </div>
 
+<details class="bloc-repliable" id="bloc-avis-supprimes">
+  <summary>🗑️ Avis supprimés <span id="chiffre-avis-supprimes"></span></summary>
+  <p class="texte-discret">
+    Google ne donne aucun moyen de lister les avis supprimés directement : cette liste vient d'une vérification
+    quotidienne faite par la plateforme (un avis déjà vu qui n'apparaît plus est considéré supprimé). Elle ne peut
+    donc contenir que des suppressions survenues depuis que ce suivi tourne, pas l'historique complet.
+  </p>
+  <div id="erreurs-avis-supprimes"></div>
+  <ul id="liste-avis-supprimes" class="liste-avis"></ul>
+  <p id="texte-vide-avis-supprimes" class="texte-vide" hidden>Aucun avis supprimé détecté pour l'instant.</p>
+</details>
+
 <div class="filtre-entreprises">
   <span class="filtre-titre">Statut :</span>
   <label class="filtre-case"><input type="radio" name="filtre-statut" value="tous"> Tous</label>
@@ -574,6 +586,76 @@
   // cache - cocher/decocher ensuite ne re-appelle l'API que pour ce qui n'est
   // pas deja en memoire.
   assurerChargementClientsSelectionnes();
+
+  // --- Avis supprimes (detectes par la tache de fond quotidienne, simple
+  // lecture en base - voir /avis/supprimes/{client_id}) : charges seulement
+  // a la premiere ouverture du bloc, pas au chargement de la page.
+  const blocAvisSupprimes = document.getElementById("bloc-avis-supprimes");
+  const chiffreAvisSupprimes = document.getElementById("chiffre-avis-supprimes");
+  const listeAvisSupprimes = document.getElementById("liste-avis-supprimes");
+  const texteVideAvisSupprimes = document.getElementById("texte-vide-avis-supprimes");
+  const erreursAvisSupprimes = document.getElementById("erreurs-avis-supprimes");
+  let avisSupprimesCharges = false;
+
+  function carteAvisSupprimeHTML(item) {
+    const blocReponse = item.reponse
+      ? `<div class="bloc-reponse-existante"><div class="reponse-existante"><p><strong>Votre réponse (disparue avec l'avis) :</strong> <span class="texte-reponse-existante">${echapper(item.reponse)}</span></p></div></div>`
+      : "";
+    return `
+      <li class="carte-avis">
+        <div class="entete-avis">
+          <div>
+            <strong>${echapper(item.auteur)}</strong>
+            <span class="etoiles">${etoiles(item.note)}</span>
+            <span class="date-avis" title="${echapper(formaterDateExacte(item.date_avis))}">${formaterDateRelative(item.date_avis)}</span>
+          </div>
+          <span class="etiquette-statut">${echapper(item.client_nom)}</span>
+        </div>
+        <p class="commentaire-avis">${echapper(item.commentaire) || "(avis sans commentaire écrit)"}</p>
+        ${blocReponse}
+        <p class="texte-discret">Suppression détectée ${formaterDateRelative(item.supprime_le)} (le ${echapper(formaterDateExacte(item.supprime_le))})</p>
+      </li>`;
+  }
+
+  async function chargerAvisSupprimes() {
+    if (avisSupprimesCharges) return;
+    avisSupprimesCharges = true;
+    const actifs = filtresActifs();
+    const idsCibles = actifs === null ? clients.map((c) => c.id) : actifs;
+    listeAvisSupprimes.innerHTML = '<li class="texte-discret">Chargement…</li>';
+
+    const tousLesAvisSupprimes = [];
+    const erreurs = [];
+    const CONCURRENCE = 3;
+    let curseur = 0;
+    async function traiterSuivant() {
+      while (curseur < idsCibles.length) {
+        const id = idsCibles[curseur++];
+        try {
+          const reponse = await fetch(`/avis/supprimes/${id}`);
+          const donnees = await reponse.json();
+          if (donnees.erreur) erreurs.push(donnees.erreur);
+          if (donnees.avis) tousLesAvisSupprimes.push(...donnees.avis);
+        } catch (e) {
+          erreurs.push(`Client ${id} : erreur réseau.`);
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCE, idsCibles.length) }, traiterSuivant));
+
+    tousLesAvisSupprimes.sort((a, b) => (a.supprime_le < b.supprime_le ? 1 : -1));
+
+    erreursAvisSupprimes.innerHTML = erreurs.length
+      ? erreurs.map((e) => `<p class="message-erreur">${echapper(e)}</p>`).join("")
+      : "";
+    chiffreAvisSupprimes.textContent = `(${tousLesAvisSupprimes.length})`;
+    listeAvisSupprimes.innerHTML = tousLesAvisSupprimes.map(carteAvisSupprimeHTML).join("");
+    texteVideAvisSupprimes.hidden = tousLesAvisSupprimes.length > 0;
+  }
+
+  blocAvisSupprimes.addEventListener("toggle", () => {
+    if (blocAvisSupprimes.open) chargerAvisSupprimes();
+  });
 })();
 </script>
 {% endif %}

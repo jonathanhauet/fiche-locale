@@ -57,6 +57,7 @@ from . import (
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
     envoyer_recaps_mensuels,
+    verifier_avis_supprimes,
     verifier_et_publier_photos_programmees,
     verifier_et_publier_posts_programmes,
 )
@@ -293,6 +294,16 @@ planificateur.add_job(
     hours=6,
     id="solde_dataforseo",
     next_run_time=datetime.now() + timedelta(seconds=5),
+)
+# Detection des avis supprimes (voir planificateur.verifier_avis_supprimes) :
+# une fois par jour suffit (Google ne fournit de toute facon aucune notification
+# temps reel), tot le matin pour ne pas concurrencer le recap mensuel a 8h.
+planificateur.add_job(
+    verifier_avis_supprimes,
+    "cron",
+    hour=5,
+    timezone="Europe/Brussels",
+    id="verification_avis_supprimes",
 )
 planificateur.start()
 
@@ -786,6 +797,48 @@ def avis_donnees_client(client_id: int, request: Request, db: Session = Depends(
         return JSONResponse({"avis": avis, "erreur": None})
     except Exception as erreur:
         return JSONResponse({"avis": [], "erreur": f"{client.nom} : {erreur}"})
+
+
+@app.get("/avis/supprimes/{client_id}")
+def avis_supprimes_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Avis detectes comme supprimes pour un client (voir models.AvisConnu et
+    planificateur.verifier_avis_supprimes) - simple lecture en base, aucun
+    appel a Google ici. Ne peut remonter que les suppressions survenues
+    depuis que la tache de fond tourne pour ce client.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"avis": [], "erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"avis": [], "erreur": None})
+
+    avis_supprimes = (
+        db.query(models.AvisConnu)
+        .filter(models.AvisConnu.client_id == client_id, models.AvisConnu.supprime_le.isnot(None))
+        .order_by(models.AvisConnu.supprime_le.desc())
+        .all()
+    )
+
+    return JSONResponse({
+        "avis": [
+            {
+                "client_id": client.id,
+                "client_nom": client.nom,
+                "review_id": a.review_id,
+                "auteur": a.auteur,
+                "note": a.note,
+                "commentaire": a.commentaire,
+                "date_avis": a.date_avis,
+                "reponse": a.reponse or None,
+                "supprime_le": a.supprime_le.isoformat(),
+                "premiere_detection_le": a.premiere_detection_le.isoformat() if a.premiere_detection_le else None,
+            }
+            for a in avis_supprimes
+        ],
+        "erreur": None,
+    })
 
 
 @app.get("/avis/comparatif", response_class=HTMLResponse)

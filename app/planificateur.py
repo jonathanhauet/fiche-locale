@@ -6,7 +6,7 @@ commande : ici, une tache de fond integree au processus web (APScheduler).
 
 from datetime import date, datetime, time
 
-from . import google_business, google_oauth, google_publish, models, rapport_donnees
+from . import google_business, google_oauth, google_publish, google_reviews, models, rapport_donnees
 from .database import SessionLocal
 
 
@@ -131,5 +131,76 @@ def envoyer_recaps_mensuels():
         cache_groupes_etiquette = {}
         for client in clients_eligibles:
             rapport_donnees.envoyer_recap_client(db, client, mois, annee, cache_groupes_etiquette)
+    finally:
+        db.close()
+
+
+def verifier_avis_supprimes():
+    """
+    Compare les avis actuellement presents sur chaque fiche a ceux deja connus
+    (models.AvisConnu) pour detecter les suppressions - Google ne fournit
+    aucun moyen direct de lister les avis supprimes, la seule facon de les
+    detecter est de comparer un releve actuel a un releve precedent. Tourne
+    une fois par jour. Un avis connu qui reapparait (rare, mais possible si
+    Google le restaure) est "reactive" (supprime_le remis a None).
+    """
+    db = SessionLocal()
+    try:
+        if not google_oauth.google_est_connecte(db):
+            return
+
+        clients = (
+            db.query(models.Client)
+            .filter(models.Client.account_id != "", models.Client.location_id != "")
+            .all()
+        )
+        maintenant = datetime.now()
+        identifiants_par_compte = {}
+
+        for client in clients:
+            compte_id = client.compte_google_id
+            if compte_id not in identifiants_par_compte:
+                identifiants_par_compte[compte_id] = google_oauth.obtenir_identifiants(db, compte_id)
+            identifiants = identifiants_par_compte[compte_id]
+            if not identifiants:
+                continue
+
+            try:
+                avis_actuels = google_reviews.lister_avis_complet_client(identifiants, client)
+            except Exception:
+                continue
+
+            ids_actuels = {a["review_id"] for a in avis_actuels}
+            avis_connus = {
+                a.review_id: a
+                for a in db.query(models.AvisConnu).filter(models.AvisConnu.client_id == client.id).all()
+            }
+
+            for avis in avis_actuels:
+                connu = avis_connus.get(avis["review_id"])
+                if connu:
+                    connu.derniere_confirmation_le = maintenant
+                    connu.supprime_le = None
+                    connu.note = avis["note"]
+                    connu.commentaire = avis["commentaire"]
+                    connu.reponse = avis["reponse"] or ""
+                else:
+                    db.add(models.AvisConnu(
+                        client_id=client.id,
+                        review_id=avis["review_id"],
+                        auteur=avis["auteur"],
+                        note=avis["note"],
+                        commentaire=avis["commentaire"],
+                        date_avis=avis["date_avis"],
+                        reponse=avis["reponse"] or "",
+                        premiere_detection_le=maintenant,
+                        derniere_confirmation_le=maintenant,
+                    ))
+
+            for review_id, connu in avis_connus.items():
+                if review_id not in ids_actuels and connu.supprime_le is None:
+                    connu.supprime_le = maintenant
+
+            db.commit()
     finally:
         db.close()

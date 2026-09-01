@@ -6,7 +6,9 @@ identifiants_fiches.json, posts_generes/*.txt, logs/journal_publications.csv).
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import (
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Table, Text, UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -208,6 +210,35 @@ class ComparatifAvis(Base):
     date_fin = Column(Date, nullable=False)
     donnees_json = Column(Text, nullable=False)
     cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class AvisConnu(Base):
+    """
+    Dernier etat connu de chaque avis Google d'un client, releve par la tache
+    de fond quotidienne verifier_avis_supprimes (voir planificateur.py).
+    Google ne fournit aucun moyen direct de lister les avis supprimes ; c'est
+    la comparaison entre ce qui est deja connu ici et le releve actuel qui
+    permet de detecter une suppression (avis connu mais absent du releve ->
+    supprime_le renseigne). Ne peut donc detecter que les suppressions
+    survenues APRES la premiere execution de cette tache pour un client donne.
+    """
+
+    __tablename__ = "avis_connus"
+    __table_args__ = (UniqueConstraint("client_id", "review_id", name="uq_avis_connu_client_review"),)
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    review_id = Column(String, nullable=False)
+    auteur = Column(String, default="")
+    note = Column(Integer, nullable=True)
+    commentaire = Column(Text, default="")
+    date_avis = Column(String, default="")  # createTime Google, ISO brut
+    reponse = Column(Text, default="")
+    premiere_detection_le = Column(DateTime, default=datetime.utcnow)
+    derniere_confirmation_le = Column(DateTime, default=datetime.utcnow)
+    supprime_le = Column(DateTime, nullable=True)
+
+    client = relationship("Client")
 
 
 class Etiquette(Base):
