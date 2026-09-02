@@ -124,7 +124,7 @@ def _migrer_vers_multi_comptes():
         if "protection_statut_ref" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_statut_ref TEXT DEFAULT ''"))
         if "protection_reference_maj_le" not in colonnes_clients:
-            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_reference_maj_le DATETIME"))
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_reference_maj_le TIMESTAMP"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
