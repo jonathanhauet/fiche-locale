@@ -1783,6 +1783,7 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
         .order_by(models.AlerteProtectionFiche.detecte_le.desc())
         .all()
     )
+    nb_sans_protection = sum(1 for c in clients_avec_fiche if not c.protection_fiche_active)
 
     return templates.TemplateResponse(
         request,
@@ -1793,6 +1794,7 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
             ).replace("</", "<\\/"),
             "clients_inactifs": clients_inactifs,
             "seuil_inactivite_jours": SEUIL_INACTIVITE_POSTS_JOURS,
+            "nb_sans_protection": nb_sans_protection,
             "espace": espace,
             "changements_suspects": changements_suspects,
         },
@@ -2286,6 +2288,18 @@ async def verifier_citations_client(client_id: int, request: Request, db: Sessio
     return _reponse_detail_client(request, db, client, resultats_citations=resultats)
 
 
+def _capturer_reference_protection(client: models.Client, infos: dict) -> None:
+    """Enregistre l'etat actuel des champs surveilles comme reference et active la protection."""
+    valeurs = google_location.valeurs_protegees(infos)
+    client.protection_titre_ref = valeurs["titre"]
+    client.protection_telephone_ref = valeurs["telephone"]
+    client.protection_categorie_id_ref = valeurs["categorie_id"]
+    client.protection_categorie_nom_ref = valeurs["categorie_nom"]
+    client.protection_statut_ref = valeurs["statut_ouvert"]
+    client.protection_reference_maj_le = datetime.utcnow()
+    client.protection_fiche_active = True
+
+
 @app.post("/clients/{client_id}/protection/activer")
 def activer_protection_fiche(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -2318,16 +2332,49 @@ def activer_protection_fiche(client_id: int, request: Request, db: Session = Dep
     except Exception as erreur:
         return _reponse_detail_client(request, db, client, erreur_protection=f"Impossible de lire la fiche : {erreur}")
 
-    valeurs = google_location.valeurs_protegees(infos)
-    client.protection_titre_ref = valeurs["titre"]
-    client.protection_telephone_ref = valeurs["telephone"]
-    client.protection_categorie_id_ref = valeurs["categorie_id"]
-    client.protection_categorie_nom_ref = valeurs["categorie_nom"]
-    client.protection_statut_ref = valeurs["statut_ouvert"]
-    client.protection_reference_maj_le = datetime.utcnow()
-    client.protection_fiche_active = True
+    _capturer_reference_protection(client, infos)
     db.commit()
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+@app.post("/clients/protection/activer-toutes")
+def activer_protection_toutes_fiches(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Active la protection en une fois sur toutes les fiches qui ne l'ont pas
+    encore (voir _capturer_reference_protection) - pratique pour l'activer sur
+    l'ensemble des clients existants plutot que fiche par fiche. Une fiche en
+    erreur (token expire, fiche non lisible...) est simplement ignoree, les
+    autres sont quand meme activees.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    clients = (
+        db.query(models.Client)
+        .filter(models.Client.account_id != "", models.Client.location_id != "")
+        .filter(models.Client.protection_fiche_active.is_(False))
+        .all()
+    )
+
+    identifiants_par_compte = {}
+    for client in clients:
+        compte_id = client.compte_google_id
+        if compte_id not in identifiants_par_compte:
+            identifiants_par_compte[compte_id] = google_oauth.obtenir_identifiants(db, compte_id)
+        identifiants = identifiants_par_compte[compte_id]
+        if not identifiants:
+            continue
+
+        try:
+            infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+        except Exception:
+            continue
+
+        _capturer_reference_protection(client, infos)
+        db.commit()
+
+    return RedirectResponse("/alertes", status_code=303)
 
 
 @app.post("/clients/{client_id}/protection/desactiver")

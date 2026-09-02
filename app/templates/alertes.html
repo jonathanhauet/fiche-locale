@@ -41,6 +41,14 @@
 </div>
 
 <h2>🛡️ Changements suspects sur les fiches protégées</h2>
+{% if nb_sans_protection %}
+<form method="post" action="/clients/protection/activer-toutes"
+      onsubmit="return confirm('Activer la protection sur les {{ nb_sans_protection }} fiche{{ "s" if nb_sans_protection != 1 else "" }} non protégées ? Les valeurs actuelles de chacune seront enregistrées comme référence.');">
+  <div class="actions-avis" style="margin-bottom:1rem;">
+    <button type="submit" class="bouton-secondaire">🛡️ Activer la protection sur les {{ nb_sans_protection }} fiche{{ "s" if nb_sans_protection != 1 else "" }} restante{{ "s" if nb_sans_protection != 1 else "" }}</button>
+  </div>
+</form>
+{% endif %}
 {% if changements_suspects %}
 <ul class="liste-avis">
   {% for alerte in changements_suspects %}
