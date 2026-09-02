@@ -86,6 +86,20 @@ class Client(Base):
     localisation_latitude = Column(Float, nullable=True)
     localisation_longitude = Column(Float, nullable=True)
     localisation_rayon_km = Column(Integer, default=15)
+    # Protection de la fiche (voir google_location.valeurs_protegees et
+    # planificateur.verifier_protection_fiches) : instantane de reference des
+    # champs les plus sensibles aux modifications non sollicitees (nom,
+    # telephone, categorie principale, statut ouvert/ferme), capture au moment
+    # de l'activation. Compare quotidiennement au reel pour detecter un
+    # changement non voulu (Google autorise n'importe qui a suggerer une
+    # modification sur une fiche).
+    protection_fiche_active = Column(Boolean, default=False)
+    protection_titre_ref = Column(String, default="")
+    protection_telephone_ref = Column(String, default="")
+    protection_categorie_id_ref = Column(String, default="")
+    protection_categorie_nom_ref = Column(String, default="")
+    protection_statut_ref = Column(String, default="")
+    protection_reference_maj_le = Column(DateTime, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
@@ -237,6 +251,30 @@ class AvisConnu(Base):
     premiere_detection_le = Column(DateTime, default=datetime.utcnow)
     derniere_confirmation_le = Column(DateTime, default=datetime.utcnow)
     supprime_le = Column(DateTime, nullable=True)
+
+    client = relationship("Client")
+
+
+class AlerteProtectionFiche(Base):
+    """
+    Changement suspect detecte sur un champ protege d'une fiche (voir
+    Client.protection_*_ref et planificateur.verifier_protection_fiches) :
+    reste en attente (traite_le NULL) jusqu'a ce que Jonathan choisisse de
+    restaurer la valeur de reference ou d'accepter le changement comme
+    nouvelle reference, depuis la page /alertes.
+    """
+
+    __tablename__ = "alertes_protection_fiche"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    champ = Column(String, nullable=False)  # titre, telephone, categorie, statut
+    libelle_champ = Column(String, default="")
+    valeur_reference = Column(String, default="")  # texte affichable, pas necessairement la valeur brute API
+    valeur_detectee = Column(String, default="")
+    detecte_le = Column(DateTime, default=datetime.utcnow)
+    traite_le = Column(DateTime, nullable=True)
+    action = Column(String, nullable=True)  # RESTAURE, IGNORE
 
     client = relationship("Client")
 

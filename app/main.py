@@ -61,6 +61,7 @@ from .planificateur import (
     verifier_avis_supprimes,
     verifier_et_publier_photos_programmees,
     verifier_et_publier_posts_programmes,
+    verifier_protection_fiches,
 )
 from .security import hacher_mot_de_passe, verifier_mot_de_passe
 
@@ -110,6 +111,20 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN localisation_longitude REAL"))
         if "localisation_rayon_km" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN localisation_rayon_km INTEGER DEFAULT 15"))
+        if "protection_fiche_active" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_fiche_active BOOLEAN DEFAULT FALSE"))
+        if "protection_titre_ref" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_titre_ref TEXT DEFAULT ''"))
+        if "protection_telephone_ref" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_telephone_ref TEXT DEFAULT ''"))
+        if "protection_categorie_id_ref" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_categorie_id_ref TEXT DEFAULT ''"))
+        if "protection_categorie_nom_ref" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_categorie_nom_ref TEXT DEFAULT ''"))
+        if "protection_statut_ref" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_statut_ref TEXT DEFAULT ''"))
+        if "protection_reference_maj_le" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_reference_maj_le DATETIME"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -305,6 +320,15 @@ planificateur.add_job(
     hour=5,
     timezone="Europe/Brussels",
     id="verification_avis_supprimes",
+)
+# Protection de fiche (voir planificateur.verifier_protection_fiches) : une
+# fois par jour, meme creneau matinal que les autres verifications legeres.
+planificateur.add_job(
+    verifier_protection_fiches,
+    "cron",
+    hour=6,
+    timezone="Europe/Brussels",
+    id="verification_protection_fiches",
 )
 planificateur.start()
 
@@ -1749,6 +1773,17 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
     # Les plus preoccupants en premier : jamais publie, puis les plus anciens.
     clients_inactifs.sort(key=lambda c: c["nb_jours"] if c["nb_jours"] is not None else float("inf"), reverse=True)
 
+    changements_suspects = (
+        db.query(models.AlerteProtectionFiche)
+        .join(models.Client, models.AlerteProtectionFiche.client_id == models.Client.id)
+        .filter(
+            models.AlerteProtectionFiche.client_id.in_([c.id for c in clients_avec_fiche]),
+            models.AlerteProtectionFiche.traite_le.is_(None),
+        )
+        .order_by(models.AlerteProtectionFiche.detecte_le.desc())
+        .all()
+    )
+
     return templates.TemplateResponse(
         request,
         "alertes.html",
@@ -1759,8 +1794,82 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
             "clients_inactifs": clients_inactifs,
             "seuil_inactivite_jours": SEUIL_INACTIVITE_POSTS_JOURS,
             "espace": espace,
+            "changements_suspects": changements_suspects,
         },
     )
+
+
+@app.post("/alertes/protection/{alerte_id}/restaurer")
+def restaurer_alerte_protection(alerte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Remet le champ concerne a la valeur de reference sur la fiche Google (ecriture reelle)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    alerte = db.get(models.AlerteProtectionFiche, alerte_id)
+    if not alerte or alerte.traite_le is not None:
+        return RedirectResponse("/alertes", status_code=303)
+
+    client = alerte.client
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client else None
+    if not client or not identifiants:
+        return RedirectResponse("/alertes", status_code=303)
+
+    valeur_reference = {
+        "titre": client.protection_titre_ref,
+        "telephone": client.protection_telephone_ref,
+        "categorie": client.protection_categorie_id_ref,
+        "statut": client.protection_statut_ref,
+    }.get(alerte.champ)
+
+    try:
+        google_location.restaurer_champ_protege(
+            identifiants, client.location_id, alerte.champ,
+            valeur_reference, client.protection_categorie_nom_ref,
+        )
+    except Exception:
+        # L'alerte reste en attente (non marquee traitee) : Jonathan peut reessayer.
+        return RedirectResponse("/alertes", status_code=303)
+
+    alerte.traite_le = datetime.utcnow()
+    alerte.action = "RESTAURE"
+    db.commit()
+    return RedirectResponse("/alertes", status_code=303)
+
+
+@app.post("/alertes/protection/{alerte_id}/ignorer")
+def ignorer_alerte_protection(alerte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Accepte le changement detecte comme nouvelle reference (relit la fiche pour l'etat le plus a jour)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    alerte = db.get(models.AlerteProtectionFiche, alerte_id)
+    if not alerte or alerte.traite_le is not None:
+        return RedirectResponse("/alertes", status_code=303)
+
+    client = alerte.client
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client else None
+    if client and identifiants:
+        try:
+            infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+            valeurs = google_location.valeurs_protegees(infos)
+            if alerte.champ == "titre":
+                client.protection_titre_ref = valeurs["titre"]
+            elif alerte.champ == "telephone":
+                client.protection_telephone_ref = valeurs["telephone"]
+            elif alerte.champ == "categorie":
+                client.protection_categorie_id_ref = valeurs["categorie_id"]
+                client.protection_categorie_nom_ref = valeurs["categorie_nom"]
+            elif alerte.champ == "statut":
+                client.protection_statut_ref = valeurs["statut_ouvert"]
+        except Exception:
+            pass  # la reference n'est pas mise a jour, mais l'alerte est quand meme classee
+
+    alerte.traite_le = datetime.utcnow()
+    alerte.action = "IGNORE"
+    db.commit()
+    return RedirectResponse("/alertes", status_code=303)
 
 
 @app.get("/clients/nouveau", response_class=HTMLResponse)
@@ -2066,7 +2175,8 @@ def _jours_occupes_client(db: Session, client_id: int, posts_en_ligne: list = No
 def _reponse_detail_client(
     request: Request, db: Session, client: models.Client, erreur_generation: str = None,
     erreur_photo: str = None, erreur_document: str = None, erreur_post_manuel: str = None,
-    resultats_citations: list = None, erreur_citations: str = None, code: int = 200,
+    resultats_citations: list = None, erreur_citations: str = None, erreur_protection: str = None,
+    code: int = 200,
 ):
     posts = (
         db.query(models.Post)
@@ -2105,6 +2215,8 @@ def _reponse_detail_client(
             "annuaires_citations": citations.ANNUAIRES,
             "resultats_citations": resultats_citations,
             "erreur_citations": erreur_citations,
+            "erreur_protection": erreur_protection,
+            "libelles_statut_ouverture": google_location.LIBELLES_STATUT_OUVERTURE,
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -2172,6 +2284,65 @@ async def verifier_citations_client(client_id: int, request: Request, db: Sessio
         return _reponse_detail_client(request, db, client, erreur_citations=str(erreur))
 
     return _reponse_detail_client(request, db, client, resultats_citations=resultats)
+
+
+@app.post("/clients/{client_id}/protection/activer")
+def activer_protection_fiche(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Capture l'etat actuel des champs surveilles (nom, telephone, categorie
+    principale, statut) comme reference, puis active la protection - voir
+    planificateur.verifier_protection_fiches pour la verification quotidienne.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    if not client.account_id or not client.location_id:
+        return _reponse_detail_client(
+            request, db, client, erreur_protection="Ce client n'a pas de fiche Google associee."
+        )
+
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return _reponse_detail_client(
+            request, db, client,
+            erreur_protection="Compte Google non valide pour ce client (a reconnecter depuis Comptes Google).",
+        )
+
+    try:
+        infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+    except Exception as erreur:
+        return _reponse_detail_client(request, db, client, erreur_protection=f"Impossible de lire la fiche : {erreur}")
+
+    valeurs = google_location.valeurs_protegees(infos)
+    client.protection_titre_ref = valeurs["titre"]
+    client.protection_telephone_ref = valeurs["telephone"]
+    client.protection_categorie_id_ref = valeurs["categorie_id"]
+    client.protection_categorie_nom_ref = valeurs["categorie_nom"]
+    client.protection_statut_ref = valeurs["statut_ouvert"]
+    client.protection_reference_maj_le = datetime.utcnow()
+    client.protection_fiche_active = True
+    db.commit()
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+@app.post("/clients/{client_id}/protection/desactiver")
+def desactiver_protection_fiche(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    client.protection_fiche_active = False
+    db.commit()
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
 @app.post("/clients/{client_id}/generer")

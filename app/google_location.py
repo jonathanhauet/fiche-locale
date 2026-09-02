@@ -9,8 +9,16 @@ import requests
 
 CHAMPS_LECTURE = (
     "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,specialHours,"
-    "profile,latlng,categories,serviceItems,metadata.mapsUri,metadata.newReviewUri,metadata.hasVoiceOfMerchant"
+    "profile,latlng,categories,serviceItems,openInfo,"
+    "metadata.mapsUri,metadata.newReviewUri,metadata.hasVoiceOfMerchant"
 )
+
+LIBELLES_STATUT_OUVERTURE = {
+    "OPEN": "Ouverte",
+    "CLOSED_PERMANENTLY": "Fermée définitivement",
+    "CLOSED_TEMPORARILY": "Fermée temporairement",
+    "OPEN_FOR_BUSINESS_UNSPECIFIED": "Statut non renseigné",
+}
 
 JOURS_SEMAINE = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
 LIBELLES_JOUR = {
@@ -79,6 +87,56 @@ def mettre_a_jour_fiche(identifiants, location_id: str, donnees: dict, champs: l
     if reponse.status_code != 200:
         raise RuntimeError(f"Echec de la mise a jour de la fiche (code {reponse.status_code}) : {reponse.text}")
     return reponse.json()
+
+
+def valeurs_protegees(infos: dict) -> dict:
+    """
+    Extrait les quelques champs surveilles par la protection de fiche (voir
+    Client.protection_*_ref / planificateur.verifier_protection_fiches), a
+    partir d'une reponse obtenir_infos_fiche.
+    """
+    categories = infos.get("categories") or {}
+    primaire = categories.get("primaryCategory") or {}
+    return {
+        "titre": infos.get("title", ""),
+        "telephone": (infos.get("phoneNumbers") or {}).get("primaryPhone", ""),
+        "categorie_id": primaire.get("name", ""),
+        "categorie_nom": primaire.get("displayName", ""),
+        "statut_ouvert": (infos.get("openInfo") or {}).get("status", ""),
+    }
+
+
+def restaurer_champ_protege(
+    identifiants, location_id: str, champ: str,
+    valeur_reference: str, valeur_reference_secondaire: str = "",
+) -> dict:
+    """
+    Remet un seul champ protege a sa valeur de reference. Relit d'abord l'etat
+    actuel de la fiche pour ne modifier que le sous-champ concerne dans sa
+    structure (ex. primaryPhone au sein de phoneNumbers) sans ecraser le reste
+    (additionalPhones, additionalCategories...).
+    """
+    infos_actuelles = obtenir_infos_fiche(identifiants, location_id)
+
+    if champ == "titre":
+        return mettre_a_jour_fiche(identifiants, location_id, {"title": valeur_reference}, ["title"])
+
+    if champ == "telephone":
+        telephones = dict(infos_actuelles.get("phoneNumbers") or {})
+        telephones["primaryPhone"] = valeur_reference
+        return mettre_a_jour_fiche(identifiants, location_id, {"phoneNumbers": telephones}, ["phoneNumbers"])
+
+    if champ == "categorie":
+        categories = dict(infos_actuelles.get("categories") or {})
+        categories["primaryCategory"] = {"name": valeur_reference, "displayName": valeur_reference_secondaire}
+        return mettre_a_jour_fiche(identifiants, location_id, {"categories": categories}, ["categories"])
+
+    if champ == "statut":
+        info_ouverture = dict(infos_actuelles.get("openInfo") or {})
+        info_ouverture["status"] = valeur_reference
+        return mettre_a_jour_fiche(identifiants, location_id, {"openInfo": info_ouverture}, ["openInfo"])
+
+    raise ValueError(f"Champ protege inconnu : {champ}")
 
 
 def rechercher_categories(identifiants, terme: str, langue: str = "fr", region: str = "FR") -> list[dict]:

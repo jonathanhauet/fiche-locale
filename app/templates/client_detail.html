@@ -259,6 +259,51 @@
   </div>
 </details>
 
+<details class="bloc-repliable" {% if erreur_protection %}open{% endif %}>
+  <summary>
+    Protection de la fiche
+    {% if client.protection_fiche_active %}
+    <span class="etiquette-statut etiquette-publie_live">🛡️ Activée</span>
+    {% endif %}
+  </summary>
+  <div class="formulaire">
+    <p class="texte-discret">
+      Google autorise n'importe qui à suggérer une modification sur une fiche (nom, téléphone, catégorie,
+      statut ouvert/fermé...). Une fois activée, la plateforme compare chaque jour ces informations à une
+      référence enregistrée et te prévient dans l'onglet Alertes en cas d'écart — jamais de restauration
+      automatique, c'est toi qui valides.
+    </p>
+    {% if erreur_protection %}
+    <p class="message-erreur">{{ erreur_protection }}</p>
+    {% endif %}
+
+    {% if client.protection_fiche_active %}
+    <ul class="liste-resultats-citations">
+      <li><strong>Nom de la fiche</strong> {{ client.protection_titre_ref }}</li>
+      <li><strong>Téléphone</strong> {{ client.protection_telephone_ref or "—" }}</li>
+      <li><strong>Catégorie principale</strong> {{ client.protection_categorie_nom_ref or "—" }}</li>
+      <li><strong>Statut</strong> {{ libelles_statut_ouverture.get(client.protection_statut_ref, client.protection_statut_ref) }}</li>
+    </ul>
+    <p class="texte-discret">
+      Référence enregistrée le {{ client.protection_reference_maj_le.strftime("%d/%m/%Y à %H:%M") if client.protection_reference_maj_le else "—" }}.
+    </p>
+    <form method="post" action="/clients/{{ client.id }}/protection/desactiver"
+          onsubmit="return confirm('Désactiver la protection de cette fiche ? Les changements ne seront plus surveillés.');">
+      <div class="actions-avis">
+        <button type="submit" class="bouton-secondaire">Désactiver la protection</button>
+      </div>
+    </form>
+    {% else %}
+    <form method="post" action="/clients/{{ client.id }}/protection/activer"
+          onsubmit="return confirm('Activer la protection ? Les valeurs actuelles (nom, téléphone, catégorie, statut) seront enregistrées comme référence.');">
+      <div class="actions-avis">
+        <button type="submit" class="bouton-secondaire">🛡️ Activer la protection</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</details>
+
 <h2 id="photos-fiche">Photos de la fiche Google</h2>
 {% if erreur_photo %}
 <p class="message-erreur">{{ erreur_photo }}</p>

@@ -6,7 +6,7 @@ commande : ici, une tache de fond integree au processus web (APScheduler).
 
 from datetime import date, datetime, time
 
-from . import google_business, google_oauth, google_publish, google_reviews, models, rapport_donnees
+from . import google_business, google_location, google_oauth, google_publish, google_reviews, models, rapport_donnees
 from .database import SessionLocal
 
 
@@ -200,6 +200,104 @@ def verifier_avis_supprimes():
             for review_id, connu in avis_connus.items():
                 if review_id not in ids_actuels and connu.supprime_le is None:
                     connu.supprime_le = maintenant
+
+            db.commit()
+    finally:
+        db.close()
+
+
+def verifier_protection_fiches():
+    """
+    Compare, pour chaque fiche ayant active la protection, le nom, le
+    telephone, la categorie principale et le statut ouvert/ferme actuels a la
+    reference enregistree au moment de l'activation (voir
+    Client.protection_*_ref). Un ecart cree une AlerteProtectionFiche en
+    attente (visible sur /alertes) - aucune ecriture automatique sur la fiche
+    Google, Jonathan valide ensuite la restauration ou l'acceptation depuis
+    l'alerte. Tourne une fois par jour.
+    """
+    db = SessionLocal()
+    try:
+        if not google_oauth.google_est_connecte(db):
+            return
+
+        clients = (
+            db.query(models.Client)
+            .filter(models.Client.protection_fiche_active == True)  # noqa: E712
+            .filter(models.Client.account_id != "", models.Client.location_id != "")
+            .all()
+        )
+        if not clients:
+            return
+
+        identifiants_par_compte = {}
+
+        for client in clients:
+            compte_id = client.compte_google_id
+            if compte_id not in identifiants_par_compte:
+                identifiants_par_compte[compte_id] = google_oauth.obtenir_identifiants(db, compte_id)
+            identifiants = identifiants_par_compte[compte_id]
+            if not identifiants:
+                continue
+
+            try:
+                infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+            except Exception:
+                continue
+            actuel = google_location.valeurs_protegees(infos)
+
+            verifications = [
+                {
+                    "champ": "titre", "libelle": "Nom de la fiche",
+                    "reference": client.protection_titre_ref, "detecte": actuel["titre"],
+                    "reference_affichee": client.protection_titre_ref, "detecte_affiche": actuel["titre"],
+                },
+                {
+                    "champ": "telephone", "libelle": "Téléphone",
+                    "reference": client.protection_telephone_ref, "detecte": actuel["telephone"],
+                    "reference_affichee": client.protection_telephone_ref, "detecte_affiche": actuel["telephone"],
+                },
+                {
+                    "champ": "categorie", "libelle": "Catégorie principale",
+                    "reference": client.protection_categorie_id_ref, "detecte": actuel["categorie_id"],
+                    "reference_affichee": client.protection_categorie_nom_ref, "detecte_affiche": actuel["categorie_nom"],
+                },
+                {
+                    "champ": "statut", "libelle": "Statut ouvert/fermé",
+                    "reference": client.protection_statut_ref, "detecte": actuel["statut_ouvert"],
+                    "reference_affichee": google_location.LIBELLES_STATUT_OUVERTURE.get(
+                        client.protection_statut_ref, client.protection_statut_ref
+                    ),
+                    "detecte_affiche": google_location.LIBELLES_STATUT_OUVERTURE.get(
+                        actuel["statut_ouvert"], actuel["statut_ouvert"]
+                    ),
+                },
+            ]
+
+            for verif in verifications:
+                if not verif["reference"] or verif["reference"] == verif["detecte"]:
+                    continue
+                alerte_en_attente = (
+                    db.query(models.AlerteProtectionFiche)
+                    .filter(
+                        models.AlerteProtectionFiche.client_id == client.id,
+                        models.AlerteProtectionFiche.champ == verif["champ"],
+                        models.AlerteProtectionFiche.traite_le.is_(None),
+                    )
+                    .first()
+                )
+                if alerte_en_attente:
+                    # Deja signale et toujours pas traite : on rafraichit juste la
+                    # valeur detectee au cas ou elle aurait encore change entre-temps.
+                    alerte_en_attente.valeur_detectee = verif["detecte_affiche"]
+                    continue
+                db.add(models.AlerteProtectionFiche(
+                    client_id=client.id,
+                    champ=verif["champ"],
+                    libelle_champ=verif["libelle"],
+                    valeur_reference=verif["reference_affichee"],
+                    valeur_detectee=verif["detecte_affiche"],
+                ))
 
             db.commit()
     finally:

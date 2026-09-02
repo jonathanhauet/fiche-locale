@@ -13,8 +13,8 @@
 
 <p class="texte-discret">
   Ce qui mérite ton attention sur l'ensemble des clients : fiches sans nouveau post depuis
-  {{ seuil_inactivite_jours }} jours, fiches Google incomplètes, et avis négatifs restés sans réponse.
-  Le suivi de position n'est pas inclus ici (payant, il reste à la demande).
+  {{ seuil_inactivite_jours }} jours, fiches Google incomplètes, avis négatifs restés sans réponse, et
+  changements suspects sur les fiches protégées. Le suivi de position n'est pas inclus ici (payant, il reste à la demande).
 </p>
 
 <div class="grille-resume">
@@ -34,7 +34,44 @@
     <span class="carte-resume-chiffre" id="chiffre-avis-negatifs">…</span>
     <span class="carte-resume-libelle">Avis négatifs sans réponse</span>
   </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre{{ ' chiffre-attention' if changements_suspects else '' }}">{{ changements_suspects|length }}</span>
+    <span class="carte-resume-libelle">Changement{{ "s" if changements_suspects|length != 1 else "" }} suspect{{ "s" if changements_suspects|length != 1 else "" }}</span>
+  </div>
 </div>
+
+<h2>🛡️ Changements suspects sur les fiches protégées</h2>
+{% if changements_suspects %}
+<ul class="liste-avis">
+  {% for alerte in changements_suspects %}
+  <li class="carte-avis">
+    <div class="entete-avis">
+      <div>
+        <strong>{{ alerte.libelle_champ }}</strong>
+        <span class="date-avis">détecté le {{ alerte.detecte_le.strftime("%d/%m/%Y") }}</span>
+      </div>
+      <a href="/clients/{{ alerte.client_id }}"><span class="etiquette-statut">{{ alerte.client.nom }}</span></a>
+    </div>
+    <p class="commentaire-avis">
+      Référence : <strong>{{ alerte.valeur_reference or "—" }}</strong>
+      &nbsp;→&nbsp; Détecté : <strong>{{ alerte.valeur_detectee or "—" }}</strong>
+    </p>
+    <div class="actions-avis">
+      <form method="post" action="/alertes/protection/{{ alerte.id }}/restaurer"
+            onsubmit="return confirm('Restaurer la valeur de référence sur la fiche Google ?');">
+        <button type="submit">🔄 Restaurer la référence</button>
+      </form>
+      <form method="post" action="/alertes/protection/{{ alerte.id }}/ignorer"
+            onsubmit="return confirm('Accepter ce changement comme nouvelle référence ? Il ne sera plus signalé.');">
+        <button type="submit" class="bouton-secondaire">✓ C'est normal, accepter</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun changement suspect détecté sur les fiches protégées.</p>
+{% endif %}
 
 <h2>Fiches sans post depuis {{ seuil_inactivite_jours }}+ jours</h2>
 {% if clients_inactifs %}
