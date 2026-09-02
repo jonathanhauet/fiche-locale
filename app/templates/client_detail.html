@@ -216,6 +216,49 @@
   </form>
 </details>
 
+<details class="bloc-repliable" {% if resultats_citations or erreur_citations %}open{% endif %}>
+  <summary>Citations (présence sur les annuaires)</summary>
+  <div class="formulaire">
+    <p class="texte-discret">
+      Vérifie si le nom de l'entreprise ressort sur quelques annuaires tiers. Vérification à la demande
+      uniquement (jamais automatique) : chaque annuaire coché consomme une requête DataForSEO facturée à l'usage.
+    </p>
+    {% if erreur_citations %}
+    <p class="message-erreur">{{ erreur_citations }}</p>
+    {% endif %}
+    {% if resultats_citations %}
+    <ul class="liste-resultats-citations">
+      {% for resultat in resultats_citations %}
+      <li>
+        <strong>{{ resultat.nom }}</strong>
+        {% if resultat.erreur %}
+          <span class="etiquette-statut etiquette-echec">Erreur : {{ resultat.erreur }}</span>
+        {% elif resultat.trouve %}
+          <span class="etiquette-statut etiquette-publie_live">✓ Trouvé</span>
+          {% if resultat.url %}<a href="{{ resultat.url }}" target="_blank" rel="noopener" class="texte-discret">Voir la fiche</a>{% endif %}
+        {% else %}
+          <span class="etiquette-statut etiquette-echec">✕ Non trouvé</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <form method="post" action="/clients/{{ client.id }}/citations/verifier"
+          onsubmit="return confirm('Lancer la vérification ? Chaque annuaire coché consomme du crédit DataForSEO.');">
+      <div class="filtre-entreprises">
+        {% for annuaire in annuaires_citations %}
+        <label class="filtre-case">
+          <input type="checkbox" name="annuaires" value="{{ annuaire.id }}" checked> {{ annuaire.nom }}
+        </label>
+        {% endfor %}
+      </div>
+      <div class="actions-avis">
+        <button type="submit" class="bouton-secondaire">🔍 Vérifier</button>
+      </div>
+    </form>
+  </div>
+</details>
+
 <h2 id="photos-fiche">Photos de la fiche Google</h2>
 {% if erreur_photo %}
 <p class="message-erreur">{{ erreur_photo }}</p>

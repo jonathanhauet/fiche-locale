@@ -29,6 +29,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from . import (
     bilan_pdf,
     brevo_email,
+    citations,
     claude_generation,
     comparatif_avis_pdf,
     deux_facteurs,
@@ -2064,7 +2065,8 @@ def _jours_occupes_client(db: Session, client_id: int, posts_en_ligne: list = No
 
 def _reponse_detail_client(
     request: Request, db: Session, client: models.Client, erreur_generation: str = None,
-    erreur_photo: str = None, erreur_document: str = None, erreur_post_manuel: str = None, code: int = 200,
+    erreur_photo: str = None, erreur_document: str = None, erreur_post_manuel: str = None,
+    resultats_citations: list = None, erreur_citations: str = None, code: int = 200,
 ):
     posts = (
         db.query(models.Post)
@@ -2100,6 +2102,9 @@ def _reponse_detail_client(
             "toutes_etiquettes_json": toutes_etiquettes_json,
             "jours_occupes_json": _jours_occupes_client(db, client.id, posts_en_ligne=tous_posts_en_ligne),
             "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
+            "annuaires_citations": citations.ANNUAIRES,
+            "resultats_citations": resultats_citations,
+            "erreur_citations": erreur_citations,
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -2117,6 +2122,56 @@ def detail_client(client_id: int, request: Request, db: Session = Depends(obteni
         return HTMLResponse("Client introuvable.", status_code=404)
 
     return _reponse_detail_client(request, db, client)
+
+
+@app.post("/clients/{client_id}/citations/verifier")
+async def verifier_citations_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Verifie a la demande la presence de la fiche sur quelques annuaires tiers
+    (voir citations.py) - jamais automatique, chaque annuaire coche consomme
+    une requete DataForSEO facturee a l'usage.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    formulaire = await request.form()
+    annuaires_ids = [v for v in formulaire.getlist("annuaires") if v.strip()]
+    if not annuaires_ids:
+        return _reponse_detail_client(request, db, client, erreur_citations="Cochez au moins un annuaire a verifier.")
+
+    if not client.account_id or not client.location_id:
+        return _reponse_detail_client(
+            request, db, client, erreur_citations="Ce client n'a pas de fiche Google associee."
+        )
+
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return _reponse_detail_client(
+            request, db, client,
+            erreur_citations="Compte Google non valide pour ce client (a reconnecter depuis Comptes Google).",
+        )
+
+    try:
+        infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+        adresse = infos.get("storefrontAddress") or {}
+        ville = adresse.get("locality", "")
+        code_pays = adresse.get("regionCode", "")
+    except Exception as erreur:
+        return _reponse_detail_client(
+            request, db, client, erreur_citations=f"Impossible de lire l'adresse de la fiche : {erreur}"
+        )
+
+    try:
+        resultats = citations.verifier_citations(client.nom, ville, code_pays, annuaires_ids)
+    except Exception as erreur:
+        return _reponse_detail_client(request, db, client, erreur_citations=str(erreur))
+
+    return _reponse_detail_client(request, db, client, resultats_citations=resultats)
 
 
 @app.post("/clients/{client_id}/generer")
