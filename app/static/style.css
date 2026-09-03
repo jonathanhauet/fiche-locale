@@ -224,6 +224,19 @@ a { color: var(--accent); }
   font-size: 0.95rem;
 }
 
+.badge-notification {
+  margin-left: auto;
+  background: var(--danger);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  min-width: 1.1rem;
+  text-align: center;
+}
+
 .lien-deconnexion-barre {
   color: var(--barre-texte);
   text-decoration: none;

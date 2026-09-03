@@ -267,6 +267,24 @@ def _clients_json_recherche_globale() -> str:
 
 templates.env.globals["clients_json_recherche_globale"] = _clients_json_recherche_globale
 
+
+def _nb_changements_suspects() -> int:
+    """
+    Nombre de changements suspects (protection de fiche) pas encore traites,
+    toutes fiches confondues - affiche en pastille sur le lien "Alertes" de la
+    barre laterale (voir base.html). Session dediee, comme
+    _clients_json_recherche_globale ci-dessus (fonction globale Jinja, pas de
+    Depends(obtenir_session) disponible ici).
+    """
+    db = SessionLocal()
+    try:
+        return db.query(models.AlerteProtectionFiche).filter(models.AlerteProtectionFiche.traite_le.is_(None)).count()
+    finally:
+        db.close()
+
+
+templates.env.globals["nb_changements_suspects"] = _nb_changements_suspects
+
 # Tache de fond : publie automatiquement les posts programmes dont la date
 # est arrivee. Remplace la tache planifiee Windows des scripts en ligne de
 # commande - tourne tant que ce processus est actif.

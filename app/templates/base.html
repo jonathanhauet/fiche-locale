@@ -34,6 +34,10 @@
           </a>
           <a href="/alertes" class="{{ 'lien-actif' if page_actuelle == 'alertes' else '' }}">
             <span class="nav-icone">🔔</span> Alertes
+            {% set nb_suspects = nb_changements_suspects() %}
+            {% if nb_suspects %}
+            <span class="badge-notification" title="{{ nb_suspects }} changement{{ 's' if nb_suspects != 1 else '' }} suspect{{ 's' if nb_suspects != 1 else '' }} a valider">{{ nb_suspects }}</span>
+            {% endif %}
           </a>
           <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
             <span class="nav-icone">▤</span> Posts en masse
