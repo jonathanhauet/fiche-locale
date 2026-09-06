@@ -128,14 +128,14 @@ def construire_email(
         <div style="background:{COULEUR_FOND_CARTE};border-left:3px solid {COULEUR_ACCENT};
                     padding:12px 16px;margin:10px 0;border-radius:4px;">
           <p style="margin:0;color:{COULEUR_TEXTE};font-style:italic;font-size:14px;">« {a['commentaire']} »</p>
-          <p style="margin:6px 0 0;color:{COULEUR_DISCRET};font-size:13px;">— {a['auteur']}</p>
+          <p style="margin:6px 0 0;color:{COULEUR_DISCRET};font-size:13px;">- {a['auteur']}</p>
         </div>""")
     elif len(avis_positifs) > 1:
         citations = "".join(f"""
         <div style="background:{COULEUR_FOND_CARTE};border-left:3px solid {COULEUR_ACCENT};
                     padding:12px 16px;margin:10px 0;border-radius:4px;">
           <p style="margin:0;color:{COULEUR_TEXTE};font-style:italic;font-size:14px;">« {a['commentaire']} »</p>
-          <p style="margin:6px 0 0;color:{COULEUR_DISCRET};font-size:13px;">— {a['auteur']}</p>
+          <p style="margin:6px 0 0;color:{COULEUR_DISCRET};font-size:13px;">- {a['auteur']}</p>
         </div>""" for a in avis_positifs[:2])
         sections.append(citations)
 
@@ -179,7 +179,7 @@ def construire_email(
     if posts_publies:
         items = "".join(
             f'<li style="margin-bottom:6px;color:{COULEUR_TEXTE};font-size:14px;">'
-            f'<span style="color:{COULEUR_DISCRET};font-size:12px;">{p["date"]}</span> — {p["titre"]}</li>'
+            f'<span style="color:{COULEUR_DISCRET};font-size:12px;">{p["date"]}</span> : {p["titre"]}</li>'
             for p in posts_publies
         )
         sections.append(f"""
@@ -191,11 +191,47 @@ def construire_email(
         sections.append(f"""
         <p style="color:{COULEUR_TEXTE};font-size:14px;">📷 <strong>{photos_publiees}</strong> photo(s) ajoutée(s) à ta fiche {en_mois}.</p>""")
 
+    # --- Surveillance en arriere-plan (protection de fiche, avis supprimes) :
+    # travail invisible sinon, on le montre pour prouver qu'il tourne meme
+    # quand tout va bien - pas seulement quand un souci est detecte. ---
+    lignes_surveillance = []
+    if donnees.get("protection_active"):
+        nb_changements = donnees.get("nb_changements_protection", 0)
+        if nb_changements:
+            lignes_surveillance.append(
+                f"🛡️ <strong>{nb_changements} modification{'s' if nb_changements > 1 else ''} suspecte"
+                f"{'s' if nb_changements > 1 else ''}</strong> repérée{'s' if nb_changements > 1 else ''} "
+                f"sur ta fiche {en_mois} (nom, téléphone ou catégorie) : je l'ai détectée et je m'en occupe."
+            )
+        else:
+            lignes_surveillance.append(
+                "🛡️ Je surveille en continu que personne ne modifie ton nom, ton téléphone ou ta "
+                "catégorie sans ton accord."
+            )
+    nb_avis_supprimes = donnees.get("nb_avis_supprimes", 0)
+    if nb_avis_supprimes:
+        lignes_surveillance.append(
+            f"🔎 <strong>{nb_avis_supprimes} avis {'a' if nb_avis_supprimes == 1 else 'ont'} disparu</strong> "
+            f"{en_mois}, je {'l’ai' if nb_avis_supprimes == 1 else 'les ai'} repéré"
+            f"{'s' if nb_avis_supprimes > 1 else ''} et je te tiens au courant."
+        )
+    else:
+        lignes_surveillance.append("🔎 Aucune suppression d'avis détectée ce mois-ci, tout est stable.")
+
+    if lignes_surveillance:
+        items_surveillance = "".join(
+            f'<li style="margin-bottom:6px;color:{COULEUR_TEXTE};font-size:14px;">{ligne}</li>'
+            for ligne in lignes_surveillance
+        )
+        sections.append(f"""
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">🛡️ Ce que je surveille pour toi</h2>
+        <ul style="margin:8px 0;padding-left:20px;">{items_surveillance}</ul>""")
+
     # --- Mots-cles de recherche : preuve concrete du travail SEO. ---
     if mots_cles:
         items = "".join(
             f'<li style="margin-bottom:4px;color:{COULEUR_TEXTE};font-size:14px;">'
-            f'{"moins de " if m["est_seuil"] else ""}{m["impressions"]} recherche(s) — <strong>{m["mot_cle"]}</strong></li>'
+            f'{"moins de " if m["est_seuil"] else ""}{m["impressions"]} recherche(s) : <strong>{m["mot_cle"]}</strong></li>'
             for m in mots_cles[:5]
         )
         sections.append(f"""
@@ -204,7 +240,7 @@ def construire_email(
 
     contenu_sections = "".join(sections) or (
         f'<p style="color:{COULEUR_DISCRET};font-size:14px;">'
-        f"Pas de nouveauté marquante {en_mois} — on continue le travail de fond !</p>"
+        f"Pas de nouveauté marquante {en_mois} : je continue le travail de fond !</p>"
     )
 
     prenom_ou_nom = client.prenom.strip() if client.prenom and client.prenom.strip() else client.nom
@@ -227,7 +263,7 @@ def construire_email(
             f'<img src="{qr_code_avis}" width="130" height="130" alt="QR code pour laisser un avis" '
             f'style="display:block;margin:12px auto 0;border-radius:6px;">'
             f'<p style="margin:8px 0 0;color:{COULEUR_DISCRET};font-size:12px;">'
-            f"Ou fais-leur scanner ce QR code (à imprimer sur une facture, une carte de visite, en salle d'attente...).</p>"
+            f"Ou fais-leur scanner ce QR code (à imprimer sur une facture, une carte de visite, sur un flyer...).</p>"
             if qr_code_avis else ""
         )
         bloc_avis_a_partager = f"""

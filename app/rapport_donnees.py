@@ -56,6 +56,7 @@ def donnees_rapport_vides() -> dict:
         "mots_cles": [], "erreur_mots_cles": None,
         "comparatif_visibilite": None, "evolution_avis": None,
         "photos_publiees": 0, "fiche_validee": None,
+        "protection_active": False, "nb_changements_protection": 0, "nb_avis_supprimes": 0,
     }
 
 
@@ -165,6 +166,27 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
             (resume_avis["nombre_avis_periode"] - nombre_avis_periode_n1) / nombre_avis_periode_n1 * 100, 1
         )
 
+    # Travail de surveillance en arriere-plan (protection de fiche, detection
+    # des avis supprimes - voir planificateur.py) : invisible sinon, on le
+    # rend visible dans le recap pour montrer ce qui est fait sur la fiche
+    # meme quand rien de "suspect" n'est detecte (voir recap_mensuel.py).
+    debut_dt, fin_dt = datetime.combine(debut, datetime.min.time()), datetime.combine(fin, datetime.max.time())
+    nb_avis_supprimes = (
+        db.query(models.AvisConnu)
+        .filter(models.AvisConnu.client_id == client.id)
+        .filter(models.AvisConnu.supprime_le.isnot(None))
+        .filter(models.AvisConnu.supprime_le >= debut_dt, models.AvisConnu.supprime_le <= fin_dt)
+        .count()
+    )
+    nb_changements_protection = 0
+    if client.protection_fiche_active:
+        nb_changements_protection = (
+            db.query(models.AlerteProtectionFiche)
+            .filter(models.AlerteProtectionFiche.client_id == client.id)
+            .filter(models.AlerteProtectionFiche.detecte_le >= debut_dt, models.AlerteProtectionFiche.detecte_le <= fin_dt)
+            .count()
+        )
+
     return {
         "statistiques": statistiques,
         "resume_avis": resume_avis,
@@ -175,6 +197,9 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
         "evolution_avis": evolution_avis,
         "photos_publiees": photos_publiees,
         "fiche_validee": fiche_validee,
+        "protection_active": client.protection_fiche_active,
+        "nb_changements_protection": nb_changements_protection,
+        "nb_avis_supprimes": nb_avis_supprimes,
     }
 
 
