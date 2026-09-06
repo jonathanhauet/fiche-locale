@@ -11,6 +11,8 @@ Respecte les règles Google Business Profile : aucun numéro de téléphone dans
 
 Varie les angles : chaque post traite d'une prestation ou d'une situation différente (urgence, installation, entretien, promotion, conseil, clientèle professionnelle, etc.).
 
+N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou un tiret simple (-).
+
 Contexte temporel :
 
 Tu peux intégrer un contexte saisonnier si c'est cohérent et naturel avec l'activité, mais ce n'est pas obligatoire. Si tu le fais, base-toi uniquement sur la période réelle de publication précisée plus bas (jamais sur une saison générique ou une autre période).

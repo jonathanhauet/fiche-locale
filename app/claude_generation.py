@@ -138,8 +138,13 @@ def _nettoyer_texte_genere(texte: str) -> str:
     backticks ou de ponctuation/caracteres CJK isoles, sans lien avec le
     contenu demande, qui se glissent occasionnellement dans la sortie du
     modele) - jamais legitimes dans un post en francais, retires sans risque.
+    Remplace aussi le tiret cadratin (—) par un tiret simple : meme avec la
+    consigne de style demandee au modele, il peut lui arriver d'en glisser
+    un malgre tout - ce filet garantit qu'aucun n'atteint jamais le client.
     """
-    return _CARACTERES_INDESIRABLES.sub("", texte).strip()
+    texte = _CARACTERES_INDESIRABLES.sub("", texte)
+    texte = texte.replace("—", "-")
+    return texte.strip()
 
 
 def _nettoyer_champs_post(post: dict) -> dict:
@@ -250,6 +255,8 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
         "- Longueur : entre 1200 et 1500 caracteres (espaces compris), comme un vrai Google Post developpe.\n"
         "- Passe des lignes entre les idees pour aerer le texte (pas un seul bloc compact) : "
         "utilise des sauts de ligne (\\n\\n) entre les paragraphes.\n"
+        "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
+        "un tiret simple (-).\n"
         "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images "
         "(illustration adaptee au theme, sans texte incruste ni logo, sans reference geographique)."
     )
@@ -302,6 +309,8 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
         "- Longueur : entre 1200 et 1500 caracteres (espaces compris), comme un vrai Google Post developpe.\n"
         "- Passe des lignes entre les idees pour aerer le texte (pas un seul bloc compact) : "
         "utilise des sauts de ligne (\\n\\n) entre les paragraphes.\n"
+        "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
+        "un tiret simple (-).\n"
         "- Pour chaque proposition, redige aussi un titre court et un prompt en anglais pour un "
         "generateur d'images (illustration adaptee au theme, sans texte incruste ni logo, sans "
         "reference geographique)."
@@ -375,6 +384,8 @@ def suggerer_reponse_avis(
         "- Personnalise en fonction du contenu reel de l'avis s'il y en a un. N'invente aucun detail "
         "specifique que tu ne connais pas (nom d'employe, date, evenement precis).\n"
         "- Pas de formule signature du type « L'equipe de ... ». Reste naturel et humain.\n"
+        "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
+        "un tiret simple (-).\n"
         "- Reponds uniquement avec le texte de la reponse, sans guillemets ni commentaire autour."
     )
 
@@ -390,7 +401,7 @@ def suggerer_reponse_avis(
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
-    return bloc_texte.strip()
+    return _nettoyer_texte_genere(bloc_texte)
 
 
 def resumer_avis_positifs(avis: list[dict]) -> str:
@@ -415,8 +426,9 @@ def resumer_avis_positifs(avis: list[dict]) -> str:
         "montrant ce que ses propres clients apprecient. Mets en avant les points communs qui reviennent "
         "(ex. reactivite, qualite du travail, accueil...). Ne cite pas les auteurs nommement. Tutoie "
         "l'entreprise (le reste de l'email la tutoie). Reste naturel, evite les formules toutes faites et "
-        "les superlatifs excessifs. Reponds uniquement avec le texte du resume, sans guillemets ni "
-        "commentaire autour."
+        "les superlatifs excessifs. N'utilise jamais de tiret cadratin (—) : remplace par une virgule, "
+        "un deux-points ou un tiret simple (-). Reponds uniquement avec le texte du resume, sans "
+        "guillemets ni commentaire autour."
     )
 
     client = Anthropic(api_key=CLE_API)
@@ -431,4 +443,4 @@ def resumer_avis_positifs(avis: list[dict]) -> str:
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
-    return bloc_texte.strip()
+    return _nettoyer_texte_genere(bloc_texte)
