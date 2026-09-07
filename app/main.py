@@ -1683,9 +1683,12 @@ def _plage_mois_prochain() -> tuple[date, date]:
 
 @app.get("/", response_class=HTMLResponse)
 def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return redirection
+    if not utilisateur_connecte(request):
+        # Page d'accueil publique (sans connexion) decrivant l'outil - requise
+        # par la validation du branding Google (ecran de consentement OAuth) :
+        # la page d'accueil doit rester consultable sans se connecter et
+        # expliquer l'objet de l'application.
+        return templates.TemplateResponse(request, "accueil.html", {})
 
     espace, clients = _resoudre_espace_et_clients(db, etiquette_id)
 
