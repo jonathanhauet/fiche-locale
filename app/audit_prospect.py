@@ -31,14 +31,11 @@ RAYON_KM_DEFAUT = 2.0
 MAX_CONCURRENTS_AFFICHES = 5
 
 
-def rechercher_fiche_publique(nom_entreprise: str, ville: str) -> dict:
-    """
-    Retrouve la fiche publique d'une entreprise (nom + ville) via une
-    recherche Google Maps grand public - aucune authentification necessaire,
-    ca fonctionne donc pour une entreprise qui n'est pas cliente. Renvoie
-    {"trouve": bool, "titre", "note", "nombre_avis", "adresse", "telephone",
-    "categorie", "site_web", "latitude", "longitude"}.
-    """
+MAX_CANDIDATS_RECHERCHE = 5
+
+
+def _rechercher_maps(nom_entreprise: str, ville: str) -> list[dict]:
+    """Appel DataForSEO brut (1 requete facturee) partage par rechercher_fiche_publique et rechercher_candidats_fiche."""
     if not identifiants_configures():
         raise RuntimeError("DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD manquants dans plateforme_web/.env.")
 
@@ -59,8 +56,58 @@ def rechercher_fiche_publique(nom_entreprise: str, ville: str) -> dict:
         message = taches[0].get("status_message") if taches else "reponse vide"
         raise RuntimeError(f"Erreur DataForSEO : {message}")
 
-    resultats = (taches[0].get("result") or [{}])[0].get("items") or []
-    mots_mot_cle = rank_tracking._mots(requete)
+    return (taches[0].get("result") or [{}])[0].get("items") or []
+
+
+def _item_vers_fiche(item: dict) -> dict:
+    note = item.get("rating") or {}
+    return {
+        "trouve": True,
+        "titre": item.get("title", ""),
+        "note": note.get("value"),
+        "nombre_avis": note.get("votes_count"),
+        "adresse": item.get("address", ""),
+        "telephone": item.get("phone", ""),
+        "categorie": item.get("category", ""),
+        "site_web": item.get("url", "") or item.get("domain", ""),
+        # DataForSEO renvoie latitude/longitude directement sur l'item (pas
+        # sous une cle "coordinates" imbriquee, malgre ce que la doc laisse
+        # penser - verifie contre un appel reel).
+        "latitude": item.get("latitude"),
+        "longitude": item.get("longitude"),
+    }
+
+
+def rechercher_candidats_fiche(nom_entreprise: str, ville: str) -> list[dict]:
+    """
+    Renvoie jusqu'a MAX_CANDIDATS_RECHERCHE fiches candidates (les plus
+    proches du nom saisi), pour laisser confirmer visuellement la bonne
+    entreprise AVANT de lancer l'audit complet (qui consomme beaucoup plus
+    de requetes avec la grille de positions). Un seul appel DataForSEO,
+    partage avec rechercher_fiche_publique.
+    """
+    resultats = _rechercher_maps(nom_entreprise, ville)
+    mots_mot_cle = rank_tracking._mots(f"{nom_entreprise} {ville}")
+
+    resultats_notes = [
+        (item, _score_correspondance(item.get("title", ""), nom_entreprise, mots_mot_cle))
+        for item in resultats
+    ]
+    resultats_notes.sort(key=lambda paire: paire[1], reverse=True)
+
+    return [_item_vers_fiche(item) for item, score in resultats_notes[:MAX_CANDIDATS_RECHERCHE] if score > 0]
+
+
+def rechercher_fiche_publique(nom_entreprise: str, ville: str) -> dict:
+    """
+    Retrouve la fiche publique d'une entreprise (nom + ville) via une
+    recherche Google Maps grand public - aucune authentification necessaire,
+    ca fonctionne donc pour une entreprise qui n'est pas cliente. Renvoie
+    {"trouve": bool, "titre", "note", "nombre_avis", "adresse", "telephone",
+    "categorie", "site_web", "latitude", "longitude"}.
+    """
+    resultats = _rechercher_maps(nom_entreprise, ville)
+    mots_mot_cle = rank_tracking._mots(f"{nom_entreprise} {ville}")
 
     meilleur, meilleur_score = None, 0.0
     for item in resultats:
@@ -71,20 +118,7 @@ def rechercher_fiche_publique(nom_entreprise: str, ville: str) -> dict:
     if meilleur is None or meilleur_score < rank_tracking.SEUIL_CORRESPONDANCE:
         return {"trouve": False}
 
-    note = meilleur.get("rating") or {}
-    coordonnees = meilleur.get("coordinates") or {}
-    return {
-        "trouve": True,
-        "titre": meilleur.get("title", ""),
-        "note": note.get("value"),
-        "nombre_avis": note.get("votes_count"),
-        "adresse": meilleur.get("address", ""),
-        "telephone": meilleur.get("phone", ""),
-        "categorie": meilleur.get("category", ""),
-        "site_web": meilleur.get("url", "") or meilleur.get("domain", ""),
-        "latitude": coordonnees.get("latitude"),
-        "longitude": coordonnees.get("longitude"),
-    }
+    return _item_vers_fiche(meilleur)
 
 
 def grille_positions_prospect(

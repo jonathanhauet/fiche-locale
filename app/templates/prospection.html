@@ -19,18 +19,39 @@
 <p class="message-erreur">{{ erreur }}</p>
 {% endif %}
 
-<form class="formulaire" method="post" action="/prospection/audit"
+<form class="formulaire" id="formulaire-prospection" method="post" action="/prospection/audit"
       onsubmit="return confirm('Lancer cet audit ? Chaque mot-cle teste consomme des requetes DataForSEO facturees a usage.');">
   <div class="ligne-champs">
     <label>
       Nom de l'entreprise
-      <input type="text" name="nom_entreprise" required placeholder="Ex : Bâti'Net">
+      <input type="text" name="nom_entreprise" id="champ-nom-entreprise" required placeholder="Ex : Bâti'Net">
     </label>
     <label>
       Ville
-      <input type="text" name="ville" required placeholder="Ex : Mérignac">
+      <input type="text" name="ville" id="champ-ville" required placeholder="Ex : Mérignac">
     </label>
   </div>
+
+  <div class="recherche-ville">
+    <button type="button" id="bouton-rechercher-fiche" class="bouton-secondaire">🔍 Rechercher la fiche</button>
+  </div>
+  <p class="texte-discret" id="texte-recherche-info" hidden></p>
+  <ul id="resultats-recherche-fiche" class="resultats-recherche-ville" hidden></ul>
+  <p class="ville-selectionnee" id="fiche-confirmee-affichage" hidden>
+    ✓ <span id="texte-fiche-confirmee"></span>
+    <button type="button" class="lien-retirer-geotag" id="bouton-retirer-confirmation" title="Retirer">×</button>
+  </p>
+
+  <input type="hidden" name="fiche_confirmee" id="champ-fiche-confirmee" value="">
+  <input type="hidden" name="fiche_titre" id="champ-fiche-titre">
+  <input type="hidden" name="fiche_note" id="champ-fiche-note">
+  <input type="hidden" name="fiche_nombre_avis" id="champ-fiche-nombre-avis">
+  <input type="hidden" name="fiche_adresse" id="champ-fiche-adresse">
+  <input type="hidden" name="fiche_telephone" id="champ-fiche-telephone">
+  <input type="hidden" name="fiche_categorie" id="champ-fiche-categorie">
+  <input type="hidden" name="fiche_site_web" id="champ-fiche-site-web">
+  <input type="hidden" name="fiche_latitude" id="champ-fiche-latitude">
+  <input type="hidden" name="fiche_longitude" id="champ-fiche-longitude">
 
   <div class="ligne-champs">
     <label>
@@ -55,5 +76,118 @@
     <button type="submit">🎯 Générer l'audit PDF</button>
   </div>
 </form>
+
+<script>
+(function () {
+  const boutonRechercher = document.getElementById("bouton-rechercher-fiche");
+  const champNom = document.getElementById("champ-nom-entreprise");
+  const champVille = document.getElementById("champ-ville");
+  const texteInfo = document.getElementById("texte-recherche-info");
+  const resultats = document.getElementById("resultats-recherche-fiche");
+  const afficheConfirmee = document.getElementById("fiche-confirmee-affichage");
+  const texteConfirmee = document.getElementById("texte-fiche-confirmee");
+  const boutonRetirer = document.getElementById("bouton-retirer-confirmation");
+
+  const champsCaches = {
+    confirmee: document.getElementById("champ-fiche-confirmee"),
+    titre: document.getElementById("champ-fiche-titre"),
+    note: document.getElementById("champ-fiche-note"),
+    nombreAvis: document.getElementById("champ-fiche-nombre-avis"),
+    adresse: document.getElementById("champ-fiche-adresse"),
+    telephone: document.getElementById("champ-fiche-telephone"),
+    categorie: document.getElementById("champ-fiche-categorie"),
+    siteWeb: document.getElementById("champ-fiche-site-web"),
+    latitude: document.getElementById("champ-fiche-latitude"),
+    longitude: document.getElementById("champ-fiche-longitude"),
+  };
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function reinitialiserConfirmation() {
+    champsCaches.confirmee.value = "";
+    afficheConfirmee.hidden = true;
+  }
+
+  function confirmerCandidat(candidat) {
+    champsCaches.confirmee.value = "1";
+    champsCaches.titre.value = candidat.titre || "";
+    champsCaches.note.value = candidat.note ?? "";
+    champsCaches.nombreAvis.value = candidat.nombre_avis ?? "";
+    champsCaches.adresse.value = candidat.adresse || "";
+    champsCaches.telephone.value = candidat.telephone || "";
+    champsCaches.categorie.value = candidat.categorie || "";
+    champsCaches.siteWeb.value = candidat.site_web || "";
+    champsCaches.latitude.value = candidat.latitude ?? "";
+    champsCaches.longitude.value = candidat.longitude ?? "";
+
+    const details = [candidat.categorie, candidat.adresse].filter(Boolean).join(" — ");
+    texteConfirmee.textContent = `${candidat.titre}${details ? " (" + details + ")" : ""}`;
+    afficheConfirmee.hidden = false;
+    resultats.hidden = true;
+    resultats.innerHTML = "";
+  }
+
+  boutonRetirer.addEventListener("click", reinitialiserConfirmation);
+
+  boutonRechercher.addEventListener("click", async () => {
+    const nom = champNom.value.trim();
+    const ville = champVille.value.trim();
+    if (!nom || !ville) {
+      texteInfo.textContent = "Renseigne le nom de l'entreprise et la ville avant de rechercher.";
+      texteInfo.hidden = false;
+      return;
+    }
+
+    reinitialiserConfirmation();
+    boutonRechercher.disabled = true;
+    boutonRechercher.textContent = "Recherche...";
+    texteInfo.hidden = true;
+    resultats.hidden = true;
+    resultats.innerHTML = "";
+
+    try {
+      const donnees = new URLSearchParams({ nom_entreprise: nom, ville: ville });
+      const reponseHttp = await fetch("/prospection/rechercher", { method: "POST", body: donnees });
+      const resultat = await reponseHttp.json();
+      if (!reponseHttp.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+
+      const candidats = resultat.candidats || [];
+      if (!candidats.length) {
+        texteInfo.textContent = "Aucune fiche trouvée avec ce nom et cette ville sur Google Maps — vérifie l'orthographe, ou lance quand même l'audit (la grille de positions fonctionne même sans fiche retrouvée).";
+        texteInfo.hidden = false;
+      } else {
+        resultats.innerHTML = candidats.map((candidat, index) => {
+          const details = [candidat.categorie, candidat.adresse].filter(Boolean).join(" — ");
+          const note = candidat.note ? `★ ${candidat.note}${candidat.nombre_avis ? " (" + candidat.nombre_avis + " avis)" : ""}` : "";
+          return `<li>
+            <button type="button" class="bouton-resultat-ville" data-index="${index}">
+              <strong>${echapper(candidat.titre)}</strong>${note ? " — " + echapper(note) : ""}
+              ${details ? `<br><span class="texte-discret">${echapper(details)}</span>` : ""}
+            </button>
+          </li>`;
+        }).join("");
+        resultats.hidden = false;
+        resultats.querySelectorAll(".bouton-resultat-ville").forEach((bouton) => {
+          bouton.addEventListener("click", () => confirmerCandidat(candidats[Number(bouton.dataset.index)]));
+        });
+      }
+    } catch (erreur) {
+      texteInfo.textContent = erreur.message;
+      texteInfo.hidden = false;
+    } finally {
+      boutonRechercher.disabled = false;
+      boutonRechercher.textContent = "🔍 Rechercher la fiche";
+    }
+  });
+
+  // Une nouvelle recherche invalide la confirmation precedente (nom/ville modifies entre-temps).
+  champNom.addEventListener("input", reinitialiserConfirmation);
+  champVille.addEventListener("input", reinitialiserConfirmation);
+})();
+</script>
 
 {% endblock %}

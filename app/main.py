@@ -4038,6 +4038,32 @@ def prospection_formulaire(request: Request):
     return templates.TemplateResponse(request, "prospection.html", {"erreur": None})
 
 
+@app.post("/prospection/rechercher")
+async def rechercher_candidats_prospect(request: Request):
+    """
+    Recherche a la demande (1 seule requete DataForSEO) les fiches candidates
+    correspondant au nom/ville saisis, pour confirmer visuellement la bonne
+    entreprise avant de lancer l'audit complet - bien plus couteux (grille de
+    positions sur plusieurs points).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    formulaire = await request.form()
+    nom_entreprise = (formulaire.get("nom_entreprise") or "").strip()
+    ville = (formulaire.get("ville") or "").strip()
+    if not nom_entreprise or not ville:
+        return JSONResponse({"erreur": "Renseignez le nom de l'entreprise et la ville."}, status_code=400)
+
+    try:
+        candidats = audit_prospect.rechercher_candidats_fiche(nom_entreprise, ville)
+    except Exception as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+
+    return JSONResponse({"candidats": candidats})
+
+
 @app.post("/prospection/audit")
 async def generer_audit_prospect(request: Request):
     """
@@ -4065,10 +4091,27 @@ async def generer_audit_prospect(request: Request):
             {"erreur": "Renseignez le nom de l'entreprise, la ville, et au moins un mot-cle."}, status_code=400,
         )
 
-    try:
-        fiche = audit_prospect.rechercher_fiche_publique(nom_entreprise, ville)
-    except Exception as erreur:
-        return templates.TemplateResponse(request, "prospection.html", {"erreur": str(erreur)}, status_code=400)
+    # Si une fiche candidate a deja ete confirmee via /prospection/rechercher
+    # (champs caches du formulaire), on evite une deuxieme requete DataForSEO
+    # identique pour la retrouver.
+    if (formulaire.get("fiche_confirmee") or "") == "1" and formulaire.get("fiche_latitude"):
+        fiche = {
+            "trouve": True,
+            "titre": formulaire.get("fiche_titre") or "",
+            "note": float(formulaire["fiche_note"]) if formulaire.get("fiche_note") else None,
+            "nombre_avis": int(formulaire["fiche_nombre_avis"]) if formulaire.get("fiche_nombre_avis") else None,
+            "adresse": formulaire.get("fiche_adresse") or "",
+            "telephone": formulaire.get("fiche_telephone") or "",
+            "categorie": formulaire.get("fiche_categorie") or "",
+            "site_web": formulaire.get("fiche_site_web") or "",
+            "latitude": float(formulaire["fiche_latitude"]),
+            "longitude": float(formulaire["fiche_longitude"]),
+        }
+    else:
+        try:
+            fiche = audit_prospect.rechercher_fiche_publique(nom_entreprise, ville)
+        except Exception as erreur:
+            return templates.TemplateResponse(request, "prospection.html", {"erreur": str(erreur)}, status_code=400)
 
     latitude = fiche.get("latitude") if fiche.get("trouve") else None
     longitude = fiche.get("longitude") if fiche.get("trouve") else None
