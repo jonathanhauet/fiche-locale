@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% set page_actuelle = "prospection" %}
+{% block titre %}Prospection : audit d'une entreprise non cliente{% endblock %}
+{% block contenu %}
+
+<div class="barre-titre">
+  <h1>Audit prospect</h1>
+</div>
+
+<p class="texte-discret">
+  Génère un audit PDF de visibilité locale pour une entreprise qui n'est pas cliente (démarchage) : fiche
+  Google publique, position sur un ou deux mots-clés, et principaux concurrents. Contrairement aux outils du
+  reste de la plateforme, aucun accès autorisé n'est utilisé (impossible sans autorisation du propriétaire) :
+  seules des données Google Maps publiques sont exploitées, donc pas d'historique de posts ni de photos dans
+  ce document.
+</p>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+<form class="formulaire" method="post" action="/prospection/audit"
+      onsubmit="return confirm('Lancer cet audit ? Chaque mot-cle teste consomme des requetes DataForSEO facturees a usage.');">
+  <div class="ligne-champs">
+    <label>
+      Nom de l'entreprise
+      <input type="text" name="nom_entreprise" required placeholder="Ex : Bâti'Net">
+    </label>
+    <label>
+      Ville
+      <input type="text" name="ville" required placeholder="Ex : Mérignac">
+    </label>
+  </div>
+
+  <div class="ligne-champs">
+    <label>
+      Mot-clé à tester
+      <input type="text" name="mot_cle_1" required placeholder="Ex : nettoyage de toiture">
+    </label>
+    <label>
+      Second mot-clé (optionnel)
+      <input type="text" name="mot_cle_2" placeholder="Ex : entreprise de démoussage de toiture">
+    </label>
+  </div>
+
+  <label>
+    Taille de la grille de test
+    <select name="taille_grille">
+      <option value="3" selected>3×3 (9 points, le plus économique)</option>
+      <option value="5">5×5 (25 points, plus précis)</option>
+    </select>
+  </label>
+
+  <div class="actions-avis">
+    <button type="submit">🎯 Générer l'audit PDF</button>
+  </div>
+</form>
+
+{% endblock %}

@@ -27,6 +27,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import (
+    audit_prospect,
+    audit_prospect_pdf,
     bilan_pdf,
     brevo_email,
     citations,
@@ -4018,6 +4020,82 @@ def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_sessio
 
     octets_pdf = bilan_pdf.generer_bilan_pdf(sections_clients, debut, fin)
     nom_fichier = f"bilan_{debut.isoformat()}_{fin.isoformat()}.pdf"
+    return Response(
+        content=octets_pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
+
+
+# --- Audit prospect (demarchage a froid) -------------------------------------
+
+
+@app.get("/prospection", response_class=HTMLResponse)
+def prospection_formulaire(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    return templates.TemplateResponse(request, "prospection.html", {"erreur": None})
+
+
+@app.post("/prospection/audit")
+async def generer_audit_prospect(request: Request):
+    """
+    Genere un audit PDF pour une entreprise qui n'est PAS cliente (prospection),
+    a partir de donnees Google Maps publiques uniquement (voir audit_prospect.py -
+    aucun acces authentifie a la fiche, donc pas d'historique de posts/photos).
+    Chaque mot-cle teste consomme des requetes DataForSEO facturees a l'usage.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    formulaire = await request.form()
+    nom_entreprise = (formulaire.get("nom_entreprise") or "").strip()
+    ville = (formulaire.get("ville") or "").strip()
+    mots_cles = [m.strip() for m in [formulaire.get("mot_cle_1"), formulaire.get("mot_cle_2")] if m and m.strip()]
+    try:
+        taille_grille = int(formulaire.get("taille_grille") or audit_prospect.TAILLE_GRILLE_DEFAUT)
+    except ValueError:
+        taille_grille = audit_prospect.TAILLE_GRILLE_DEFAUT
+
+    if not nom_entreprise or not ville or not mots_cles:
+        return templates.TemplateResponse(
+            request, "prospection.html",
+            {"erreur": "Renseignez le nom de l'entreprise, la ville, et au moins un mot-cle."}, status_code=400,
+        )
+
+    try:
+        fiche = audit_prospect.rechercher_fiche_publique(nom_entreprise, ville)
+    except Exception as erreur:
+        return templates.TemplateResponse(request, "prospection.html", {"erreur": str(erreur)}, status_code=400)
+
+    latitude = fiche.get("latitude") if fiche.get("trouve") else None
+    longitude = fiche.get("longitude") if fiche.get("trouve") else None
+    if latitude is None or longitude is None:
+        try:
+            lieux = geocodage.rechercher_lieu(f"{ville}, France")
+        except Exception:
+            lieux = []
+        if not lieux:
+            return templates.TemplateResponse(
+                request, "prospection.html",
+                {"erreur": f"Impossible de localiser la ville '{ville}' pour centrer la grille de positions."},
+                status_code=400,
+            )
+        latitude, longitude = lieux[0]["latitude"], lieux[0]["longitude"]
+
+    releves = []
+    try:
+        for mot_cle in mots_cles:
+            releves.append(audit_prospect.grille_positions_prospect(
+                nom_entreprise, mot_cle, latitude, longitude, taille_grille=taille_grille,
+            ))
+    except Exception as erreur:
+        return templates.TemplateResponse(request, "prospection.html", {"erreur": str(erreur)}, status_code=400)
+
+    octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(nom_entreprise, ville, fiche, releves)
+    nom_fichier = f"audit_{nom_entreprise.lower().replace(' ', '_')}.pdf"
     return Response(
         content=octets_pdf,
         media_type="application/pdf",
