@@ -364,6 +364,16 @@ def rediriger_si_non_connecte(request: Request):
 # --- Connexion / deconnexion ---------------------------------------------
 
 
+@app.get("/confidentialite", response_class=HTMLResponse)
+def page_confidentialite(request: Request):
+    """
+    Page publique (pas d'authentification requise) - exigee par Google pour la
+    validation du branding de l'ecran de consentement OAuth (voir demande
+    d'acces Google Ads API).
+    """
+    return templates.TemplateResponse(request, "confidentialite.html", {})
+
+
 @app.get("/connexion", response_class=HTMLResponse)
 def page_connexion(request: Request):
     if utilisateur_connecte(request):

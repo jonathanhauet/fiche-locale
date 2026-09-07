@@ -347,6 +347,17 @@ a { color: var(--accent); }
 
 .carte-connexion-2fa { max-width: 400px; }
 
+.carte-texte-legal {
+  max-width: 640px;
+  text-align: left;
+  gap: 0.4rem;
+}
+.carte-texte-legal h1 { font-size: 1.4rem; margin: 0.4rem 0 0; }
+.carte-texte-legal h2 { font-size: 1.05rem; margin: 1.1rem 0 0.2rem; color: var(--texte); }
+.carte-texte-legal p, .carte-texte-legal ul { margin: 0 0 0.3rem; line-height: 1.55; }
+.carte-texte-legal ul { padding-left: 1.2rem; }
+.carte-texte-legal .marque-connexion { align-self: flex-start; }
+
 .texte-explication-2fa {
   font-size: 0.85rem;
   color: var(--texte-discret);

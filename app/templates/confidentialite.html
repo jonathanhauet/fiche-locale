@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block titre %}Politique de confidentialité — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <div class="carte-connexion carte-texte-legal">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    <h1>Politique de confidentialité</h1>
+    <p class="texte-discret">Dernière mise à jour : septembre 2026</p>
+
+    <h2>Qui gère cet outil</h2>
+    <p>
+      Fiche Locale est un outil interne développé et exploité par Jonathan Hauet, exerçant une
+      activité d'agence de référencement local (France/Belgique), pour gérer les fiches Google
+      Business Profile et les campagnes Google Ads de ses propres clients. Ce n'est pas un produit
+      public : il n'est ni vendu, ni revendu, ni mis à disposition de tiers externes.
+    </p>
+
+    <h2>Données traitées</h2>
+    <p>Pour fonctionner, l'outil accède, via les API officielles de Google et avec l'autorisation
+      explicite (OAuth) du titulaire du compte, aux données suivantes :</p>
+    <ul>
+      <li>Informations des fiches Google Business Profile gérées (nom, coordonnées, horaires, catégories, photos, avis, statistiques de visibilité) ;</li>
+      <li>Données de campagnes Google Ads gérées pour ces mêmes clients (campagnes, groupes d'annonces, budgets, performances) ;</li>
+      <li>Volumes de recherche de mots-clés (Google Ads Keyword Planner).</li>
+    </ul>
+    <p>
+      Aucune donnée d'utilisateur final ou de grand public n'est collectée : les seules personnes
+      utilisant l'outil sont l'exploitant de l'agence et, le cas échéant, ses collaborateurs.
+    </p>
+
+    <h2>Utilisation des données</h2>
+    <p>
+      Ces données sont utilisées exclusivement pour fournir la prestation de gestion de fiche et de
+      campagnes à l'entreprise cliente concernée (rédaction et publication de posts, réponse aux
+      avis, suivi de positionnement, gestion publicitaire). Elles ne sont ni vendues, ni partagées
+      avec des tiers, ni utilisées à des fins publicitaires externes à l'agence. L'utilisation des
+      données obtenues via les API Google respecte la
+      <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>,
+      y compris ses exigences de "Limited Use".
+    </p>
+
+    <h2>Conservation et sécurité</h2>
+    <p>
+      Les données sont conservées dans une base de données hébergée chez un fournisseur cloud
+      sécurisé, accessible uniquement via un compte protégé par mot de passe et double
+      authentification (2FA).
+    </p>
+
+    <h2>Révocation de l'accès</h2>
+    <p>
+      Le titulaire d'un compte Google connecté à l'outil peut révoquer cet accès à tout moment
+      depuis <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.
+    </p>
+
+    <h2>Contact</h2>
+    <p>Pour toute question sur cette politique : <a href="mailto:hello@jonathanhauet.fr">hello@jonathanhauet.fr</a>.</p>
+
+    <p class="fil-retour"><a href="/connexion">&larr; Retour à la connexion</a></p>
+  </div>
+</div>
+{% endblock %}
