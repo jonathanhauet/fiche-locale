@@ -517,6 +517,15 @@
     const messageErreur = carte.querySelector(".message-erreur-carte");
     messageErreur.hidden = true;
 
+    // Le formulaire est re-rendu a l'identique apres une modification de
+    // reponse existante (meme texte, meme bouton) : sans indication visuelle
+    // explicite, rien ne distingue un clic pris en compte d'un clic qui n'a
+    // rien fait, ce qui pousse a cliquer plusieurs fois par doute.
+    const bouton = formulaire.querySelector("button[type=submit]");
+    const texteBoutonInitial = bouton.textContent;
+    bouton.disabled = true;
+    bouton.textContent = "Enregistrement...";
+
     const donnees = new URLSearchParams({
       account_id: carte.dataset.accountId,
       location_id: carte.dataset.locationId,
@@ -533,8 +542,13 @@
         (a) => a.review_id === carte.dataset.reviewId && a.account_id === carte.dataset.accountId
       );
       if (item) { item.reponse = resultat.reponse; item.date_reponse = resultat.date_reponse; }
+
+      bouton.textContent = "✓ Réponse enregistrée";
+      await new Promise((resoudre) => setTimeout(resoudre, 1100));
       afficherAvis();
     } catch (erreur) {
+      bouton.disabled = false;
+      bouton.textContent = texteBoutonInitial;
       messageErreur.textContent = erreur.message;
       messageErreur.hidden = false;
     }
