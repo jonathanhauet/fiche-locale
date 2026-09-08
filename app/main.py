@@ -27,6 +27,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import (
+    acces_masse,
     audit_prospect,
     audit_prospect_pdf,
     audit_public,
@@ -37,9 +38,11 @@ from . import (
     comparatif_avis_pdf,
     deux_facteurs,
     documents,
+    export_acces_excel,
     export_clients_excel,
     gemini_images,
     geocodage,
+    google_admins,
     google_ads_keywords,
     google_autocomplete,
     google_business,
@@ -4139,6 +4142,78 @@ def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_sessio
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
     )
+
+
+# --- Gestion des acces (administrateurs de fiche) ----------------------------
+
+
+@app.get("/acces", response_class=HTMLResponse)
+def acces_formulaire(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    return templates.TemplateResponse(
+        request, "acces.html",
+        {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "resultats": None, "erreur": None},
+    )
+
+
+@app.get("/acces/export")
+def telecharger_acces_excel(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Export en lecture seule (une ligne par administrateur trouve sur chaque
+    fiche selectionnee) - sert a la fois d'audit des acces actuels et de base
+    pour preparer le fichier de remplacement (voir /acces/remplacer).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client_ids = [int(v) for v in request.query_params.getlist("client_ids") if v.strip()]
+    if not client_ids:
+        return HTMLResponse("Selectionnez au moins une fiche.", status_code=400)
+
+    clients = db.query(models.Client).filter(models.Client.id.in_(client_ids)).order_by(models.Client.nom).all()
+    octets = export_acces_excel.generer_export(db, clients)
+    return Response(
+        content=octets,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="acces_fiches_{date.today().isoformat()}.xlsx"'},
+    )
+
+
+@app.post("/acces/remplacer", response_class=HTMLResponse)
+async def remplacer_acces(request: Request, fichier: UploadFile = File(...), db: Session = Depends(obtenir_session)):
+    """
+    Importe un fichier (colonnes : ID client, Ancien email a retirer, Nouvel
+    email a inviter, Role) et execute chaque remplacement - voir
+    acces_masse.py. Chaque invitation reste en attente jusqu'a acceptation
+    par l'adresse invitee elle-meme (aucun moyen de forcer l'acces par API).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    contexte_base = {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "resultats": None}
+
+    try:
+        octets = fichier.file.read()
+        lignes = acces_masse.lire_fichier_remplacement(octets)
+    except Exception as erreur:
+        return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": f"Fichier illisible : {erreur}"}, status_code=400)
+
+    if not lignes:
+        return templates.TemplateResponse(
+            request, "acces.html",
+            {**contexte_base, "erreur": "Aucune ligne exploitable dans ce fichier (colonnes attendues : ID client, Ancien email à retirer, Nouvel email à inviter, Rôle)."},
+            status_code=400,
+        )
+
+    resultats = acces_masse.executer_remplacements(db, lignes)
+    return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": None, "resultats": resultats})
 
 
 # --- Audit prospect (demarchage a froid) -------------------------------------

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% set page_actuelle = "acces" %}
+{% block titre %}Accès fiches — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Accès fiches</h1>
+</div>
+
+<p class="texte-discret">
+  Qui a accès à quelle fiche Google, et remplacement en masse (ex. migrer d'anciennes adresses personnelles
+  vers des adresses d'entreprise). Retirer un accès est immédiat ; inviter un nouvel accès reste
+  <strong>en attente</strong> tant que l'adresse invitée ne se connecte pas elle-même pour l'accepter — Google
+  ne permet pas de forcer l'accès par API.
+</p>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+<details class="bloc-repliable" open>
+  <summary>1. Télécharger les accès actuels</summary>
+  <div class="formulaire">
+    {% if not etiquettes %}
+    <div class="bandeau-avertissement">
+      Aucune étiquette pour l'instant. Ajoutez-en depuis la fiche d'un client, ou depuis la page
+      <a href="/etiquettes">Étiquettes</a>, puis revenez ici.
+    </div>
+    {% endif %}
+
+    {% if etiquettes %}
+    <div class="filtre-entreprises">
+      <span class="filtre-titre">Étiquettes :</span>
+      {% for etiquette in etiquettes %}
+      <label class="filtre-case">
+        <input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+      </label>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+    <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+    <p id="texte-compte-clients" class="texte-discret" hidden></p>
+
+    <div class="actions-avis">
+      <button type="button" id="bouton-telecharger-acces" disabled>📥 Télécharger les accès actuels (Excel)</button>
+    </div>
+  </div>
+</details>
+
+<details class="bloc-repliable" {% if resultats %}open{% endif %}>
+  <summary>2. Importer un fichier de remplacement</summary>
+  <div class="formulaire">
+    <p class="texte-discret">
+      Fichier Excel avec les colonnes <strong>ID client</strong>, <strong>Administrateur à retirer (nom affiché
+      ou email)</strong>, <strong>Nouvel email à inviter</strong>, <strong>Rôle</strong> (MANAGER par défaut) —
+      reprends les colonnes "ID client" et "Administrateur" de l'export ci-dessus pour préparer ce fichier.
+    </p>
+    <div class="bandeau-avertissement">
+      Important : une fois une invitation acceptée, Google n'expose plus l'email de la personne, seulement
+      son nom affiché — la colonne "Administrateur à retirer" doit donc reprendre exactement ce nom tel qu'il
+      apparaît dans l'export (pas forcément une adresse email).
+    </div>
+    <form method="post" action="/acces/remplacer" enctype="multipart/form-data"
+          onsubmit="return confirm('Executer ces remplacements ? Les anciens acces seront retires immediatement, les nouveaux invites (en attente d acceptation).');">
+      <input type="file" name="fichier" accept=".xlsx" required>
+      <div class="actions-avis">
+        <button type="submit" class="bouton-secondaire">Exécuter le remplacement</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+{% if resultats %}
+<h2>Résultat</h2>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Fiche</th>
+        <th>Administrateur retiré</th>
+        <th>Retrait</th>
+        <th>Nouvel email invité</th>
+        <th>Invitation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for resultat in resultats %}
+      <tr>
+        <td>{{ resultat.client_nom }}</td>
+        <td>{{ resultat.ancien_email or "—" }}</td>
+        <td>{{ resultat.statut_retrait or "—" }}</td>
+        <td>{{ resultat.nouvel_email }}</td>
+        <td>{{ resultat.statut_invitation }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script id="donnees-clients-acces" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-acces").textContent);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  const conteneurClients = document.getElementById("liste-clients-cibles");
+  const texteAucunClient = document.getElementById("texte-aucun-client");
+  const texteCompteClients = document.getElementById("texte-compte-clients");
+  const boutonTelecharger = document.getElementById("bouton-telecharger-acces");
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function idsSelectionnes() {
+    return Array.from(conteneurClients.querySelectorAll('input[name="client_ids"]:checked')).map((c) => c.value);
+  }
+
+  function actualiserEtatBouton() {
+    boutonTelecharger.disabled = idsSelectionnes().length === 0;
+  }
+
+  function actualiserListe() {
+    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    if (!etiquettesActives.length) {
+      conteneurClients.innerHTML = "";
+      texteAucunClient.hidden = false;
+      texteCompteClients.hidden = true;
+      actualiserEtatBouton();
+      return;
+    }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
+    texteAucunClient.hidden = true;
+    texteCompteClients.hidden = false;
+    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    conteneurClients.innerHTML = correspondants.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      </label>
+    `).join("");
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((c) => c.addEventListener("change", actualiserEtatBouton));
+    actualiserEtatBouton();
+  }
+
+  boutonTelecharger.addEventListener("click", () => {
+    const parametres = new URLSearchParams();
+    idsSelectionnes().forEach((id) => parametres.append("client_ids", id));
+    window.location.href = "/acces/export?" + parametres.toString();
+  });
+
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+})();
+</script>
+{% endblock %}
