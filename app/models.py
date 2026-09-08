@@ -279,6 +279,28 @@ class AlerteProtectionFiche(Base):
     client = relationship("Client")
 
 
+class LeadAudit(Base):
+    """
+    Contact capture sur la page publique d'audit gratuit (/audit-gratuit) -
+    voir audit_public.py. Coordonnees completes demandees avant de lancer la
+    recherche (protege le solde DataForSEO et sert de liste de prospects a
+    recontacter, voir /leads).
+    """
+
+    __tablename__ = "leads_audit"
+
+    id = Column(Integer, primary_key=True)
+    prenom = Column(String, default="")
+    nom = Column(String, default="")
+    email = Column(String, default="")
+    telephone = Column(String, default="")
+    entreprise_nom = Column(String, default="")
+    ville = Column(String, default="")
+    score = Column(Integer, nullable=True)
+    details_json = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class Etiquette(Base):
     """Etiquette libre posee sur un ou plusieurs clients, pour les regrouper (ex. envoi multi-fiches)."""
 

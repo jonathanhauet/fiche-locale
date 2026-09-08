@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set page_actuelle = "leads" %}
+{% block titre %}Leads (audit gratuit) : Fiche Locale{% endblock %}
+{% block contenu %}
+
+<div class="barre-titre">
+  <h1>Leads</h1>
+</div>
+
+<p class="texte-discret">
+  Contacts capturés depuis la page publique d'audit gratuit (<a href="/audit-gratuit" target="_blank" rel="noopener">/audit-gratuit</a>).
+  Chaque soumission consomme une requête DataForSEO facturée à l'usage.
+</p>
+
+{% if leads %}
+<ul class="liste-clients">
+  {% for lead in leads %}
+  <li>
+    <div>
+      <strong>{{ lead.prenom }} {{ lead.nom }}</strong>
+      <span class="texte-discret">— {{ lead.entreprise_nom }} ({{ lead.ville }})</span>
+      <br>
+      <span class="texte-discret">
+        <a href="mailto:{{ lead.email }}">{{ lead.email }}</a>
+        {% if lead.telephone %} · <a href="tel:{{ lead.telephone }}">{{ lead.telephone }}</a>{% endif %}
+        · {{ lead.cree_le.strftime("%d/%m/%Y à %H:%M") }}
+      </span>
+    </div>
+    <div class="actions-avis">
+      {% if lead.score is not none %}
+      <span class="etiquette-statut {{ 'etiquette-publie_live' if lead.score >= 70 else ('etiquette-avertissement' if lead.score >= 40 else 'etiquette-echec') }}">
+        Score {{ lead.score }}%
+      </span>
+      {% else %}
+      <span class="etiquette-statut etiquette-echec">Fiche non trouvée</span>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun lead capturé pour l'instant.</p>
+{% endif %}
+
+{% endblock %}

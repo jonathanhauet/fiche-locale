@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block titre %}Score Google gratuit de votre fiche{% endblock %}
+{% block corps %}
+<div class="page-connexion page-audit-public">
+  <div class="carte-connexion carte-audit-public">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+
+    <h1>Quel est le score Google de votre fiche ?</h1>
+    <p class="texte-discret">
+      Analyse gratuite et immédiate de votre fiche Google Business Profile : photos, avis, informations
+      renseignées. Laissez vos coordonnées, on vous recontacte avec les points à améliorer en priorité.
+    </p>
+
+    {% if erreur %}
+    <p class="message-erreur">{{ erreur }}</p>
+    {% endif %}
+
+    {% if resultat %}
+      {% if resultat.trouve %}
+      <div class="resultat-audit-public">
+        <div class="jauge-score jauge-score-{{ 'bon' if resultat.score >= 70 else ('moyenne' if resultat.score >= 40 else 'haute') }}">
+          <svg viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="52" class="jauge-fond"></circle>
+            <circle cx="60" cy="60" r="52" class="jauge-remplissage"
+                    style="stroke-dasharray: {{ (resultat.score / 100 * 326.7)|round(1) }} 326.7;"></circle>
+          </svg>
+          <div class="jauge-texte">
+            <strong>{{ resultat.score }}%</strong>
+            <span>{{ "Bon" if resultat.score >= 70 else ("Moyen" if resultat.score >= 40 else "À travailler") }}</span>
+          </div>
+        </div>
+
+        <div class="liste-facteurs-audit">
+          {% for facteur in resultat.facteurs %}
+          <div class="facteur-audit facteur-audit-{{ facteur.niveau }}">
+            <div>
+              <strong>{{ facteur.libelle }}</strong>
+              <span class="texte-discret">{{ facteur.detail }}</span>
+            </div>
+            <span class="etiquette-priorite-{{ facteur.niveau }}">
+              {{ "Priorité" if facteur.niveau == "haute" else ("À améliorer" if facteur.niveau == "moyenne" else "Bon") }}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+
+        <p class="confirmation-lead">
+          ✓ Merci ! Vos coordonnées sont bien enregistrées, on revient vers vous rapidement avec un plan
+          d'action détaillé pour <strong>{{ entreprise_nom }}</strong>.
+        </p>
+      </div>
+      {% else %}
+      <p class="message-erreur">
+        Nous n'avons pas retrouvé automatiquement votre fiche Google avec ce nom et cette ville — vos
+        coordonnées sont tout de même enregistrées, on vous recontacte pour l'analyser à la main.
+      </p>
+      {% endif %}
+      <p class="fil-retour"><a href="/audit-gratuit">← Analyser une autre fiche</a></p>
+    {% else %}
+    <form class="formulaire" method="post" action="/audit-gratuit">
+      <input type="text" name="site_web_perso" autocomplete="off" tabindex="-1" class="champ-piege" aria-hidden="true">
+
+      <div class="ligne-champs">
+        <label>
+          Nom de l'entreprise
+          <input type="text" name="entreprise_nom" required value="{{ valeurs.entreprise_nom or '' }}" placeholder="Ex : Bâti'Net">
+        </label>
+        <label>
+          Ville
+          <input type="text" name="ville" required value="{{ valeurs.ville or '' }}" placeholder="Ex : Mérignac">
+        </label>
+      </div>
+
+      <div class="ligne-champs">
+        <label>
+          Prénom
+          <input type="text" name="prenom" required value="{{ valeurs.prenom or '' }}">
+        </label>
+        <label>
+          Nom
+          <input type="text" name="nom" required value="{{ valeurs.nom or '' }}">
+        </label>
+      </div>
+
+      <div class="ligne-champs">
+        <label>
+          Email
+          <input type="email" name="email" required value="{{ valeurs.email or '' }}">
+        </label>
+        <label>
+          Téléphone
+          <input type="tel" name="telephone" required value="{{ valeurs.telephone or '' }}">
+        </label>
+      </div>
+
+      <button type="submit">Voir mon score gratuitement →</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

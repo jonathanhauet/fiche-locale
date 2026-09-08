@@ -29,6 +29,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from . import (
     audit_prospect,
     audit_prospect_pdf,
+    audit_public,
     bilan_pdf,
     brevo_email,
     citations,
@@ -374,6 +375,73 @@ def page_confidentialite(request: Request):
     d'acces Google Ads API).
     """
     return templates.TemplateResponse(request, "confidentialite.html", {})
+
+
+@app.get("/audit-gratuit", response_class=HTMLResponse)
+def page_audit_gratuit(request: Request):
+    """
+    Page publique (pas d'authentification requise) de capture de leads : score
+    gratuit de completude de fiche Google, calcule a partir de donnees
+    publiques uniquement (voir audit_public.py - un seul appel DataForSEO,
+    pas de grille de positions). Destinee a etre exposee sous un sous-domaine
+    du site vitrine de l'agence, pas sous le nom "Fiche Locale".
+    """
+    return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "valeurs": {}})
+
+
+@app.post("/audit-gratuit")
+async def soumettre_audit_gratuit(request: Request, db: Session = Depends(obtenir_session)):
+    formulaire = await request.form()
+
+    # Piege a robots : champ cache que seul un script automatise remplirait -
+    # on repond normalement en apparence, sans rien enregistrer ni consommer
+    # de requete DataForSEO.
+    if (formulaire.get("site_web_perso") or "").strip():
+        return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "valeurs": {}})
+
+    prenom = (formulaire.get("prenom") or "").strip()
+    nom = (formulaire.get("nom") or "").strip()
+    email = (formulaire.get("email") or "").strip()
+    telephone = (formulaire.get("telephone") or "").strip()
+    entreprise_nom = (formulaire.get("entreprise_nom") or "").strip()
+    ville = (formulaire.get("ville") or "").strip()
+
+    if not all([prenom, nom, email, telephone, entreprise_nom, ville]):
+        return templates.TemplateResponse(
+            request, "audit_gratuit.html",
+            {"erreur": "Merci de remplir tous les champs.", "resultat": None, "valeurs": formulaire},
+            status_code=400,
+        )
+
+    try:
+        resultat = audit_public.calculer_score_public(entreprise_nom, ville)
+    except Exception as erreur:
+        return templates.TemplateResponse(
+            request, "audit_gratuit.html",
+            {"erreur": f"Impossible d'analyser cette fiche pour le moment : {erreur}", "resultat": None, "valeurs": formulaire},
+            status_code=400,
+        )
+
+    db.add(models.LeadAudit(
+        prenom=prenom, nom=nom, email=email, telephone=telephone,
+        entreprise_nom=entreprise_nom, ville=ville,
+        score=resultat.get("score"), details_json=json.dumps(resultat),
+    ))
+    db.commit()
+
+    return templates.TemplateResponse(
+        request, "audit_gratuit.html",
+        {"erreur": None, "resultat": resultat, "entreprise_nom": entreprise_nom, "valeurs": {}},
+    )
+
+
+@app.get("/leads", response_class=HTMLResponse)
+def liste_leads(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    leads = db.query(models.LeadAudit).order_by(models.LeadAudit.cree_le.desc()).all()
+    return templates.TemplateResponse(request, "leads.html", {"leads": leads})
 
 
 @app.get("/connexion", response_class=HTMLResponse)

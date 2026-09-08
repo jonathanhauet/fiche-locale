@@ -355,6 +355,83 @@ a { color: var(--accent); }
 .carte-texte-legal h1 { font-size: 1.4rem; margin: 0.4rem 0 0; }
 .carte-texte-legal h2 { font-size: 1.05rem; margin: 1.1rem 0 0.2rem; color: var(--texte); }
 .carte-texte-legal p, .carte-texte-legal ul { margin: 0 0 0.3rem; line-height: 1.55; }
+
+/* ---------- Page publique d'audit gratuit (capture de leads) ---------- */
+
+.carte-audit-public {
+  max-width: 560px;
+  text-align: left;
+}
+.carte-audit-public h1 { font-size: 1.5rem; margin: 0.3rem 0 0.2rem; text-align: center; }
+.carte-audit-public > p.texte-discret { text-align: center; }
+
+.champ-piege {
+  position: absolute;
+  width: 1px; height: 1px;
+  opacity: 0; pointer-events: none;
+  left: -9999px;
+}
+
+.resultat-audit-public { display: flex; flex-direction: column; gap: 1.2rem; align-items: center; }
+
+.jauge-score { position: relative; width: 140px; height: 140px; }
+.jauge-score svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.jauge-score circle {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+.jauge-fond { stroke: var(--fond); }
+.jauge-remplissage { stroke-dashoffset: 0; transition: stroke-dasharray 0.6s ease; }
+.jauge-score-bon .jauge-remplissage { stroke: var(--succes); }
+.jauge-score-moyenne .jauge-remplissage { stroke: var(--attention); }
+.jauge-score-haute .jauge-remplissage { stroke: var(--danger); }
+
+.jauge-texte {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.jauge-texte strong { font-size: 1.6rem; color: var(--texte); }
+.jauge-texte span { font-size: 0.78rem; color: var(--texte-discret); }
+
+.liste-facteurs-audit { width: 100%; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.facteur-audit {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--rayon-petit);
+  border-left: 3px solid transparent;
+  background: var(--fond);
+}
+.facteur-audit strong { display: block; font-size: 0.92rem; }
+.facteur-audit .texte-discret { font-size: 0.8rem; }
+.facteur-audit-haute { border-left-color: var(--danger); }
+.facteur-audit-moyenne { border-left-color: var(--attention); }
+.facteur-audit-bon { border-left-color: var(--succes); }
+
+.etiquette-priorite-haute, .etiquette-priorite-moyenne, .etiquette-priorite-bon {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.etiquette-priorite-haute { background: var(--danger-clair); color: var(--danger); }
+.etiquette-priorite-moyenne { background: var(--attention-clair); color: var(--attention); }
+.etiquette-priorite-bon { background: var(--succes-clair); color: var(--succes); }
+
+.confirmation-lead {
+  text-align: center;
+  font-size: 0.9rem;
+  background: var(--accent-clair);
+  color: var(--texte);
+  padding: 0.85rem 1rem;
+  border-radius: var(--rayon-petit);
+  margin: 0;
+}
 .carte-texte-legal ul { padding-left: 1.2rem; }
 .carte-texte-legal .marque-connexion { align-self: flex-start; }
 
