@@ -4156,7 +4156,10 @@ def acces_formulaire(request: Request, db: Session = Depends(obtenir_session)):
     etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
     return templates.TemplateResponse(
         request, "acces.html",
-        {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "resultats": None, "erreur": None},
+        {
+            "etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db),
+            "comptes": google_oauth.lister_comptes(db), "resultats": None, "erreur": None, "message_compte": None,
+        },
     )
 
 
@@ -4197,7 +4200,10 @@ async def remplacer_acces(request: Request, fichier: UploadFile = File(...), db:
         return redirection
 
     etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
-    contexte_base = {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "resultats": None}
+    contexte_base = {
+        "etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db),
+        "comptes": google_oauth.lister_comptes(db), "resultats": None, "message_compte": None,
+    }
 
     try:
         octets = fichier.file.read()
@@ -4214,6 +4220,47 @@ async def remplacer_acces(request: Request, fichier: UploadFile = File(...), db:
 
     resultats = acces_masse.executer_remplacements(db, lignes)
     return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": None, "resultats": resultats})
+
+
+@app.post("/acces/changer-compte-google", response_class=HTMLResponse)
+def changer_compte_google_masse(
+    request: Request, client_ids: list[int] = Form(default=[]),
+    compte_google_id: int = Form(...), db: Session = Depends(obtenir_session),
+):
+    """
+    Change quel compte Google connecte (voir /google/comptes) la plateforme
+    utilise pour gerer les fiches selectionnees. Ne touche ni location_id ni
+    account_id (l'identifiant de la fiche Google elle-meme, valable quel que
+    soit le compte qui la consulte) : aucune donnee locale (historique,
+    posts, positions...) n'est perdue, contrairement a une suppression +
+    recreation de la fiche. Utile par ex. quand le compte initialement
+    connecte n'a qu'un role Gestionnaire et ne peut pas inviter/retirer des
+    administrateurs (reserve aux comptes Proprietaire par Google - voir
+    google_admins.py) alors qu'un autre compte connecte l'est.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    comptes = google_oauth.lister_comptes(db)
+    contexte_base = {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "comptes": comptes, "resultats": None}
+
+    compte = db.get(models.CompteGoogle, compte_google_id)
+    if not compte:
+        return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": "Compte Google introuvable.", "message_compte": None}, status_code=400)
+    if not client_ids:
+        return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": "Sélectionnez au moins une fiche.", "message_compte": None}, status_code=400)
+
+    clients = db.query(models.Client).filter(models.Client.id.in_(client_ids)).all()
+    for client in clients:
+        client.compte_google_id = compte.id
+    db.commit()
+
+    return templates.TemplateResponse(
+        request, "acces.html",
+        {**contexte_base, "erreur": None, "message_compte": f"{len(clients)} fiche(s) basculée(s) sur le compte « {compte.libelle} »."},
+    )
 
 
 # --- Audit prospect (demarchage a froid) -------------------------------------

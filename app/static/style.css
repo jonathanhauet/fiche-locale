@@ -663,6 +663,16 @@ button:active { transform: translateY(1px); }
   margin: 0 0 1rem;
 }
 
+.message-succes {
+  color: var(--succes);
+  background: var(--succes-clair);
+  border: 1px solid var(--succes);
+  border-radius: var(--rayon-petit);
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+  margin: 0 0 1rem;
+}
+
 .formulaire {
   display: flex;
   flex-direction: column;

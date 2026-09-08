@@ -18,6 +18,9 @@
 {% if erreur %}
 <p class="message-erreur">{{ erreur }}</p>
 {% endif %}
+{% if message_compte %}
+<p class="message-succes">{{ message_compte }}</p>
+{% endif %}
 
 <details class="bloc-repliable" open>
   <summary>1. Télécharger les accès actuels</summary>
@@ -68,6 +71,53 @@
       <input type="file" name="fichier" accept=".xlsx" required>
       <div class="actions-avis">
         <button type="submit" class="bouton-secondaire">Exécuter le remplacement</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+<details class="bloc-repliable">
+  <summary>3. Changer le compte Google utilisé pour gérer des fiches</summary>
+  <div class="formulaire">
+    <p class="texte-discret">
+      Bascule les fiches sélectionnées sur un autre compte Google connecté (voir <a href="/google/comptes">Comptes Google</a>) —
+      utile par exemple si le compte actuel n'a qu'un rôle <strong>Gestionnaire</strong> sur ces fiches et ne peut donc pas
+      inviter ou retirer des administrateurs (réservé aux comptes <strong>Propriétaire</strong> par Google). Cela ne supprime
+      et ne recrée rien : l'historique local (positions, avis, posts...) de ces fiches est conservé.
+    </p>
+
+    {% if not comptes %}
+    <div class="bandeau-avertissement">
+      Aucun compte Google connecté pour l'instant. Connectez-en un depuis <a href="/google/comptes">Comptes Google</a>,
+      puis revenez ici.
+    </div>
+    {% endif %}
+
+    <form method="post" action="/acces/changer-compte-google" id="formulaire-changer-compte"
+          onsubmit="return confirm('Basculer les fiches selectionnees vers ce compte Google ?');">
+      {% if etiquettes %}
+      <div class="filtre-entreprises">
+        <span class="filtre-titre">Étiquettes :</span>
+        {% for etiquette in etiquettes %}
+        <label class="filtre-case">
+          <input type="checkbox" class="case-filtre-etiquette-compte" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+        </label>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div id="liste-clients-cibles-compte" class="liste-clients-cibles"></div>
+      <p id="texte-aucun-client-compte" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+      <p id="texte-compte-clients-compte" class="texte-discret" hidden></p>
+
+      <div class="actions-avis">
+        <select name="compte_google_id" required {% if not comptes %}disabled{% endif %}>
+          <option value="" disabled selected>Vers quel compte ?</option>
+          {% for compte in comptes %}
+          <option value="{{ compte.id }}">{{ compte.libelle }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="bouton-secondaire" id="bouton-changer-compte" disabled>Changer de compte</button>
       </div>
     </form>
   </div>
@@ -152,6 +202,52 @@
     idsSelectionnes().forEach((id) => parametres.append("client_ids", id));
     window.location.href = "/acces/export?" + parametres.toString();
   });
+
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+})();
+</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-acces").textContent);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette-compte"));
+  const conteneurClients = document.getElementById("liste-clients-cibles-compte");
+  const texteAucunClient = document.getElementById("texte-aucun-client-compte");
+  const texteCompteClients = document.getElementById("texte-compte-clients-compte");
+  const boutonChanger = document.getElementById("bouton-changer-compte");
+  if (!boutonChanger) return;
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function actualiserEtatBouton() {
+    const coche = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length;
+    boutonChanger.disabled = coche === 0;
+  }
+
+  function actualiserListe() {
+    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    if (!etiquettesActives.length) {
+      conteneurClients.innerHTML = "";
+      texteAucunClient.hidden = false;
+      texteCompteClients.hidden = true;
+      actualiserEtatBouton();
+      return;
+    }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
+    texteAucunClient.hidden = true;
+    texteCompteClients.hidden = false;
+    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    conteneurClients.innerHTML = correspondants.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      </label>
+    `).join("");
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((c) => c.addEventListener("change", actualiserEtatBouton));
+    actualiserEtatBouton();
+  }
 
   casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
 })();
