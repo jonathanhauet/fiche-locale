@@ -386,18 +386,24 @@ def page_audit_gratuit(request: Request):
     pas de grille de positions). Destinee a etre exposee sous un sous-domaine
     du site vitrine de l'agence, pas sous le nom "Fiche Locale".
     """
-    return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "valeurs": {}})
+    return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "candidats": None, "valeurs": {}})
 
 
 @app.post("/audit-gratuit")
 async def soumettre_audit_gratuit(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Etape 1 : capture le lead (coordonnees completes) puis lance UNE recherche
+    Google Maps publique et presente les fiches candidates a confirmer - voir
+    /audit-gratuit/confirmer pour l'etape 2 (calcul du score, sans nouvel
+    appel DataForSEO).
+    """
     formulaire = await request.form()
 
     # Piege a robots : champ cache que seul un script automatise remplirait -
     # on repond normalement en apparence, sans rien enregistrer ni consommer
     # de requete DataForSEO.
     if (formulaire.get("site_web_perso") or "").strip():
-        return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "valeurs": {}})
+        return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "candidats": None, "valeurs": {}})
 
     prenom = (formulaire.get("prenom") or "").strip()
     nom = (formulaire.get("nom") or "").strip()
@@ -409,29 +415,69 @@ async def soumettre_audit_gratuit(request: Request, db: Session = Depends(obteni
     if not all([prenom, nom, email, telephone, entreprise_nom, ville]):
         return templates.TemplateResponse(
             request, "audit_gratuit.html",
-            {"erreur": "Merci de remplir tous les champs.", "resultat": None, "valeurs": formulaire},
+            {"erreur": "Merci de remplir tous les champs.", "resultat": None, "candidats": None, "valeurs": formulaire},
             status_code=400,
         )
 
+    lead = models.LeadAudit(
+        prenom=prenom, nom=nom, email=email, telephone=telephone,
+        entreprise_nom=entreprise_nom, ville=ville,
+    )
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+
     try:
-        resultat = audit_public.calculer_score_public(entreprise_nom, ville)
+        candidats = audit_public.rechercher_candidats_public(entreprise_nom, ville)
     except Exception as erreur:
         return templates.TemplateResponse(
             request, "audit_gratuit.html",
-            {"erreur": f"Impossible d'analyser cette fiche pour le moment : {erreur}", "resultat": None, "valeurs": formulaire},
+            {"erreur": f"Impossible d'analyser cette fiche pour le moment : {erreur}", "resultat": None, "candidats": None, "valeurs": formulaire},
             status_code=400,
         )
 
-    db.add(models.LeadAudit(
-        prenom=prenom, nom=nom, email=email, telephone=telephone,
-        entreprise_nom=entreprise_nom, ville=ville,
-        score=resultat.get("score"), details_json=json.dumps(resultat),
-    ))
-    db.commit()
-
     return templates.TemplateResponse(
         request, "audit_gratuit.html",
-        {"erreur": None, "resultat": resultat, "entreprise_nom": entreprise_nom, "valeurs": {}},
+        {
+            "erreur": None, "resultat": None, "valeurs": {},
+            "candidats": candidats, "lead_id": lead.id, "entreprise_nom": entreprise_nom,
+        },
+    )
+
+
+@app.post("/audit-gratuit/confirmer")
+async def confirmer_audit_gratuit(request: Request, db: Session = Depends(obtenir_session)):
+    """Etape 2 : calcule le score a partir du candidat choisi (deja recupere a l'etape 1, aucun nouvel appel DataForSEO)."""
+    formulaire = await request.form()
+
+    candidat = {
+        "trouve": True,
+        "titre": formulaire.get("candidat_titre") or "",
+        "note": float(formulaire["candidat_note"]) if formulaire.get("candidat_note") else None,
+        "nombre_avis": int(formulaire["candidat_nombre_avis"]) if formulaire.get("candidat_nombre_avis") else None,
+        "adresse": formulaire.get("candidat_adresse") or "",
+        "telephone": formulaire.get("candidat_telephone") or "",
+        "categorie": formulaire.get("candidat_categorie") or "",
+        "site_web": formulaire.get("candidat_site_web") or "",
+        "total_photos": int(formulaire["candidat_total_photos"]) if formulaire.get("candidat_total_photos") else 0,
+        "a_horaires": (formulaire.get("candidat_a_horaires") or "") == "1",
+        "a_categorie_secondaire": (formulaire.get("candidat_a_categorie_secondaire") or "") == "1",
+    }
+
+    resultat = audit_public.calculer_score_depuis_candidat(candidat)
+
+    lead_id = formulaire.get("lead_id")
+    if lead_id:
+        lead = db.get(models.LeadAudit, int(lead_id))
+        if lead:
+            lead.score = resultat["score"]
+            lead.details_json = json.dumps(resultat)
+            db.commit()
+
+    resultat["trouve"] = True
+    return templates.TemplateResponse(
+        request, "audit_gratuit.html",
+        {"erreur": None, "resultat": resultat, "candidats": None, "entreprise_nom": candidat["titre"], "valeurs": {}},
     )
 
 

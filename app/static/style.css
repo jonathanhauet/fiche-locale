@@ -423,6 +423,17 @@ a { color: var(--accent); }
 .etiquette-priorite-moyenne { background: var(--attention-clair); color: var(--attention); }
 .etiquette-priorite-bon { background: var(--succes-clair); color: var(--succes); }
 
+.liste-candidats-audit {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.liste-candidats-audit form { margin: 0; }
+.liste-candidats-audit .bouton-resultat-ville { padding: 0.75rem 0.9rem; }
+
 .confirmation-lead {
   text-align: center;
   font-size: 0.9rem;

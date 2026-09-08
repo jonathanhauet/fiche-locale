@@ -59,6 +59,43 @@
       </p>
       {% endif %}
       <p class="fil-retour"><a href="/audit-gratuit">← Analyser une autre fiche</a></p>
+
+    {% elif candidats is not none %}
+      {% if candidats %}
+      <p><strong>Quelle est votre fiche parmi celles-ci ?</strong></p>
+      <ul class="liste-candidats-audit">
+        {% for candidat in candidats %}
+        <li>
+          <form method="post" action="/audit-gratuit/confirmer">
+            <input type="hidden" name="lead_id" value="{{ lead_id }}">
+            <input type="hidden" name="candidat_titre" value="{{ candidat.titre }}">
+            <input type="hidden" name="candidat_note" value="{{ candidat.note if candidat.note is not none else '' }}">
+            <input type="hidden" name="candidat_nombre_avis" value="{{ candidat.nombre_avis if candidat.nombre_avis is not none else '' }}">
+            <input type="hidden" name="candidat_adresse" value="{{ candidat.adresse }}">
+            <input type="hidden" name="candidat_telephone" value="{{ candidat.telephone }}">
+            <input type="hidden" name="candidat_categorie" value="{{ candidat.categorie }}">
+            <input type="hidden" name="candidat_site_web" value="{{ candidat.site_web }}">
+            <input type="hidden" name="candidat_total_photos" value="{{ candidat.total_photos }}">
+            <input type="hidden" name="candidat_a_horaires" value="{{ '1' if candidat.a_horaires else '0' }}">
+            <input type="hidden" name="candidat_a_categorie_secondaire" value="{{ '1' if candidat.a_categorie_secondaire else '0' }}">
+            <button type="submit" class="bouton-resultat-ville">
+              <strong>{{ candidat.titre }}</strong>{% if candidat.note %} — ★ {{ candidat.note }}{% if candidat.nombre_avis %} ({{ candidat.nombre_avis }} avis){% endif %}{% endif %}
+              {% if candidat.categorie or candidat.adresse %}
+              <br><span class="texte-discret">{{ [candidat.categorie, candidat.adresse] | select | join(" — ") }}</span>
+              {% endif %}
+            </button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="message-erreur">
+        Nous n'avons pas retrouvé de fiche Google avec ce nom et cette ville — vos coordonnées sont tout de
+        même enregistrées, on vous recontacte pour l'analyser à la main.
+      </p>
+      {% endif %}
+      <p class="fil-retour"><a href="/audit-gratuit">← Recommencer</a></p>
+
     {% else %}
     <form class="formulaire" method="post" action="/audit-gratuit">
       <input type="text" name="site_web_perso" autocomplete="off" tabindex="-1" class="champ-piege" aria-hidden="true">
