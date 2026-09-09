@@ -25,4 +25,48 @@
   </label>
   <button type="submit" class="bouton">Publier sur Facebook</button>
 </form>
+
+<h2>Statistiques de la Page</h2>
+{% if erreur_insights %}
+<p class="message-erreur">{{ erreur_insights }}</p>
+{% elif insights %}
+<div class="grille-resume">
+  {% for insight in insights %}
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre">{{ insight.derniere_valeur if insight.derniere_valeur is not none else "—" }}</span>
+    <span class="carte-resume-libelle">{{ insight.titre or insight.nom }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="texte-vide">Aucune statistique disponible.</p>
+{% endif %}
+
+<h2>Posts récents et commentaires</h2>
+{% if erreur_posts %}
+<p class="message-erreur">{{ erreur_posts }}</p>
+{% elif posts %}
+<ul class="liste-avis">
+  {% for post in posts %}
+  <li class="carte-avis">
+    <div class="entete-avis">
+      <div>
+        <span class="date-avis">{{ post.cree_le }}</span>
+      </div>
+      {% if post.url %}<a href="{{ post.url }}" target="_blank" rel="noopener">Voir sur Facebook</a>{% endif %}
+    </div>
+    <p class="commentaire-avis">{{ post.message or "(sans texte)" }}</p>
+    {% if post.commentaires %}
+    <ul>
+      {% for commentaire in post.commentaires %}
+      <li><strong>{{ commentaire.auteur }}</strong> : {{ commentaire.message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun post trouvé sur cette Page.</p>
+{% endif %}
 {% endblock %}

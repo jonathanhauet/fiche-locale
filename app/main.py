@@ -53,6 +53,7 @@ from . import (
     google_publish,
     google_reviews,
     ia_visibilite,
+    meta_engagement,
     meta_oauth,
     meta_publish,
     models,
@@ -4690,6 +4691,19 @@ def meta_lier_page(
     return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
 
 
+def _contexte_meta_test(client) -> dict:
+    contexte = {"posts": [], "erreur_posts": None, "insights": [], "erreur_insights": None}
+    try:
+        contexte["posts"] = meta_engagement.lister_posts_avec_commentaires(client.token_page_meta, client.page_id_meta)
+    except Exception as erreur:
+        contexte["erreur_posts"] = str(erreur)
+    try:
+        contexte["insights"] = meta_engagement.obtenir_insights_page(client.token_page_meta, client.page_id_meta)
+    except Exception as erreur:
+        contexte["erreur_insights"] = str(erreur)
+    return contexte
+
+
 @app.get("/clients/{client_id}/meta/publier", response_class=HTMLResponse)
 def meta_publier_formulaire(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -4700,7 +4714,9 @@ def meta_publier_formulaire(client_id: int, request: Request, db: Session = Depe
     if not client or not client.page_id_meta:
         return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
-    return templates.TemplateResponse(request, "meta_publier_test.html", {"client": client, "erreur": None, "resultat": None})
+    return templates.TemplateResponse(
+        request, "meta_publier_test.html", {"client": client, "erreur": None, "resultat": None, **_contexte_meta_test(client)},
+    )
 
 
 @app.post("/clients/{client_id}/meta/publier", response_class=HTMLResponse)
@@ -4717,10 +4733,13 @@ def meta_publier(client_id: int, request: Request, message: str = Form(...), db:
         resultat = meta_publish.publier_post_page(client.token_page_meta, client.page_id_meta, message)
     except Exception as erreur:
         return templates.TemplateResponse(
-            request, "meta_publier_test.html", {"client": client, "erreur": str(erreur), "resultat": None}, status_code=400,
+            request, "meta_publier_test.html",
+            {"client": client, "erreur": str(erreur), "resultat": None, **_contexte_meta_test(client)}, status_code=400,
         )
 
-    return templates.TemplateResponse(request, "meta_publier_test.html", {"client": client, "erreur": None, "resultat": resultat})
+    return templates.TemplateResponse(
+        request, "meta_publier_test.html", {"client": client, "erreur": None, "resultat": resultat, **_contexte_meta_test(client)},
+    )
 
 
 @app.post("/google-ads/parametres")
