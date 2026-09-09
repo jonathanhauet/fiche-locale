@@ -54,6 +54,7 @@ from . import (
     google_reviews,
     ia_visibilite,
     meta_oauth,
+    meta_publish,
     models,
     ovh_upload,
     rank_tracking,
@@ -4687,6 +4688,39 @@ def meta_lier_page(
         db.commit()
 
     return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
+
+
+@app.get("/clients/{client_id}/meta/publier", response_class=HTMLResponse)
+def meta_publier_formulaire(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client or not client.page_id_meta:
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+    return templates.TemplateResponse(request, "meta_publier_test.html", {"client": client, "erreur": None, "resultat": None})
+
+
+@app.post("/clients/{client_id}/meta/publier", response_class=HTMLResponse)
+def meta_publier(client_id: int, request: Request, message: str = Form(...), db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client or not client.page_id_meta:
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+    try:
+        resultat = meta_publish.publier_post_page(client.token_page_meta, client.page_id_meta, message)
+    except Exception as erreur:
+        return templates.TemplateResponse(
+            request, "meta_publier_test.html", {"client": client, "erreur": str(erreur), "resultat": None}, status_code=400,
+        )
+
+    return templates.TemplateResponse(request, "meta_publier_test.html", {"client": client, "erreur": None, "resultat": resultat})
 
 
 @app.post("/google-ads/parametres")

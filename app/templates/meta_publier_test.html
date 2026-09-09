@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block titre %}Publier sur Meta — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+
+<div class="barre-titre">
+  <h1>Tester une publication — {{ client.page_nom_meta }}</h1>
+</div>
+
+<p class="texte-discret">
+  Publie un vrai post sur cette Page Facebook, pour vérifier que la connexion fonctionne de bout en bout.
+</p>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+{% if resultat %}
+<p class="message-succes">Publié avec succès (ID : {{ resultat.id }}).</p>
+{% endif %}
+
+<form class="formulaire" method="post" action="/clients/{{ client.id }}/meta/publier">
+  <label>
+    Texte du post
+    <textarea name="message" rows="4" required></textarea>
+  </label>
+  <button type="submit" class="bouton">Publier sur Facebook</button>
+</form>
+{% endblock %}
