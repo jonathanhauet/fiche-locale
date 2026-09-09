@@ -106,11 +106,22 @@ class Client(Base):
     # fiche n'a jamais ete verifiee par cette tache (evite une fausse alerte
     # au premier passage apres l'ajout d'une fiche ou ce deploiement).
     dernier_statut_validation = Column(String, nullable=True)
+    # Page Facebook (et compte Instagram lie, optionnel) associes a ce client
+    # - voir meta_oauth.py. token_page_meta est le token de la Page elle-meme
+    # (distinct du token systeme du compte Meta connecte), necessaire pour
+    # publier/lire sur cette Page precisement.
+    compte_meta_id = Column(Integer, ForeignKey("comptes_meta.id"), nullable=True)
+    page_id_meta = Column(String, default="")
+    page_nom_meta = Column(String, default="")
+    token_page_meta = Column(String, default="")
+    instagram_id_meta = Column(String, default="")
+    instagram_nom_meta = Column(String, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
     photos = relationship("PhotoFiche", back_populates="client", cascade="all, delete-orphan")
     compte_google = relationship("CompteGoogle", back_populates="clients")
+    compte_meta = relationship("CompteMeta", back_populates="clients")
     etiquettes = relationship("Etiquette", secondary=client_etiquettes, back_populates="clients")
     mots_cles = relationship("MotCle", back_populates="client", cascade="all, delete-orphan")
     releves_position = relationship("ReleveDePosition", back_populates="client", cascade="all, delete-orphan")
@@ -479,6 +490,24 @@ class CompteGoogle(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     clients = relationship("Client", back_populates="compte_google")
+
+
+class CompteMeta(Base):
+    """
+    Un compte Meta (Facebook/Instagram) connecte a la plateforme via
+    "Facebook Login for Business" (voir meta_oauth.py) - token d'acces
+    utilisateur systeme, n'expire jamais (choix fait a la creation de la
+    Configuration cote tableau de bord developpeur Meta).
+    """
+
+    __tablename__ = "comptes_meta"
+
+    id = Column(Integer, primary_key=True)
+    libelle = Column(String, default="")
+    access_token = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    clients = relationship("Client", back_populates="compte_meta")
 
 
 class ParametreGoogleAds(Base):

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set page_actuelle = "comptes_meta" %}
+{% block titre %}Comptes Meta — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Comptes Meta connectés</h1>
+  <a class="bouton" href="/meta/connecter">+ Connecter un compte Meta</a>
+</div>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+{% if comptes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Compte</th>
+        <th>Connecté le</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for compte in comptes %}
+      <tr>
+        <td>{{ compte.libelle }}</td>
+        <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><a href="/meta/comptes/{{ compte.id }}/pages">Voir les Pages</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucun compte Meta connecté pour l'instant.</p>
+{% endif %}
+{% endblock %}

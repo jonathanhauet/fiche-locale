@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set page_actuelle = "comptes_meta" %}
+{% block titre %}Pages Meta — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/meta/comptes">&larr; Retour aux comptes Meta</a></p>
+
+<div class="barre-titre">
+  <h1>Pages disponibles — {{ compte.libelle }}</h1>
+</div>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% elif not pages %}
+<p class="texte-vide">Aucune Page accessible avec ce compte pour l'instant.</p>
+{% else %}
+<p class="texte-discret">
+  Choisis à quel client associer chaque Page (et son compte Instagram lié, s'il y en a un).
+  Une Page déjà liée à un client l'indique ci-dessous.
+</p>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Page</th>
+        <th>Instagram lié</th>
+        <th>Client associé</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for page in pages %}
+      <tr>
+        <td>{{ page.nom }}</td>
+        <td>{{ page.instagram_nom or "—" }}</td>
+        <td>
+          {% set client_lie = clients_par_page_id.get(page.id) %}
+          {{ client_lie.nom if client_lie else "—" }}
+        </td>
+        <td>
+          <form method="post" action="/meta/comptes/{{ compte.id }}/pages/lier">
+            <input type="hidden" name="page_id" value="{{ page.id }}">
+            <input type="hidden" name="page_nom" value="{{ page.nom }}">
+            <input type="hidden" name="token_page" value="{{ page.token_page }}">
+            <input type="hidden" name="instagram_id" value="{{ page.instagram_id }}">
+            <input type="hidden" name="instagram_nom" value="{{ page.instagram_nom }}">
+            <select name="client_id" required>
+              <option value="" disabled {{ "selected" if not client_lie else "" }}>Choisir un client…</option>
+              {% for client in clients %}
+              <option value="{{ client.id }}" {{ "selected" if client_lie and client_lie.id == client.id else "" }}>{{ client.nom }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

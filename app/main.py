@@ -53,6 +53,7 @@ from . import (
     google_publish,
     google_reviews,
     ia_visibilite,
+    meta_oauth,
     models,
     ovh_upload,
     rank_tracking,
@@ -134,6 +135,18 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_reference_maj_le TIMESTAMP"))
         if "dernier_statut_validation" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN dernier_statut_validation TEXT"))
+        if "compte_meta_id" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_meta_id INTEGER"))
+        if "page_id_meta" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN page_id_meta TEXT DEFAULT ''"))
+        if "page_nom_meta" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN page_nom_meta TEXT DEFAULT ''"))
+        if "token_page_meta" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN token_page_meta TEXT DEFAULT ''"))
+        if "instagram_id_meta" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN instagram_id_meta TEXT DEFAULT ''"))
+        if "instagram_nom_meta" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN instagram_nom_meta TEXT DEFAULT ''"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -4567,6 +4580,113 @@ def google_comptes(request: Request, db: Session = Depends(obtenir_session)):
         request, "google_comptes.html",
         {"comptes": comptes, "parametre_ads": google_oauth.obtenir_parametre_ads(db)},
     )
+
+
+# --- Connexion Meta (Facebook/Instagram, OAuth) ----------------------------
+
+
+@app.get("/meta/connecter")
+def meta_connecter(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    redirect_uri = str(request.url_for("meta_callback"))
+    state = uuid.uuid4().hex
+    request.session["meta_oauth_state"] = state
+    return RedirectResponse(meta_oauth.construire_url_autorisation(redirect_uri, state))
+
+
+@app.get("/meta/callback", name="meta_callback")
+def meta_callback(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    if request.query_params.get("error"):
+        return HTMLResponse(
+            f"Connexion Meta annulée ou refusée : {request.query_params.get('error_description', '')}",
+            status_code=400,
+        )
+
+    state_attendu = request.session.get("meta_oauth_state")
+    if state_attendu and request.query_params.get("state") != state_attendu:
+        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /meta/connecter.", status_code=400)
+
+    code = request.query_params.get("code")
+    if not code:
+        return HTMLResponse("Code d'autorisation manquant.", status_code=400)
+
+    redirect_uri = str(request.url_for("meta_callback"))
+    try:
+        access_token = meta_oauth.echanger_code(code, redirect_uri)
+    except Exception as erreur:
+        return HTMLResponse(f"Echec de la connexion Meta : {erreur}", status_code=400)
+
+    meta_oauth.enregistrer_compte(db, access_token)
+    return RedirectResponse("/meta/comptes", status_code=303)
+
+
+@app.get("/meta/comptes", response_class=HTMLResponse)
+def meta_comptes(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comptes = meta_oauth.lister_comptes(db)
+    return templates.TemplateResponse(request, "meta_comptes.html", {"comptes": comptes, "erreur": None})
+
+
+@app.get("/meta/comptes/{compte_id}/pages", response_class=HTMLResponse)
+def meta_pages(compte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteMeta, compte_id)
+    if not compte:
+        return RedirectResponse("/meta/comptes", status_code=303)
+
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
+    contexte = {"compte": compte, "clients": clients}
+
+    try:
+        pages = meta_oauth.lister_pages(compte.access_token)
+    except Exception as erreur:
+        return templates.TemplateResponse(
+            request, "meta_pages.html", {**contexte, "pages": [], "clients_par_page_id": {}, "erreur": str(erreur)},
+        )
+
+    clients_par_page_id = {
+        c.page_id_meta: c for c in clients if c.page_id_meta
+    }
+    return templates.TemplateResponse(
+        request, "meta_pages.html", {**contexte, "pages": pages, "clients_par_page_id": clients_par_page_id, "erreur": None},
+    )
+
+
+@app.post("/meta/comptes/{compte_id}/pages/lier")
+def meta_lier_page(
+    compte_id: int, request: Request, client_id: int = Form(...),
+    page_id: str = Form(...), page_nom: str = Form(...), token_page: str = Form(...),
+    instagram_id: str = Form(""), instagram_nom: str = Form(""),
+    db: Session = Depends(obtenir_session),
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if client:
+        client.compte_meta_id = compte_id
+        client.page_id_meta = page_id
+        client.page_nom_meta = page_nom
+        client.token_page_meta = token_page
+        client.instagram_id_meta = instagram_id
+        client.instagram_nom_meta = instagram_nom
+        db.commit()
+
+    return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
 
 
 @app.post("/google-ads/parametres")
