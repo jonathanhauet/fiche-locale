@@ -4691,6 +4691,34 @@ def meta_lier_page(
     return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
 
 
+@app.post("/meta/comptes/{compte_id}/deconnecter")
+def meta_deconnecter_compte(compte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteMeta, compte_id)
+    if compte:
+        clients_lies = db.query(models.Client).filter_by(compte_meta_id=compte_id).count()
+        if clients_lies:
+            comptes = meta_oauth.lister_comptes(db)
+            return templates.TemplateResponse(
+                request, "meta_comptes.html",
+                {
+                    "comptes": comptes,
+                    "erreur": (
+                        f"Impossible de deconnecter ce compte : {clients_lies} client(s) y sont "
+                        "encore rattaches. Reassignez-les d'abord a un autre compte."
+                    ),
+                },
+                status_code=400,
+            )
+        db.delete(compte)
+        db.commit()
+
+    return RedirectResponse("/meta/comptes", status_code=303)
+
+
 def _contexte_meta_test(client) -> dict:
     contexte = {"posts": [], "erreur_posts": None, "insights": [], "erreur_insights": None}
     try:

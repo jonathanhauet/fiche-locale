@@ -21,6 +21,7 @@
         <th>Compte</th>
         <th>Connecté le</th>
         <th></th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -29,6 +30,12 @@
         <td>{{ compte.libelle }}</td>
         <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
         <td><a href="/meta/comptes/{{ compte.id }}/pages">Voir les Pages</a></td>
+        <td>
+          <form method="post" action="/meta/comptes/{{ compte.id }}/deconnecter"
+                onsubmit="return confirm('Deconnecter ce compte Meta ?');">
+            <button type="submit" class="bouton-danger">Déconnecter</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
