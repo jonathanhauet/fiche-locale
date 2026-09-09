@@ -38,7 +38,35 @@
     <span class="carte-resume-chiffre{{ ' chiffre-attention' if changements_suspects else '' }}">{{ changements_suspects|length }}</span>
     <span class="carte-resume-libelle">Changement{{ "s" if changements_suspects|length != 1 else "" }} suspect{{ "s" if changements_suspects|length != 1 else "" }}</span>
   </div>
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre{{ ' chiffre-attention' if changements_statut else '' }}">{{ changements_statut|length }}</span>
+    <span class="carte-resume-libelle">Changement{{ "s" if changements_statut|length != 1 else "" }} de statut de validation</span>
+  </div>
 </div>
+
+<h2>🔔 Changements de statut de validation Google</h2>
+{% if changements_statut %}
+<ul class="liste-avis">
+  {% for alerte in changements_statut %}
+  <li class="carte-avis">
+    <div class="entete-avis">
+      <div>
+        <strong>{{ libelles_statut_validation.get(alerte.statut_avant, alerte.statut_avant) }} → {{ libelles_statut_validation.get(alerte.statut_apres, alerte.statut_apres) }}</strong>
+        <span class="date-avis">détecté le {{ alerte.detecte_le.strftime("%d/%m/%Y") }}</span>
+      </div>
+      <a href="/clients/{{ alerte.client_id }}"><span class="etiquette-statut">{{ alerte.client.nom }}</span></a>
+    </div>
+    <div class="actions-avis">
+      <form method="post" action="/alertes/statut/{{ alerte.id }}/vu">
+        <button type="submit" class="bouton-secondaire">✓ Vu</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucun changement de statut de validation en attente.</p>
+{% endif %}
 
 <h2>🛡️ Changements suspects sur les fiches protégées</h2>
 {% if nb_sans_protection %}

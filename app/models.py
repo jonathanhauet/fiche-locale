@@ -100,6 +100,12 @@ class Client(Base):
     protection_categorie_nom_ref = Column(String, default="")
     protection_statut_ref = Column(String, default="")
     protection_reference_maj_le = Column(DateTime, nullable=True)
+    # Dernier statut de validation Google connu ("valide", "non_valide",
+    # "inaccessible") - voir AlerteStatutFiche et
+    # planificateur.verifier_statut_validation_fiches. NULL tant que la
+    # fiche n'a jamais ete verifiee par cette tache (evite une fausse alerte
+    # au premier passage apres l'ajout d'une fiche ou ce deploiement).
+    dernier_statut_validation = Column(String, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
@@ -275,6 +281,29 @@ class AlerteProtectionFiche(Base):
     detecte_le = Column(DateTime, default=datetime.utcnow)
     traite_le = Column(DateTime, nullable=True)
     action = Column(String, nullable=True)  # RESTAURE, IGNORE
+
+    client = relationship("Client")
+
+
+class AlerteStatutFiche(Base):
+    """
+    Changement du statut de validation Google (voir Client.dernier_statut_validation
+    et planificateur.verifier_statut_validation_fiches) : "non_valide" (fiche
+    en attente de verification Google), "valide" (Voice of Merchant confirme)
+    ou "inaccessible" (la fiche ne repond plus - signe probable d'une
+    suspension, sans certitude absolue car Google n'expose pas d'etat
+    "suspendu" explicite dans l'API). Purement informatif (rien a restaurer
+    sur Google) : Jonathan marque juste l'alerte comme vue depuis /alertes.
+    """
+
+    __tablename__ = "alertes_statut_fiche"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    statut_avant = Column(String, nullable=False)
+    statut_apres = Column(String, nullable=False)
+    detecte_le = Column(DateTime, default=datetime.utcnow)
+    traite_le = Column(DateTime, nullable=True)
 
     client = relationship("Client")
 

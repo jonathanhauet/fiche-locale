@@ -68,6 +68,7 @@ from .planificateur import (
     verifier_et_publier_photos_programmees,
     verifier_et_publier_posts_programmes,
     verifier_protection_fiches,
+    verifier_statut_validation_fiches,
 )
 from .security import hacher_mot_de_passe, verifier_mot_de_passe
 
@@ -131,6 +132,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_statut_ref TEXT DEFAULT ''"))
         if "protection_reference_maj_le" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN protection_reference_maj_le TIMESTAMP"))
+        if "dernier_statut_validation" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN dernier_statut_validation TEXT"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -276,15 +279,19 @@ templates.env.globals["clients_json_recherche_globale"] = _clients_json_recherch
 
 def _nb_changements_suspects() -> int:
     """
-    Nombre de changements suspects (protection de fiche) pas encore traites,
-    toutes fiches confondues - affiche en pastille sur le lien "Alertes" de la
+    Nombre d'alertes pas encore traitees (changements suspects sur les
+    fiches protegees + changements de statut de validation Google), toutes
+    fiches confondues - affiche en pastille sur le lien "Alertes" de la
     barre laterale (voir base.html). Session dediee, comme
     _clients_json_recherche_globale ci-dessus (fonction globale Jinja, pas de
     Depends(obtenir_session) disponible ici).
     """
     db = SessionLocal()
     try:
-        return db.query(models.AlerteProtectionFiche).filter(models.AlerteProtectionFiche.traite_le.is_(None)).count()
+        return (
+            db.query(models.AlerteProtectionFiche).filter(models.AlerteProtectionFiche.traite_le.is_(None)).count()
+            + db.query(models.AlerteStatutFiche).filter(models.AlerteStatutFiche.traite_le.is_(None)).count()
+        )
     finally:
         db.close()
 
@@ -353,6 +360,16 @@ planificateur.add_job(
     hour=6,
     timezone="Europe/Brussels",
     id="verification_protection_fiches",
+)
+# Changement de statut de validation Google (voir
+# planificateur.verifier_statut_validation_fiches) : meme creneau matinal.
+planificateur.add_job(
+    verifier_statut_validation_fiches,
+    "cron",
+    hour=6,
+    minute=30,
+    timezone="Europe/Brussels",
+    id="verification_statut_validation_fiches",
 )
 planificateur.start()
 
@@ -1879,6 +1896,12 @@ def exporter_clients_excel(request: Request, etiquette_id: int = None, db: Sessi
 # publie (via cette plateforme) remonte dans les alertes.
 SEUIL_INACTIVITE_POSTS_JOURS = 30
 
+LIBELLES_STATUT_VALIDATION = {
+    "valide": "Validée",
+    "non_valide": "Non validée (en attente Google)",
+    "inaccessible": "Inaccessible (suspension probable)",
+}
+
 
 @app.get("/alertes", response_class=HTMLResponse)
 def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
@@ -1935,6 +1958,17 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
     )
     nb_sans_protection = sum(1 for c in clients_avec_fiche if not c.protection_fiche_active)
 
+    changements_statut = (
+        db.query(models.AlerteStatutFiche)
+        .join(models.Client, models.AlerteStatutFiche.client_id == models.Client.id)
+        .filter(
+            models.AlerteStatutFiche.client_id.in_([c.id for c in clients_avec_fiche]),
+            models.AlerteStatutFiche.traite_le.is_(None),
+        )
+        .order_by(models.AlerteStatutFiche.detecte_le.desc())
+        .all()
+    )
+
     return templates.TemplateResponse(
         request,
         "alertes.html",
@@ -1947,8 +1981,24 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
             "nb_sans_protection": nb_sans_protection,
             "espace": espace,
             "changements_suspects": changements_suspects,
+            "changements_statut": changements_statut,
+            "libelles_statut_validation": LIBELLES_STATUT_VALIDATION,
         },
     )
+
+
+@app.post("/alertes/statut/{alerte_id}/vu")
+def marquer_alerte_statut_vue(alerte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Marque une alerte de changement de statut comme vue - purement informatif, aucune ecriture sur Google."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    alerte = db.get(models.AlerteStatutFiche, alerte_id)
+    if alerte and alerte.traite_le is None:
+        alerte.traite_le = datetime.utcnow()
+        db.commit()
+    return RedirectResponse("/alertes", status_code=303)
 
 
 @app.post("/alertes/protection/{alerte_id}/restaurer")

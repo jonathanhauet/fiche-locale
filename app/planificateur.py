@@ -302,3 +302,75 @@ def verifier_protection_fiches():
             db.commit()
     finally:
         db.close()
+
+
+def verifier_statut_validation_fiches():
+    """
+    Compare, pour toutes les fiches liees a Google, le statut de validation
+    actuel (voir google_location.fiche_validee) au dernier statut connu
+    (Client.dernier_statut_validation). Un changement - dans un sens comme
+    dans l'autre - cree une AlerteStatutFiche en attente, visible sur
+    /alertes. Tourne une fois par jour, meme creneau que les autres
+    verifications legeres.
+
+    "inaccessible" (echec de lecture avec un code d'erreur explicite,
+    typiquement 403/404) est traite comme un statut a part entiere : Google
+    n'expose aucun champ "suspendu" officiel dans cette API, donc une fiche
+    qui devient brutalement inaccessible apres avoir ete lisible est le
+    signal le plus proche d'une suspension qu'on puisse detecter. Une erreur
+    reseau/transitoire (pas de code HTTP net) ne fait pas changer le statut
+    enregistre, pour eviter une fausse alerte.
+    """
+    db = SessionLocal()
+    try:
+        if not google_oauth.google_est_connecte(db):
+            return
+
+        clients = (
+            db.query(models.Client)
+            .filter(models.Client.account_id != "", models.Client.location_id != "")
+            .all()
+        )
+        if not clients:
+            return
+
+        identifiants_par_compte = {}
+
+        for client in clients:
+            compte_id = client.compte_google_id
+            if compte_id not in identifiants_par_compte:
+                identifiants_par_compte[compte_id] = google_oauth.obtenir_identifiants(db, compte_id)
+            identifiants = identifiants_par_compte[compte_id]
+            if not identifiants:
+                continue
+
+            try:
+                infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+                nouveau_statut = "valide" if google_location.fiche_validee(infos) else "non_valide"
+            except RuntimeError:
+                # Echec avec code HTTP explicite (voir google_location.obtenir_infos_fiche) -
+                # traite comme un signal d'inaccessibilite, pas ignore.
+                nouveau_statut = "inaccessible"
+            except Exception:
+                # Erreur transitoire (reseau, timeout...) : on ne change rien,
+                # on reessaiera au prochain passage.
+                continue
+
+            ancien_statut = client.dernier_statut_validation
+            if ancien_statut is None:
+                # Premiere verification pour cette fiche : on enregistre la
+                # reference sans alerter (rien a comparer).
+                client.dernier_statut_validation = nouveau_statut
+                db.commit()
+                continue
+
+            if nouveau_statut == ancien_statut:
+                continue
+
+            db.add(models.AlerteStatutFiche(
+                client_id=client.id, statut_avant=ancien_statut, statut_apres=nouveau_statut,
+            ))
+            client.dernier_statut_validation = nouveau_statut
+            db.commit()
+    finally:
+        db.close()
