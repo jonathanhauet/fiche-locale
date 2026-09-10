@@ -17,6 +17,15 @@
   changements suspects sur les fiches protégées. Le suivi de position n'est pas inclus ici (payant, il reste à la demande).
 </p>
 
+{% if alertes_espaces_isoles %}
+<div class="bandeau-avertissement">
+  🔔 D'autres alertes existent dans des espaces séparés (non comptées ci-dessous, mais incluses dans le badge de la barre latérale) :
+  {% for item in alertes_espaces_isoles %}
+  <a href="/alertes?etiquette_id={{ item.etiquette.id }}">{{ item.etiquette.nom }} ({{ item.nb }})</a>{{ ", " if not loop.last else "" }}
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="grille-resume">
   <div class="carte-resume">
     <span class="carte-resume-chiffre{{ ' chiffre-attention' if clients_inactifs else '' }}">{{ clients_inactifs|length }}</span>

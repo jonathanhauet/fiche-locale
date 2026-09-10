@@ -1953,6 +1953,31 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
         base = db.query(models.Client).filter(models.Client.etiquettes.any(models.Etiquette.id == espace.id))
     else:
         base = _query_clients_non_isoles(db)
+
+    # Le badge global (barre laterale) compte les alertes de tous les
+    # clients, y compris ceux d'un espace isole (exclus de cette page - voir
+    # _query_clients_non_isoles). Sur la vue globale, on pointe explicitement
+    # vers ces espaces plutot que de laisser un ecart badge/page inexplique.
+    alertes_espaces_isoles = []
+    if not espace:
+        for etiquette_isolee in db.query(models.Etiquette).filter(models.Etiquette.isolee == True).all():  # noqa: E712
+            ids_clients_espace = [
+                c.id for c in db.query(models.Client.id)
+                .filter(models.Client.etiquettes.any(models.Etiquette.id == etiquette_isolee.id))
+                .all()
+            ]
+            if not ids_clients_espace:
+                continue
+            nb = (
+                db.query(models.AlerteProtectionFiche)
+                .filter(models.AlerteProtectionFiche.client_id.in_(ids_clients_espace), models.AlerteProtectionFiche.traite_le.is_(None))
+                .count()
+                + db.query(models.AlerteStatutFiche)
+                .filter(models.AlerteStatutFiche.client_id.in_(ids_clients_espace), models.AlerteStatutFiche.traite_le.is_(None))
+                .count()
+            )
+            if nb:
+                alertes_espaces_isoles.append({"etiquette": etiquette_isolee, "nb": nb})
     clients_avec_fiche = [
         c for c in base.order_by(models.Client.nom).all()
         if c.account_id and c.location_id
@@ -2015,6 +2040,7 @@ def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(ob
             "changements_suspects": changements_suspects,
             "changements_statut": changements_statut,
             "libelles_statut_validation": LIBELLES_STATUT_VALIDATION,
+            "alertes_espaces_isoles": alertes_espaces_isoles,
         },
     )
 
