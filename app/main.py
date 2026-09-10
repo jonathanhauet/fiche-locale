@@ -1935,6 +1935,39 @@ LIBELLES_STATUT_VALIDATION = {
 }
 
 
+@app.get("/alertes/diagnostic", response_class=JSONResponse)
+def alertes_diagnostic(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Diagnostic temporaire : ecart constate entre le badge (toutes les alertes
+    en attente) et la liste affichee sur /alertes (filtree aux clients ayant
+    account_id + location_id). A retirer une fois la cause confirmee.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    def _detail(alerte, type_alerte):
+        client = alerte.client
+        return {
+            "type": type_alerte,
+            "id": alerte.id,
+            "client_id": alerte.client_id,
+            "client_nom": client.nom if client else "(client introuvable)",
+            "client_a_account_id": bool(client.account_id) if client else None,
+            "client_a_location_id": bool(client.location_id) if client else None,
+            "detecte_le": str(alerte.detecte_le),
+        }
+
+    protection = db.query(models.AlerteProtectionFiche).filter(models.AlerteProtectionFiche.traite_le.is_(None)).all()
+    statut = db.query(models.AlerteStatutFiche).filter(models.AlerteStatutFiche.traite_le.is_(None)).all()
+
+    return {
+        "total_badge": len(protection) + len(statut),
+        "protection_fiche_en_attente": [_detail(a, "protection") for a in protection],
+        "statut_fiche_en_attente": [_detail(a, "statut") for a in statut],
+    }
+
+
 @app.get("/alertes", response_class=HTMLResponse)
 def alertes(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
     """
