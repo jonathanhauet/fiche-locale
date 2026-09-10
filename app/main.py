@@ -4720,7 +4720,10 @@ def meta_deconnecter_compte(compte_id: int, request: Request, db: Session = Depe
 
 
 def _contexte_meta_test(client) -> dict:
-    contexte = {"posts": [], "erreur_posts": None, "insights": [], "erreur_insights": None}
+    contexte = {
+        "posts": [], "erreur_posts": None, "insights": [], "erreur_insights": None,
+        "medias_instagram": [], "erreur_medias_instagram": None, "insights_instagram": [], "erreur_insights_instagram": None,
+    }
     try:
         contexte["posts"] = meta_engagement.lister_posts_avec_commentaires(client.token_page_meta, client.page_id_meta)
     except Exception as erreur:
@@ -4729,6 +4732,19 @@ def _contexte_meta_test(client) -> dict:
         contexte["insights"] = meta_engagement.obtenir_insights_page(client.token_page_meta, client.page_id_meta)
     except Exception as erreur:
         contexte["erreur_insights"] = str(erreur)
+
+    if client.instagram_id_meta:
+        try:
+            contexte["medias_instagram"] = meta_engagement.lister_medias_instagram_avec_commentaires(
+                client.token_page_meta, client.instagram_id_meta
+            )
+        except Exception as erreur:
+            contexte["erreur_medias_instagram"] = str(erreur)
+        try:
+            contexte["insights_instagram"] = meta_engagement.obtenir_insights_instagram(client.token_page_meta, client.instagram_id_meta)
+        except Exception as erreur:
+            contexte["erreur_insights_instagram"] = str(erreur)
+
     return contexte
 
 
@@ -4767,6 +4783,36 @@ def meta_publier(client_id: int, request: Request, message: str = Form(...), db:
 
     return templates.TemplateResponse(
         request, "meta_publier_test.html", {"client": client, "erreur": None, "resultat": resultat, **_contexte_meta_test(client)},
+    )
+
+
+@app.post("/clients/{client_id}/meta/publier-instagram", response_class=HTMLResponse)
+async def meta_publier_instagram(
+    client_id: int, request: Request, legende: str = Form(""), image: UploadFile = File(...),
+    db: Session = Depends(obtenir_session),
+):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client or not client.instagram_id_meta:
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+    try:
+        octets = await image.read()
+        extension = os.path.splitext(image.filename or "")[1] or ".jpg"
+        url_image = ovh_upload.envoyer_octets(octets, f"meta-test-{uuid.uuid4().hex}{extension}")
+        resultat_instagram = meta_publish.publier_photo_instagram(client.token_page_meta, client.instagram_id_meta, url_image, legende)
+    except Exception as erreur:
+        return templates.TemplateResponse(
+            request, "meta_publier_test.html",
+            {"client": client, "erreur": str(erreur), "resultat": None, **_contexte_meta_test(client)}, status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        request, "meta_publier_test.html",
+        {"client": client, "erreur": None, "resultat": resultat_instagram, **_contexte_meta_test(client)},
     )
 
 

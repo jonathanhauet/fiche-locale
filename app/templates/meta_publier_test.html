@@ -69,4 +69,67 @@
 {% else %}
 <p class="texte-vide">Aucun post trouvé sur cette Page.</p>
 {% endif %}
+
+{% if client.instagram_id_meta %}
+<h2>Instagram — {{ client.instagram_nom_meta }}</h2>
+
+<form class="formulaire" method="post" action="/clients/{{ client.id }}/meta/publier-instagram" enctype="multipart/form-data">
+  <label>
+    Image
+    <input type="file" name="image" accept="image/*" required>
+  </label>
+  <label>
+    Légende
+    <textarea name="legende" rows="3"></textarea>
+  </label>
+  <button type="submit" class="bouton">Publier sur Instagram</button>
+</form>
+
+<h3>Statistiques Instagram</h3>
+{% if erreur_insights_instagram %}
+<p class="message-erreur">{{ erreur_insights_instagram }}</p>
+{% elif insights_instagram %}
+<div class="grille-resume">
+  {% for insight in insights_instagram %}
+  <div class="carte-resume">
+    <span class="carte-resume-chiffre">{{ insight.derniere_valeur if insight.derniere_valeur is not none else "—" }}</span>
+    <span class="carte-resume-libelle">{{ insight.titre or insight.nom }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="texte-vide">Aucune statistique disponible.</p>
+{% endif %}
+
+<h3>Publications récentes et commentaires</h3>
+{% if erreur_medias_instagram %}
+<p class="message-erreur">{{ erreur_medias_instagram }}</p>
+{% elif medias_instagram %}
+<ul class="liste-avis">
+  {% for media in medias_instagram %}
+  <li class="carte-avis">
+    <div class="entete-avis">
+      <div>
+        <span class="date-avis">{{ media.cree_le }}</span>
+      </div>
+      {% if media.url %}<a href="{{ media.url }}" target="_blank" rel="noopener">Voir sur Instagram</a>{% endif %}
+    </div>
+    <p class="commentaire-avis">{{ media.legende or "(sans légende)" }}</p>
+    {% if media.commentaires %}
+    <ul>
+      {% for commentaire in media.commentaires %}
+      <li><strong>{{ commentaire.auteur }}</strong> : {{ commentaire.message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="texte-vide">Aucune publication trouvée sur ce compte.</p>
+{% endif %}
+{% else %}
+<h2>Instagram</h2>
+<p class="texte-vide">Aucun compte Instagram lié à cette Page.</p>
+{% endif %}
 {% endblock %}
