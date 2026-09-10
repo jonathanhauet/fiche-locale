@@ -14,14 +14,27 @@ import requests
 from .instagram_oauth import URL_GRAPH
 
 
+def _lister_commentaires(token_instagram: str, media_id: str) -> list[dict]:
+    """
+    Appel separe plutot qu'un champ imbrique sur /media (comments.limit(20){...})
+    - constate en reel le 10/09/2026 : la version imbriquee ne renvoie aucun
+    commentaire sur graph.instagram.com, alors que l'appel direct /comments
+    fonctionne correctement.
+    """
+    reponse = requests.get(
+        f"{URL_GRAPH}/{media_id}/comments",
+        params={"fields": "text,username,timestamp", "access_token": token_instagram},
+        timeout=15,
+    )
+    if reponse.status_code != 200:
+        return []
+    return reponse.json().get("data", [])
+
+
 def lister_medias_avec_commentaires(token_instagram: str, instagram_id: str, limite: int = 10) -> list[dict]:
     reponse = requests.get(
         f"{URL_GRAPH}/{instagram_id}/media",
-        params={
-            "fields": "caption,timestamp,permalink,comments.limit(20){text,username,timestamp}",
-            "limit": limite,
-            "access_token": token_instagram,
-        },
+        params={"fields": "caption,timestamp,permalink", "limit": limite, "access_token": token_instagram},
         timeout=30,
     )
     if reponse.status_code != 200:
@@ -29,7 +42,7 @@ def lister_medias_avec_commentaires(token_instagram: str, instagram_id: str, lim
 
     medias = []
     for media in reponse.json().get("data", []):
-        commentaires = (media.get("comments") or {}).get("data", [])
+        commentaires = _lister_commentaires(token_instagram, media.get("id", ""))
         medias.append({
             "id": media.get("id", ""),
             "legende": media.get("caption", ""),
