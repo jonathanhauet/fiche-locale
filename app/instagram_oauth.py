@@ -27,7 +27,10 @@ URL_DIALOGUE = "https://www.instagram.com/oauth/authorize"
 URL_ECHANGE_COURT = "https://api.instagram.com/oauth/access_token"
 URL_GRAPH = "https://graph.instagram.com"
 
-SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages"
+SCOPES = (
+    "instagram_business_basic,instagram_business_content_publish,"
+    "instagram_business_manage_comments,instagram_business_manage_messages,instagram_business_manage_insights"
+)
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
 DOSSIER_PLATEFORME = os.path.dirname(DOSSIER_APP)
