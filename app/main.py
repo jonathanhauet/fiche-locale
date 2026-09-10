@@ -4765,6 +4765,43 @@ def meta_deconnecter_compte(compte_id: int, request: Request, db: Session = Depe
 # --- Connexion Instagram (Business Login for Instagram, OAuth separe) -----
 
 
+def _contexte_demo_meta(access_token: str, identifiant_instagram: str, **supplement) -> dict:
+    contexte = {
+        "access_token": access_token, "instagram_id": identifiant_instagram,
+        "nom_utilisateur": instagram_oauth._recuperer_libelle(access_token),
+        "erreur": None, "erreur_publication": None, "resultat_publication": None,
+        **supplement,
+    }
+    try:
+        contexte["medias"] = instagram_engagement.lister_medias_avec_commentaires(access_token, identifiant_instagram, limite=5)
+    except Exception as erreur:
+        contexte["medias"] = []
+        contexte["erreur_medias"] = str(erreur)
+    try:
+        contexte["insights"] = instagram_engagement.obtenir_insights(access_token, identifiant_instagram)
+    except Exception as erreur:
+        contexte["insights"] = []
+        contexte["erreur_insights"] = str(erreur)
+    return contexte
+
+
+@app.post("/demo-meta/instagram/publier", response_class=HTMLResponse)
+async def demo_meta_instagram_publier(
+    request: Request, access_token: str = Form(...), instagram_id: str = Form(...),
+    legende: str = Form(""), image: UploadFile = File(...),
+):
+    contexte = _contexte_demo_meta(access_token, instagram_id)
+    try:
+        octets = await image.read()
+        extension = os.path.splitext(image.filename or "")[1] or ".jpg"
+        url_image = ovh_upload.envoyer_octets(octets, f"demo-meta-{uuid.uuid4().hex}{extension}")
+        contexte["resultat_publication"] = instagram_publish.publier_photo(access_token, instagram_id, url_image, legende)
+    except Exception as erreur:
+        contexte["erreur_publication"] = str(erreur)
+
+    return templates.TemplateResponse(request, "demo_meta_resultat.html", contexte)
+
+
 @app.get("/instagram/connecter")
 def instagram_connecter(request: Request):
     redirection = rediriger_si_non_connecte(request)
@@ -4841,18 +4878,7 @@ def instagram_callback(request: Request, db: Session = Depends(obtenir_session))
         # Rien n'est enregistre en base : le token n'est utilise que pour cet
         # affichage, puis oublie - la demo ne doit laisser aucune trace liee
         # au compte Instagram du revieweur.
-        contexte = {"nom_utilisateur": instagram_oauth._recuperer_libelle(access_token), "erreur": None}
-        try:
-            contexte["medias"] = instagram_engagement.lister_medias_avec_commentaires(access_token, identifiant_instagram, limite=5)
-        except Exception as erreur:
-            contexte["medias"] = []
-            contexte["erreur_medias"] = str(erreur)
-        try:
-            contexte["insights"] = instagram_engagement.obtenir_insights(access_token, identifiant_instagram)
-        except Exception as erreur:
-            contexte["insights"] = []
-            contexte["erreur_insights"] = str(erreur)
-        return templates.TemplateResponse(request, "demo_meta_resultat.html", contexte)
+        return templates.TemplateResponse(request, "demo_meta_resultat.html", _contexte_demo_meta(access_token, identifiant_instagram))
 
     instagram_oauth.enregistrer_compte(db, access_token, identifiant_instagram)
     return RedirectResponse("/instagram/comptes", status_code=303)

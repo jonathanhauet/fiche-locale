@@ -29,6 +29,27 @@
     <p class="texte-vide">Aucune statistique disponible.</p>
     {% endif %}
 
+    <h2>Publier une photo de test</h2>
+    {% if erreur_publication %}
+    <p class="message-erreur">{{ erreur_publication }}</p>
+    {% endif %}
+    {% if resultat_publication %}
+    <p class="message-succes">Publié avec succès (ID : {{ resultat_publication.id }}).</p>
+    {% endif %}
+    <form class="formulaire" method="post" action="/demo-meta/instagram/publier" enctype="multipart/form-data">
+      <input type="hidden" name="access_token" value="{{ access_token }}">
+      <input type="hidden" name="instagram_id" value="{{ instagram_id }}">
+      <label>
+        Image
+        <input type="file" name="image" accept="image/*" required>
+      </label>
+      <label>
+        Légende
+        <textarea name="legende" rows="3"></textarea>
+      </label>
+      <button type="submit" class="bouton">Publier sur Instagram</button>
+    </form>
+
     <h2>Publications récentes et commentaires</h2>
     {% if erreur_medias %}
     <p class="message-erreur">{{ erreur_medias }}</p>
