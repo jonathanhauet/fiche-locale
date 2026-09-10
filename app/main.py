@@ -4774,34 +4774,85 @@ def instagram_connecter(request: Request):
     redirect_uri = str(request.url_for("instagram_callback"))
     state = uuid.uuid4().hex
     request.session["instagram_oauth_state"] = state
+    request.session.pop("instagram_demo", None)
+    return RedirectResponse(instagram_oauth.construire_url_autorisation(redirect_uri, state))
+
+
+@app.get("/demo-meta", response_class=HTMLResponse)
+def demo_meta(request: Request):
+    """
+    Page publique et isolee (aucune donnee client, aucune connexion a Fiche
+    Locale requise) destinee aux revieweurs Meta pour tester en autonomie le
+    flux "Business Login for Instagram" - voir instagram_callback ci-dessous
+    pour la branche "demo" qui n'enregistre rien en base.
+    """
+    return templates.TemplateResponse(request, "demo_meta.html", {})
+
+
+@app.get("/demo-meta/instagram/connecter")
+def demo_meta_instagram_connecter(request: Request):
+    redirect_uri = str(request.url_for("instagram_callback"))
+    state = uuid.uuid4().hex
+    request.session["instagram_oauth_state"] = state
+    request.session["instagram_demo"] = "1"
     return RedirectResponse(instagram_oauth.construire_url_autorisation(redirect_uri, state))
 
 
 @app.get("/instagram/callback", name="instagram_callback")
 def instagram_callback(request: Request, db: Session = Depends(obtenir_session)):
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return redirection
+    mode_demo = bool(request.session.pop("instagram_demo", None))
+
+    if not mode_demo:
+        redirection = rediriger_si_non_connecte(request)
+        if redirection:
+            return redirection
 
     if request.query_params.get("error"):
-        return HTMLResponse(
-            f"Connexion Instagram annulée ou refusée : {request.query_params.get('error_description', '')}",
-            status_code=400,
-        )
+        message_erreur = f"Connexion Instagram annulée ou refusée : {request.query_params.get('error_description', '')}"
+        if mode_demo:
+            return templates.TemplateResponse(request, "demo_meta.html", {"erreur": message_erreur}, status_code=400)
+        return HTMLResponse(message_erreur, status_code=400)
 
     state_attendu = request.session.get("instagram_oauth_state")
     if state_attendu and request.query_params.get("state") != state_attendu:
-        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /instagram/connecter.", status_code=400)
+        message_erreur = "Etat OAuth invalide, merci de reessayer depuis le debut."
+        if mode_demo:
+            return templates.TemplateResponse(request, "demo_meta.html", {"erreur": message_erreur}, status_code=400)
+        return HTMLResponse(message_erreur, status_code=400)
 
     code = request.query_params.get("code")
     if not code:
-        return HTMLResponse("Code d'autorisation manquant.", status_code=400)
+        message_erreur = "Code d'autorisation manquant."
+        if mode_demo:
+            return templates.TemplateResponse(request, "demo_meta.html", {"erreur": message_erreur}, status_code=400)
+        return HTMLResponse(message_erreur, status_code=400)
 
     redirect_uri = str(request.url_for("instagram_callback"))
     try:
         access_token, identifiant_instagram = instagram_oauth.echanger_code(code, redirect_uri)
     except Exception as erreur:
+        if mode_demo:
+            return templates.TemplateResponse(
+                request, "demo_meta.html", {"erreur": f"Echec de la connexion Instagram : {erreur}"}, status_code=400,
+            )
         return HTMLResponse(f"Echec de la connexion Instagram : {erreur}", status_code=400)
+
+    if mode_demo:
+        # Rien n'est enregistre en base : le token n'est utilise que pour cet
+        # affichage, puis oublie - la demo ne doit laisser aucune trace liee
+        # au compte Instagram du revieweur.
+        contexte = {"nom_utilisateur": instagram_oauth._recuperer_libelle(access_token), "erreur": None}
+        try:
+            contexte["medias"] = instagram_engagement.lister_medias_avec_commentaires(access_token, identifiant_instagram, limite=5)
+        except Exception as erreur:
+            contexte["medias"] = []
+            contexte["erreur_medias"] = str(erreur)
+        try:
+            contexte["insights"] = instagram_engagement.obtenir_insights(access_token, identifiant_instagram)
+        except Exception as erreur:
+            contexte["insights"] = []
+            contexte["erreur_insights"] = str(erreur)
+        return templates.TemplateResponse(request, "demo_meta_resultat.html", contexte)
 
     instagram_oauth.enregistrer_compte(db, access_token, identifiant_instagram)
     return RedirectResponse("/instagram/comptes", status_code=303)

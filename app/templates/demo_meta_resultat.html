@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block titre %}Démonstration Instagram — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <div class="carte-connexion carte-texte-legal">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    <h1>✓ Connecté — @{{ nom_utilisateur }}</h1>
+    <p class="texte-discret">
+      Informations lues en direct depuis l'API Instagram avec le compte que tu viens d'autoriser.
+      Rien de ce qui suit n'est enregistré par Fiche Locale.
+    </p>
+
+    <h2>Statistiques</h2>
+    {% if erreur_insights %}
+    <p class="message-erreur">{{ erreur_insights }}</p>
+    {% elif insights %}
+    <div class="grille-resume">
+      {% for insight in insights %}
+      <div class="carte-resume">
+        <span class="carte-resume-chiffre">{{ insight.derniere_valeur if insight.derniere_valeur is not none else "—" }}</span>
+        <span class="carte-resume-libelle">{{ insight.titre or insight.nom }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="texte-vide">Aucune statistique disponible.</p>
+    {% endif %}
+
+    <h2>Publications récentes et commentaires</h2>
+    {% if erreur_medias %}
+    <p class="message-erreur">{{ erreur_medias }}</p>
+    {% elif medias %}
+    <ul class="liste-avis">
+      {% for media in medias %}
+      <li class="carte-avis">
+        <div class="entete-avis">
+          <div><span class="date-avis">{{ media.cree_le }}</span></div>
+          {% if media.url %}<a href="{{ media.url }}" target="_blank" rel="noopener">Voir sur Instagram</a>{% endif %}
+        </div>
+        <p class="commentaire-avis">{{ media.legende or "(sans légende)" }}</p>
+        {% if media.commentaires %}
+        <ul>
+          {% for commentaire in media.commentaires %}
+          <li><strong>{{ commentaire.auteur }}</strong> : {{ commentaire.message }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="texte-vide">Aucune publication trouvée sur ce compte.</p>
+    {% endif %}
+
+    <p class="texte-discret" style="margin-top:1.5rem;"><a href="/demo-meta">&larr; Connecter un autre compte</a></p>
+  </div>
+</div>
+{% endblock %}

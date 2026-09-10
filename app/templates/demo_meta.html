@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titre %}Démonstration Instagram — Fiche Locale{% endblock %}
+{% block corps %}
+<div class="page-connexion">
+  <div class="carte-connexion carte-texte-legal">
+    <div class="marque marque-connexion">
+      <span class="marque-icone">FL</span>
+      <span class="marque-texte">Fiche Locale</span>
+    </div>
+    <h1>Démonstration — Connexion Instagram</h1>
+    <p class="texte-discret">
+      Page isolée, sans lien avec les données clients de la plateforme. Elle sert uniquement à
+      tester le flux "Business Login for Instagram" (instagram_business_basic,
+      instagram_business_manage_comments, instagram_business_manage_insights) : connecte un compte
+      Instagram professionnel, et cette page affiche aussitôt son nom d'utilisateur, ses publications
+      récentes avec leurs commentaires, et ses statistiques. Aucune information n'est enregistrée :
+      le jeton d'accès n'est utilisé que pour cet affichage, puis oublié.
+    </p>
+
+    {% if erreur %}
+    <p class="message-erreur">{{ erreur }}</p>
+    {% endif %}
+
+    <a class="bouton" href="/demo-meta/instagram/connecter">Connecter un compte Instagram</a>
+  </div>
+</div>
+{% endblock %}
