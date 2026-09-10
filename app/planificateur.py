@@ -6,7 +6,7 @@ commande : ici, une tache de fond integree au processus web (APScheduler).
 
 from datetime import date, datetime, time
 
-from . import google_business, google_location, google_oauth, google_publish, google_reviews, models, rapport_donnees
+from . import google_business, google_location, google_oauth, google_publish, google_reviews, instagram_oauth, models, rapport_donnees
 from .database import SessionLocal
 
 
@@ -371,6 +371,42 @@ def verifier_statut_validation_fiches():
                 client_id=client.id, statut_avant=ancien_statut, statut_apres=nouveau_statut,
             ))
             client.dernier_statut_validation = nouveau_statut
+            db.commit()
+    finally:
+        db.close()
+
+
+SEUIL_RAFRAICHISSEMENT_INSTAGRAM_JOURS = 10
+
+
+def rafraichir_tokens_instagram():
+    """
+    Le token Instagram (voir instagram_oauth.py) expire au bout de 60 jours -
+    contrairement au token systeme Meta qui n'expire jamais. Rafraichit tout
+    compte dont l'expiration approche, et propage le nouveau token aux
+    clients qui y sont rattaches (une copie a ete faite sur Client au moment
+    de la liaison, pas une reference live). Tourne une fois par jour.
+    """
+    db = SessionLocal()
+    try:
+        seuil = datetime.utcnow() + timedelta(days=SEUIL_RAFRAICHISSEMENT_INSTAGRAM_JOURS)
+        comptes = (
+            db.query(models.CompteInstagram)
+            .filter(models.CompteInstagram.expire_le.isnot(None), models.CompteInstagram.expire_le <= seuil)
+            .all()
+        )
+        for compte in comptes:
+            try:
+                nouveau_token, duree_secondes = instagram_oauth.rafraichir_token(compte.access_token)
+            except Exception:
+                continue
+
+            compte.access_token = nouveau_token
+            compte.expire_le = datetime.utcnow() + timedelta(seconds=duree_secondes)
+
+            for client in db.query(models.Client).filter_by(compte_instagram_id=compte.id).all():
+                client.token_instagram = nouveau_token
+
             db.commit()
     finally:
         db.close()

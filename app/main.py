@@ -53,6 +53,9 @@ from . import (
     google_publish,
     google_reviews,
     ia_visibilite,
+    instagram_engagement,
+    instagram_oauth,
+    instagram_publish,
     meta_engagement,
     meta_oauth,
     meta_publish,
@@ -67,6 +70,7 @@ from . import (
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
     envoyer_recaps_mensuels,
+    rafraichir_tokens_instagram,
     verifier_avis_supprimes,
     verifier_et_publier_photos_programmees,
     verifier_et_publier_posts_programmes,
@@ -149,6 +153,10 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN instagram_id_meta TEXT DEFAULT ''"))
         if "instagram_nom_meta" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN instagram_nom_meta TEXT DEFAULT ''"))
+        if "compte_instagram_id" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_instagram_id INTEGER"))
+        if "token_instagram" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN token_instagram TEXT DEFAULT ''"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -385,6 +393,15 @@ planificateur.add_job(
     minute=30,
     timezone="Europe/Brussels",
     id="verification_statut_validation_fiches",
+)
+# Rafraichissement des tokens Instagram (voir planificateur.rafraichir_tokens_instagram)
+# - contrairement au token systeme Meta, celui-ci expire (60 jours).
+planificateur.add_job(
+    rafraichir_tokens_instagram,
+    "cron",
+    hour=7,
+    timezone="Europe/Brussels",
+    id="rafraichissement_tokens_instagram",
 )
 planificateur.start()
 
@@ -4719,6 +4736,114 @@ def meta_deconnecter_compte(compte_id: int, request: Request, db: Session = Depe
     return RedirectResponse("/meta/comptes", status_code=303)
 
 
+# --- Connexion Instagram (Business Login for Instagram, OAuth separe) -----
+
+
+@app.get("/instagram/connecter")
+def instagram_connecter(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    redirect_uri = str(request.url_for("instagram_callback"))
+    state = uuid.uuid4().hex
+    request.session["instagram_oauth_state"] = state
+    return RedirectResponse(instagram_oauth.construire_url_autorisation(redirect_uri, state))
+
+
+@app.get("/instagram/callback", name="instagram_callback")
+def instagram_callback(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    if request.query_params.get("error"):
+        return HTMLResponse(
+            f"Connexion Instagram annulée ou refusée : {request.query_params.get('error_description', '')}",
+            status_code=400,
+        )
+
+    state_attendu = request.session.get("instagram_oauth_state")
+    if state_attendu and request.query_params.get("state") != state_attendu:
+        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /instagram/connecter.", status_code=400)
+
+    code = request.query_params.get("code")
+    if not code:
+        return HTMLResponse("Code d'autorisation manquant.", status_code=400)
+
+    redirect_uri = str(request.url_for("instagram_callback"))
+    try:
+        access_token, identifiant_instagram = instagram_oauth.echanger_code(code, redirect_uri)
+    except Exception as erreur:
+        return HTMLResponse(f"Echec de la connexion Instagram : {erreur}", status_code=400)
+
+    instagram_oauth.enregistrer_compte(db, access_token, identifiant_instagram)
+    return RedirectResponse("/instagram/comptes", status_code=303)
+
+
+@app.get("/instagram/comptes", response_class=HTMLResponse)
+def instagram_comptes(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comptes = instagram_oauth.lister_comptes(db)
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
+    clients_par_compte_id = {c.compte_instagram_id: c for c in clients if c.compte_instagram_id}
+    return templates.TemplateResponse(
+        request, "instagram_comptes.html",
+        {"comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id, "erreur": None},
+    )
+
+
+@app.post("/instagram/comptes/{compte_id}/lier")
+def instagram_lier_compte(compte_id: int, request: Request, client_id: int = Form(...), db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteInstagram, compte_id)
+    client = db.get(models.Client, client_id)
+    if compte and client:
+        client.compte_instagram_id = compte.id
+        client.instagram_id_meta = compte.identifiant_instagram
+        client.instagram_nom_meta = compte.libelle
+        client.token_instagram = compte.access_token
+        db.commit()
+
+    return RedirectResponse("/instagram/comptes", status_code=303)
+
+
+@app.post("/instagram/comptes/{compte_id}/deconnecter")
+def instagram_deconnecter_compte(compte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteInstagram, compte_id)
+    if compte:
+        clients_lies = db.query(models.Client).filter_by(compte_instagram_id=compte_id).count()
+        if clients_lies:
+            comptes = instagram_oauth.lister_comptes(db)
+            clients = db.query(models.Client).order_by(models.Client.nom).all()
+            clients_par_compte_id = {c.compte_instagram_id: c for c in clients if c.compte_instagram_id}
+            return templates.TemplateResponse(
+                request, "instagram_comptes.html",
+                {
+                    "comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id,
+                    "erreur": (
+                        f"Impossible de deconnecter ce compte : {clients_lies} client(s) y sont "
+                        "encore rattaches. Reassignez-les d'abord a un autre compte."
+                    ),
+                },
+                status_code=400,
+            )
+        db.delete(compte)
+        db.commit()
+
+    return RedirectResponse("/instagram/comptes", status_code=303)
+
+
 def _contexte_meta_test(client) -> dict:
     contexte = {
         "posts": [], "erreur_posts": None, "insights": [], "erreur_insights": None,
@@ -4733,15 +4858,15 @@ def _contexte_meta_test(client) -> dict:
     except Exception as erreur:
         contexte["erreur_insights"] = str(erreur)
 
-    if client.instagram_id_meta:
+    if client.instagram_id_meta and client.token_instagram:
         try:
-            contexte["medias_instagram"] = meta_engagement.lister_medias_instagram_avec_commentaires(
-                client.token_page_meta, client.instagram_id_meta
+            contexte["medias_instagram"] = instagram_engagement.lister_medias_avec_commentaires(
+                client.token_instagram, client.instagram_id_meta
             )
         except Exception as erreur:
             contexte["erreur_medias_instagram"] = str(erreur)
         try:
-            contexte["insights_instagram"] = meta_engagement.obtenir_insights_instagram(client.token_page_meta, client.instagram_id_meta)
+            contexte["insights_instagram"] = instagram_engagement.obtenir_insights(client.token_instagram, client.instagram_id_meta)
         except Exception as erreur:
             contexte["erreur_insights_instagram"] = str(erreur)
 
@@ -4796,14 +4921,14 @@ async def meta_publier_instagram(
         return redirection
 
     client = db.get(models.Client, client_id)
-    if not client or not client.instagram_id_meta:
+    if not client or not client.instagram_id_meta or not client.token_instagram:
         return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
     try:
         octets = await image.read()
         extension = os.path.splitext(image.filename or "")[1] or ".jpg"
         url_image = ovh_upload.envoyer_octets(octets, f"meta-test-{uuid.uuid4().hex}{extension}")
-        resultat_instagram = meta_publish.publier_photo_instagram(client.token_page_meta, client.instagram_id_meta, url_image, legende)
+        resultat_instagram = instagram_publish.publier_photo(client.token_instagram, client.instagram_id_meta, url_image, legende)
     except Exception as erreur:
         return templates.TemplateResponse(
             request, "meta_publier_test.html",

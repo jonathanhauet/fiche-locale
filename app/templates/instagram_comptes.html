@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set page_actuelle = "comptes_instagram" %}
+{% block titre %}Comptes Instagram — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Comptes Instagram connectés</h1>
+  <a class="bouton" href="/instagram/connecter">+ Connecter un compte Instagram</a>
+</div>
+
+<p class="texte-discret">
+  Flux de connexion séparé de Meta/Facebook — l'accès aux publications, commentaires et statistiques Instagram
+  passe par cette connexion directe, pas par celle des Pages.
+</p>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+{% if comptes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Compte</th>
+        <th>Connecté le</th>
+        <th>Expire le</th>
+        <th>Client associé</th>
+        <th></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for compte in comptes %}
+      {% set client_lie = clients_par_compte_id.get(compte.id) %}
+      <tr>
+        <td>@{{ compte.libelle }}</td>
+        <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ compte.expire_le.strftime("%Y-%m-%d") if compte.expire_le else "—" }}</td>
+        <td>{{ client_lie.nom if client_lie else "—" }}</td>
+        <td>
+          <form method="post" action="/instagram/comptes/{{ compte.id }}/lier">
+            <select name="client_id" required>
+              <option value="" disabled {{ "selected" if not client_lie else "" }}>Choisir un client…</option>
+              {% for client in clients %}
+              <option value="{{ client.id }}" {{ "selected" if client_lie and client_lie.id == client.id else "" }}>{{ client.nom }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="/instagram/comptes/{{ compte.id }}/deconnecter"
+                onsubmit="return confirm('Deconnecter ce compte Instagram ?');">
+            <button type="submit" class="bouton-danger">Déconnecter</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucun compte Instagram connecté pour l'instant.</p>
+{% endif %}
+{% endblock %}

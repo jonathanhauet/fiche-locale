@@ -116,12 +116,18 @@ class Client(Base):
     token_page_meta = Column(String, default="")
     instagram_id_meta = Column(String, default="")
     instagram_nom_meta = Column(String, default="")
+    # Compte Instagram lie - flux de connexion separe (voir instagram_oauth.py) :
+    # token distinct du token de Page Facebook ci-dessus, car "Business Login
+    # for Instagram" n'a rien a voir avec "Facebook Login for Business".
+    compte_instagram_id = Column(Integer, ForeignKey("comptes_instagram.id"), nullable=True)
+    token_instagram = Column(Text, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
     photos = relationship("PhotoFiche", back_populates="client", cascade="all, delete-orphan")
     compte_google = relationship("CompteGoogle", back_populates="clients")
     compte_meta = relationship("CompteMeta", back_populates="clients")
+    compte_instagram = relationship("CompteInstagram", back_populates="clients")
     etiquettes = relationship("Etiquette", secondary=client_etiquettes, back_populates="clients")
     mots_cles = relationship("MotCle", back_populates="client", cascade="all, delete-orphan")
     releves_position = relationship("ReleveDePosition", back_populates="client", cascade="all, delete-orphan")
@@ -508,6 +514,26 @@ class CompteMeta(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     clients = relationship("Client", back_populates="compte_meta")
+
+
+class CompteInstagram(Base):
+    """
+    Un compte Instagram connecte via "Business Login for Instagram" (voir
+    instagram_oauth.py) - flux distinct de CompteMeta. Le token expire (60
+    jours) et doit etre rafraichi avant expiration, contrairement au token
+    systeme Meta.
+    """
+
+    __tablename__ = "comptes_instagram"
+
+    id = Column(Integer, primary_key=True)
+    libelle = Column(String, default="")
+    identifiant_instagram = Column(String, default="")
+    access_token = Column(Text, default="")
+    expire_le = Column(DateTime, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    clients = relationship("Client", back_populates="compte_instagram")
 
 
 class ParametreGoogleAds(Base):
