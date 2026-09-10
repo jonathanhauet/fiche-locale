@@ -11,6 +11,9 @@
     <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/historique">Historique</a>
     <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/stats">Statistiques</a>
     <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/visibilite-ia">Visibilité IA</a>
+    {% if client.page_id_meta %}
+    <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/meta/publier">Meta / Instagram (test)</a>
+    {% endif %}
   </div>
 </div>
 
