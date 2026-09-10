@@ -1217,6 +1217,13 @@ button:active { transform: translateY(1px); }
   max-width: 11rem;
 }
 
+.resume-avis-supprimes-par-client {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+
 .etiquette-statut {
   font-size: 0.72rem;
   font-weight: 600;

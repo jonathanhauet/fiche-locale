@@ -44,7 +44,19 @@
     Google ne donne aucun moyen de lister les avis supprimés directement : cette liste vient d'une vérification
     quotidienne faite par la plateforme (un avis déjà vu qui n'apparaît plus est considéré supprimé). Elle ne peut
     donc contenir que des suppressions survenues depuis que ce suivi tourne, pas l'historique complet.
+    Utilise les filtres "Entreprises" et "Étiquettes" ci-dessous pour restreindre la liste.
   </p>
+
+  <div class="filtre-entreprises">
+    <span class="filtre-titre">Suppression détectée :</span>
+    <label class="filtre-case"><input type="radio" name="filtre-anciennete-suppression" value="tous" checked> Toutes dates</label>
+    <label class="filtre-case"><input type="radio" name="filtre-anciennete-suppression" value="7"> Moins d'1 semaine</label>
+    <label class="filtre-case"><input type="radio" name="filtre-anciennete-suppression" value="30"> Moins d'1 mois</label>
+    <label class="filtre-case"><input type="radio" name="filtre-anciennete-suppression" value="90"> Moins de 3 mois</label>
+  </div>
+
+  <div id="resume-avis-supprimes-par-client" class="resume-avis-supprimes-par-client"></div>
+
   <div id="erreurs-avis-supprimes"></div>
   <ul id="liste-avis-supprimes" class="liste-avis"></ul>
   <p id="texte-vide-avis-supprimes" class="texte-vide" hidden>Aucun avis supprimé détecté pour l'instant.</p>
@@ -609,7 +621,16 @@
   const listeAvisSupprimes = document.getElementById("liste-avis-supprimes");
   const texteVideAvisSupprimes = document.getElementById("texte-vide-avis-supprimes");
   const erreursAvisSupprimes = document.getElementById("erreurs-avis-supprimes");
+  const resumeAvisSupprimesParClient = document.getElementById("resume-avis-supprimes-par-client");
+  const casesAncienneteSuppression = Array.from(document.querySelectorAll('input[name=filtre-anciennete-suppression]'));
   let avisSupprimesCharges = false;
+  let idsClientsChargesSuppression = null;
+  let tousLesAvisSupprimesEnMemoire = [];
+
+  function ancienneteSuppressionActive() {
+    const coche = casesAncienneteSuppression.find((c) => c.checked);
+    return coche ? coche.value : "tous";
+  }
 
   function carteAvisSupprimeHTML(item) {
     const blocReponse = item.reponse
@@ -631,11 +652,36 @@
       </li>`;
   }
 
-  async function chargerAvisSupprimes() {
-    if (avisSupprimesCharges) return;
-    avisSupprimesCharges = true;
+  function rendreAvisSupprimes() {
+    const seuilJours = ancienneteSuppressionActive();
+    let avis = tousLesAvisSupprimesEnMemoire;
+    if (seuilJours !== "tous") {
+      const limite = new Date();
+      limite.setDate(limite.getDate() - Number(seuilJours));
+      avis = avis.filter((a) => new Date(a.supprime_le) >= limite);
+    }
+
+    chiffreAvisSupprimes.textContent = `(${avis.length})`;
+
+    const parClient = new Map();
+    avis.forEach((a) => parClient.set(a.client_nom, (parClient.get(a.client_nom) || 0) + 1));
+    const resume = Array.from(parClient.entries()).sort((a, b) => b[1] - a[1]);
+    resumeAvisSupprimesParClient.innerHTML = resume.length
+      ? resume.map(([nom, n]) => `<span class="etiquette-statut">${echapper(nom)} : ${n}</span>`).join(" ")
+      : "";
+
+    listeAvisSupprimes.innerHTML = avis.map(carteAvisSupprimeHTML).join("");
+    texteVideAvisSupprimes.hidden = avis.length > 0;
+  }
+
+  async function chargerAvisSupprimes(forcerRechargement) {
     const actifs = filtresActifs();
     const idsCibles = actifs === null ? clients.map((c) => c.id) : actifs;
+    const cleCibles = idsCibles.slice().sort((a, b) => a - b).join(",");
+
+    if (avisSupprimesCharges && !forcerRechargement && cleCibles === idsClientsChargesSuppression) return;
+    avisSupprimesCharges = true;
+    idsClientsChargesSuppression = cleCibles;
     listeAvisSupprimes.innerHTML = '<li class="texte-discret">Chargement…</li>';
 
     const tousLesAvisSupprimes = [];
@@ -662,13 +708,19 @@
     erreursAvisSupprimes.innerHTML = erreurs.length
       ? erreurs.map((e) => `<p class="message-erreur">${echapper(e)}</p>`).join("")
       : "";
-    chiffreAvisSupprimes.textContent = `(${tousLesAvisSupprimes.length})`;
-    listeAvisSupprimes.innerHTML = tousLesAvisSupprimes.map(carteAvisSupprimeHTML).join("");
-    texteVideAvisSupprimes.hidden = tousLesAvisSupprimes.length > 0;
+    tousLesAvisSupprimesEnMemoire = tousLesAvisSupprimes;
+    rendreAvisSupprimes();
   }
 
   blocAvisSupprimes.addEventListener("toggle", () => {
-    if (blocAvisSupprimes.open) chargerAvisSupprimes();
+    if (blocAvisSupprimes.open) chargerAvisSupprimes(false);
+  });
+  casesAncienneteSuppression.forEach((c) => c.addEventListener("change", rendreAvisSupprimes));
+  casesClients.forEach((c) => c.addEventListener("change", () => {
+    if (blocAvisSupprimes.open) chargerAvisSupprimes(false);
+  }));
+  if (caseToutes) caseToutes.addEventListener("change", () => {
+    if (blocAvisSupprimes.open) chargerAvisSupprimes(false);
   });
 })();
 </script>
