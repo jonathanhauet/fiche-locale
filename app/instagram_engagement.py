@@ -36,7 +36,7 @@ def lister_medias_avec_commentaires(token_instagram: str, instagram_id: str, lim
             "cree_le": media.get("timestamp", ""),
             "url": media.get("permalink", ""),
             "commentaires": [
-                {"auteur": c.get("username", "?"), "message": c.get("text", ""), "cree_le": c.get("timestamp", "")}
+                {"auteur": c.get("username", "Utilisateur Instagram"), "message": c.get("text", ""), "cree_le": c.get("timestamp", "")}
                 for c in commentaires
             ],
         })

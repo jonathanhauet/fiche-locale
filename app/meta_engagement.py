@@ -38,7 +38,7 @@ def lister_posts_avec_commentaires(token_page: str, page_id: str, limite: int = 
             "cree_le": post.get("created_time", ""),
             "url": post.get("permalink_url", ""),
             "commentaires": [
-                {"auteur": (c.get("from") or {}).get("name", "?"), "message": c.get("message", ""), "cree_le": c.get("created_time", "")}
+                {"auteur": (c.get("from") or {}).get("name", "Utilisateur Facebook"), "message": c.get("message", ""), "cree_le": c.get("created_time", "")}
                 for c in commentaires
             ],
         })
