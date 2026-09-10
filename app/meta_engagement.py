@@ -3,12 +3,11 @@ Lecture de l'engagement (posts + commentaires) et des statistiques d'une
 Page Facebook via l'API Graph - voir meta_oauth.py.
 
 Important sur les statistiques (Page Insights) : Meta a deprecie fin 2025 la
-plupart des metriques historiques ("impressions", "page fans"...), avec un
-remplacement encore partiel/mouvant au moment ou ce module a ete ecrit -
-voir https://developers.facebook.com/blog/post/2025/08/15/page-insights-api-updates/.
-On se limite volontairement a "views" (remplacant confirme d'"impressions"),
-plutot que de deviner d'autres noms de metriques qui pourraient etre
-invalides ou eux-memes deja depreciees.
+plupart des metriques historiques ("impressions", "page fans"...). Verifie
+en reel via Graph API Explorer (metric=page_views_total&period=day) le
+10/09/2026 - fonctionne. On se limite volontairement a cette seule metrique
+confirmee, plutot que de deviner d'autres noms qui pourraient etre invalides
+ou eux-memes deja depreciees.
 """
 
 import requests
@@ -48,7 +47,7 @@ def lister_posts_avec_commentaires(token_page: str, page_id: str, limite: int = 
 def obtenir_insights_page(token_page: str, page_id: str) -> list[dict]:
     reponse = requests.get(
         f"{URL_GRAPH}/{page_id}/insights",
-        params={"metric": "views", "period": "day", "access_token": token_page},
+        params={"metric": "page_views_total", "period": "day", "access_token": token_page},
         timeout=30,
     )
     if reponse.status_code != 200:
