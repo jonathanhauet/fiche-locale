@@ -3644,7 +3644,9 @@ def recherche_mots_cles(request: Request, q: str = "", db: Session = Depends(obt
         if ads_configure:
             try:
                 idees_volume = sorted(
-                    google_ads_keywords.idees_mots_cles(google_oauth.obtenir_parametre_ads(db), [q]),
+                    google_ads_keywords.idees_mots_cles(
+                        google_oauth.obtenir_parametre_ads(db), google_ads_keywords.variantes_locales(q)
+                    ),
                     key=lambda i: i["volume_moyen_mensuel"] or 0,
                     reverse=True,
                 )

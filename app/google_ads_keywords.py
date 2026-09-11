@@ -17,6 +17,24 @@ LANGUE_FRANCAIS = "languageConstants/1003"
 # L'API refuse au-dela d'un certain nombre de mots-cles de depart par appel.
 MAX_MOTS_CLES_SEMENCE = 10
 
+# Modificateurs d'intention locale courants en SEO local (avis, urgence, tarif...).
+# Google Ads ne genere pas de lui-meme ces variantes a partir d'un seul mot-cle
+# de depart deja localise (ex. "serrurier royan") - il faut les lui fournir
+# explicitement comme autant de semences pour obtenir leurs volumes.
+MODIFICATEURS_LOCAUX = [
+    "pas cher", "urgence", "avis", "prix", "devis gratuit",
+    "proche de moi", "24h/24", "meilleur", "horaires",
+]
+
+
+def variantes_locales(terme: str) -> list[str]:
+    """Le terme original suivi de ses variantes avec un modificateur d'intention locale, dans la limite de MAX_MOTS_CLES_SEMENCE."""
+    terme = terme.strip()
+    if not terme:
+        return []
+    variantes = [terme] + [f"{terme} {modificateur}" for modificateur in MODIFICATEURS_LOCAUX]
+    return variantes[:MAX_MOTS_CLES_SEMENCE]
+
 
 def construire_client(parametre: "models.ParametreGoogleAds") -> GoogleAdsClient:
     configuration = {
