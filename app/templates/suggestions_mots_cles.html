@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Suggestions de mots-clés — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}/positions">&larr; Retour au suivi de positions</a></p>
+
+<div class="barre-titre">
+  <h1>Mots-clés suggérés — {{ client.nom }}</h1>
+</div>
+
+<p class="texte-discret">
+  Généré à partir de la catégorie Google{{ " (" ~ categorie ~ ")" if categorie else "" }}, de la ville
+  {{ ("(" ~ ville ~ ")") if ville else "(non détectée)" }} et du contenu du site du client — mélange de
+  mots-clés courts et de longue traîne, triés par volume de recherche réel.
+</p>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% elif idees %}
+<form method="post" action="/mots-cles/envoyer-positions">
+  <input type="hidden" name="client_id" value="{{ client.id }}">
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Mot-clé</th>
+          <th>Recherches / mois (moyenne)</th>
+          <th>Concurrence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for idee in idees %}
+        <tr>
+          <td><input type="checkbox" name="mots_cles" value="{{ idee.mot_cle }}" checked></td>
+          <td>{{ idee.mot_cle }}</td>
+          <td>{{ idee.volume_moyen_mensuel if idee.volume_moyen_mensuel is not none else "—" }}</td>
+          <td>{{ idee.concurrence|title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="actions-avis">
+    <button type="submit" class="bouton">Ajouter la sélection au suivi de positions</button>
+  </div>
+</form>
+{% else %}
+<p class="texte-vide">Aucune suggestion trouvée.</p>
+{% endif %}
+{% endblock %}

@@ -444,3 +444,59 @@ def resumer_avis_positifs(avis: list[dict]) -> str:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
     return _nettoyer_texte_genere(bloc_texte)
+
+
+SCHEMA_SEMENCES_MOTS_CLES = {
+    "type": "object",
+    "properties": {
+        "semences": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["semences"],
+    "additionalProperties": False,
+}
+
+
+def suggerer_semences_mots_cles(contenu_site: str, categorie: str, ville: str, limite: int = 10) -> list[str]:
+    """
+    Propose des mots-cles de depart pertinents pour ce client precis, a
+    passer ensuite a google_ads_keywords.idees_mots_cles pour en obtenir le
+    volume de recherche reel - melange volontaire de mots-cles courts
+    (categorie + ville, l'essentiel du trafic) et de longue traine (services
+    precis identifies dans le contenu du site, moins de volume individuel
+    mais plus facile a bien positionner et souvent mieux converti).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    prompt = (
+        f"Voici les informations d'une entreprise geree en SEO local :\n\n"
+        f"Categorie Google : {categorie or 'non renseignee'}\n"
+        f"Ville : {ville or 'non renseignee'}\n\n"
+        f"Contenu de son site web :\n{(contenu_site or '(aucun contenu de site fourni)').strip()[:6000]}\n\n"
+        f"Propose {limite} mots-cles de recherche Google pertinents pour cette entreprise, en francais, "
+        "melangeant deux types :\n"
+        "- des mots-cles courts (2-4 mots), du type \"categorie + ville\" ou variantes proches - le gros du "
+        "volume de recherche ;\n"
+        "- des mots-cles de longue traine (4-8 mots), plus specifiques, refletant des services ou "
+        "problematiques precises identifiees dans le contenu du site (pas juste \"categorie ville\" repete) - "
+        "moins de volume individuel mais plus faciles a bien positionner.\n"
+        "Chaque mot-cle doit etre une requete plausible telle qu'un internaute la taperait reellement dans "
+        "Google, pas une phrase. Ne repete pas deux fois la meme idee sous une forme a peine differente. "
+        "Reponds uniquement avec la liste demandee."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=1024,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_SEMENCES_MOTS_CLES}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    semences = json.loads(bloc_texte)["semences"]
+    return [s.strip() for s in semences if s.strip()][:limite]

@@ -3599,6 +3599,53 @@ def positions_client(request: Request, client_id: int, db: Session = Depends(obt
     )
 
 
+@app.get("/clients/{client_id}/positions/suggestions", response_class=HTMLResponse)
+def suggestions_mots_cles(request: Request, client_id: int, db: Session = Depends(obtenir_session)):
+    """
+    Propose des mots-cles pertinents pour ce client precis, a partir de sa
+    categorie Google, sa ville et le contenu de son site (voir
+    claude_generation.suggerer_semences_mots_cles), avec leur volume de
+    recherche reel (voir google_ads_keywords.idees_mots_cles).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    if not google_oauth.ads_configure(db):
+        return RedirectResponse(f"/clients/{client_id}/positions", status_code=303)
+
+    categorie, ville = "", client.localisation_ville or ""
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if identifiants and client.location_id:
+        try:
+            infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+            categorie = google_location.valeurs_protegees(infos).get("categorie_nom", "")
+            if not ville:
+                ville = (infos.get("storefrontAddress") or {}).get("locality", "")
+        except Exception:
+            pass
+
+    erreur, idees = None, None
+    try:
+        semences = claude_generation.suggerer_semences_mots_cles(client.contenu_site, categorie, ville)
+        idees = sorted(
+            google_ads_keywords.idees_mots_cles(google_oauth.obtenir_parametre_ads(db), semences),
+            key=lambda i: i["volume_moyen_mensuel"] or 0,
+            reverse=True,
+        )
+    except Exception as e:
+        erreur = f"Impossible de generer des suggestions pour le moment : {e}"
+
+    return templates.TemplateResponse(
+        request, "suggestions_mots_cles.html",
+        {"client": client, "categorie": categorie, "ville": ville, "idees": idees, "erreur": erreur},
+    )
+
+
 @app.post("/clients/{client_id}/positions/mots_cles")
 def ajouter_mot_cle(client_id: int, request: Request, texte: str = Form(...), db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

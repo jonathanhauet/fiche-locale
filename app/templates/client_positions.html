@@ -49,6 +49,7 @@
     <input type="text" name="texte" placeholder="Ex : Serrurier Charleroi" required>
     <button type="submit" class="bouton-secondaire">Ajouter</button>
   </form>
+  <a class="bouton-secondaire" href="/clients/{{ client.id }}/positions/suggestions">🤖 Suggérer des mots-clés pertinents</a>
 </div>
 
 {% if dataforseo_configure and latitude is not none and client.mots_cles %}
