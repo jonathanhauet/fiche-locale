@@ -1,8 +1,9 @@
 """
 Mise en page PDF de l'audit prospect (voir audit_prospect.py) - reutilise la
 classe/couleurs de base de rapport_pdf.py, mais avec une mise en page plus
-soignee (bandeau de couverture, encadres de verdict, grille de positions
-dessinee) pour un document destine a etre envoye tel quel a un prospect.
+soignee (cartes arrondies, tuiles de statistiques, grille de positions
+dessinee, marges genereuses) pour un document destine a etre envoye tel quel
+a un prospect.
 """
 
 from datetime import date
@@ -19,6 +20,12 @@ COULEUR_DANGER_CLAIR = (253, 236, 236)
 COULEUR_GRILLE_ABSENT = (203, 210, 221)
 COULEUR_FOND_CARTE = (247, 248, 251)
 COULEUR_BORDURE_CARTE = (226, 230, 238)
+
+# Marges laterales generees plus larges que le defaut fpdf2 (10mm) pour aerer
+# la mise en page - point explicitement demande apres relecture du rendu.
+MARGE_LATERALE = 18
+RAYON_CARTE = 3.5
+RAYON_TUILE = 2.5
 
 
 def _couleurs_selon_couverture(pourcentage: int):
@@ -39,6 +46,16 @@ def _couleur_point(position):
     return COULEUR_DANGER
 
 
+def _couleur_score(score):
+    if score is None:
+        return COULEUR_GRIS
+    if score >= 80:
+        return COULEUR_BON
+    if score >= 50:
+        return COULEUR_ATTENTION
+    return COULEUR_DANGER
+
+
 def _assurer_espace(pdf: RapportPDF, hauteur: float):
     """
     Ajoute une nouvelle page si le bloc a dessiner (hauteur donnee) ne rentre
@@ -54,26 +71,97 @@ def _assurer_espace(pdf: RapportPDF, hauteur: float):
         pdf.add_page()
 
 
-def _bandeau_titre(pdf: RapportPDF, nom_entreprise: str, ville: str):
-    pdf.set_fill_color(*COULEUR_ACCENT)
-    pdf.rect(0, 0, pdf.w, 40, style="F")
+def _titre_section(pdf: RapportPDF, texte: str, sous_titre: str = None):
+    """Titre de section uniforme - fixe le rythme vertical entre les blocs du rapport."""
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", "B", 12.5)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 8, _nettoyer(texte), new_x="LMARGIN", new_y="NEXT")
+    if sous_titre:
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "", 8.5)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.multi_cell(0, 5, _nettoyer(sous_titre), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.ln(2.5)
 
-    pdf.set_xy(pdf.l_margin, 10)
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 8, "AUDIT DE VISIBILITE LOCALE", new_x="LMARGIN", new_y="NEXT")
+
+def _ligne_puce(pdf: RapportPDF, libelle: str, ok: bool):
+    """Ligne a puce ronde coloree (remplace un caractere "+"/"!" par un vrai point visuel)."""
+    couleur = COULEUR_BON if ok else COULEUR_ATTENTION
+    x, y = pdf.l_margin, pdf.y
+    pdf.set_fill_color(*couleur)
+    pdf.ellipse(x + 1, y + 2, 3.2, 3.2, style="F")
+    pdf.set_xy(x + 8, y)
+    pdf.set_font("Helvetica", "", 9.5)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.multi_cell(pdf.w - pdf.l_margin - pdf.r_margin - 8, 6, _nettoyer(libelle), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+
+
+def _rangee_statistiques(pdf: RapportPDF, cases: list):
+    """
+    cases : [(libelle, valeur, couleur), ...] - rangee de tuiles de
+    statistiques a fond arrondi, chiffre en avant, legende discrete en
+    dessous. Reutilisee par la section technique du site et l'autorite du
+    site (memes proportions, nombre de tuiles different).
+    """
+    largeur_totale = pdf.w - pdf.l_margin - pdf.r_margin
+    marge_tuile = 3.5
+    largeur_case = largeur_totale / len(cases)
+    hauteur = 24
+
+    _assurer_espace(pdf, hauteur)
+    y_debut = pdf.y
+
+    for indice, (libelle, valeur, couleur) in enumerate(cases):
+        x = pdf.l_margin + indice * largeur_case
+        pdf.set_fill_color(*COULEUR_FOND_CARTE)
+        pdf.rect(
+            x + marge_tuile / 2, y_debut, largeur_case - marge_tuile, hauteur,
+            style="F", round_corners=True, corner_radius=RAYON_TUILE,
+        )
+        pdf.set_xy(x, y_debut + 5)
+        pdf.set_font("Helvetica", "B", 15)
+        pdf.set_text_color(*couleur)
+        pdf.cell(largeur_case, 8, _nettoyer(valeur), align="C")
+        pdf.set_xy(x, y_debut + 15)
+        pdf.set_font("Helvetica", "", 7.5)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.cell(largeur_case, 5, _nettoyer(libelle), align="C")
+
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.set_y(y_debut + hauteur + 8)
+
+
+def _bandeau_titre(pdf: RapportPDF, nom_entreprise: str, ville: str):
+    """
+    En-tete sans bloc de couleur plein (remplace par une etiquette "eyebrow"
+    en petites capitales espacees + une regle fine) - plus actuel qu'un
+    bandeau colore epais, et laisse plus d'air en haut de page.
+    """
+    pdf.set_xy(pdf.l_margin, pdf.t_margin)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(*COULEUR_ACCENT)
+    pdf.cell(0, 6, " ".join("AUDIT DE VISIBILITE LOCALE"), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_x(pdf.l_margin)
-    pdf.set_font("Helvetica", "B", 19)
-    pdf.cell(0, 10, _nettoyer(nom_entreprise), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 23)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 13, _nettoyer(nom_entreprise), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_x(pdf.l_margin)
     pdf.set_font("Helvetica", "", 10)
-    pdf.set_text_color(230, 233, 250)
+    pdf.set_text_color(*COULEUR_GRIS)
     pdf.cell(0, 6, f"{_nettoyer(ville)} - genere le {date.today().strftime('%d/%m/%Y')}", new_x="LMARGIN", new_y="NEXT")
 
+    pdf.ln(4)
+    pdf.set_draw_color(*COULEUR_ACCENT)
+    pdf.set_line_width(0.7)
+    pdf.line(pdf.l_margin, pdf.y, pdf.w - pdf.r_margin, pdf.y)
+    pdf.set_line_width(0.2)
     pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.set_y(48)
+    pdf.ln(9)
 
 
 def _couleurs_score_global(score: int):
@@ -97,30 +185,30 @@ def _bandeau_score_global(pdf: RapportPDF, score: int):
         return
 
     couleur, couleur_claire = _couleurs_score_global(score)
-    y_debut = pdf.y
     largeur = pdf.w - pdf.l_margin - pdf.r_margin
-    hauteur = 22
+    hauteur = 26
+    _assurer_espace(pdf, hauteur)
+    y_debut = pdf.y
     pdf.set_fill_color(*couleur_claire)
-    pdf.set_draw_color(*couleur)
-    pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="DF")
+    pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="F", round_corners=True, corner_radius=RAYON_CARTE)
 
-    pdf.set_xy(pdf.l_margin + 6, y_debut + 4)
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.set_xy(pdf.l_margin + 8, y_debut + 5)
+    pdf.set_font("Helvetica", "", 9.5)
+    pdf.set_text_color(*COULEUR_GRIS)
     pdf.cell(0, 6, "Score global de visibilite locale", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_x(pdf.l_margin + 6)
-    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_x(pdf.l_margin + 8)
+    pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(*couleur)
     texte_score = f"{score}/100"
-    pdf.cell(pdf.get_string_width(texte_score) + 4, 10, texte_score)
+    pdf.cell(pdf.get_string_width(texte_score) + 5, 11, texte_score)
 
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("Helvetica", "", 10.5)
     pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 10, "  " + _nettoyer(_libelle_score_global(score)), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 11, "  " + _nettoyer(_libelle_score_global(score)), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.set_y(y_debut + hauteur + 6)
+    pdf.set_y(y_debut + hauteur + 9)
 
 
 def _carte_fiche_google(pdf: RapportPDF, fiche: dict):
@@ -142,182 +230,120 @@ def _carte_fiche_google(pdf: RapportPDF, fiche: dict):
     else:
         lignes.append((None, "Fiche non retrouvee automatiquement sur Google Maps avec ce nom et cette ville."))
 
-    hauteur = 10 + len(lignes) * 7 + 4
+    hauteur = 13 + len(lignes) * 8
     _assurer_espace(pdf, hauteur)
     y_debut = pdf.y
-    pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
     pdf.set_fill_color(*COULEUR_FOND_CARTE)
-    pdf.rect(pdf.l_margin, y_debut, pdf.w - pdf.l_margin - pdf.r_margin, hauteur, style="DF")
+    pdf.rect(
+        pdf.l_margin, y_debut, pdf.w - pdf.l_margin - pdf.r_margin, hauteur,
+        style="F", round_corners=True, corner_radius=RAYON_CARTE,
+    )
 
-    pdf.set_xy(pdf.l_margin + 6, y_debut + 4)
+    pdf.set_xy(pdf.l_margin + 8, y_debut + 6)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*COULEUR_TEXTE)
     pdf.cell(0, 7, "Fiche Google", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
 
     for libelle, valeur in lignes:
-        pdf.set_x(pdf.l_margin + 6)
+        pdf.set_x(pdf.l_margin + 8)
         if libelle:
             pdf.set_font("Helvetica", "", 10)
             pdf.set_text_color(*COULEUR_GRIS)
-            pdf.cell(48, 7, libelle)
+            pdf.cell(50, 8, libelle)
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_text_color(*COULEUR_TEXTE)
-            pdf.cell(0, 7, _nettoyer(str(valeur))[:70], new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 8, _nettoyer(str(valeur))[:70], new_x="LMARGIN", new_y="NEXT")
         else:
             pdf.set_font("Helvetica", "I", 10)
             pdf.set_text_color(*COULEUR_GRIS)
-            pdf.multi_cell(pdf.w - pdf.l_margin - pdf.r_margin - 12, 6, _nettoyer(valeur), new_x="LMARGIN", new_y="NEXT")
+            pdf.multi_cell(pdf.w - pdf.l_margin - pdf.r_margin - 16, 6, _nettoyer(valeur), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.set_y(y_debut + hauteur + 6)
+    pdf.set_y(y_debut + hauteur + 9)
 
 
 def _tableau_completude(pdf: RapportPDF, items: list):
     if not items:
         return
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_x(pdf.l_margin)
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 8, "Completude de la fiche", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(1)
+    _titre_section(pdf, "Completude de la fiche")
 
     largeur_totale = pdf.w - pdf.l_margin - pdf.r_margin
-    largeur_puce = 32
+    largeur_puce = 34
+    hauteur_ligne = 11
 
-    for indice, item in enumerate(items):
+    for item in items:
         couleur, couleur_claire = (COULEUR_BON, COULEUR_BON_CLAIR) if item["complet"] else (COULEUR_ATTENTION, COULEUR_ATTENTION_CLAIR)
         libelle_puce = "Complet" if item["complet"] else "A ameliorer"
 
-        _assurer_espace(pdf, 9)
+        _assurer_espace(pdf, hauteur_ligne + 2)
         y_debut = pdf.y
-        pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
-        pdf.set_fill_color(*COULEUR_FOND_CARTE if indice % 2 else (255, 255, 255))
-        pdf.rect(pdf.l_margin, y_debut, largeur_totale, 9, style="F")
+        pdf.set_fill_color(*COULEUR_FOND_CARTE)
+        pdf.rect(pdf.l_margin, y_debut, largeur_totale, hauteur_ligne, style="F", round_corners=True, corner_radius=RAYON_TUILE)
 
-        pdf.set_xy(pdf.l_margin + 3, y_debut + 1.3)
+        pdf.set_xy(pdf.l_margin + 6, y_debut + 2.3)
         pdf.set_font("Helvetica", "B", 9.5)
         pdf.set_text_color(*COULEUR_TEXTE)
         pdf.cell(50, 6.5, _nettoyer(item["libelle"]))
 
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(*COULEUR_GRIS)
-        pdf.cell(largeur_totale - 50 - largeur_puce - 6, 6.5, _nettoyer(item["detail"])[:75])
+        pdf.cell(largeur_totale - 50 - largeur_puce - 10, 6.5, _nettoyer(item["detail"])[:72])
 
         pdf.set_fill_color(*couleur_claire)
-        pdf.set_xy(pdf.l_margin + largeur_totale - largeur_puce, y_debut + 1.3)
+        pdf.set_xy(pdf.l_margin + largeur_totale - largeur_puce - 5, y_debut + 2.3)
         pdf.set_font("Helvetica", "B", 8)
         pdf.set_text_color(*couleur)
         pdf.cell(largeur_puce, 6.5, libelle_puce, align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
 
-        pdf.set_y(y_debut + 9)
+        pdf.set_y(y_debut + hauteur_ligne + 2)
 
     pdf.set_text_color(*COULEUR_TEXTE)
     pdf.ln(6)
 
 
-def _couleur_score(score):
-    if score is None:
-        return COULEUR_GRIS
-    if score >= 80:
-        return COULEUR_BON
-    if score >= 50:
-        return COULEUR_ATTENTION
-    return COULEUR_DANGER
-
-
-def _ligne_point_technique(pdf: RapportPDF, libelle: str, ok: bool):
-    couleur = COULEUR_BON if ok else COULEUR_ATTENTION
-    pdf.set_x(pdf.l_margin)
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.set_text_color(*couleur)
-    pdf.cell(6, 6, "+" if ok else "!")
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.multi_cell(pdf.w - pdf.l_margin - pdf.r_margin - 6, 6, _nettoyer(libelle), new_x="LMARGIN", new_y="NEXT")
-
-
 def _carte_site_technique(pdf: RapportPDF, resultat: dict):
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_x(pdf.l_margin)
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 8, "Votre site face a Google", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 8.5)
-    pdf.set_text_color(*COULEUR_GRIS)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(0, 5, _nettoyer(resultat["url"]), new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
+    _titre_section(pdf, "Votre site face a Google", resultat["url"])
 
-    largeur_totale = pdf.w - pdf.l_margin - pdf.r_margin
-    largeur_case = largeur_totale / 4
-    y_debut = pdf.y
     cases = [
         ("Performance", f"{resultat['score_performance']}/100" if resultat["score_performance"] is not None else "-", _couleur_score(resultat["score_performance"])),
         ("SEO", f"{resultat['score_seo']}/100" if resultat["score_seo"] is not None else "-", _couleur_score(resultat["score_seo"])),
         ("1er affichage", resultat["premier_affichage"] or "-", COULEUR_TEXTE),
         ("Affichage complet", resultat["affichage_complet"] or "-", COULEUR_TEXTE),
     ]
-    for indice, (libelle, valeur, couleur) in enumerate(cases):
-        x = pdf.l_margin + indice * largeur_case
-        pdf.set_xy(x, y_debut)
-        pdf.set_font("Helvetica", "B", 13)
-        pdf.set_text_color(*couleur)
-        pdf.cell(largeur_case, 8, _nettoyer(valeur), align="C", new_x="LMARGIN", new_y="TOP")
-        pdf.set_xy(x, y_debut + 8)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.set_text_color(*COULEUR_GRIS)
-        pdf.cell(largeur_case, 5, _nettoyer(libelle), align="C")
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.set_y(y_debut + 16)
+    _rangee_statistiques(pdf, cases)
 
     if resultat["points_bloquants"]:
-        pdf.ln(2)
         pdf.set_font("Helvetica", "B", 9.5)
         pdf.set_x(pdf.l_margin)
         pdf.cell(0, 6, "Ce qui freine votre site", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
         for point in resultat["points_bloquants"]:
-            _ligne_point_technique(pdf, point["libelle"], ok=False)
+            _ligne_puce(pdf, point["libelle"], ok=False)
+        pdf.ln(2)
 
     if resultat["points_positifs"]:
-        pdf.ln(2)
         pdf.set_font("Helvetica", "B", 9.5)
         pdf.set_x(pdf.l_margin)
         pdf.cell(0, 6, "Ce qui fonctionne deja", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
         for point in resultat["points_positifs"]:
-            _ligne_point_technique(pdf, point["libelle"], ok=True)
+            _ligne_puce(pdf, point["libelle"], ok=True)
 
-    pdf.ln(4)
+    pdf.ln(5)
 
 
 def _carte_autorite_site(pdf: RapportPDF, resultat: dict):
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_x(pdf.l_margin)
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 8, "Autorite du site", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
+    _titre_section(pdf, "Autorite du site")
 
-    largeur_totale = pdf.w - pdf.l_margin - pdf.r_margin
-    largeur_case = largeur_totale / 3
-    y_debut = pdf.y
     cases = [
         ("Score d'autorite", f"{resultat['rang']}/100", _couleur_score(resultat["rang"])),
         ("Backlinks", str(resultat["backlinks"]), COULEUR_TEXTE),
         ("Domaines referents", str(resultat["domaines_referents"]), COULEUR_TEXTE),
     ]
-    for indice, (libelle, valeur, couleur) in enumerate(cases):
-        x = pdf.l_margin + indice * largeur_case
-        pdf.set_xy(x, y_debut)
-        pdf.set_font("Helvetica", "B", 13)
-        pdf.set_text_color(*couleur)
-        pdf.cell(largeur_case, 8, _nettoyer(valeur), align="C", new_x="LMARGIN", new_y="TOP")
-        pdf.set_xy(x, y_debut + 8)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.set_text_color(*COULEUR_GRIS)
-        pdf.cell(largeur_case, 5, _nettoyer(libelle), align="C")
-
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.set_y(y_debut + 16)
-    pdf.ln(4)
+    _rangee_statistiques(pdf, cases)
+    pdf.ln(3)
 
 
 def _carte_citations(pdf: RapportPDF, resultats: list):
@@ -325,15 +351,11 @@ def _carte_citations(pdf: RapportPDF, resultats: list):
     if not resultats_valides:
         return
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_x(pdf.l_margin)
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 8, "Presence sur les annuaires locaux", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(1)
+    _titre_section(pdf, "Presence sur les annuaires locaux")
 
     for resultat in resultats_valides:
         libelle = f"{resultat['nom']} : " + ("fiche trouvee" if resultat["trouve"] else "aucune fiche trouvee")
-        _ligne_point_technique(pdf, libelle, ok=resultat["trouve"])
+        _ligne_puce(pdf, libelle, ok=resultat["trouve"])
 
     pdf.ln(4)
 
@@ -342,15 +364,7 @@ def _tableau_opportunites_mots_cles(pdf: RapportPDF, idees: list):
     if not idees:
         return
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_x(pdf.l_margin)
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 8, "Opportunites de mots-cles a exploiter", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 8.5)
-    pdf.set_text_color(*COULEUR_GRIS)
-    pdf.set_x(pdf.l_margin)
-    pdf.multi_cell(0, 5, _nettoyer("Recherches Google reelles, non testees dans cet audit."), new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(1)
+    _titre_section(pdf, "Opportunites de mots-cles a exploiter", "Recherches Google reelles, non testees dans cet audit.")
 
     largeur = pdf.w - pdf.l_margin - pdf.r_margin
     largeur_volume = 55
@@ -359,8 +373,8 @@ def _tableau_opportunites_mots_cles(pdf: RapportPDF, idees: list):
     pdf.set_fill_color(*COULEUR_ACCENT)
     pdf.set_text_color(255, 255, 255)
     pdf.set_x(pdf.l_margin)
-    pdf.cell(largeur - largeur_volume, 8, "  Mot-cle", border=0, fill=True)
-    pdf.cell(largeur_volume, 8, "Volume mensuel estime", border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(largeur - largeur_volume, 9, "   Mot-cle", border=0, fill=True)
+    pdf.cell(largeur_volume, 9, "Volume mensuel estime", border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*COULEUR_TEXTE)
@@ -369,58 +383,53 @@ def _tableau_opportunites_mots_cles(pdf: RapportPDF, idees: list):
         fill = bool(indice % 2)
         if fill:
             pdf.set_fill_color(*COULEUR_FOND_CARTE)
-        pdf.cell(largeur - largeur_volume, 7.5, "  " + _nettoyer(idee["mot_cle"])[:60], border=0, fill=fill)
+        pdf.cell(largeur - largeur_volume, 9, "   " + _nettoyer(idee["mot_cle"])[:58], border=0, fill=fill)
         pdf.cell(
-            largeur_volume, 7.5, f"{idee['volume_moyen_mensuel']}/mois",
+            largeur_volume, 9, f"{idee['volume_moyen_mensuel']}/mois",
             border=0, fill=fill, align="C", new_x="LMARGIN", new_y="NEXT",
         )
 
-    pdf.ln(6)
+    pdf.ln(7)
 
 
 def _carte_plan_action(pdf: RapportPDF, priorites: list):
     if not priorites:
         return
 
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_x(pdf.l_margin)
-    pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 9, "Plan d'action : vos 3 priorites", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
+    _titre_section(pdf, "Plan d'action : vos 3 priorites")
 
     largeur = pdf.w - pdf.l_margin - pdf.r_margin
-    largeur_texte = largeur - 20
+    largeur_texte = largeur - 24
 
     for indice, priorite in enumerate(priorites, start=1):
         pdf.set_font("Helvetica", "", 9.5)
-        lignes = pdf.multi_cell(largeur_texte, 5.5, _nettoyer(priorite["description"]), dry_run=True, output="LINES")
-        hauteur = 12 + len(lignes) * 5.5 + 5
+        lignes = pdf.multi_cell(largeur_texte, 5.8, _nettoyer(priorite["description"]), dry_run=True, output="LINES")
+        hauteur = 14 + len(lignes) * 5.8 + 6
 
         _assurer_espace(pdf, hauteur)
         y_debut = pdf.y
-        pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
         pdf.set_fill_color(*COULEUR_FOND_CARTE)
-        pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="DF")
+        pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="F", round_corners=True, corner_radius=RAYON_CARTE)
 
         pdf.set_fill_color(*COULEUR_ACCENT)
-        pdf.ellipse(pdf.l_margin + 5, y_debut + 4, 8, 8, style="F")
-        pdf.set_xy(pdf.l_margin + 5, y_debut + 4)
+        pdf.ellipse(pdf.l_margin + 7, y_debut + 6, 8.5, 8.5, style="F")
+        pdf.set_xy(pdf.l_margin + 7, y_debut + 6)
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(255, 255, 255)
-        pdf.cell(8, 8, str(indice), align="C")
+        pdf.cell(8.5, 8.5, str(indice), align="C")
 
-        pdf.set_xy(pdf.l_margin + 17, y_debut + 4)
+        pdf.set_xy(pdf.l_margin + 20, y_debut + 6)
         pdf.set_font("Helvetica", "B", 11)
         pdf.set_text_color(*COULEUR_TEXTE)
         pdf.cell(largeur_texte, 6, _nettoyer(priorite["titre"]), new_x="LMARGIN", new_y="NEXT")
 
-        pdf.set_xy(pdf.l_margin + 17, pdf.y)
+        pdf.set_xy(pdf.l_margin + 20, pdf.y + 1)
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*COULEUR_GRIS)
-        pdf.multi_cell(largeur_texte, 5.5, _nettoyer(priorite["description"]), new_x="LMARGIN", new_y="NEXT")
+        pdf.multi_cell(largeur_texte, 5.8, _nettoyer(priorite["description"]), new_x="LMARGIN", new_y="NEXT")
 
         pdf.set_text_color(*COULEUR_TEXTE)
-        pdf.set_y(y_debut + hauteur + 5)
+        pdf.set_y(y_debut + hauteur + 6)
 
     pdf.ln(2)
 
@@ -435,32 +444,31 @@ def _encadre_verdict(pdf: RapportPDF, mot_cle: str, resume: dict):
         verdict = "Visibilite tres faible sur ce mot-cle"
 
     largeur = pdf.w - pdf.l_margin - pdf.r_margin
-    hauteur = 26
+    hauteur = 28
     _assurer_espace(pdf, hauteur)
     y_debut = pdf.y
     pdf.set_fill_color(*couleur_claire)
-    pdf.set_draw_color(*couleur)
-    pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="DF")
+    pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="F", round_corners=True, corner_radius=RAYON_CARTE)
 
-    pdf.set_xy(pdf.l_margin + 6, y_debut + 4)
-    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_xy(pdf.l_margin + 8, y_debut + 5)
+    pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(*COULEUR_TEXTE)
     pdf.cell(0, 6, _nettoyer(f'Visibilite locale : "{mot_cle}"'), new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_x(pdf.l_margin + 6)
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_x(pdf.l_margin + 8)
+    pdf.set_font("Helvetica", "B", 17)
     pdf.set_text_color(*couleur)
     texte_pct = f"{resume['pourcentage_couverture']}%"
-    pdf.cell(pdf.get_string_width(texte_pct) + 4, 10, texte_pct)
+    pdf.cell(pdf.get_string_width(texte_pct) + 5, 11, texte_pct)
 
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.cell(0, 10, _nettoyer(
-        f"  {verdict} ({resume['points_trouves']}/{resume['total_points']} points de la zone testee)"
+    pdf.cell(0, 11, "  " + _nettoyer(
+        f"{verdict} ({resume['points_trouves']}/{resume['total_points']} points de la zone testee)"
     ), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.set_y(y_debut + hauteur + 5)
+    pdf.set_y(y_debut + hauteur + 8)
 
 
 def _grille_visuelle(pdf: RapportPDF, points: list):
@@ -468,11 +476,11 @@ def _grille_visuelle(pdf: RapportPDF, points: list):
     if taille * taille != len(points) or taille == 0:
         return  # forme inattendue, on saute plutot que d'afficher une grille fausse
 
-    cote = 9.0
-    marge_case = 1.2
+    cote = 9.5
+    marge_case = 1.8
     largeur_totale = taille * (cote + marge_case) - marge_case
-    # +13 pour la legende dessinee juste en dessous (voir plus bas dans cette fonction).
-    _assurer_espace(pdf, largeur_totale + 13)
+    # +14 pour la legende dessinee juste en dessous (voir plus bas dans cette fonction).
+    _assurer_espace(pdf, largeur_totale + 14)
     x_debut = pdf.l_margin + (pdf.w - pdf.l_margin - pdf.r_margin - largeur_totale) / 2
     y_debut = pdf.y
 
@@ -481,15 +489,15 @@ def _grille_visuelle(pdf: RapportPDF, points: list):
         x = x_debut + colonne * (cote + marge_case)
         y = y_debut + ligne * (cote + marge_case)
         pdf.set_fill_color(*_couleur_point(point.get("position")))
-        pdf.rect(x, y, cote, cote, style="F")
+        pdf.rect(x, y, cote, cote, style="F", round_corners=True, corner_radius=1.8)
         if point.get("position") and point["position"] <= 10:
-            pdf.set_xy(x, y + 1.6)
+            pdf.set_xy(x, y + 1.9)
             pdf.set_font("Helvetica", "B", 6.5)
             pdf.set_text_color(255, 255, 255)
             pdf.cell(cote, 6, str(point["position"]), align="C")
 
     pdf.set_text_color(*COULEUR_TEXTE)
-    pdf.set_y(y_debut + taille * (cote + marge_case) + 3)
+    pdf.set_y(y_debut + taille * (cote + marge_case) + 4)
 
     # Legende
     legende = [
@@ -501,11 +509,11 @@ def _grille_visuelle(pdf: RapportPDF, points: list):
     for couleur, libelle in legende:
         pdf.set_fill_color(*couleur)
         x, y = pdf.get_x(), pdf.get_y()
-        pdf.rect(x, y + 1, 3, 3, style="F")
-        pdf.set_x(x + 4.5)
+        pdf.rect(x, y + 1, 3, 3, style="F", round_corners=True, corner_radius=0.7)
+        pdf.set_x(x + 5)
         pdf.set_text_color(*COULEUR_GRIS)
-        pdf.cell(pdf.get_string_width(libelle) + 6, 5, libelle)
-    pdf.ln(8)
+        pdf.cell(pdf.get_string_width(libelle) + 7, 5, libelle)
+    pdf.ln(9)
     pdf.set_text_color(*COULEUR_TEXTE)
 
 
@@ -519,17 +527,17 @@ def _tableau_concurrents(pdf: RapportPDF, concurrents: list, fiche: dict = None,
         pdf.set_text_color(*COULEUR_TEXTE)
         return
 
-    largeur_nom, largeur_note, largeur_avis, largeur_position = 55, 22, 22, 33
+    largeur_nom, largeur_note, largeur_avis, largeur_position = 58, 22, 22, 30
 
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_fill_color(*COULEUR_ACCENT)
     pdf.set_text_color(255, 255, 255)
     pdf.set_x(pdf.l_margin)
-    pdf.cell(largeur_nom, 8, "  Entreprise", border=0, fill=True)
-    pdf.cell(largeur_note, 8, "Note", border=0, fill=True, align="C")
-    pdf.cell(largeur_avis, 8, "Avis", border=0, fill=True, align="C")
-    pdf.cell(largeur_position, 8, "Position moy.", border=0, fill=True, align="C")
-    pdf.cell(0, 8, "Presence sur la zone", border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(largeur_nom, 9, "   Entreprise", border=0, fill=True)
+    pdf.cell(largeur_note, 9, "Note", border=0, fill=True, align="C")
+    pdf.cell(largeur_avis, 9, "Avis", border=0, fill=True, align="C")
+    pdf.cell(largeur_position, 9, "Position moy.", border=0, fill=True, align="C")
+    pdf.cell(0, 9, "Presence sur la zone", border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_text_color(*COULEUR_TEXTE)
     indice = 0
@@ -538,16 +546,16 @@ def _tableau_concurrents(pdf: RapportPDF, concurrents: list, fiche: dict = None,
         pdf.set_x(pdf.l_margin)
         pdf.set_fill_color(*COULEUR_BON_CLAIR)
         pdf.set_font("Helvetica", "B", 9)
-        nom_vous = _nettoyer(fiche.get("titre") or "Votre entreprise")[:32] + " (vous)"
-        pdf.cell(largeur_nom, 7.5, "  " + nom_vous, border=0, fill=True)
-        pdf.cell(largeur_note, 7.5, f"{fiche['note']}/5" if fiche.get("note") else "-", border=0, fill=True, align="C")
-        pdf.cell(largeur_avis, 7.5, str(fiche["nombre_avis"]) if fiche.get("nombre_avis") else "-", border=0, fill=True, align="C")
+        nom_vous = _nettoyer(fiche.get("titre") or "Votre entreprise")[:26] + " (vous)"
+        pdf.cell(largeur_nom, 9, "   " + nom_vous, border=0, fill=True)
+        pdf.cell(largeur_note, 9, f"{fiche['note']}/5" if fiche.get("note") else "-", border=0, fill=True, align="C")
+        pdf.cell(largeur_avis, 9, str(fiche["nombre_avis"]) if fiche.get("nombre_avis") else "-", border=0, fill=True, align="C")
         pdf.cell(
-            largeur_position, 7.5, f"#{resume['position_moyenne']}" if resume.get("position_moyenne") else "-",
+            largeur_position, 9, f"#{resume['position_moyenne']}" if resume.get("position_moyenne") else "-",
             border=0, fill=True, align="C",
         )
         pdf.cell(
-            0, 7.5, f"{resume['pourcentage_couverture']}%",
+            0, 9, f"{resume['pourcentage_couverture']}%",
             border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT",
         )
         indice = 1
@@ -558,14 +566,14 @@ def _tableau_concurrents(pdf: RapportPDF, concurrents: list, fiche: dict = None,
         fill = bool(indice % 2)
         if fill:
             pdf.set_fill_color(*COULEUR_FOND_CARTE)
-        pdf.cell(largeur_nom, 7.5, "  " + _nettoyer(concurrent["nom"])[:32], border=0, fill=fill)
-        pdf.cell(largeur_note, 7.5, f"{concurrent['note']}/5" if concurrent.get("note") else "-", border=0, fill=fill, align="C")
+        pdf.cell(largeur_nom, 9, "   " + _nettoyer(concurrent["nom"])[:32], border=0, fill=fill)
+        pdf.cell(largeur_note, 9, f"{concurrent['note']}/5" if concurrent.get("note") else "-", border=0, fill=fill, align="C")
         pdf.cell(
-            largeur_avis, 7.5, str(concurrent["nombre_avis"]) if concurrent.get("nombre_avis") else "-",
+            largeur_avis, 9, str(concurrent["nombre_avis"]) if concurrent.get("nombre_avis") else "-",
             border=0, fill=fill, align="C",
         )
-        pdf.cell(largeur_position, 7.5, f"#{concurrent['position_moyenne']}", border=0, fill=fill, align="C")
-        pdf.cell(0, 7.5, f"{concurrent['presence']}%", border=0, fill=fill, align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(largeur_position, 9, f"#{concurrent['position_moyenne']}", border=0, fill=fill, align="C")
+        pdf.cell(0, 9, f"{concurrent['presence']}%", border=0, fill=fill, align="C", new_x="LMARGIN", new_y="NEXT")
         indice += 1
 
 
@@ -612,7 +620,8 @@ def generer_audit_prospect_pdf(
     web renseigne ou si l'appel a echoue - section simplement omise).
     """
     pdf = RapportPDF(format="A4", unit="mm")
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_margins(MARGE_LATERALE, 16, MARGE_LATERALE)
+    pdf.set_auto_page_break(auto=True, margin=24)
     pdf.add_page()
 
     items_completude = audit_prospect.evaluer_completude_fiche(fiche)
@@ -639,20 +648,21 @@ def generer_audit_prospect_pdf(
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_x(pdf.l_margin)
         pdf.cell(0, 6, "Carte de positionnement (zone testee autour de la fiche)", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(2)
+        pdf.ln(3)
         _grille_visuelle(pdf, releve["points"])
 
         pdf.set_font("Helvetica", "", 9.5)
         for constat in _recommandations(resume):
             pdf.set_x(pdf.l_margin)
             pdf.multi_cell(0, 5.5, _nettoyer(f"- {constat}"), new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(3)
+        pdf.ln(4)
 
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_x(pdf.l_margin)
         pdf.cell(0, 7, "Qui ressort devant elle sur ce mot-cle", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
         _tableau_concurrents(pdf, releve["concurrents"], fiche, resume)
-        pdf.ln(6)
+        pdf.ln(8)
 
     if opportunites_mots_cles:
         _tableau_opportunites_mots_cles(pdf, opportunites_mots_cles)
