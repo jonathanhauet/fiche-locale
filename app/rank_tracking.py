@@ -128,7 +128,12 @@ def verifier_position(mot_cle: str, latitude: float, longitude: float, nom_entre
     )
 
     classement = [
-        {"position": item.get("rank_absolute") or item.get("rank_group"), "nom": item.get("title", "")}
+        {
+            "position": item.get("rank_absolute") or item.get("rank_group"),
+            "nom": item.get("title", ""),
+            "note": (item.get("rating") or {}).get("value"),
+            "nombre_avis": (item.get("rating") or {}).get("votes_count"),
+        }
         for item in resultats_classes[:10]
     ]
 

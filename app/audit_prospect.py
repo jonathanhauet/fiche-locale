@@ -148,8 +148,11 @@ def grille_positions_prospect(
             nom = item.get("nom", "")
             if not nom or _score_correspondance(nom, nom_entreprise, rank_tracking._mots(mot_cle)) >= rank_tracking.SEUIL_CORRESPONDANCE:
                 continue  # c'est l'entreprise elle-meme, pas un concurrent
-            entree = concurrents_par_nom.setdefault(nom, {"nom": nom, "positions": []})
+            entree = concurrents_par_nom.setdefault(nom, {"nom": nom, "positions": [], "note": None, "nombre_avis": None})
             entree["positions"].append(item.get("position") or 9999)
+            if entree["note"] is None and item.get("note") is not None:
+                entree["note"] = item["note"]
+                entree["nombre_avis"] = item.get("nombre_avis")
 
     trouves = [p["position"] for p in points if p["position"] is not None]
     resume = {
@@ -162,7 +165,8 @@ def grille_positions_prospect(
     concurrents = sorted(
         (
             {"nom": c["nom"], "position_moyenne": round(sum(c["positions"]) / len(c["positions"]), 1),
-             "presence": round(len(c["positions"]) / len(points) * 100) if points else 0}
+             "presence": round(len(c["positions"]) / len(points) * 100) if points else 0,
+             "note": c["note"], "nombre_avis": c["nombre_avis"]}
             for c in concurrents_par_nom.values()
         ),
         key=lambda c: c["position_moyenne"],
@@ -215,3 +219,28 @@ def evaluer_completude_fiche(fiche: dict) -> list[dict]:
     # Les champs incomplets remontent en premier, pour aller droit aux priorites.
     items.sort(key=lambda i: i["complet"])
     return items
+
+
+def calculer_score_global(completude: list[dict], analyse_site: dict = None, releves: list[dict] = None) -> int:
+    """
+    Score unique 0-100 synthetisant les constats deja calcules par l'audit
+    (moyenne simple des composantes disponibles, chacune deja sur 0-100) :
+    complet de la fiche, technique du site, visibilite sur les mots-cles
+    testes. Une composante absente (ex. pas de site web) est simplement
+    exclue de la moyenne plutot que comptee comme un defaut. Renvoie None
+    si aucune composante n'est disponible (rien a synthetiser).
+    """
+    composantes = []
+
+    if completude:
+        composantes.append(sum(1 for item in completude if item["complet"]) / len(completude) * 100)
+
+    if analyse_site and analyse_site.get("score_performance") is not None and analyse_site.get("score_seo") is not None:
+        composantes.append((analyse_site["score_performance"] + analyse_site["score_seo"]) / 2)
+
+    if releves:
+        composantes.append(sum(r["resume"]["pourcentage_couverture"] for r in releves) / len(releves))
+
+    if not composantes:
+        return None
+    return round(sum(composantes) / len(composantes))

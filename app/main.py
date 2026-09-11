@@ -4568,16 +4568,46 @@ async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir
         except Exception:
             pass  # section omise si l'analyse echoue, ne bloque jamais la generation du PDF
 
+    citations_resultats = None
+    try:
+        citations_resultats = citations.verifier_citations(
+            nom_entreprise, ville, "FR", [annuaire["id"] for annuaire in citations.ANNUAIRES],
+        )
+    except Exception:
+        pass  # section omise si la verification echoue, ne bloque jamais la generation du PDF
+
+    opportunites_mots_cles = None
+    if google_oauth.ads_configure(db):
+        try:
+            # Variantes reparties equitablement entre les mots-cles testes (jusqu'a 2), pour
+            # ne pas laisser le premier accaparer tout le quota MAX_MOTS_CLES_SEMENCE.
+            par_mot_cle = google_ads_keywords.MAX_MOTS_CLES_SEMENCE // max(len(mots_cles), 1)
+            semences = []
+            for mot_cle in mots_cles:
+                semences.extend(google_ads_keywords.variantes_locales(mot_cle)[:par_mot_cle])
+            semences = semences[:google_ads_keywords.MAX_MOTS_CLES_SEMENCE]
+            idees = google_ads_keywords.idees_mots_cles(google_oauth.obtenir_parametre_ads(db), semences)
+            deja_testes = {m.strip().lower() for m in mots_cles}
+            opportunites_mots_cles = sorted(
+                (i for i in idees if i["mot_cle"].strip().lower() not in deja_testes and i["volume_moyen_mensuel"]),
+                key=lambda i: i["volume_moyen_mensuel"],
+                reverse=True,
+            )[:6]
+        except Exception:
+            pass  # section omise si l'appel echoue, ne bloque jamais la generation du PDF
+
     plan_action = None
     try:
         plan_action = claude_generation.generer_plan_action_audit(
             nom_entreprise, audit_prospect.evaluer_completude_fiche(fiche), analyse_site, releves,
+            citations_resultats, opportunites_mots_cles,
         )
     except Exception:
         pass  # section omise si la generation IA echoue, ne bloque jamais la generation du PDF
 
     octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(
         nom_entreprise, ville, fiche, releves, analyse_site, plan_action,
+        citations_resultats, opportunites_mots_cles,
     )
 
     lead_id = (formulaire.get("lead_id") or "").strip()

@@ -61,6 +61,53 @@ def _bandeau_titre(pdf: RapportPDF, nom_entreprise: str, ville: str):
     pdf.set_y(48)
 
 
+def _couleurs_score_global(score: int):
+    if score >= 70:
+        return COULEUR_BON, COULEUR_BON_CLAIR
+    if score >= 40:
+        return COULEUR_ATTENTION, COULEUR_ATTENTION_CLAIR
+    return COULEUR_DANGER, COULEUR_DANGER_CLAIR
+
+
+def _libelle_score_global(score: int) -> str:
+    if score >= 70:
+        return "Bonne visibilite locale d'ensemble"
+    if score >= 40:
+        return "Visibilite locale correcte, des points a ameliorer"
+    return "Visibilite locale a renforcer en priorite"
+
+
+def _bandeau_score_global(pdf: RapportPDF, score: int):
+    if score is None:
+        return
+
+    couleur, couleur_claire = _couleurs_score_global(score)
+    y_debut = pdf.y
+    largeur = pdf.w - pdf.l_margin - pdf.r_margin
+    hauteur = 22
+    pdf.set_fill_color(*couleur_claire)
+    pdf.set_draw_color(*couleur)
+    pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="DF")
+
+    pdf.set_xy(pdf.l_margin + 6, y_debut + 4)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 6, "Score global de visibilite locale", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(pdf.l_margin + 6)
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(*couleur)
+    texte_score = f"{score}/100"
+    pdf.cell(pdf.get_string_width(texte_score) + 4, 10, texte_score)
+
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 10, "  " + _nettoyer(_libelle_score_global(score)), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.set_y(y_debut + hauteur + 6)
+
+
 def _carte_fiche_google(pdf: RapportPDF, fiche: dict):
     y_debut = pdf.y
     lignes = []
@@ -225,6 +272,64 @@ def _carte_site_technique(pdf: RapportPDF, resultat: dict):
     pdf.ln(4)
 
 
+def _carte_citations(pdf: RapportPDF, resultats: list):
+    resultats_valides = [r for r in resultats if r.get("erreur") is None]
+    if not resultats_valides:
+        return
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_x(pdf.l_margin)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 8, "Presence sur les annuaires locaux", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+
+    for resultat in resultats_valides:
+        libelle = f"{resultat['nom']} : " + ("fiche trouvee" if resultat["trouve"] else "aucune fiche trouvee")
+        _ligne_point_technique(pdf, libelle, ok=resultat["trouve"])
+
+    pdf.ln(4)
+
+
+def _tableau_opportunites_mots_cles(pdf: RapportPDF, idees: list):
+    if not idees:
+        return
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_x(pdf.l_margin)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 8, "Opportunites de mots-cles a exploiter", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_text_color(*COULEUR_GRIS)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 5, _nettoyer("Recherches Google reelles, non testees dans cet audit."), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+
+    largeur = pdf.w - pdf.l_margin - pdf.r_margin
+    largeur_volume = 55
+
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(*COULEUR_ACCENT)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_x(pdf.l_margin)
+    pdf.cell(largeur - largeur_volume, 8, "  Mot-cle", border=0, fill=True)
+    pdf.cell(largeur_volume, 8, "Volume mensuel estime", border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    for indice, idee in enumerate(idees):
+        pdf.set_x(pdf.l_margin)
+        fill = bool(indice % 2)
+        if fill:
+            pdf.set_fill_color(*COULEUR_FOND_CARTE)
+        pdf.cell(largeur - largeur_volume, 7.5, "  " + _nettoyer(idee["mot_cle"])[:60], border=0, fill=fill)
+        pdf.cell(
+            largeur_volume, 7.5, f"{idee['volume_moyen_mensuel']}/mois",
+            border=0, fill=fill, align="C", new_x="LMARGIN", new_y="NEXT",
+        )
+
+    pdf.ln(6)
+
+
 def _carte_plan_action(pdf: RapportPDF, priorites: list):
     if not priorites:
         return
@@ -352,8 +457,9 @@ def _grille_visuelle(pdf: RapportPDF, points: list):
     pdf.set_text_color(*COULEUR_TEXTE)
 
 
-def _tableau_concurrents(pdf: RapportPDF, concurrents: list):
-    if not concurrents:
+def _tableau_concurrents(pdf: RapportPDF, concurrents: list, fiche: dict = None, resume: dict = None):
+    fiche_comparable = bool(fiche and fiche.get("trouve") and resume)
+    if not concurrents and not fiche_comparable:
         pdf.set_font("Helvetica", "I", 9)
         pdf.set_text_color(*COULEUR_GRIS)
         pdf.set_x(pdf.l_margin)
@@ -361,26 +467,54 @@ def _tableau_concurrents(pdf: RapportPDF, concurrents: list):
         pdf.set_text_color(*COULEUR_TEXTE)
         return
 
+    largeur_nom, largeur_note, largeur_avis, largeur_position = 55, 22, 22, 33
+
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_fill_color(*COULEUR_ACCENT)
     pdf.set_text_color(255, 255, 255)
     pdf.set_x(pdf.l_margin)
-    pdf.cell(90, 8, "  Entreprise", border=0, fill=True)
-    pdf.cell(45, 8, "Position moyenne", border=0, fill=True, align="C")
+    pdf.cell(largeur_nom, 8, "  Entreprise", border=0, fill=True)
+    pdf.cell(largeur_note, 8, "Note", border=0, fill=True, align="C")
+    pdf.cell(largeur_avis, 8, "Avis", border=0, fill=True, align="C")
+    pdf.cell(largeur_position, 8, "Position moy.", border=0, fill=True, align="C")
     pdf.cell(0, 8, "Presence sur la zone", border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*COULEUR_TEXTE)
-    for indice, concurrent in enumerate(concurrents):
+    indice = 0
+
+    if fiche_comparable:
         pdf.set_x(pdf.l_margin)
-        if indice % 2:
+        pdf.set_fill_color(*COULEUR_BON_CLAIR)
+        pdf.set_font("Helvetica", "B", 9)
+        nom_vous = _nettoyer(fiche.get("titre") or "Votre entreprise")[:32] + " (vous)"
+        pdf.cell(largeur_nom, 7.5, "  " + nom_vous, border=0, fill=True)
+        pdf.cell(largeur_note, 7.5, f"{fiche['note']}/5" if fiche.get("note") else "-", border=0, fill=True, align="C")
+        pdf.cell(largeur_avis, 7.5, str(fiche["nombre_avis"]) if fiche.get("nombre_avis") else "-", border=0, fill=True, align="C")
+        pdf.cell(
+            largeur_position, 7.5, f"#{resume['position_moyenne']}" if resume.get("position_moyenne") else "-",
+            border=0, fill=True, align="C",
+        )
+        pdf.cell(
+            0, 7.5, f"{resume['pourcentage_couverture']}%",
+            border=0, fill=True, align="C", new_x="LMARGIN", new_y="NEXT",
+        )
+        indice = 1
+
+    pdf.set_font("Helvetica", "", 9)
+    for concurrent in concurrents:
+        pdf.set_x(pdf.l_margin)
+        fill = bool(indice % 2)
+        if fill:
             pdf.set_fill_color(*COULEUR_FOND_CARTE)
-            fill = True
-        else:
-            fill = False
-        pdf.cell(90, 7.5, "  " + _nettoyer(concurrent["nom"])[:46], border=0, fill=fill)
-        pdf.cell(45, 7.5, f"#{concurrent['position_moyenne']}", border=0, fill=fill, align="C")
+        pdf.cell(largeur_nom, 7.5, "  " + _nettoyer(concurrent["nom"])[:32], border=0, fill=fill)
+        pdf.cell(largeur_note, 7.5, f"{concurrent['note']}/5" if concurrent.get("note") else "-", border=0, fill=fill, align="C")
+        pdf.cell(
+            largeur_avis, 7.5, str(concurrent["nombre_avis"]) if concurrent.get("nombre_avis") else "-",
+            border=0, fill=fill, align="C",
+        )
+        pdf.cell(largeur_position, 7.5, f"#{concurrent['position_moyenne']}", border=0, fill=fill, align="C")
         pdf.cell(0, 7.5, f"{concurrent['presence']}%", border=0, fill=fill, align="C", new_x="LMARGIN", new_y="NEXT")
+        indice += 1
 
 
 def _recommandations(resume: dict) -> list:
@@ -408,6 +542,7 @@ def _recommandations(resume: dict) -> list:
 def generer_audit_prospect_pdf(
     nom_entreprise: str, ville: str, fiche: dict, releves: list,
     analyse_site: dict = None, plan_action: list = None,
+    citations_resultats: list = None, opportunites_mots_cles: list = None,
 ) -> bytes:
     """
     fiche : voir audit_prospect.rechercher_fiche_publique()
@@ -416,17 +551,28 @@ def generer_audit_prospect_pdf(
     web renseigne ou si l'analyse a echoue - section simplement omise).
     plan_action : voir claude_generation.generer_plan_action_audit(), optionnel (absent si la
     generation IA a echoue - section simplement omise).
+    citations_resultats : voir citations.verifier_citations(), optionnel (absent si non verifie
+    ou si l'appel a echoue - section simplement omise).
+    opportunites_mots_cles : voir google_ads_keywords.idees_mots_cles(), optionnel (absent si
+    Google Ads non configure ou si l'appel a echoue - section simplement omise).
     """
     pdf = RapportPDF(format="A4", unit="mm")
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
 
+    items_completude = audit_prospect.evaluer_completude_fiche(fiche)
+    score_global = audit_prospect.calculer_score_global(items_completude, analyse_site, releves)
+
     _bandeau_titre(pdf, nom_entreprise, ville)
+    _bandeau_score_global(pdf, score_global)
     _carte_fiche_google(pdf, fiche)
-    _tableau_completude(pdf, audit_prospect.evaluer_completude_fiche(fiche))
+    _tableau_completude(pdf, items_completude)
 
     if analyse_site:
         _carte_site_technique(pdf, analyse_site)
+
+    if citations_resultats:
+        _carte_citations(pdf, citations_resultats)
 
     for releve in releves:
         resume = releve["resume"]
@@ -447,8 +593,11 @@ def generer_audit_prospect_pdf(
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_x(pdf.l_margin)
         pdf.cell(0, 7, "Qui ressort devant elle sur ce mot-cle", new_x="LMARGIN", new_y="NEXT")
-        _tableau_concurrents(pdf, releve["concurrents"])
+        _tableau_concurrents(pdf, releve["concurrents"], fiche, resume)
         pdf.ln(6)
+
+    if opportunites_mots_cles:
+        _tableau_opportunites_mots_cles(pdf, opportunites_mots_cles)
 
     if plan_action:
         _carte_plan_action(pdf, plan_action)

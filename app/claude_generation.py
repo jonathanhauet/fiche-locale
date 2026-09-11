@@ -525,6 +525,7 @@ SCHEMA_PLAN_ACTION = {
 
 def generer_plan_action_audit(
     nom_entreprise: str, completude: list[dict], analyse_site: dict = None, releves: list[dict] = None,
+    citations_resultats: list[dict] = None, opportunites_mots_cles: list[dict] = None,
 ) -> list[dict]:
     """
     Synthese en 3 priorites concretes a partir des constats deja etablis par
@@ -563,12 +564,31 @@ def generer_plan_action_audit(
             lignes.append(ligne)
         bloc_visibilite = "\n".join(lignes)
 
+    bloc_citations = "Presence sur les annuaires locaux non verifiee."
+    if citations_resultats:
+        valides = [r for r in citations_resultats if r.get("erreur") is None]
+        if valides:
+            absents = [r["nom"] for r in valides if not r["trouve"]]
+            bloc_citations = (
+                "Annuaires locaux ou l'entreprise n'a PAS ete retrouvee : " + ", ".join(absents) + "."
+                if absents else "L'entreprise est presente sur tous les annuaires locaux verifies."
+            )
+
+    bloc_opportunites = "Aucune opportunite de mot-cle supplementaire identifiee."
+    if opportunites_mots_cles:
+        bloc_opportunites = "Mots-cles a fort volume non encore travailles : " + ", ".join(
+            f'"{idee["mot_cle"]}" ({idee["volume_moyen_mensuel"]} recherches/mois)'
+            for idee in opportunites_mots_cles[:5]
+        ) + "."
+
     prompt = (
         "Voici les constats d'un audit de visibilite locale Google realise pour l'entreprise "
         f'"{nom_entreprise}" :\n\n'
         f"1. Completude de la fiche Google Business Profile :\n{bloc_completude}\n\n"
         f"2. Audit technique du site web :\n{bloc_site}\n\n"
         f"3. Visibilite sur les mots-cles testes (recherche geolocalisee autour de la fiche) :\n{bloc_visibilite}\n\n"
+        f"4. Presence sur les annuaires locaux :\n{bloc_citations}\n\n"
+        f"5. Opportunites de mots-cles :\n{bloc_opportunites}\n\n"
         "A partir de ces constats reels uniquement (n'invente aucun element non mentionne ci-dessus), "
         "identifie les 3 priorites d'action les plus impactantes pour ameliorer la visibilite locale de "
         "cette entreprise, classees de la plus urgente/impactante a la moins urgente. Pour chacune :\n"
