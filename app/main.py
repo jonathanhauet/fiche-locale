@@ -4484,6 +4484,27 @@ async def rechercher_candidats_prospect(request: Request):
     return JSONResponse({"candidats": candidats})
 
 
+def _avis_jonathan(db: Session) -> dict:
+    """
+    Note et nombre d'avis de la propre fiche de Jonathan (client "Jonathan
+    Hauet Marketing" dans la plateforme) - utilises comme preuve sociale sur
+    la page de couverture de l'audit prospect PDF ("il applique ce qu'il
+    recommande"). Best-effort : renvoie None si le client/compte n'est pas
+    configure ou si l'appel echoue, la section est alors simplement omise.
+    """
+    client = db.query(models.Client).filter(models.Client.nom == "Jonathan Hauet Marketing").first()
+    if not client:
+        return None
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return None
+    aujourdhui = date.today()
+    resume = google_reviews.resumer_avis(identifiants, client.account_id, client.location_id, aujourdhui, aujourdhui)
+    if resume.get("note_moyenne_globale") is None:
+        return None
+    return {"note": resume["note_moyenne_globale"], "nombre_avis": resume["total_avis_global"]}
+
+
 @app.post("/prospection/audit")
 async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -4613,9 +4634,14 @@ async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir
     except Exception:
         pass  # section omise si la generation IA echoue, ne bloque jamais la generation du PDF
 
+    try:
+        avis_jonathan = _avis_jonathan(db)
+    except Exception:
+        avis_jonathan = None  # section omise si l'appel echoue, ne bloque jamais la generation du PDF
+
     octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(
         nom_entreprise, ville, fiche, releves, analyse_site, plan_action,
-        citations_resultats, opportunites_mots_cles, autorite_site,
+        citations_resultats, opportunites_mots_cles, autorite_site, avis_jonathan,
     )
 
     lead_id = (formulaire.get("lead_id") or "").strip()

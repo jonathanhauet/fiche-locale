@@ -7,7 +7,10 @@ a un prospect.
 """
 
 import io
+import os
 from datetime import date
+
+from PIL import Image
 
 from . import audit_carte, audit_prospect
 from .rapport_pdf import COULEUR_ACCENT, COULEUR_GRIS, COULEUR_TEXTE, RapportPDF, _nettoyer
@@ -21,6 +24,31 @@ COULEUR_DANGER_CLAIR = (253, 236, 236)
 COULEUR_GRILLE_ABSENT = (203, 210, 221)
 COULEUR_FOND_CARTE = (247, 248, 251)
 COULEUR_BORDURE_CARTE = (226, 230, 238)
+
+# Couleurs et polices reprises du site jonathanhauet.com pour les pages de
+# couverture/contact - la seule touche "personal branding" du rapport, le
+# reste des pages garde la palette bleue/neutre habituelle du document.
+COULEUR_NAVY = (15, 23, 42)
+COULEUR_NAVY_TEXTE_ATTENUE = (180, 190, 213)
+COULEUR_AMBRE = (245, 166, 35)
+
+DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
+CHEMIN_PHOTO_JONATHAN = os.path.join(DOSSIER_APP, "assets", "jonathan_photo.jpg")
+CHEMIN_POLICE_SIGNATURE = os.path.join(DOSSIER_APP, "fonts", "DancingScript-Bold.ttf")
+
+COORDONNEES_JONATHAN = {
+    "email": "hello@jonathanhauet.fr",
+    "site": "https://www.jonathanhauet.com",
+    "linkedin": "https://www.linkedin.com/in/jonathan-hauet/",
+    "youtube": "https://www.youtube.com/@jonathanhauet",
+}
+
+# Calcule une seule fois au chargement du module plutot qu'a chaque PDF genere.
+try:
+    with Image.open(CHEMIN_PHOTO_JONATHAN) as _photo:
+        RATIO_PHOTO_JONATHAN = _photo.height / _photo.width
+except Exception:
+    RATIO_PHOTO_JONATHAN = None
 
 # Marges laterales generees plus larges que le defaut fpdf2 (10mm) pour aerer
 # la mise en page - point explicitement demande apres relecture du rendu.
@@ -631,11 +659,150 @@ def _recommandations(resume: dict) -> list:
     return constats
 
 
+def _activer_police_signature(pdf: RapportPDF) -> bool:
+    """
+    Enregistre la police script (signature personnelle) une fois pour tout le
+    document. Renvoie False si le fichier est indisponible - les pages
+    couverture/contact retombent alors sur Helvetica italique.
+    """
+    try:
+        pdf.add_font("DancingScript", "", CHEMIN_POLICE_SIGNATURE)
+        return True
+    except Exception:
+        return False
+
+
+def _photo_jonathan(pdf: RapportPDF, largeur: float):
+    """Colle la photo de Jonathan (fond navy) en bas a droite de la page courante, bord a bord."""
+    if RATIO_PHOTO_JONATHAN is None:
+        return
+    try:
+        hauteur = largeur * RATIO_PHOTO_JONATHAN
+        pdf.image(CHEMIN_PHOTO_JONATHAN, x=pdf.w - largeur, y=pdf.h - hauteur, w=largeur)
+    except Exception:
+        pass  # photo omise si le fichier est illisible, ne bloque jamais la generation du PDF
+
+
+def _page_couverture(pdf: RapportPDF, nom_entreprise: str, ville: str, avis_jonathan: dict, police_signature_ok: bool):
+    """
+    Page de garde personnalisee (fond navy, palette reprise du site
+    jonathanhauet.com) - met en avant que l'audit est realise par Jonathan
+    lui-meme, avec sa photo et, quand disponible, la note de sa propre fiche
+    Google comme preuve sociale ("il applique ce qu'il recommande").
+    """
+    pdf.add_page()
+    pdf.set_fill_color(*COULEUR_NAVY)
+    pdf.rect(0, 0, pdf.w, pdf.h, style="F")
+
+    largeur_photo = 100
+    _photo_jonathan(pdf, largeur_photo)
+    largeur_texte = pdf.w - largeur_photo - MARGE_LATERALE - 10
+
+    pdf.set_xy(MARGE_LATERALE, 34)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 6, " ".join("AUDIT DE VISIBILITE LOCALE"), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(4)
+    pdf.set_x(MARGE_LATERALE)
+    pdf.set_font("Helvetica", "B", 27)
+    pdf.set_text_color(255, 255, 255)
+    pdf.multi_cell(largeur_texte, 13, _nettoyer(nom_entreprise), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(MARGE_LATERALE)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(*COULEUR_NAVY_TEXTE_ATTENUE)
+    pdf.cell(0, 7, _nettoyer(f"{ville} - genere le {date.today().strftime('%d/%m/%Y')}"), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_xy(MARGE_LATERALE, pdf.h - 96)
+    if police_signature_ok:
+        pdf.set_font("DancingScript", "", 27)
+    else:
+        pdf.set_font("Helvetica", "I", 15)
+    pdf.set_text_color(*COULEUR_AMBRE)
+    # multi_cell (pas cell) : la police script est large, le texte doit
+    # pouvoir passer sur 2 lignes sans deborder sur la photo a droite.
+    pdf.multi_cell(largeur_texte, 12, "Un audit realise par Jonathan Hauet", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_x(MARGE_LATERALE)
+    pdf.set_font("Helvetica", "", 9.5)
+    pdf.set_text_color(*COULEUR_NAVY_TEXTE_ATTENUE)
+    pdf.multi_cell(
+        largeur_texte, 5.5, _nettoyer("Expert Produit Google et specialiste du referencement local"),
+        new_x="LMARGIN", new_y="NEXT",
+    )
+
+    if avis_jonathan and avis_jonathan.get("note") is not None:
+        pdf.ln(6)
+        note_texte = f"{avis_jonathan['note']:.1f}".replace(".", ",")
+        texte = f"Sa fiche Google : {note_texte}/5 ({avis_jonathan['nombre_avis']} avis)"
+        pdf.set_font("Helvetica", "B", 9.5)
+        largeur_badge = min(pdf.get_string_width(_nettoyer(texte)) + 14, largeur_texte)
+        y_badge = pdf.y
+        pdf.set_fill_color(255, 255, 255)
+        pdf.rect(MARGE_LATERALE, y_badge, largeur_badge, 10, style="F", round_corners=True, corner_radius=5)
+        pdf.set_xy(MARGE_LATERALE, y_badge + 2.2)
+        pdf.set_text_color(*COULEUR_NAVY)
+        pdf.cell(largeur_badge, 6, _nettoyer(texte), align="C")
+
+    pdf.set_text_color(*COULEUR_TEXTE)
+
+
+def _page_contact(pdf: RapportPDF, police_signature_ok: bool):
+    """Derniere page (fond navy) : invite au contact avec les coordonnees de Jonathan, liens cliquables."""
+    pdf.add_page()
+    pdf.set_fill_color(*COULEUR_NAVY)
+    pdf.rect(0, 0, pdf.w, pdf.h, style="F")
+
+    largeur_photo = 78
+    _photo_jonathan(pdf, largeur_photo)
+    largeur_texte = pdf.w - largeur_photo - MARGE_LATERALE - 10
+
+    pdf.set_xy(MARGE_LATERALE, 40)
+    if police_signature_ok:
+        pdf.set_font("DancingScript", "", 30)
+    else:
+        pdf.set_font("Helvetica", "I", 19)
+    pdf.set_text_color(*COULEUR_AMBRE)
+    pdf.cell(largeur_texte, 14, "Envie d'en discuter ?", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(2)
+    pdf.set_x(MARGE_LATERALE)
+    pdf.set_font("Helvetica", "", 10.5)
+    pdf.set_text_color(*COULEUR_NAVY_TEXTE_ATTENUE)
+    pdf.multi_cell(
+        largeur_texte, 6,
+        _nettoyer(
+            "Cet audit n'est qu'un point de depart. Si vous voulez qu'on regarde ensemble comment "
+            "ameliorer concretement votre visibilite locale, contactez-moi."
+        ),
+        new_x="LMARGIN", new_y="NEXT",
+    )
+    pdf.ln(10)
+
+    liens = [
+        ("Email", COORDONNEES_JONATHAN["email"], f"mailto:{COORDONNEES_JONATHAN['email']}"),
+        ("Site web", "jonathanhauet.com", COORDONNEES_JONATHAN["site"]),
+        ("LinkedIn", "linkedin.com/in/jonathan-hauet", COORDONNEES_JONATHAN["linkedin"]),
+        ("YouTube", "youtube.com/@jonathanhauet", COORDONNEES_JONATHAN["youtube"]),
+    ]
+    for libelle, texte_affiche, url in liens:
+        pdf.set_x(MARGE_LATERALE)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(*COULEUR_AMBRE)
+        pdf.cell(26, 8, libelle)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(largeur_texte - 26, 8, texte_affiche, link=url, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_text_color(*COULEUR_TEXTE)
+
+
 def generer_audit_prospect_pdf(
     nom_entreprise: str, ville: str, fiche: dict, releves: list,
     analyse_site: dict = None, plan_action: list = None,
     citations_resultats: list = None, opportunites_mots_cles: list = None,
-    autorite_site: dict = None,
+    autorite_site: dict = None, avis_jonathan: dict = None,
 ) -> bytes:
     """
     fiche : voir audit_prospect.rechercher_fiche_publique()
@@ -650,10 +817,16 @@ def generer_audit_prospect_pdf(
     Google Ads non configure ou si l'appel a echoue - section simplement omise).
     autorite_site : voir audit_backlinks.analyser_autorite(), optionnel (absent si pas de site
     web renseigne ou si l'appel a echoue - section simplement omise).
+    avis_jonathan : voir main._avis_jonathan(), optionnel (absent si la fiche de Jonathan n'est
+    pas configuree ou si l'appel a echoue - le badge de preuve sociale est simplement omis).
     """
     pdf = RapportPDF(format="A4", unit="mm")
     pdf.set_margins(MARGE_LATERALE, 16, MARGE_LATERALE)
     pdf.set_auto_page_break(auto=True, margin=24)
+
+    police_signature_ok = _activer_police_signature(pdf)
+    _page_couverture(pdf, nom_entreprise, ville, avis_jonathan, police_signature_ok)
+
     pdf.add_page()
 
     items_completude = audit_prospect.evaluer_completude_fiche(fiche)
@@ -723,5 +896,7 @@ def generer_audit_prospect_pdf(
         new_x="LMARGIN", new_y="NEXT",
     )
     pdf.set_text_color(*COULEUR_TEXTE)
+
+    _page_contact(pdf, police_signature_ok)
 
     return bytes(pdf.output())
