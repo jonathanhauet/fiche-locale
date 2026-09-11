@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titre %}Score Google gratuit de votre fiche{% endblock %}
+{% block titre %}Audit gratuit de votre fiche Google{% endblock %}
 {% block corps %}
 <div class="page-connexion page-audit-public">
   <div class="carte-connexion carte-audit-public">
@@ -8,95 +8,23 @@
       <span class="marque-texte">Fiche Locale</span>
     </div>
 
+    {% if envoye %}
+    <h1>✓ Demande bien reçue</h1>
+    <p class="confirmation-lead">
+      Merci ! On analyse votre fiche Google et on vous envoie votre audit gratuit par email très prochainement.
+    </p>
+    <p class="fil-retour"><a href="/audit-gratuit">← Analyser une autre fiche</a></p>
+    {% else %}
     <h1>Quel est le score Google de votre fiche ?</h1>
     <p class="texte-discret">
-      Analyse gratuite et immédiate de votre fiche Google Business Profile : photos, avis, informations
-      renseignées. Laissez vos coordonnées, on vous recontacte avec les points à améliorer en priorité.
+      Analyse gratuite de votre fiche Google Business Profile : photos, avis, informations renseignées,
+      positionnement local. Laissez vos coordonnées, on vous envoie votre audit détaillé par email.
     </p>
 
     {% if erreur %}
     <p class="message-erreur">{{ erreur }}</p>
     {% endif %}
 
-    {% if resultat %}
-      {% if resultat.trouve %}
-      <div class="resultat-audit-public">
-        <div class="jauge-score jauge-score-{{ 'bon' if resultat.score >= 70 else ('moyenne' if resultat.score >= 40 else 'haute') }}">
-          <svg viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="52" class="jauge-fond"></circle>
-            <circle cx="60" cy="60" r="52" class="jauge-remplissage"
-                    style="stroke-dasharray: {{ (resultat.score / 100 * 326.7)|round(1) }} 326.7;"></circle>
-          </svg>
-          <div class="jauge-texte">
-            <strong>{{ resultat.score }}%</strong>
-            <span>{{ "Bon" if resultat.score >= 70 else ("Moyen" if resultat.score >= 40 else "À travailler") }}</span>
-          </div>
-        </div>
-
-        <div class="liste-facteurs-audit">
-          {% for facteur in resultat.facteurs %}
-          <div class="facteur-audit facteur-audit-{{ facteur.niveau }}">
-            <div>
-              <strong>{{ facteur.libelle }}</strong>
-              <span class="texte-discret">{{ facteur.detail }}</span>
-            </div>
-            <span class="etiquette-priorite-{{ facteur.niveau }}">
-              {{ "Priorité" if facteur.niveau == "haute" else ("À améliorer" if facteur.niveau == "moyenne" else "Bon") }}
-            </span>
-          </div>
-          {% endfor %}
-        </div>
-
-        <p class="confirmation-lead">
-          ✓ Merci ! Vos coordonnées sont bien enregistrées, on revient vers vous rapidement avec un plan
-          d'action détaillé pour <strong>{{ entreprise_nom }}</strong>.
-        </p>
-      </div>
-      {% else %}
-      <p class="message-erreur">
-        Nous n'avons pas retrouvé automatiquement votre fiche Google avec ce nom et cette ville — vos
-        coordonnées sont tout de même enregistrées, on vous recontacte pour l'analyser à la main.
-      </p>
-      {% endif %}
-      <p class="fil-retour"><a href="/audit-gratuit">← Analyser une autre fiche</a></p>
-
-    {% elif candidats is not none %}
-      {% if candidats %}
-      <p><strong>Quelle est votre fiche parmi celles-ci ?</strong></p>
-      <ul class="liste-candidats-audit">
-        {% for candidat in candidats %}
-        <li>
-          <form method="post" action="/audit-gratuit/confirmer">
-            <input type="hidden" name="lead_id" value="{{ lead_id }}">
-            <input type="hidden" name="candidat_titre" value="{{ candidat.titre }}">
-            <input type="hidden" name="candidat_note" value="{{ candidat.note if candidat.note is not none else '' }}">
-            <input type="hidden" name="candidat_nombre_avis" value="{{ candidat.nombre_avis if candidat.nombre_avis is not none else '' }}">
-            <input type="hidden" name="candidat_adresse" value="{{ candidat.adresse }}">
-            <input type="hidden" name="candidat_telephone" value="{{ candidat.telephone }}">
-            <input type="hidden" name="candidat_categorie" value="{{ candidat.categorie }}">
-            <input type="hidden" name="candidat_site_web" value="{{ candidat.site_web }}">
-            <input type="hidden" name="candidat_total_photos" value="{{ candidat.total_photos }}">
-            <input type="hidden" name="candidat_a_horaires" value="{{ '1' if candidat.a_horaires else '0' }}">
-            <input type="hidden" name="candidat_a_categorie_secondaire" value="{{ '1' if candidat.a_categorie_secondaire else '0' }}">
-            <button type="submit" class="bouton-resultat-ville">
-              <strong>{{ candidat.titre }}</strong>{% if candidat.note %} — ★ {{ candidat.note }}{% if candidat.nombre_avis %} ({{ candidat.nombre_avis }} avis){% endif %}{% endif %}
-              {% if candidat.categorie or candidat.adresse %}
-              <br><span class="texte-discret">{{ [candidat.categorie, candidat.adresse] | select | join(" — ") }}</span>
-              {% endif %}
-            </button>
-          </form>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <p class="message-erreur">
-        Nous n'avons pas retrouvé de fiche Google avec ce nom et cette ville — vos coordonnées sont tout de
-        même enregistrées, on vous recontacte pour l'analyser à la main.
-      </p>
-      {% endif %}
-      <p class="fil-retour"><a href="/audit-gratuit">← Recommencer</a></p>
-
-    {% else %}
     <form class="formulaire" method="post" action="/audit-gratuit">
       <input type="text" name="site_web_perso" autocomplete="off" tabindex="-1" class="champ-piege" aria-hidden="true">
 
@@ -133,7 +61,7 @@
         </label>
       </div>
 
-      <button type="submit">Voir mon score gratuitement →</button>
+      <button type="submit">Recevoir mon audit gratuit →</button>
     </form>
     {% endif %}
   </div>

@@ -6,6 +6,7 @@ Lancement en local : depuis le dossier plateforme_web/,
 puis ouvrir http://localhost:8000
 """
 
+import base64
 import calendar
 import json
 import os
@@ -30,7 +31,6 @@ from . import (
     acces_masse,
     audit_prospect,
     audit_prospect_pdf,
-    audit_public,
     bilan_pdf,
     brevo_email,
     citations,
@@ -82,6 +82,9 @@ from .security import hacher_mot_de_passe, verifier_mot_de_passe
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
 DOSSIER_PLATEFORME = os.path.dirname(DOSSIER_APP)
 load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
+
+# Destinataire de la notification "nouvelle demande d'audit gratuit" (voir /audit-gratuit).
+EMAIL_NOTIFICATION_LEADS = os.getenv("EMAIL_NOTIFICATION_LEADS", "")
 
 Base.metadata.create_all(bind=engine)
 
@@ -157,6 +160,15 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_instagram_id INTEGER"))
         if "token_instagram" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN token_instagram TEXT DEFAULT ''"))
+
+        if "leads_audit" in inspecteur.get_table_names():
+            colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
+            if "pdf_audit_base64" not in colonnes_leads:
+                connexion.execute(text("ALTER TABLE leads_audit ADD COLUMN pdf_audit_base64 TEXT"))
+            if "audite_le" not in colonnes_leads:
+                connexion.execute(text("ALTER TABLE leads_audit ADD COLUMN audite_le TIMESTAMP"))
+            if "envoye_le" not in colonnes_leads:
+                connexion.execute(text("ALTER TABLE leads_audit ADD COLUMN envoye_le TIMESTAMP"))
 
         if "photos_fiche" in inspecteur.get_table_names():
             colonnes_photos = [c["name"] for c in inspecteur.get_columns("photos_fiche")]
@@ -432,30 +444,24 @@ def page_confidentialite(request: Request):
 @app.get("/audit-gratuit", response_class=HTMLResponse)
 def page_audit_gratuit(request: Request):
     """
-    Page publique (pas d'authentification requise) de capture de leads : score
-    gratuit de completude de fiche Google, calcule a partir de donnees
-    publiques uniquement (voir audit_public.py - un seul appel DataForSEO,
-    pas de grille de positions). Destinee a etre exposee sous un sous-domaine
-    du site vitrine de l'agence, pas sous le nom "Fiche Locale".
+    Page publique (pas d'authentification requise) de capture de leads. Ne
+    declenche plus aucun appel DataForSEO a la soumission (voir
+    soumettre_audit_gratuit) - Jonathan lance lui-meme l'audit depuis /leads.
+    Destinee a etre exposee sous un sous-domaine du site vitrine de
+    l'agence, pas sous le nom "Fiche Locale".
     """
-    return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "candidats": None, "valeurs": {}})
+    return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "envoye": False, "valeurs": {}})
 
 
 @app.post("/audit-gratuit")
 async def soumettre_audit_gratuit(request: Request, db: Session = Depends(obtenir_session)):
-    """
-    Etape 1 : capture le lead (coordonnees completes) puis lance UNE recherche
-    Google Maps publique et presente les fiches candidates a confirmer - voir
-    /audit-gratuit/confirmer pour l'etape 2 (calcul du score, sans nouvel
-    appel DataForSEO).
-    """
+    """Capture le lead (coordonnees completes) et notifie Jonathan par email (Brevo) - aucun appel DataForSEO ici."""
     formulaire = await request.form()
 
     # Piege a robots : champ cache que seul un script automatise remplirait -
-    # on repond normalement en apparence, sans rien enregistrer ni consommer
-    # de requete DataForSEO.
+    # on repond normalement en apparence, sans rien enregistrer.
     if (formulaire.get("site_web_perso") or "").strip():
-        return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "resultat": None, "candidats": None, "valeurs": {}})
+        return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "envoye": True, "valeurs": {}})
 
     prenom = (formulaire.get("prenom") or "").strip()
     nom = (formulaire.get("nom") or "").strip()
@@ -467,7 +473,7 @@ async def soumettre_audit_gratuit(request: Request, db: Session = Depends(obteni
     if not all([prenom, nom, email, telephone, entreprise_nom, ville]):
         return templates.TemplateResponse(
             request, "audit_gratuit.html",
-            {"erreur": "Merci de remplir tous les champs.", "resultat": None, "candidats": None, "valeurs": formulaire},
+            {"erreur": "Merci de remplir tous les champs.", "envoye": False, "valeurs": formulaire},
             status_code=400,
         )
 
@@ -477,60 +483,22 @@ async def soumettre_audit_gratuit(request: Request, db: Session = Depends(obteni
     )
     db.add(lead)
     db.commit()
-    db.refresh(lead)
 
-    try:
-        candidats = audit_public.rechercher_candidats_public(entreprise_nom, ville)
-    except Exception as erreur:
-        return templates.TemplateResponse(
-            request, "audit_gratuit.html",
-            {"erreur": f"Impossible d'analyser cette fiche pour le moment : {erreur}", "resultat": None, "candidats": None, "valeurs": formulaire},
-            status_code=400,
-        )
+    if EMAIL_NOTIFICATION_LEADS and brevo_email.identifiants_configures():
+        try:
+            brevo_email.envoyer_email(
+                EMAIL_NOTIFICATION_LEADS, "Fiche Locale",
+                f"Nouvelle demande d'audit gratuit : {entreprise_nom}",
+                (
+                    f"<p>{prenom} {nom} ({email}, {telephone}) demande un audit gratuit pour "
+                    f"<strong>{entreprise_nom}</strong> ({ville}).</p>"
+                    "<p><a href='https://web-production-bf59a.up.railway.app/leads'>Voir la demande sur /leads</a></p>"
+                ),
+            )
+        except Exception:
+            pass  # ne bloque jamais la confirmation au visiteur si la notification echoue
 
-    return templates.TemplateResponse(
-        request, "audit_gratuit.html",
-        {
-            "erreur": None, "resultat": None, "valeurs": {},
-            "candidats": candidats, "lead_id": lead.id, "entreprise_nom": entreprise_nom,
-        },
-    )
-
-
-@app.post("/audit-gratuit/confirmer")
-async def confirmer_audit_gratuit(request: Request, db: Session = Depends(obtenir_session)):
-    """Etape 2 : calcule le score a partir du candidat choisi (deja recupere a l'etape 1, aucun nouvel appel DataForSEO)."""
-    formulaire = await request.form()
-
-    candidat = {
-        "trouve": True,
-        "titre": formulaire.get("candidat_titre") or "",
-        "note": float(formulaire["candidat_note"]) if formulaire.get("candidat_note") else None,
-        "nombre_avis": int(formulaire["candidat_nombre_avis"]) if formulaire.get("candidat_nombre_avis") else None,
-        "adresse": formulaire.get("candidat_adresse") or "",
-        "telephone": formulaire.get("candidat_telephone") or "",
-        "categorie": formulaire.get("candidat_categorie") or "",
-        "site_web": formulaire.get("candidat_site_web") or "",
-        "total_photos": int(formulaire["candidat_total_photos"]) if formulaire.get("candidat_total_photos") else 0,
-        "a_horaires": (formulaire.get("candidat_a_horaires") or "") == "1",
-        "a_categorie_secondaire": (formulaire.get("candidat_a_categorie_secondaire") or "") == "1",
-    }
-
-    resultat = audit_public.calculer_score_depuis_candidat(candidat)
-
-    lead_id = formulaire.get("lead_id")
-    if lead_id:
-        lead = db.get(models.LeadAudit, int(lead_id))
-        if lead:
-            lead.score = resultat["score"]
-            lead.details_json = json.dumps(resultat)
-            db.commit()
-
-    resultat["trouve"] = True
-    return templates.TemplateResponse(
-        request, "audit_gratuit.html",
-        {"erreur": None, "resultat": resultat, "candidats": None, "entreprise_nom": candidat["titre"], "valeurs": {}},
-    )
+    return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "envoye": True, "valeurs": {}})
 
 
 @app.get("/leads", response_class=HTMLResponse)
@@ -540,6 +508,55 @@ def liste_leads(request: Request, db: Session = Depends(obtenir_session)):
         return redirection
     leads = db.query(models.LeadAudit).order_by(models.LeadAudit.cree_le.desc()).all()
     return templates.TemplateResponse(request, "leads.html", {"leads": leads})
+
+
+@app.get("/leads/{lead_id}/pdf")
+def telecharger_audit_lead(lead_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    lead = db.get(models.LeadAudit, lead_id)
+    if not lead or not lead.pdf_audit_base64:
+        return RedirectResponse("/leads", status_code=303)
+
+    nom_fichier = f"audit_{lead.entreprise_nom.lower().replace(' ', '_')}.pdf"
+    return Response(
+        content=base64.b64decode(lead.pdf_audit_base64),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
+
+
+@app.post("/leads/{lead_id}/envoyer")
+def envoyer_audit_lead(lead_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Envoie par email (Brevo) le PDF d'audit deja genere pour ce lead (voir /prospection/audit) - declenche manuellement."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    lead = db.get(models.LeadAudit, lead_id)
+    if not lead or not lead.pdf_audit_base64:
+        return RedirectResponse("/leads", status_code=303)
+
+    nom_fichier = f"audit_{lead.entreprise_nom.lower().replace(' ', '_')}.pdf"
+    try:
+        brevo_email.envoyer_email(
+            lead.email, f"{lead.prenom} {lead.nom}".strip(),
+            f"Votre audit gratuit de fiche Google — {lead.entreprise_nom}",
+            (
+                f"<p>Bonjour {lead.prenom},</p>"
+                f"<p>Voici l'audit gratuit de la fiche Google de <strong>{lead.entreprise_nom}</strong>, "
+                "en pièce jointe.</p>"
+            ),
+            pieces_jointes=[(nom_fichier, base64.b64decode(lead.pdf_audit_base64))],
+        )
+    except Exception as erreur:
+        return HTMLResponse(f"Echec de l'envoi de l'audit : {erreur}", status_code=400)
+
+    lead.envoye_le = datetime.utcnow()
+    db.commit()
+    return RedirectResponse("/leads", status_code=303)
 
 
 @app.get("/connexion", response_class=HTMLResponse)
@@ -4424,11 +4441,19 @@ def changer_compte_google_masse(
 
 
 @app.get("/prospection", response_class=HTMLResponse)
-def prospection_formulaire(request: Request):
+def prospection_formulaire(request: Request, nom_entreprise: str = "", ville: str = "", lead_id: int = None):
+    """
+    nom_entreprise/ville/lead_id : pre-remplissage optionnel depuis une
+    demande d'audit gratuit (/leads, bouton "Lancer l'audit") - lead_id est
+    reporte jusqu'a la generation du PDF pour le rattacher a cette demande.
+    """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
-    return templates.TemplateResponse(request, "prospection.html", {"erreur": None})
+    return templates.TemplateResponse(
+        request, "prospection.html",
+        {"erreur": None, "nom_entreprise": nom_entreprise, "ville": ville, "lead_id": lead_id},
+    )
 
 
 @app.post("/prospection/rechercher")
@@ -4458,12 +4483,14 @@ async def rechercher_candidats_prospect(request: Request):
 
 
 @app.post("/prospection/audit")
-async def generer_audit_prospect(request: Request):
+async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir_session)):
     """
     Genere un audit PDF pour une entreprise qui n'est PAS cliente (prospection),
     a partir de donnees Google Maps publiques uniquement (voir audit_prospect.py -
     aucun acces authentifie a la fiche, donc pas d'historique de posts/photos).
     Chaque mot-cle teste consomme des requetes DataForSEO facturees a l'usage.
+    Si issu d'une demande d'audit gratuit (champ cache lead_id), le PDF est
+    rattache a cette demande pour envoi ulterieur depuis /leads.
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -4531,6 +4558,15 @@ async def generer_audit_prospect(request: Request):
         return templates.TemplateResponse(request, "prospection.html", {"erreur": str(erreur)}, status_code=400)
 
     octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(nom_entreprise, ville, fiche, releves)
+
+    lead_id = (formulaire.get("lead_id") or "").strip()
+    if lead_id:
+        lead = db.get(models.LeadAudit, int(lead_id))
+        if lead:
+            lead.pdf_audit_base64 = base64.b64encode(octets_pdf).decode()
+            lead.audite_le = datetime.utcnow()
+            db.commit()
+
     nom_fichier = f"audit_{nom_entreprise.lower().replace(' ', '_')}.pdf"
     return Response(
         content=octets_pdf,

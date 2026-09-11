@@ -21,14 +21,18 @@
 
 <form class="formulaire" id="formulaire-prospection" method="post" action="/prospection/audit"
       onsubmit="return confirm('Lancer cet audit ? Chaque mot-cle teste consomme des requetes DataForSEO facturees a usage.');">
+  {% if lead_id %}
+  <input type="hidden" name="lead_id" value="{{ lead_id }}">
+  {% endif %}
+
   <div class="ligne-champs">
     <label>
       Nom de l'entreprise
-      <input type="text" name="nom_entreprise" id="champ-nom-entreprise" required placeholder="Ex : Bâti'Net">
+      <input type="text" name="nom_entreprise" id="champ-nom-entreprise" required placeholder="Ex : Bâti'Net" value="{{ nom_entreprise or '' }}">
     </label>
     <label>
       Ville
-      <input type="text" name="ville" id="champ-ville" required placeholder="Ex : Mérignac">
+      <input type="text" name="ville" id="champ-ville" required placeholder="Ex : Mérignac" value="{{ ville or '' }}">
     </label>
   </div>
 

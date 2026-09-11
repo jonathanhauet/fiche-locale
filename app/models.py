@@ -328,9 +328,15 @@ class AlerteStatutFiche(Base):
 class LeadAudit(Base):
     """
     Contact capture sur la page publique d'audit gratuit (/audit-gratuit) -
-    voir audit_public.py. Coordonnees completes demandees avant de lancer la
-    recherche (protege le solde DataForSEO et sert de liste de prospects a
-    recontacter, voir /leads).
+    coordonnees completes demandees avant tout traitement. Ne declenche plus
+    aucun appel DataForSEO a la soumission (protege le solde et filtre le
+    spam) : Jonathan lance lui-meme l'audit depuis /leads quand il le juge
+    pertinent (voir /prospection, pre-rempli avec ces coordonnees), puis
+    envoie le PDF genere par email via Brevo quand il est pret.
+
+    score/details_json : vestiges de l'ancien flux (score calcule
+    automatiquement a la soumission) - plus alimentes, conserves pour les
+    leads deja enregistres avant ce changement.
     """
 
     __tablename__ = "leads_audit"
@@ -344,6 +350,9 @@ class LeadAudit(Base):
     ville = Column(String, default="")
     score = Column(Integer, nullable=True)
     details_json = Column(Text, default="")
+    pdf_audit_base64 = Column(Text, nullable=True)
+    audite_le = Column(DateTime, nullable=True)
+    envoye_le = Column(DateTime, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 

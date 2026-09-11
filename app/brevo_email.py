@@ -1,5 +1,6 @@
 """Envoi d'emails transactionnels via l'API Brevo (https://api.brevo.com)."""
 
+import base64
 import os
 
 import requests
@@ -22,20 +23,31 @@ def identifiants_configures() -> bool:
     return bool(BREVO_API_KEY and BREVO_EMAIL_EXPEDITEUR)
 
 
-def envoyer_email(destinataire_email: str, destinataire_nom: str, sujet: str, contenu_html: str) -> None:
+def envoyer_email(
+    destinataire_email: str, destinataire_nom: str, sujet: str, contenu_html: str,
+    pieces_jointes: list[tuple[str, bytes]] = None,
+) -> None:
+    """pieces_jointes : [(nom_fichier, octets), ...], optionnel (ex. PDF d'audit joint)."""
     if not identifiants_configures():
         raise RuntimeError("BREVO_API_KEY / BREVO_EMAIL_EXPEDITEUR manquants dans plateforme_web/.env.")
+
+    corps = {
+        "sender": {"name": BREVO_NOM_EXPEDITEUR, "email": BREVO_EMAIL_EXPEDITEUR},
+        "to": [{"email": destinataire_email, "name": destinataire_nom}],
+        "subject": sujet,
+        "htmlContent": contenu_html,
+    }
+    if pieces_jointes:
+        corps["attachment"] = [
+            {"name": nom_fichier, "content": base64.b64encode(octets).decode()}
+            for nom_fichier, octets in pieces_jointes
+        ]
 
     reponse = requests.post(
         URL_ENVOI,
         headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json", "Accept": "application/json"},
-        json={
-            "sender": {"name": BREVO_NOM_EXPEDITEUR, "email": BREVO_EMAIL_EXPEDITEUR},
-            "to": [{"email": destinataire_email, "name": destinataire_nom}],
-            "subject": sujet,
-            "htmlContent": contenu_html,
-        },
-        timeout=15,
+        json=corps,
+        timeout=30,
     )
     if reponse.status_code >= 300:
         raise RuntimeError(f"Echec de l'envoi Brevo (code {reponse.status_code}) : {reponse.text}")

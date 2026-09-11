@@ -9,7 +9,8 @@
 
 <p class="texte-discret">
   Contacts capturés depuis la page publique d'audit gratuit (<a href="/audit-gratuit" target="_blank" rel="noopener">/audit-gratuit</a>).
-  Chaque soumission consomme une requête DataForSEO facturée à l'usage.
+  Aucun appel DataForSEO n'est fait à la soumission : lance l'audit toi-même pour chaque demande qui te semble
+  pertinente, puis envoie le PDF par email une fois prêt.
 </p>
 
 {% if leads %}
@@ -27,12 +28,17 @@
       </span>
     </div>
     <div class="actions-avis">
-      {% if lead.score is not none %}
-      <span class="etiquette-statut {{ 'etiquette-publie_live' if lead.score >= 70 else ('etiquette-avertissement' if lead.score >= 40 else 'etiquette-echec') }}">
-        Score {{ lead.score }}%
-      </span>
+      {% if lead.envoye_le %}
+      <span class="etiquette-statut etiquette-publie_live">✓ Envoyé le {{ lead.envoye_le.strftime("%d/%m/%Y") }}</span>
+      <a class="bouton-secondaire" href="/leads/{{ lead.id }}/pdf">📥 PDF</a>
+      {% elif lead.pdf_audit_base64 %}
+      <span class="etiquette-statut etiquette-avertissement">Audit prêt</span>
+      <a class="bouton-secondaire" href="/leads/{{ lead.id }}/pdf">📥 Télécharger</a>
+      <form method="post" action="/leads/{{ lead.id }}/envoyer" onsubmit="return confirm('Envoyer l\'audit par email a ' + '{{ lead.email }}' + ' ?');">
+        <button type="submit" class="bouton">✉️ Envoyer par email</button>
+      </form>
       {% else %}
-      <span class="etiquette-statut etiquette-echec">Fiche non trouvée</span>
+      <a class="bouton" href="/prospection?nom_entreprise={{ lead.entreprise_nom | urlencode }}&ville={{ lead.ville | urlencode }}&lead_id={{ lead.id }}">🎯 Lancer l'audit</a>
       {% endif %}
     </div>
   </li>
