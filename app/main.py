@@ -4568,7 +4568,17 @@ async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir
         except Exception:
             pass  # section omise si l'analyse echoue, ne bloque jamais la generation du PDF
 
-    octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(nom_entreprise, ville, fiche, releves, analyse_site)
+    plan_action = None
+    try:
+        plan_action = claude_generation.generer_plan_action_audit(
+            nom_entreprise, audit_prospect.evaluer_completude_fiche(fiche), analyse_site, releves,
+        )
+    except Exception:
+        pass  # section omise si la generation IA echoue, ne bloque jamais la generation du PDF
+
+    octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(
+        nom_entreprise, ville, fiche, releves, analyse_site, plan_action,
+    )
 
     lead_id = (formulaire.get("lead_id") or "").strip()
     if lead_id:

@@ -500,3 +500,107 @@ def suggerer_semences_mots_cles(contenu_site: str, categorie: str, ville: str, l
 
     semences = json.loads(bloc_texte)["semences"]
     return [s.strip() for s in semences if s.strip()][:limite]
+
+
+SCHEMA_PLAN_ACTION = {
+    "type": "object",
+    "properties": {
+        "priorites": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "titre": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+                "required": ["titre", "description"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["priorites"],
+    "additionalProperties": False,
+}
+
+
+def generer_plan_action_audit(
+    nom_entreprise: str, completude: list[dict], analyse_site: dict = None, releves: list[dict] = None,
+) -> list[dict]:
+    """
+    Synthese en 3 priorites concretes a partir des constats deja etablis par
+    l'audit (completude de la fiche, analyse technique du site, visibilite
+    sur les mots-cles testes) - section "Plan d'action" de audit_prospect_pdf.py.
+    Ne fait aucune analyse elle-meme, se contente de hierarchiser et reformuler
+    des constats deja calcules ailleurs (evite d'inventer des chiffres).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    points_a_ameliorer = [item["libelle"] for item in completude if not item["complet"]]
+    bloc_completude = (
+        "Elements incomplets sur la fiche Google : " + ", ".join(points_a_ameliorer) + "."
+        if points_a_ameliorer else "La fiche Google est complete sur tous les points verifies."
+    )
+
+    bloc_site = "Aucun site web renseigne, ou analyse technique non disponible."
+    if analyse_site:
+        blocages = [p["libelle"] for p in analyse_site.get("points_bloquants", [])]
+        bloc_site = (
+            f"Score de performance du site : {analyse_site.get('score_performance')}/100. "
+            f"Score SEO : {analyse_site.get('score_seo')}/100. "
+            + ("Points techniques a corriger : " + ", ".join(blocages) + "."
+               if blocages else "Aucun point technique bloquant releve.")
+        )
+
+    bloc_visibilite = "Aucun mot-cle teste."
+    if releves:
+        lignes = []
+        for releve in releves:
+            resume = releve["resume"]
+            ligne = f"- \"{releve['mot_cle']}\" : visible sur {resume['pourcentage_couverture']}% de la zone testee"
+            if resume.get("position_moyenne"):
+                ligne += f", position moyenne {resume['position_moyenne']}"
+            lignes.append(ligne)
+        bloc_visibilite = "\n".join(lignes)
+
+    prompt = (
+        "Voici les constats d'un audit de visibilite locale Google realise pour l'entreprise "
+        f'"{nom_entreprise}" :\n\n'
+        f"1. Completude de la fiche Google Business Profile :\n{bloc_completude}\n\n"
+        f"2. Audit technique du site web :\n{bloc_site}\n\n"
+        f"3. Visibilite sur les mots-cles testes (recherche geolocalisee autour de la fiche) :\n{bloc_visibilite}\n\n"
+        "A partir de ces constats reels uniquement (n'invente aucun element non mentionne ci-dessus), "
+        "identifie les 3 priorites d'action les plus impactantes pour ameliorer la visibilite locale de "
+        "cette entreprise, classees de la plus urgente/impactante a la moins urgente. Pour chacune :\n"
+        "- un titre court et concret (5-8 mots), qui donne envie d'agir ;\n"
+        "- une description de 2 a 3 phrases expliquant pourquoi c'est important et ce qu'il faut faire "
+        "concretement, en te basant sur les constats ci-dessus (jamais de conseil generique deconnecte "
+        "des donnees fournies).\n"
+        "Ton professionnel et direct, destine a convaincre un dirigeant non technique de l'interet de se "
+        "faire accompagner. N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un "
+        "deux-points ou un tiret simple (-)."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=1536,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_PLAN_ACTION}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    priorites = json.loads(bloc_texte)["priorites"]
+    for priorite in priorites:
+        priorite["titre"] = _nettoyer_texte_genere(priorite["titre"])
+        priorite["description"] = _nettoyer_texte_genere(priorite["description"])
+        # Filet de securite : il est arrive (rarement) que le modele laisse des
+        # fragments de la structure JSON elle-meme dans le texte d'un champ -
+        # jamais legitime ici, donc on rejette plutot que d'exposer ca au prospect.
+        if "{" in priorite["titre"] or "}" in priorite["titre"] or "{" in priorite["description"] or "}" in priorite["description"]:
+            raise RuntimeError("Sortie IA malformee pour le plan d'action.")
+    return priorites[:3]

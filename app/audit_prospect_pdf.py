@@ -225,6 +225,52 @@ def _carte_site_technique(pdf: RapportPDF, resultat: dict):
     pdf.ln(4)
 
 
+def _carte_plan_action(pdf: RapportPDF, priorites: list):
+    if not priorites:
+        return
+
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_x(pdf.l_margin)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 9, "Plan d'action : vos 3 priorites", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
+
+    largeur = pdf.w - pdf.l_margin - pdf.r_margin
+    largeur_texte = largeur - 20
+
+    for indice, priorite in enumerate(priorites, start=1):
+        pdf.set_font("Helvetica", "", 9.5)
+        lignes = pdf.multi_cell(largeur_texte, 5.5, _nettoyer(priorite["description"]), dry_run=True, output="LINES")
+        hauteur = 12 + len(lignes) * 5.5 + 5
+
+        y_debut = pdf.y
+        pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
+        pdf.set_fill_color(*COULEUR_FOND_CARTE)
+        pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="DF")
+
+        pdf.set_fill_color(*COULEUR_ACCENT)
+        pdf.ellipse(pdf.l_margin + 5, y_debut + 4, 8, 8, style="F")
+        pdf.set_xy(pdf.l_margin + 5, y_debut + 4)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(8, 8, str(indice), align="C")
+
+        pdf.set_xy(pdf.l_margin + 17, y_debut + 4)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(*COULEUR_TEXTE)
+        pdf.cell(largeur_texte, 6, _nettoyer(priorite["titre"]), new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_xy(pdf.l_margin + 17, pdf.y)
+        pdf.set_font("Helvetica", "", 9.5)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.multi_cell(largeur_texte, 5.5, _nettoyer(priorite["description"]), new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_text_color(*COULEUR_TEXTE)
+        pdf.set_y(y_debut + hauteur + 5)
+
+    pdf.ln(2)
+
+
 def _encadre_verdict(pdf: RapportPDF, mot_cle: str, resume: dict):
     couleur, couleur_claire = _couleurs_selon_couverture(resume["pourcentage_couverture"])
     if resume["pourcentage_couverture"] >= 50:
@@ -359,12 +405,17 @@ def _recommandations(resume: dict) -> list:
     return constats
 
 
-def generer_audit_prospect_pdf(nom_entreprise: str, ville: str, fiche: dict, releves: list, analyse_site: dict = None) -> bytes:
+def generer_audit_prospect_pdf(
+    nom_entreprise: str, ville: str, fiche: dict, releves: list,
+    analyse_site: dict = None, plan_action: list = None,
+) -> bytes:
     """
     fiche : voir audit_prospect.rechercher_fiche_publique()
     releves : liste de resultats audit_prospect.grille_positions_prospect() (un par mot-cle)
     analyse_site : voir audit_site_technique.analyser_site(), optionnel (absent si pas de site
     web renseigne ou si l'analyse a echoue - section simplement omise).
+    plan_action : voir claude_generation.generer_plan_action_audit(), optionnel (absent si la
+    generation IA a echoue - section simplement omise).
     """
     pdf = RapportPDF(format="A4", unit="mm")
     pdf.set_auto_page_break(auto=True, margin=20)
@@ -398,6 +449,9 @@ def generer_audit_prospect_pdf(nom_entreprise: str, ville: str, fiche: dict, rel
         pdf.cell(0, 7, "Qui ressort devant elle sur ce mot-cle", new_x="LMARGIN", new_y="NEXT")
         _tableau_concurrents(pdf, releve["concurrents"])
         pdf.ln(6)
+
+    if plan_action:
+        _carte_plan_action(pdf, plan_action)
 
     pdf.set_font("Helvetica", "I", 8.5)
     pdf.set_text_color(*COULEUR_GRIS)
