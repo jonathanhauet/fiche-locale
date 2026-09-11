@@ -6,9 +6,10 @@ dessinee, marges genereuses) pour un document destine a etre envoye tel quel
 a un prospect.
 """
 
+import io
 from datetime import date
 
-from . import audit_prospect
+from . import audit_carte, audit_prospect
 from .rapport_pdf import COULEUR_ACCENT, COULEUR_GRIS, COULEUR_TEXTE, RapportPDF, _nettoyer
 
 COULEUR_BON = (22, 163, 74)
@@ -471,7 +472,49 @@ def _encadre_verdict(pdf: RapportPDF, mot_cle: str, resume: dict):
     pdf.set_y(y_debut + hauteur + 8)
 
 
+def _legende_positions(pdf: RapportPDF):
+    legende = [
+        (COULEUR_BON, "Top 3"), (COULEUR_ATTENTION, "Top 4-10"),
+        (COULEUR_DANGER, "Au-dela / non classee"), (COULEUR_GRILLE_ABSENT, "Non trouvee"),
+    ]
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", "", 8)
+    for couleur, libelle in legende:
+        pdf.set_fill_color(*couleur)
+        x, y = pdf.get_x(), pdf.get_y()
+        pdf.rect(x, y + 1, 3, 3, style="F", round_corners=True, corner_radius=0.7)
+        pdf.set_x(x + 5)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.cell(pdf.get_string_width(libelle) + 7, 5, libelle)
+    pdf.ln(9)
+    pdf.set_text_color(*COULEUR_TEXTE)
+
+
+def _carte_reelle_positions(pdf: RapportPDF, points: list) -> bool:
+    """
+    Tente d'inserer une vraie carte (fond OpenStreetMap, voir audit_carte.py)
+    avec un marqueur colore par point de la grille - beaucoup plus parlant
+    qu'une grille abstraite pour comprendre quelle zone geographique reelle a
+    ete testee. Renvoie False sans rien dessiner si le rendu a echoue (ex.
+    tuiles injoignables), pour laisser l'appelant retomber sur la grille
+    abstraite : jamais d'echec bloquant pour la generation du PDF.
+    """
+    try:
+        octets_image = audit_carte.generer_image_carte(points)
+    except Exception:
+        return False
+
+    taille_mm = min(pdf.w - pdf.l_margin - pdf.r_margin, 115)
+    _assurer_espace(pdf, taille_mm + 14)
+    x = pdf.l_margin + (pdf.w - pdf.l_margin - pdf.r_margin - taille_mm) / 2
+    y = pdf.y
+    pdf.image(io.BytesIO(octets_image), x=x, y=y, w=taille_mm, h=taille_mm)
+    pdf.set_y(y + taille_mm + 5)
+    return True
+
+
 def _grille_visuelle(pdf: RapportPDF, points: list):
+    """Repli abstrait (carres colores) quand la vraie carte n'a pas pu etre generee."""
     taille = int(round(len(points) ** 0.5))
     if taille * taille != len(points) or taille == 0:
         return  # forme inattendue, on saute plutot que d'afficher une grille fausse
@@ -479,7 +522,7 @@ def _grille_visuelle(pdf: RapportPDF, points: list):
     cote = 9.5
     marge_case = 1.8
     largeur_totale = taille * (cote + marge_case) - marge_case
-    # +14 pour la legende dessinee juste en dessous (voir plus bas dans cette fonction).
+    # +14 pour la legende dessinee juste apres (voir _section_carte_positions).
     _assurer_espace(pdf, largeur_totale + 14)
     x_debut = pdf.l_margin + (pdf.w - pdf.l_margin - pdf.r_margin - largeur_totale) / 2
     y_debut = pdf.y
@@ -499,22 +542,11 @@ def _grille_visuelle(pdf: RapportPDF, points: list):
     pdf.set_text_color(*COULEUR_TEXTE)
     pdf.set_y(y_debut + taille * (cote + marge_case) + 4)
 
-    # Legende
-    legende = [
-        (COULEUR_BON, "Top 3"), (COULEUR_ATTENTION, "Top 4-10"),
-        (COULEUR_DANGER, "Au-dela / non classee"), (COULEUR_GRILLE_ABSENT, "Non trouvee"),
-    ]
-    pdf.set_x(pdf.l_margin)
-    pdf.set_font("Helvetica", "", 8)
-    for couleur, libelle in legende:
-        pdf.set_fill_color(*couleur)
-        x, y = pdf.get_x(), pdf.get_y()
-        pdf.rect(x, y + 1, 3, 3, style="F", round_corners=True, corner_radius=0.7)
-        pdf.set_x(x + 5)
-        pdf.set_text_color(*COULEUR_GRIS)
-        pdf.cell(pdf.get_string_width(libelle) + 7, 5, libelle)
-    pdf.ln(9)
-    pdf.set_text_color(*COULEUR_TEXTE)
+
+def _section_carte_positions(pdf: RapportPDF, points: list):
+    if not _carte_reelle_positions(pdf, points):
+        _grille_visuelle(pdf, points)
+    _legende_positions(pdf)
 
 
 def _tableau_concurrents(pdf: RapportPDF, concurrents: list, fiche: dict = None, resume: dict = None):
@@ -647,9 +679,17 @@ def generer_audit_prospect_pdf(
 
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_x(pdf.l_margin)
-        pdf.cell(0, 6, "Carte de positionnement (zone testee autour de la fiche)", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 6, "Carte de positionnement", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 8.5)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.set_x(pdf.l_margin)
+        pdf.cell(
+            0, 5, f"Zone testee : rayon d'environ {audit_prospect.RAYON_KM_DEFAUT:g} km autour de la fiche",
+            new_x="LMARGIN", new_y="NEXT",
+        )
+        pdf.set_text_color(*COULEUR_TEXTE)
         pdf.ln(3)
-        _grille_visuelle(pdf, releve["points"])
+        _section_carte_positions(pdf, releve["points"])
 
         pdf.set_font("Helvetica", "", 9.5)
         for constat in _recommandations(resume):
