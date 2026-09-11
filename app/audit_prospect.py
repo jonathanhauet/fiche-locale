@@ -75,6 +75,12 @@ def _item_vers_fiche(item: dict) -> dict:
         # penser - verifie contre un appel reel).
         "latitude": item.get("latitude"),
         "longitude": item.get("longitude"),
+        # Utilises par evaluer_completude_fiche - verifies contre un appel
+        # reel dans l'ancienne version publique de l'outil (audit_public.py,
+        # depuis retiree, remplacee par la revue manuelle depuis /leads).
+        "total_photos": item.get("total_photos") or 0,
+        "a_horaires": bool(item.get("work_hours")),
+        "a_categorie_secondaire": bool(item.get("additional_categories")),
     }
 
 
@@ -163,3 +169,49 @@ def grille_positions_prospect(
     )[:MAX_CONCURRENTS_AFFICHES]
 
     return {"mot_cle": mot_cle, "points": points, "resume": resume, "concurrents": concurrents}
+
+
+def evaluer_completude_fiche(fiche: dict) -> list[dict]:
+    """
+    Renvoie une liste de {"libelle", "complet": bool, "detail": str} evaluant
+    chaque champ visible publiquement sur la fiche - inspire des rapports
+    concurrents (WeComm) qui detaillent "Complet" / "A ameliorer" champ par
+    champ plutot qu'un score global opaque. Limite aux champs disponibles via
+    une recherche Google Maps publique (pas de description ni de reseaux
+    sociaux : ces champs ne sont pas exposes par cette API, contrairement a
+    l'API Business Profile authentifiee utilisee pour les clients).
+    """
+    if not fiche.get("trouve"):
+        return []
+
+    nb_avis = fiche.get("nombre_avis") or 0
+    note = fiche.get("note") or 0
+    total_photos = fiche.get("total_photos") or 0
+
+    items = [
+        {"libelle": "Nom de la fiche", "complet": bool(fiche.get("titre")), "detail": fiche.get("titre") or "Non renseigne"},
+        {"libelle": "Categorie principale", "complet": bool(fiche.get("categorie")), "detail": fiche.get("categorie") or "Non renseignee"},
+        {
+            "libelle": "Categorie secondaire", "complet": fiche.get("a_categorie_secondaire", False),
+            "detail": "Au moins une categorie secondaire presente" if fiche.get("a_categorie_secondaire") else "Aucune categorie secondaire renseignee",
+        },
+        {"libelle": "Adresse", "complet": bool(fiche.get("adresse")), "detail": fiche.get("adresse") or "Non renseignee"},
+        {"libelle": "Telephone", "complet": bool(fiche.get("telephone")), "detail": fiche.get("telephone") or "Non renseigne"},
+        {"libelle": "Site web", "complet": bool(fiche.get("site_web")), "detail": fiche.get("site_web") or "Non renseigne"},
+        {
+            "libelle": "Horaires", "complet": fiche.get("a_horaires", False),
+            "detail": "Horaires renseignes" if fiche.get("a_horaires") else "Horaires non renseignes",
+        },
+        {
+            "libelle": "Photos", "complet": total_photos >= 20,
+            "detail": f"{total_photos} photo(s) sur la fiche" + ("" if total_photos >= 20 else " - viser au moins 20"),
+        },
+        {
+            "libelle": "Avis", "complet": nb_avis >= 20 and note >= 4.3,
+            "detail": f"{nb_avis} avis, note de {note}/5" if nb_avis else "Aucun avis",
+        },
+    ]
+
+    # Les champs incomplets remontent en premier, pour aller droit aux priorites.
+    items.sort(key=lambda i: i["complet"])
+    return items

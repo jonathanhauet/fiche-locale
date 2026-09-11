@@ -4526,6 +4526,9 @@ async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir
             "site_web": formulaire.get("fiche_site_web") or "",
             "latitude": float(formulaire["fiche_latitude"]),
             "longitude": float(formulaire["fiche_longitude"]),
+            "total_photos": int(formulaire["fiche_total_photos"]) if formulaire.get("fiche_total_photos") else 0,
+            "a_horaires": (formulaire.get("fiche_a_horaires") or "") == "1",
+            "a_categorie_secondaire": (formulaire.get("fiche_a_categorie_secondaire") or "") == "1",
         }
     else:
         try:

@@ -7,6 +7,7 @@ dessinee) pour un document destine a etre envoye tel quel a un prospect.
 
 from datetime import date
 
+from . import audit_prospect
 from .rapport_pdf import COULEUR_ACCENT, COULEUR_GRIS, COULEUR_TEXTE, RapportPDF, _nettoyer
 
 COULEUR_BON = (22, 163, 74)
@@ -106,6 +107,49 @@ def _carte_fiche_google(pdf: RapportPDF, fiche: dict):
 
     pdf.set_text_color(*COULEUR_TEXTE)
     pdf.set_y(y_debut + hauteur + 6)
+
+
+def _tableau_completude(pdf: RapportPDF, items: list):
+    if not items:
+        return
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_x(pdf.l_margin)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 8, "Completude de la fiche", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+
+    largeur_totale = pdf.w - pdf.l_margin - pdf.r_margin
+    largeur_puce = 32
+
+    for indice, item in enumerate(items):
+        couleur, couleur_claire = (COULEUR_BON, COULEUR_BON_CLAIR) if item["complet"] else (COULEUR_ATTENTION, COULEUR_ATTENTION_CLAIR)
+        libelle_puce = "Complet" if item["complet"] else "A ameliorer"
+
+        y_debut = pdf.y
+        pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
+        pdf.set_fill_color(*COULEUR_FOND_CARTE if indice % 2 else (255, 255, 255))
+        pdf.rect(pdf.l_margin, y_debut, largeur_totale, 9, style="F")
+
+        pdf.set_xy(pdf.l_margin + 3, y_debut + 1.3)
+        pdf.set_font("Helvetica", "B", 9.5)
+        pdf.set_text_color(*COULEUR_TEXTE)
+        pdf.cell(50, 6.5, _nettoyer(item["libelle"]))
+
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.cell(largeur_totale - 50 - largeur_puce - 6, 6.5, _nettoyer(item["detail"])[:75])
+
+        pdf.set_fill_color(*couleur_claire)
+        pdf.set_xy(pdf.l_margin + largeur_totale - largeur_puce, y_debut + 1.3)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(*couleur)
+        pdf.cell(largeur_puce, 6.5, libelle_puce, align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_y(y_debut + 9)
+
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.ln(6)
 
 
 def _encadre_verdict(pdf: RapportPDF, mot_cle: str, resume: dict):
@@ -253,6 +297,7 @@ def generer_audit_prospect_pdf(nom_entreprise: str, ville: str, fiche: dict, rel
 
     _bandeau_titre(pdf, nom_entreprise, ville)
     _carte_fiche_google(pdf, fiche)
+    _tableau_completude(pdf, audit_prospect.evaluer_completude_fiche(fiche))
 
     for releve in releves:
         resume = releve["resume"]

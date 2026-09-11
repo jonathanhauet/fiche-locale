@@ -56,6 +56,9 @@
   <input type="hidden" name="fiche_site_web" id="champ-fiche-site-web">
   <input type="hidden" name="fiche_latitude" id="champ-fiche-latitude">
   <input type="hidden" name="fiche_longitude" id="champ-fiche-longitude">
+  <input type="hidden" name="fiche_total_photos" id="champ-fiche-total-photos">
+  <input type="hidden" name="fiche_a_horaires" id="champ-fiche-a-horaires">
+  <input type="hidden" name="fiche_a_categorie_secondaire" id="champ-fiche-a-categorie-secondaire">
 
   <div class="ligne-champs">
     <label>
@@ -103,6 +106,9 @@
     siteWeb: document.getElementById("champ-fiche-site-web"),
     latitude: document.getElementById("champ-fiche-latitude"),
     longitude: document.getElementById("champ-fiche-longitude"),
+    totalPhotos: document.getElementById("champ-fiche-total-photos"),
+    aHoraires: document.getElementById("champ-fiche-a-horaires"),
+    aCategorieSecondaire: document.getElementById("champ-fiche-a-categorie-secondaire"),
   };
 
   function echapper(texte) {
@@ -127,6 +133,9 @@
     champsCaches.siteWeb.value = candidat.site_web || "";
     champsCaches.latitude.value = candidat.latitude ?? "";
     champsCaches.longitude.value = candidat.longitude ?? "";
+    champsCaches.totalPhotos.value = candidat.total_photos ?? "";
+    champsCaches.aHoraires.value = candidat.a_horaires ? "1" : "0";
+    champsCaches.aCategorieSecondaire.value = candidat.a_categorie_secondaire ? "1" : "0";
 
     const details = [candidat.categorie, candidat.adresse].filter(Boolean).join(" — ");
     texteConfirmee.textContent = `${candidat.titre}${details ? " (" + details + ")" : ""}`;
