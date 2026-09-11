@@ -31,6 +31,7 @@ from . import (
     acces_masse,
     audit_prospect,
     audit_prospect_pdf,
+    audit_site_technique,
     bilan_pdf,
     brevo_email,
     citations,
@@ -4560,7 +4561,14 @@ async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir
     except Exception as erreur:
         return templates.TemplateResponse(request, "prospection.html", {"erreur": str(erreur)}, status_code=400)
 
-    octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(nom_entreprise, ville, fiche, releves)
+    analyse_site = None
+    if fiche.get("site_web") and audit_site_technique.identifiants_configures():
+        try:
+            analyse_site = audit_site_technique.analyser_site(fiche["site_web"])
+        except Exception:
+            pass  # section omise si l'analyse echoue, ne bloque jamais la generation du PDF
+
+    octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(nom_entreprise, ville, fiche, releves, analyse_site)
 
     lead_id = (formulaire.get("lead_id") or "").strip()
     if lead_id:

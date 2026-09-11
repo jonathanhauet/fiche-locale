@@ -152,6 +152,79 @@ def _tableau_completude(pdf: RapportPDF, items: list):
     pdf.ln(6)
 
 
+def _couleur_score(score):
+    if score is None:
+        return COULEUR_GRIS
+    if score >= 80:
+        return COULEUR_BON
+    if score >= 50:
+        return COULEUR_ATTENTION
+    return COULEUR_DANGER
+
+
+def _ligne_point_technique(pdf: RapportPDF, libelle: str, ok: bool):
+    couleur = COULEUR_BON if ok else COULEUR_ATTENTION
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(*couleur)
+    pdf.cell(6, 6, "+" if ok else "!")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.multi_cell(pdf.w - pdf.l_margin - pdf.r_margin - 6, 6, _nettoyer(libelle), new_x="LMARGIN", new_y="NEXT")
+
+
+def _carte_site_technique(pdf: RapportPDF, resultat: dict):
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_x(pdf.l_margin)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 8, "Votre site face a Google", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_text_color(*COULEUR_GRIS)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 5, _nettoyer(resultat["url"]), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
+
+    largeur_totale = pdf.w - pdf.l_margin - pdf.r_margin
+    largeur_case = largeur_totale / 4
+    y_debut = pdf.y
+    cases = [
+        ("Performance", f"{resultat['score_performance']}/100" if resultat["score_performance"] is not None else "-", _couleur_score(resultat["score_performance"])),
+        ("SEO", f"{resultat['score_seo']}/100" if resultat["score_seo"] is not None else "-", _couleur_score(resultat["score_seo"])),
+        ("1er affichage", resultat["premier_affichage"] or "-", COULEUR_TEXTE),
+        ("Affichage complet", resultat["affichage_complet"] or "-", COULEUR_TEXTE),
+    ]
+    for indice, (libelle, valeur, couleur) in enumerate(cases):
+        x = pdf.l_margin + indice * largeur_case
+        pdf.set_xy(x, y_debut)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(*couleur)
+        pdf.cell(largeur_case, 8, _nettoyer(valeur), align="C", new_x="LMARGIN", new_y="TOP")
+        pdf.set_xy(x, y_debut + 8)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.cell(largeur_case, 5, _nettoyer(libelle), align="C")
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.set_y(y_debut + 16)
+
+    if resultat["points_bloquants"]:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 9.5)
+        pdf.set_x(pdf.l_margin)
+        pdf.cell(0, 6, "Ce qui freine votre site", new_x="LMARGIN", new_y="NEXT")
+        for point in resultat["points_bloquants"]:
+            _ligne_point_technique(pdf, point["libelle"], ok=False)
+
+    if resultat["points_positifs"]:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 9.5)
+        pdf.set_x(pdf.l_margin)
+        pdf.cell(0, 6, "Ce qui fonctionne deja", new_x="LMARGIN", new_y="NEXT")
+        for point in resultat["points_positifs"]:
+            _ligne_point_technique(pdf, point["libelle"], ok=True)
+
+    pdf.ln(4)
+
+
 def _encadre_verdict(pdf: RapportPDF, mot_cle: str, resume: dict):
     couleur, couleur_claire = _couleurs_selon_couverture(resume["pourcentage_couverture"])
     if resume["pourcentage_couverture"] >= 50:
@@ -286,10 +359,12 @@ def _recommandations(resume: dict) -> list:
     return constats
 
 
-def generer_audit_prospect_pdf(nom_entreprise: str, ville: str, fiche: dict, releves: list) -> bytes:
+def generer_audit_prospect_pdf(nom_entreprise: str, ville: str, fiche: dict, releves: list, analyse_site: dict = None) -> bytes:
     """
     fiche : voir audit_prospect.rechercher_fiche_publique()
     releves : liste de resultats audit_prospect.grille_positions_prospect() (un par mot-cle)
+    analyse_site : voir audit_site_technique.analyser_site(), optionnel (absent si pas de site
+    web renseigne ou si l'analyse a echoue - section simplement omise).
     """
     pdf = RapportPDF(format="A4", unit="mm")
     pdf.set_auto_page_break(auto=True, margin=20)
@@ -298,6 +373,9 @@ def generer_audit_prospect_pdf(nom_entreprise: str, ville: str, fiche: dict, rel
     _bandeau_titre(pdf, nom_entreprise, ville)
     _carte_fiche_google(pdf, fiche)
     _tableau_completude(pdf, audit_prospect.evaluer_completude_fiche(fiche))
+
+    if analyse_site:
+        _carte_site_technique(pdf, analyse_site)
 
     for releve in releves:
         resume = releve["resume"]
