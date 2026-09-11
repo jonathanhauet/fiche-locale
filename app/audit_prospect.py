@@ -221,14 +221,16 @@ def evaluer_completude_fiche(fiche: dict) -> list[dict]:
     return items
 
 
-def calculer_score_global(completude: list[dict], analyse_site: dict = None, releves: list[dict] = None) -> int:
+def calculer_score_global(
+    completude: list[dict], analyse_site: dict = None, releves: list[dict] = None, autorite_site: dict = None,
+) -> int:
     """
     Score unique 0-100 synthetisant les constats deja calcules par l'audit
     (moyenne simple des composantes disponibles, chacune deja sur 0-100) :
-    complet de la fiche, technique du site, visibilite sur les mots-cles
-    testes. Une composante absente (ex. pas de site web) est simplement
-    exclue de la moyenne plutot que comptee comme un defaut. Renvoie None
-    si aucune composante n'est disponible (rien a synthetiser).
+    completude de la fiche, technique du site, visibilite sur les mots-cles
+    testes, autorite du site (backlinks). Une composante absente (ex. pas de
+    site web) est simplement exclue de la moyenne plutot que comptee comme un
+    defaut. Renvoie None si aucune composante n'est disponible.
     """
     composantes = []
 
@@ -240,6 +242,9 @@ def calculer_score_global(completude: list[dict], analyse_site: dict = None, rel
 
     if releves:
         composantes.append(sum(r["resume"]["pourcentage_couverture"] for r in releves) / len(releves))
+
+    if autorite_site and autorite_site.get("rang") is not None:
+        composantes.append(autorite_site["rang"])
 
     if not composantes:
         return None

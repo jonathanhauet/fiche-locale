@@ -29,6 +29,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import (
     acces_masse,
+    audit_backlinks,
     audit_prospect,
     audit_prospect_pdf,
     audit_site_technique,
@@ -4568,6 +4569,13 @@ async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir
         except Exception:
             pass  # section omise si l'analyse echoue, ne bloque jamais la generation du PDF
 
+    autorite_site = None
+    if fiche.get("site_web"):
+        try:
+            autorite_site = audit_backlinks.analyser_autorite(fiche["site_web"])
+        except Exception:
+            pass  # section omise si l'appel echoue, ne bloque jamais la generation du PDF
+
     citations_resultats = None
     try:
         citations_resultats = citations.verifier_citations(
@@ -4600,14 +4608,14 @@ async def generer_audit_prospect(request: Request, db: Session = Depends(obtenir
     try:
         plan_action = claude_generation.generer_plan_action_audit(
             nom_entreprise, audit_prospect.evaluer_completude_fiche(fiche), analyse_site, releves,
-            citations_resultats, opportunites_mots_cles,
+            citations_resultats, opportunites_mots_cles, autorite_site,
         )
     except Exception:
         pass  # section omise si la generation IA echoue, ne bloque jamais la generation du PDF
 
     octets_pdf = audit_prospect_pdf.generer_audit_prospect_pdf(
         nom_entreprise, ville, fiche, releves, analyse_site, plan_action,
-        citations_resultats, opportunites_mots_cles,
+        citations_resultats, opportunites_mots_cles, autorite_site,
     )
 
     lead_id = (formulaire.get("lead_id") or "").strip()

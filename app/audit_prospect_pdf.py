@@ -39,6 +39,21 @@ def _couleur_point(position):
     return COULEUR_DANGER
 
 
+def _assurer_espace(pdf: RapportPDF, hauteur: float):
+    """
+    Ajoute une nouvelle page si le bloc a dessiner (hauteur donnee) ne rentre
+    pas dans l'espace restant. Necessaire avant tout encadre colore (rect())
+    suivi de texte : rect() ne declenche jamais de saut de page (contrairement
+    a cell()/multi_cell()), donc sans cette verification un encadre peut se
+    retrouver dessine juste avant la marge basse pendant que le texte qui le
+    remplit est renvoye par le saut de page automatique sur la page suivante -
+    le cadre colore se retrouve alors vide en bas d'une page, le texte en haut
+    de la suivante sans son cadre.
+    """
+    if pdf.y + hauteur > pdf.page_break_trigger:
+        pdf.add_page()
+
+
 def _bandeau_titre(pdf: RapportPDF, nom_entreprise: str, ville: str):
     pdf.set_fill_color(*COULEUR_ACCENT)
     pdf.rect(0, 0, pdf.w, 40, style="F")
@@ -109,7 +124,6 @@ def _bandeau_score_global(pdf: RapportPDF, score: int):
 
 
 def _carte_fiche_google(pdf: RapportPDF, fiche: dict):
-    y_debut = pdf.y
     lignes = []
     if fiche.get("trouve"):
         note = fiche.get("note")
@@ -129,6 +143,8 @@ def _carte_fiche_google(pdf: RapportPDF, fiche: dict):
         lignes.append((None, "Fiche non retrouvee automatiquement sur Google Maps avec ce nom et cette ville."))
 
     hauteur = 10 + len(lignes) * 7 + 4
+    _assurer_espace(pdf, hauteur)
+    y_debut = pdf.y
     pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
     pdf.set_fill_color(*COULEUR_FOND_CARTE)
     pdf.rect(pdf.l_margin, y_debut, pdf.w - pdf.l_margin - pdf.r_margin, hauteur, style="DF")
@@ -173,6 +189,7 @@ def _tableau_completude(pdf: RapportPDF, items: list):
         couleur, couleur_claire = (COULEUR_BON, COULEUR_BON_CLAIR) if item["complet"] else (COULEUR_ATTENTION, COULEUR_ATTENTION_CLAIR)
         libelle_puce = "Complet" if item["complet"] else "A ameliorer"
 
+        _assurer_espace(pdf, 9)
         y_debut = pdf.y
         pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
         pdf.set_fill_color(*COULEUR_FOND_CARTE if indice % 2 else (255, 255, 255))
@@ -272,6 +289,37 @@ def _carte_site_technique(pdf: RapportPDF, resultat: dict):
     pdf.ln(4)
 
 
+def _carte_autorite_site(pdf: RapportPDF, resultat: dict):
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_x(pdf.l_margin)
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.cell(0, 8, "Autorite du site", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
+
+    largeur_totale = pdf.w - pdf.l_margin - pdf.r_margin
+    largeur_case = largeur_totale / 3
+    y_debut = pdf.y
+    cases = [
+        ("Score d'autorite", f"{resultat['rang']}/100", _couleur_score(resultat["rang"])),
+        ("Backlinks", str(resultat["backlinks"]), COULEUR_TEXTE),
+        ("Domaines referents", str(resultat["domaines_referents"]), COULEUR_TEXTE),
+    ]
+    for indice, (libelle, valeur, couleur) in enumerate(cases):
+        x = pdf.l_margin + indice * largeur_case
+        pdf.set_xy(x, y_debut)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(*couleur)
+        pdf.cell(largeur_case, 8, _nettoyer(valeur), align="C", new_x="LMARGIN", new_y="TOP")
+        pdf.set_xy(x, y_debut + 8)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(*COULEUR_GRIS)
+        pdf.cell(largeur_case, 5, _nettoyer(libelle), align="C")
+
+    pdf.set_text_color(*COULEUR_TEXTE)
+    pdf.set_y(y_debut + 16)
+    pdf.ln(4)
+
+
 def _carte_citations(pdf: RapportPDF, resultats: list):
     resultats_valides = [r for r in resultats if r.get("erreur") is None]
     if not resultats_valides:
@@ -348,6 +396,7 @@ def _carte_plan_action(pdf: RapportPDF, priorites: list):
         lignes = pdf.multi_cell(largeur_texte, 5.5, _nettoyer(priorite["description"]), dry_run=True, output="LINES")
         hauteur = 12 + len(lignes) * 5.5 + 5
 
+        _assurer_espace(pdf, hauteur)
         y_debut = pdf.y
         pdf.set_draw_color(*COULEUR_BORDURE_CARTE)
         pdf.set_fill_color(*COULEUR_FOND_CARTE)
@@ -385,9 +434,10 @@ def _encadre_verdict(pdf: RapportPDF, mot_cle: str, resume: dict):
     else:
         verdict = "Visibilite tres faible sur ce mot-cle"
 
-    y_debut = pdf.y
     largeur = pdf.w - pdf.l_margin - pdf.r_margin
     hauteur = 26
+    _assurer_espace(pdf, hauteur)
+    y_debut = pdf.y
     pdf.set_fill_color(*couleur_claire)
     pdf.set_draw_color(*couleur)
     pdf.rect(pdf.l_margin, y_debut, largeur, hauteur, style="DF")
@@ -421,6 +471,8 @@ def _grille_visuelle(pdf: RapportPDF, points: list):
     cote = 9.0
     marge_case = 1.2
     largeur_totale = taille * (cote + marge_case) - marge_case
+    # +13 pour la legende dessinee juste en dessous (voir plus bas dans cette fonction).
+    _assurer_espace(pdf, largeur_totale + 13)
     x_debut = pdf.l_margin + (pdf.w - pdf.l_margin - pdf.r_margin - largeur_totale) / 2
     y_debut = pdf.y
 
@@ -543,6 +595,7 @@ def generer_audit_prospect_pdf(
     nom_entreprise: str, ville: str, fiche: dict, releves: list,
     analyse_site: dict = None, plan_action: list = None,
     citations_resultats: list = None, opportunites_mots_cles: list = None,
+    autorite_site: dict = None,
 ) -> bytes:
     """
     fiche : voir audit_prospect.rechercher_fiche_publique()
@@ -555,13 +608,15 @@ def generer_audit_prospect_pdf(
     ou si l'appel a echoue - section simplement omise).
     opportunites_mots_cles : voir google_ads_keywords.idees_mots_cles(), optionnel (absent si
     Google Ads non configure ou si l'appel a echoue - section simplement omise).
+    autorite_site : voir audit_backlinks.analyser_autorite(), optionnel (absent si pas de site
+    web renseigne ou si l'appel a echoue - section simplement omise).
     """
     pdf = RapportPDF(format="A4", unit="mm")
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
 
     items_completude = audit_prospect.evaluer_completude_fiche(fiche)
-    score_global = audit_prospect.calculer_score_global(items_completude, analyse_site, releves)
+    score_global = audit_prospect.calculer_score_global(items_completude, analyse_site, releves, autorite_site)
 
     _bandeau_titre(pdf, nom_entreprise, ville)
     _bandeau_score_global(pdf, score_global)
@@ -570,6 +625,9 @@ def generer_audit_prospect_pdf(
 
     if analyse_site:
         _carte_site_technique(pdf, analyse_site)
+
+    if autorite_site:
+        _carte_autorite_site(pdf, autorite_site)
 
     if citations_resultats:
         _carte_citations(pdf, citations_resultats)

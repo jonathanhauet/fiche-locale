@@ -526,6 +526,7 @@ SCHEMA_PLAN_ACTION = {
 def generer_plan_action_audit(
     nom_entreprise: str, completude: list[dict], analyse_site: dict = None, releves: list[dict] = None,
     citations_resultats: list[dict] = None, opportunites_mots_cles: list[dict] = None,
+    autorite_site: dict = None,
 ) -> list[dict]:
     """
     Synthese en 3 priorites concretes a partir des constats deja etablis par
@@ -581,6 +582,13 @@ def generer_plan_action_audit(
             for idee in opportunites_mots_cles[:5]
         ) + "."
 
+    bloc_autorite = "Autorite du site (backlinks) non verifiee."
+    if autorite_site:
+        bloc_autorite = (
+            f"Score d'autorite du site : {autorite_site['rang']}/100, avec {autorite_site['backlinks']} "
+            f"backlinks provenant de {autorite_site['domaines_referents']} domaines differents."
+        )
+
     prompt = (
         "Voici les constats d'un audit de visibilite locale Google realise pour l'entreprise "
         f'"{nom_entreprise}" :\n\n'
@@ -589,6 +597,7 @@ def generer_plan_action_audit(
         f"3. Visibilite sur les mots-cles testes (recherche geolocalisee autour de la fiche) :\n{bloc_visibilite}\n\n"
         f"4. Presence sur les annuaires locaux :\n{bloc_citations}\n\n"
         f"5. Opportunites de mots-cles :\n{bloc_opportunites}\n\n"
+        f"6. Autorite du site (backlinks) :\n{bloc_autorite}\n\n"
         "A partir de ces constats reels uniquement (n'invente aucun element non mentionne ci-dessus), "
         "identifie les 3 priorites d'action les plus impactantes pour ameliorer la visibilite locale de "
         "cette entreprise, classees de la plus urgente/impactante a la moins urgente. Pour chacune :\n"
