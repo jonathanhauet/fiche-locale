@@ -7,12 +7,14 @@ publiques, usage raisonnable), aucune cle API a configurer.
 
 Chaque point de la grille est un marqueur compose (dessine avec Pillow) :
 un gros disque colore avec le numero de position au centre (quand connue et
-<=10), et un petit badge accroche en haut a droite qui redouble l'info de
-couleur par une forme simple (coche/tiret/croix) - lisible d'un coup d'oeil
-meme sans distinguer les couleurs.
+<=10), et un petit emoji accroche en haut a droite (visages Twemoji,
+CC-BY 4.0, voir app/assets/) qui redouble l'info de couleur par une
+expression - lisible d'un coup d'oeil meme sans distinguer les couleurs,
+plus parlant qu'un symbole abstrait.
 """
 
 import io
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 from staticmap import IconMarker, StaticMap
@@ -26,13 +28,30 @@ COULEUR_PAR_NIVEAU = {
     "top3": COULEUR_BON, "milieu": COULEUR_ATTENTION, "loin": COULEUR_DANGER, "absent": COULEUR_ABSENT,
 }
 
+DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
+DOSSIER_ASSETS = os.path.join(DOSSIER_APP, "assets")
+
 TAILLE_PX = 760
 DIAMETRE_MARQUEUR = 50
-RAYON_BADGE = 10
+TAILLE_EMOJI = 26
 _RAYON_PRINCIPAL = DIAMETRE_MARQUEUR / 2
-_MARGE = RAYON_BADGE + 4
+_MARGE = TAILLE_EMOJI // 2 + 4
 _TAILLE_ICONE = DIAMETRE_MARQUEUR + _MARGE * 2
 _CENTRE_ICONE = _MARGE + _RAYON_PRINCIPAL
+
+# Charges une seule fois au chargement du module - reutilises pour chaque
+# marqueur genere plutot que relus depuis le disque a chaque appel.
+_EMOJIS = {
+    "top3": Image.open(os.path.join(DOSSIER_ASSETS, "emoji_bon.png")).convert("RGBA").resize(
+        (TAILLE_EMOJI, TAILLE_EMOJI), Image.LANCZOS
+    ),
+    "milieu": Image.open(os.path.join(DOSSIER_ASSETS, "emoji_moyen.png")).convert("RGBA").resize(
+        (TAILLE_EMOJI, TAILLE_EMOJI), Image.LANCZOS
+    ),
+    "loin": Image.open(os.path.join(DOSSIER_ASSETS, "emoji_mauvais.png")).convert("RGBA").resize(
+        (TAILLE_EMOJI, TAILLE_EMOJI), Image.LANCZOS
+    ),
+}
 
 
 def _niveau(position) -> str:
@@ -57,22 +76,14 @@ class _MarqueurImage(IconMarker):
         self.offset = (offset_x, offset_y)
 
 
-def _dessiner_badge_tendance(draw: ImageDraw.ImageDraw, cx: float, cy: float, niveau: str):
-    if niveau == "absent":
-        return
-    draw.ellipse(
-        (cx - RAYON_BADGE, cy - RAYON_BADGE, cx + RAYON_BADGE, cy + RAYON_BADGE),
-        fill=COULEUR_PAR_NIVEAU[niveau], outline="white", width=2,
-    )
-    d = RAYON_BADGE * 0.5
-    if niveau == "top3":
-        draw.line([(cx - d, cy), (cx - d * 0.2, cy + d * 0.8), (cx + d, cy - d * 0.7)], fill="white", width=2)
-    elif niveau == "loin":
-        draw.line([(cx - d, cy - d), (cx + d, cy + d)], fill="white", width=2)
-        draw.line([(cx - d, cy + d), (cx + d, cy - d)], fill="white", width=2)
-    else:  # milieu
-        draw.line([(cx - d, cy - 2), (cx + d, cy - 2)], fill="white", width=2)
-        draw.line([(cx - d, cy + 2), (cx + d, cy + 2)], fill="white", width=2)
+def _coller_emoji_tendance(image: Image.Image, draw: ImageDraw.ImageDraw, cx: float, cy: float, niveau: str):
+    if niveau not in _EMOJIS:
+        return  # "absent" (fiche non trouvee a ce point) : rien a exprimer comme tendance
+
+    rayon_fond = TAILLE_EMOJI / 2 + 2
+    draw.ellipse((cx - rayon_fond, cy - rayon_fond, cx + rayon_fond, cy + rayon_fond), fill="white")
+    emoji = _EMOJIS[niveau]
+    image.paste(emoji, (int(cx - TAILLE_EMOJI / 2), int(cy - TAILLE_EMOJI / 2)), emoji)
 
 
 def _generer_icone_marqueur(position) -> Image.Image:
@@ -100,7 +111,7 @@ def _generer_icone_marqueur(position) -> Image.Image:
 
     cx_badge = _CENTRE_ICONE + _RAYON_PRINCIPAL * 0.72
     cy_badge = _CENTRE_ICONE - _RAYON_PRINCIPAL * 0.72
-    _dessiner_badge_tendance(draw, cx_badge, cy_badge, niveau)
+    _coller_emoji_tendance(image, draw, cx_badge, cy_badge, niveau)
 
     return image
 
