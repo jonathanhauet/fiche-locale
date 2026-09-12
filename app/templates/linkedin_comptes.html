@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set page_actuelle = "comptes_linkedin" %}
+{% block titre %}Comptes LinkedIn — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Profils LinkedIn connectés</h1>
+  <a class="bouton" href="/linkedin/connecter">+ Connecter un profil LinkedIn</a>
+</div>
+
+<p class="texte-vide">
+  Publication sur profil personnel uniquement pour l'instant (produit "Share on LinkedIn").
+  La gestion des pages entreprise des clients necessite le produit "Community Management API",
+  en attente de validation par LinkedIn.
+</p>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+{% if resultat_publication %}
+<div class="bandeau-info">Post publié sur le profil {{ resultat_publication }}.</div>
+{% endif %}
+
+{% if comptes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Profil</th>
+        <th>Connecté le</th>
+        <th>Expire le</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for compte in comptes %}
+      <tr>
+        <td>{{ compte.libelle }}</td>
+        <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ compte.expire_le.strftime("%Y-%m-%d") if compte.expire_le else "-" }}</td>
+        <td>
+          <form method="post" action="/linkedin/comptes/{{ compte.id }}/deconnecter"
+                onsubmit="return confirm('Deconnecter ce profil LinkedIn ?');">
+            <button type="submit" class="bouton-danger">Déconnecter</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Publier un post</h2>
+{% for compte in comptes %}
+<form method="post" action="/linkedin/comptes/{{ compte.id }}/publier" class="formulaire">
+  <label for="texte-{{ compte.id }}">Texte du post pour {{ compte.libelle }}</label>
+  <textarea id="texte-{{ compte.id }}" name="texte" rows="5" required></textarea>
+  <button type="submit" class="bouton">Publier sur LinkedIn</button>
+</form>
+{% endfor %}
+{% else %}
+<p class="texte-vide">Aucun profil LinkedIn connecté pour l'instant.</p>
+{% endif %}
+{% endblock %}

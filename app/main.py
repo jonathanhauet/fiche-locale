@@ -58,6 +58,8 @@ from . import (
     instagram_engagement,
     instagram_oauth,
     instagram_publish,
+    linkedin_oauth,
+    linkedin_publish,
     meta_engagement,
     meta_oauth,
     meta_publish,
@@ -4930,6 +4932,103 @@ def meta_deconnecter_compte(compte_id: int, request: Request, db: Session = Depe
         db.commit()
 
     return RedirectResponse("/meta/comptes", status_code=303)
+
+
+# --- Connexion LinkedIn (OAuth, profils personnels) ------------------------
+
+
+@app.get("/linkedin/connecter")
+def linkedin_connecter(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    redirect_uri = str(request.url_for("linkedin_callback"))
+    state = uuid.uuid4().hex
+    request.session["linkedin_oauth_state"] = state
+    return RedirectResponse(linkedin_oauth.construire_url_autorisation(redirect_uri, state))
+
+
+@app.get("/linkedin/callback", name="linkedin_callback")
+def linkedin_callback(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    if request.query_params.get("error"):
+        return HTMLResponse(
+            f"Connexion LinkedIn annulée ou refusée : {request.query_params.get('error_description', '')}",
+            status_code=400,
+        )
+
+    state_attendu = request.session.get("linkedin_oauth_state")
+    if state_attendu and request.query_params.get("state") != state_attendu:
+        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /linkedin/connecter.", status_code=400)
+
+    code = request.query_params.get("code")
+    if not code:
+        return HTMLResponse("Code d'autorisation manquant.", status_code=400)
+
+    redirect_uri = str(request.url_for("linkedin_callback"))
+    try:
+        jeton = linkedin_oauth.echanger_code(code, redirect_uri)
+        userinfo = linkedin_oauth.obtenir_userinfo(jeton["access_token"])
+    except Exception as erreur:
+        return HTMLResponse(f"Echec de la connexion LinkedIn : {erreur}", status_code=400)
+
+    linkedin_oauth.enregistrer_compte(db, jeton["access_token"], jeton["expire_le"], userinfo)
+    return RedirectResponse("/linkedin/comptes", status_code=303)
+
+
+@app.get("/linkedin/comptes", response_class=HTMLResponse)
+def linkedin_comptes(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comptes = linkedin_oauth.lister_comptes(db)
+    return templates.TemplateResponse(
+        request, "linkedin_comptes.html",
+        {"comptes": comptes, "erreur": None, "resultat_publication": None},
+    )
+
+
+@app.post("/linkedin/comptes/{compte_id}/publier")
+def linkedin_publier(compte_id: int, request: Request, texte: str = Form(...), db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comptes = linkedin_oauth.lister_comptes(db)
+    compte = db.get(models.CompteLinkedIn, compte_id)
+    if not compte:
+        return RedirectResponse("/linkedin/comptes", status_code=303)
+
+    erreur, resultat_publication = None, None
+    try:
+        linkedin_publish.publier_texte(compte.access_token, compte.identifiant_membre, texte)
+        resultat_publication = compte.libelle
+    except Exception as e:
+        erreur = f"Echec de la publication : {e}"
+
+    return templates.TemplateResponse(
+        request, "linkedin_comptes.html",
+        {"comptes": comptes, "erreur": erreur, "resultat_publication": resultat_publication},
+    )
+
+
+@app.post("/linkedin/comptes/{compte_id}/deconnecter")
+def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteLinkedIn, compte_id)
+    if compte:
+        db.delete(compte)
+        db.commit()
+
+    return RedirectResponse("/linkedin/comptes", status_code=303)
 
 
 # --- Connexion Instagram (Business Login for Instagram, OAuth separe) -----

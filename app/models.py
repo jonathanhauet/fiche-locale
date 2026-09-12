@@ -545,6 +545,29 @@ class CompteInstagram(Base):
     clients = relationship("Client", back_populates="compte_instagram")
 
 
+class CompteLinkedIn(Base):
+    """
+    Un profil LinkedIn personnel connecte via OAuth (voir linkedin_oauth.py -
+    produits "Sign In with LinkedIn using OpenID Connect" + "Share on
+    LinkedIn"). Le token expire (~60 jours) et LinkedIn ne fournit pas de
+    refresh token sans produit supplementaire approuve : au-dela de
+    l'expiration, il faut reconnecter le compte manuellement.
+
+    Pas encore de lien vers Client : la gestion des pages entreprise des
+    clients necessite le produit "Community Management API", en attente de
+    validation par LinkedIn au moment de l'ecriture de ce modele.
+    """
+
+    __tablename__ = "comptes_linkedin"
+
+    id = Column(Integer, primary_key=True)
+    libelle = Column(String, default="")
+    identifiant_membre = Column(String, default="")
+    access_token = Column(Text, default="")
+    expire_le = Column(DateTime, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class ParametreGoogleAds(Base):
     """
     Configuration Google Ads (Keyword Planner) - un seul compte pour toute
