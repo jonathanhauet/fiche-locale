@@ -29,84 +29,108 @@
         </div>
         <script id="donnees-recherche-globale-clients" type="application/json">{{ clients_json_recherche_globale()|safe }}</script>
         <nav class="nav-laterale">
-          <p class="titre-groupe-nav">Fiches clients</p>
-          <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
-            <span class="nav-icone">◧</span> Clients
-          </a>
-          <a href="/alertes" class="{{ 'lien-actif' if page_actuelle == 'alertes' else '' }}">
-            <span class="nav-icone">🔔</span> Alertes
-            {% set nb_suspects = nb_changements_suspects() %}
-            {% if nb_suspects %}
-            <span class="badge-notification" title="{{ nb_suspects }} changement{{ 's' if nb_suspects != 1 else '' }} suspect{{ 's' if nb_suspects != 1 else '' }} a valider">{{ nb_suspects }}</span>
-            {% endif %}
-          </a>
-          <a href="/acces" class="{{ 'lien-actif' if page_actuelle == 'acces' else '' }}">
-            <span class="nav-icone">🔑</span> Accès fiches
-          </a>
-          <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
-            <span class="nav-icone">⟲</span> Historique
-          </a>
-          <a href="/etiquettes" class="{{ 'lien-actif' if page_actuelle == 'etiquettes' else '' }}">
-            <span class="nav-icone">🏷</span> Étiquettes
-          </a>
-          <a href="/espaces" class="{{ 'lien-actif' if page_actuelle == 'espaces' else '' }}">
-            <span class="nav-icone">🏢</span> Espaces
-          </a>
+          <div class="groupe-nav" data-groupe="fiches-clients" data-defaut="ouvert">
+            <button type="button" class="titre-groupe-nav">Fiches clients <span class="fleche-groupe-nav">▾</span></button>
+            <div class="liens-groupe-nav">
+              <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
+                <span class="nav-icone">◧</span> Clients
+              </a>
+              <a href="/alertes" class="{{ 'lien-actif' if page_actuelle == 'alertes' else '' }}">
+                <span class="nav-icone">🔔</span> Alertes
+                {% set nb_suspects = nb_changements_suspects() %}
+                {% if nb_suspects %}
+                <span class="badge-notification" title="{{ nb_suspects }} changement{{ 's' if nb_suspects != 1 else '' }} suspect{{ 's' if nb_suspects != 1 else '' }} a valider">{{ nb_suspects }}</span>
+                {% endif %}
+              </a>
+              <a href="/acces" class="{{ 'lien-actif' if page_actuelle == 'acces' else '' }}">
+                <span class="nav-icone">🔑</span> Accès fiches
+              </a>
+              <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
+                <span class="nav-icone">⟲</span> Historique
+              </a>
+              <a href="/etiquettes" class="{{ 'lien-actif' if page_actuelle == 'etiquettes' else '' }}">
+                <span class="nav-icone">🏷</span> Étiquettes
+              </a>
+              <a href="/espaces" class="{{ 'lien-actif' if page_actuelle == 'espaces' else '' }}">
+                <span class="nav-icone">🏢</span> Espaces
+              </a>
+            </div>
+          </div>
 
-          <p class="titre-groupe-nav">Contenu &amp; visibilité</p>
-          <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
-            <span class="nav-icone">▤</span> Posts en masse
-          </a>
-          <a href="/horaires-exceptionnelles" class="{{ 'lien-actif' if page_actuelle == 'horaires_exceptionnelles' else '' }}">
-            <span class="nav-icone">🕒</span> Horaires exceptionnels
-          </a>
-          <a href="/positions" class="{{ 'lien-actif' if page_actuelle == 'positions' else '' }}">
-            <span class="nav-icone">📍</span> Positions
-          </a>
-          <a href="/mots-cles" class="{{ 'lien-actif' if page_actuelle == 'mots_cles' else '' }}">
-            <span class="nav-icone">🔎</span> Mots-clés
-          </a>
-          <a href="/bilan" class="{{ 'lien-actif' if page_actuelle == 'bilan' else '' }}">
-            <span class="nav-icone">📊</span> Bilan
-          </a>
-          <a href="/recaps" class="{{ 'lien-actif' if page_actuelle == 'recaps' else '' }}">
-            <span class="nav-icone">📧</span> Récap mensuel
-          </a>
+          <div class="groupe-nav" data-groupe="contenu-visibilite" data-defaut="ferme">
+            <button type="button" class="titre-groupe-nav">Contenu &amp; visibilité <span class="fleche-groupe-nav">▾</span></button>
+            <div class="liens-groupe-nav">
+              <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
+                <span class="nav-icone">▤</span> Posts en masse
+              </a>
+              <a href="/horaires-exceptionnelles" class="{{ 'lien-actif' if page_actuelle == 'horaires_exceptionnelles' else '' }}">
+                <span class="nav-icone">🕒</span> Horaires exceptionnels
+              </a>
+              <a href="/positions" class="{{ 'lien-actif' if page_actuelle == 'positions' else '' }}">
+                <span class="nav-icone">📍</span> Positions
+              </a>
+              <a href="/mots-cles" class="{{ 'lien-actif' if page_actuelle == 'mots_cles' else '' }}">
+                <span class="nav-icone">🔎</span> Mots-clés
+              </a>
+              <a href="/bilan" class="{{ 'lien-actif' if page_actuelle == 'bilan' else '' }}">
+                <span class="nav-icone">📊</span> Bilan
+              </a>
+              <a href="/recaps" class="{{ 'lien-actif' if page_actuelle == 'recaps' else '' }}">
+                <span class="nav-icone">📧</span> Récap mensuel
+              </a>
+            </div>
+          </div>
 
-          <p class="titre-groupe-nav">Avis</p>
-          <a href="/avis" class="{{ 'lien-actif' if page_actuelle == 'avis' else '' }}">
-            <span class="nav-icone">★</span> Avis
-          </a>
-          <a href="/avis/comparatif" class="{{ 'lien-actif' if page_actuelle == 'avis_comparatif' else '' }}">
-            <span class="nav-icone">📊</span> Comparatif avis
-          </a>
+          <div class="groupe-nav" data-groupe="avis" data-defaut="ouvert">
+            <button type="button" class="titre-groupe-nav">Avis <span class="fleche-groupe-nav">▾</span></button>
+            <div class="liens-groupe-nav">
+              <a href="/avis" class="{{ 'lien-actif' if page_actuelle == 'avis' else '' }}">
+                <span class="nav-icone">★</span> Avis
+              </a>
+              <a href="/avis/comparatif" class="{{ 'lien-actif' if page_actuelle == 'avis_comparatif' else '' }}">
+                <span class="nav-icone">📊</span> Comparatif avis
+              </a>
+            </div>
+          </div>
 
-          <p class="titre-groupe-nav">Prospection</p>
-          <a href="/prospection" class="{{ 'lien-actif' if page_actuelle == 'prospection' else '' }}">
-            <span class="nav-icone">🎯</span> Prospection
-          </a>
-          <a href="/leads" class="{{ 'lien-actif' if page_actuelle == 'leads' else '' }}">
-            <span class="nav-icone">📇</span> Leads
-          </a>
+          <div class="groupe-nav" data-groupe="prospection" data-defaut="ferme">
+            <button type="button" class="titre-groupe-nav">Prospection <span class="fleche-groupe-nav">▾</span></button>
+            <div class="liens-groupe-nav">
+              <a href="/prospection" class="{{ 'lien-actif' if page_actuelle == 'prospection' else '' }}">
+                <span class="nav-icone">🎯</span> Prospection
+              </a>
+              <a href="/leads" class="{{ 'lien-actif' if page_actuelle == 'leads' else '' }}">
+                <span class="nav-icone">📇</span> Leads
+              </a>
+            </div>
+          </div>
 
-          <p class="titre-groupe-nav">Comptes connectés</p>
-          <a href="/google/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_google' else '' }}">
-            <span class="nav-icone">⚙</span> Comptes Google
-          </a>
-          <a href="/meta/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_meta' else '' }}">
-            <span class="nav-icone">📘</span> Comptes Meta
-          </a>
-          <a href="/instagram/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_instagram' else '' }}">
-            <span class="nav-icone">📷</span> Comptes Instagram
-          </a>
-          <a href="/linkedin/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_linkedin' else '' }}">
-            <span class="nav-icone">💼</span> Comptes LinkedIn
-          </a>
+          <div class="groupe-nav" data-groupe="comptes-connectes" data-defaut="ferme">
+            <button type="button" class="titre-groupe-nav">Comptes connectés <span class="fleche-groupe-nav">▾</span></button>
+            <div class="liens-groupe-nav">
+              <a href="/google/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_google' else '' }}">
+                <span class="nav-icone">⚙</span> Comptes Google
+              </a>
+              <a href="/meta/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_meta' else '' }}">
+                <span class="nav-icone">📘</span> Comptes Meta
+              </a>
+              <a href="/instagram/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_instagram' else '' }}">
+                <span class="nav-icone">📷</span> Comptes Instagram
+              </a>
+              <a href="/linkedin/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_linkedin' else '' }}">
+                <span class="nav-icone">💼</span> Comptes LinkedIn
+              </a>
+            </div>
+          </div>
 
-          <p class="titre-groupe-nav">Compte</p>
-          <a href="/parametres/securite" class="{{ 'lien-actif' if page_actuelle == 'securite' else '' }}">
-            <span class="nav-icone">🔒</span> Sécurité
-          </a>
+          <div class="groupe-nav" data-groupe="compte" data-defaut="ferme">
+            <button type="button" class="titre-groupe-nav">Compte <span class="fleche-groupe-nav">▾</span></button>
+            <div class="liens-groupe-nav">
+              <a href="/parametres/securite" class="{{ 'lien-actif' if page_actuelle == 'securite' else '' }}">
+                <span class="nav-icone">🔒</span> Sécurité
+              </a>
+            </div>
+          </div>
         </nav>
         <div class="bloc-liens-plateformes">
           <p class="titre-liens-plateformes">Comptes &amp; crédits</p>
@@ -138,6 +162,42 @@
       bouton.addEventListener("click", () => {
         const ouvert = menu.classList.toggle("ouvert");
         bouton.setAttribute("aria-expanded", ouvert ? "true" : "false");
+      });
+    })();
+  </script>
+  <script>
+    // Groupes repliables du menu lateral : etat par defaut fixe par groupe
+    // (voir data-defaut), mais un clic manuel de l'utilisateur est retenu
+    // (localStorage) et prime sur ce defaut aux prochaines pages - sans ca,
+    // chaque navigation (page complete, pas une SPA) reinitialiserait le
+    // choix. Le groupe contenant la page actuelle s'ouvre toujours, meme si
+    // ferme par defaut/preference, pour ne jamais cacher où on se trouve.
+    (function () {
+      const CLE_STOCKAGE = "fiche-locale-groupes-nav";
+      let preferences = {};
+      try {
+        preferences = JSON.parse(localStorage.getItem(CLE_STOCKAGE) || "{}");
+      } catch (erreur) {
+        preferences = {};
+      }
+
+      document.querySelectorAll(".groupe-nav").forEach((groupe) => {
+        const id = groupe.dataset.groupe;
+        const contientPageActive = !!groupe.querySelector(".lien-actif");
+        const ouvert = contientPageActive
+          || (id in preferences ? preferences[id] : groupe.dataset.defaut === "ouvert");
+        groupe.classList.toggle("ferme", !ouvert);
+
+        const bouton = groupe.querySelector(".titre-groupe-nav");
+        bouton.addEventListener("click", () => {
+          const maintenantFerme = groupe.classList.toggle("ferme");
+          try {
+            preferences[id] = !maintenantFerme;
+            localStorage.setItem(CLE_STOCKAGE, JSON.stringify(preferences));
+          } catch (erreur) {
+            // stockage indisponible (navigation privee...) : le repli fonctionne quand meme pour cette page
+          }
+        });
       });
     })();
   </script>
