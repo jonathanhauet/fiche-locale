@@ -37,7 +37,12 @@
     <tbody>
       {% for compte in comptes %}
       <tr>
-        <td>{{ compte.libelle }}</td>
+        <td>
+          <span class="ligne-compte-reseau">
+            <span class="badge-reseau badge-reseau-linkedin badge-reseau-petit">in</span>
+            {{ compte.libelle }}
+          </span>
+        </td>
         <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
         <td>{{ compte.expire_le.strftime("%Y-%m-%d") if compte.expire_le else "-" }}</td>
         <td>
@@ -99,6 +104,9 @@
 </div>
 {% endif %}
 {% else %}
-<p class="texte-vide">Aucun profil LinkedIn connecté pour l'instant.</p>
+<div class="etat-vide-carte">
+  <span class="badge-reseau badge-reseau-linkedin">in</span>
+  <p class="texte-vide">Aucun profil LinkedIn connecté pour l'instant.</p>
+</div>
 {% endif %}
 {% endblock %}

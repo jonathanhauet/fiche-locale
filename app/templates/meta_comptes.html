@@ -27,7 +27,12 @@
     <tbody>
       {% for compte in comptes %}
       <tr>
-        <td>{{ compte.libelle }}</td>
+        <td>
+          <span class="ligne-compte-reseau">
+            <span class="badge-reseau badge-reseau-facebook badge-reseau-petit">f</span>
+            {{ compte.libelle }}
+          </span>
+        </td>
         <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
         <td><a href="/meta/comptes/{{ compte.id }}/pages">Voir les Pages</a></td>
         <td>
@@ -42,6 +47,9 @@
   </table>
 </div>
 {% else %}
-<p class="texte-vide">Aucun compte Meta connecté pour l'instant.</p>
+<div class="etat-vide-carte">
+  <span class="badge-reseau badge-reseau-facebook">f</span>
+  <p class="texte-vide">Aucun compte Meta connecté pour l'instant.</p>
+</div>
 {% endif %}
 {% endblock %}
