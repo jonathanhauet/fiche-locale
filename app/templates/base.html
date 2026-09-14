@@ -29,6 +29,7 @@
         </div>
         <script id="donnees-recherche-globale-clients" type="application/json">{{ clients_json_recherche_globale()|safe }}</script>
         <nav class="nav-laterale">
+          <p class="titre-groupe-nav">Fiches clients</p>
           <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
             <span class="nav-icone">◧</span> Clients
           </a>
@@ -39,11 +40,11 @@
             <span class="badge-notification" title="{{ nb_suspects }} changement{{ 's' if nb_suspects != 1 else '' }} suspect{{ 's' if nb_suspects != 1 else '' }} a valider">{{ nb_suspects }}</span>
             {% endif %}
           </a>
-          <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
-            <span class="nav-icone">▤</span> Posts en masse
+          <a href="/acces" class="{{ 'lien-actif' if page_actuelle == 'acces' else '' }}">
+            <span class="nav-icone">🔑</span> Accès fiches
           </a>
-          <a href="/horaires-exceptionnelles" class="{{ 'lien-actif' if page_actuelle == 'horaires_exceptionnelles' else '' }}">
-            <span class="nav-icone">🕒</span> Horaires exceptionnels
+          <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
+            <span class="nav-icone">⟲</span> Historique
           </a>
           <a href="/etiquettes" class="{{ 'lien-actif' if page_actuelle == 'etiquettes' else '' }}">
             <span class="nav-icone">🏷</span> Étiquettes
@@ -51,36 +52,44 @@
           <a href="/espaces" class="{{ 'lien-actif' if page_actuelle == 'espaces' else '' }}">
             <span class="nav-icone">🏢</span> Espaces
           </a>
-          <a href="/recaps" class="{{ 'lien-actif' if page_actuelle == 'recaps' else '' }}">
-            <span class="nav-icone">📧</span> Récap mensuel
+
+          <p class="titre-groupe-nav">Contenu &amp; visibilité</p>
+          <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
+            <span class="nav-icone">▤</span> Posts en masse
           </a>
-          <a href="/bilan" class="{{ 'lien-actif' if page_actuelle == 'bilan' else '' }}">
-            <span class="nav-icone">📊</span> Bilan
+          <a href="/horaires-exceptionnelles" class="{{ 'lien-actif' if page_actuelle == 'horaires_exceptionnelles' else '' }}">
+            <span class="nav-icone">🕒</span> Horaires exceptionnels
           </a>
           <a href="/positions" class="{{ 'lien-actif' if page_actuelle == 'positions' else '' }}">
             <span class="nav-icone">📍</span> Positions
           </a>
-          <a href="/prospection" class="{{ 'lien-actif' if page_actuelle == 'prospection' else '' }}">
-            <span class="nav-icone">🎯</span> Prospection
-          </a>
-          <a href="/leads" class="{{ 'lien-actif' if page_actuelle == 'leads' else '' }}">
-            <span class="nav-icone">📇</span> Leads
-          </a>
-          <a href="/acces" class="{{ 'lien-actif' if page_actuelle == 'acces' else '' }}">
-            <span class="nav-icone">🔑</span> Accès fiches
-          </a>
           <a href="/mots-cles" class="{{ 'lien-actif' if page_actuelle == 'mots_cles' else '' }}">
             <span class="nav-icone">🔎</span> Mots-clés
           </a>
+          <a href="/bilan" class="{{ 'lien-actif' if page_actuelle == 'bilan' else '' }}">
+            <span class="nav-icone">📊</span> Bilan
+          </a>
+          <a href="/recaps" class="{{ 'lien-actif' if page_actuelle == 'recaps' else '' }}">
+            <span class="nav-icone">📧</span> Récap mensuel
+          </a>
+
+          <p class="titre-groupe-nav">Avis</p>
           <a href="/avis" class="{{ 'lien-actif' if page_actuelle == 'avis' else '' }}">
             <span class="nav-icone">★</span> Avis
           </a>
           <a href="/avis/comparatif" class="{{ 'lien-actif' if page_actuelle == 'avis_comparatif' else '' }}">
             <span class="nav-icone">📊</span> Comparatif avis
           </a>
-          <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
-            <span class="nav-icone">⟲</span> Historique
+
+          <p class="titre-groupe-nav">Prospection</p>
+          <a href="/prospection" class="{{ 'lien-actif' if page_actuelle == 'prospection' else '' }}">
+            <span class="nav-icone">🎯</span> Prospection
           </a>
+          <a href="/leads" class="{{ 'lien-actif' if page_actuelle == 'leads' else '' }}">
+            <span class="nav-icone">📇</span> Leads
+          </a>
+
+          <p class="titre-groupe-nav">Comptes connectés</p>
           <a href="/google/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_google' else '' }}">
             <span class="nav-icone">⚙</span> Comptes Google
           </a>
@@ -93,6 +102,8 @@
           <a href="/linkedin/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_linkedin' else '' }}">
             <span class="nav-icone">💼</span> Comptes LinkedIn
           </a>
+
+          <p class="titre-groupe-nav">Compte</p>
           <a href="/parametres/securite" class="{{ 'lien-actif' if page_actuelle == 'securite' else '' }}">
             <span class="nav-icone">🔒</span> Sécurité
           </a>

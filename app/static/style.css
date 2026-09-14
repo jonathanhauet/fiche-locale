@@ -263,6 +263,18 @@ a { color: var(--accent); }
   opacity: 0.55;
 }
 
+.titre-groupe-nav {
+  margin: 0.9rem 0 0.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--barre-texte);
+  opacity: 0.55;
+}
+
+.titre-groupe-nav:first-child { margin-top: 0; }
+
 .lien-plateforme {
   display: flex;
   align-items: center;
