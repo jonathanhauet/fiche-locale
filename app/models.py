@@ -592,6 +592,46 @@ class PostLinkedInProgramme(Base):
     compte = relationship("CompteLinkedIn")
 
 
+class PostMetaProgramme(Base):
+    """
+    Post Facebook (Page du client) en attente de publication a une date/heure
+    future (voir meta_publish.py + planificateur.publier_posts_meta_programmes).
+    image_url : contrairement a LinkedIn, l'API Graph attend une URL
+    publique, pas des octets - hebergee sur OVH au moment de la composition
+    (voir ovh_upload.py), pas au moment de la publication.
+    """
+
+    __tablename__ = "posts_meta_programmes"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    texte = Column(Text, default="")
+    image_url = Column(String, nullable=True)
+    publier_le = Column(DateTime, nullable=False)
+    etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
+    erreur = Column(Text, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client")
+
+
+class PostInstagramProgramme(Base):
+    """Post Instagram (compte du client) en attente de publication - voir PostMetaProgramme, meme logique."""
+
+    __tablename__ = "posts_instagram_programmes"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    texte = Column(Text, default="")
+    image_url = Column(String, nullable=True)
+    publier_le = Column(DateTime, nullable=False)
+    etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
+    erreur = Column(Text, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client")
+
+
 class ParametreGoogleAds(Base):
     """
     Configuration Google Ads (Keyword Planner) - un seul compte pour toute

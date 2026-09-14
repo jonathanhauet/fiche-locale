@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set page_actuelle = "publication_multi" %}
+{% block titre %}Publication multi-réseaux — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Publication multi-réseaux</h1>
+</div>
+
+<p class="texte-vide">
+  Choisissez le client pour lequel publier. Un même message de base pourra ensuite être adapté
+  par l'IA au ton de chaque réseau connecté pour ce client (Google, Facebook, Instagram).
+</p>
+
+<input type="text" id="filtre-choix-client" placeholder="Filtrer par nom...">
+
+<ul class="liste-clients">
+  {% for client in clients %}
+  <li class="ligne-client-filtrable" data-recherche="{{ client.nom|lower }}">
+    <a href="/publication-multi?client_id={{ client.id }}">
+      <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
+      <span>{{ client.nom }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+
+<script>
+  (function () {
+    const filtre = document.getElementById("filtre-choix-client");
+    const lignes = Array.from(document.querySelectorAll(".ligne-client-filtrable"));
+    filtre.addEventListener("input", () => {
+      const recherche = filtre.value.trim().toLowerCase();
+      lignes.forEach((ligne) => {
+        ligne.hidden = recherche && !ligne.dataset.recherche.includes(recherche);
+      });
+    });
+  })();
+</script>
+{% endblock %}

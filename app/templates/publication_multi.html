@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% set page_actuelle = "publication_multi" %}
+{% block titre %}Publication multi-réseaux — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/publication-multi">&larr; Changer de client</a></p>
+
+<div class="barre-titre">
+  <h1>Publication multi-réseaux — {{ client.nom }}</h1>
+</div>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+{% if resultat %}
+<div class="bandeau-info">Publication {{ resultat }} avec succès sur les réseaux sélectionnés.</div>
+{% endif %}
+
+<form method="post" action="/publication-multi/{{ client.id }}/publier" enctype="multipart/form-data" class="formulaire">
+  <label for="texte-base">Texte de base</label>
+  <textarea id="texte-base" name="texte_base" rows="4" required>{{ texte_base }}</textarea>
+
+  <label>Réseaux</label>
+  <div class="ligne-champs">
+    {% for reseau, nom in [("google", "Google Business Profile"), ("facebook", "Facebook"), ("instagram", "Instagram")] %}
+    <label>
+      <input type="checkbox" name="reseaux" value="{{ reseau }}" class="case-reseau-input" data-reseau="{{ reseau }}"
+             {% if not reseaux_disponibles[reseau] %}disabled{% endif %}
+             {% if reseau in reseaux_coches %}checked{% endif %}>
+      {{ nom }}{% if not reseaux_disponibles[reseau] %} (non connecté){% endif %}
+    </label>
+    {% endfor %}
+    <label><input type="checkbox" disabled> LinkedIn (en attente d'approbation)</label>
+  </div>
+
+  <label for="image-partagee">Image (optionnelle — partagée par défaut sur tous les réseaux, Instagram en a besoin)</label>
+  <input type="file" id="image-partagee" name="image" accept="image/*">
+
+  <button type="button" id="bouton-adapter" class="bouton-secondaire">🤖 Adapter le texte par réseau (IA)</button>
+  <p id="texte-statut-adaptation" class="texte-vide" hidden></p>
+
+  <div id="zone-variantes">
+    {% for reseau, nom in [("google", "Google Business Profile"), ("facebook", "Facebook"), ("instagram", "Instagram")] %}
+    <div class="bloc-variante-reseau" data-reseau="{{ reseau }}" {% if reseau not in reseaux_coches %}hidden{% endif %}>
+      <label for="texte-{{ reseau }}">Texte pour {{ nom }}</label>
+      <textarea id="texte-{{ reseau }}" name="texte_{{ reseau }}" rows="4">{{ variantes.get(reseau, "") }}</textarea>
+      <label>
+        <input type="checkbox" class="case-activer-image-dediee" data-reseau="{{ reseau }}">
+        Utiliser une image différente pour ce réseau
+      </label>
+      <input type="file" name="image_{{ reseau }}" accept="image/*" class="champ-image-dediee" data-reseau="{{ reseau }}" hidden>
+    </div>
+    {% endfor %}
+  </div>
+
+  <label for="date-publication">Programmer pour plus tard (optionnel — laisser vide pour publier immédiatement)</label>
+  <div class="ligne-champs">
+    <input type="date" id="date-publication" name="publier_date">
+    <input type="time" name="publier_heure">
+  </div>
+
+  <button type="submit" class="bouton">Publier / programmer sur les réseaux sélectionnés</button>
+</form>
+
+{% if posts_programmes.google or posts_programmes.facebook or posts_programmes.instagram %}
+<h2>Publications programmées pour {{ client.nom }}</h2>
+
+{% if posts_programmes.google %}
+<h3>Google Business Profile</h3>
+<ul>
+  {% for post in posts_programmes.google %}
+  <li>
+    <a href="/clients/{{ client.id }}#post-{{ post.id }}">{{ post.texte[:60] }}{% if post.texte|length > 60 %}…{% endif %}</a>
+    — {{ post.date_prevue.strftime("%d/%m/%Y") }}{% if post.heure_prevue %} à {{ post.heure_prevue }}{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if posts_programmes.facebook %}
+<h3>Facebook</h3>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Texte</th><th>Publication prévue</th><th></th></tr></thead>
+    <tbody>
+      {% for post in posts_programmes.facebook %}
+      <tr>
+        <td>{{ post.texte[:80] }}{% if post.texte|length > 80 %}…{% endif %}</td>
+        <td>{{ post.publier_le.strftime("%d/%m/%Y à %H:%M") }}</td>
+        <td>
+          <form method="post" action="/publication-multi/facebook/{{ post.id }}/annuler"
+                onsubmit="return confirm('Annuler ce post programmé ?');">
+            <button type="submit" class="bouton-danger">Annuler</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if posts_programmes.instagram %}
+<h3>Instagram</h3>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Texte</th><th>Publication prévue</th><th></th></tr></thead>
+    <tbody>
+      {% for post in posts_programmes.instagram %}
+      <tr>
+        <td>{{ post.texte[:80] }}{% if post.texte|length > 80 %}…{% endif %}</td>
+        <td>{{ post.publier_le.strftime("%d/%m/%Y à %H:%M") }}</td>
+        <td>
+          <form method="post" action="/publication-multi/instagram/{{ post.id }}/annuler"
+                onsubmit="return confirm('Annuler ce post programmé ?');">
+            <button type="submit" class="bouton-danger">Annuler</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+  (function () {
+    const casesReseaux = Array.from(document.querySelectorAll(".case-reseau-input"));
+    const blocsVariantes = {};
+    document.querySelectorAll(".bloc-variante-reseau").forEach((bloc) => { blocsVariantes[bloc.dataset.reseau] = bloc; });
+
+    function actualiserVisibilite() {
+      casesReseaux.forEach((c) => {
+        const bloc = blocsVariantes[c.dataset.reseau];
+        if (bloc) bloc.hidden = !c.checked;
+      });
+    }
+    casesReseaux.forEach((c) => c.addEventListener("change", actualiserVisibilite));
+    actualiserVisibilite();
+
+    document.querySelectorAll(".case-activer-image-dediee").forEach((caseDediee) => {
+      caseDediee.addEventListener("change", () => {
+        const champ = document.querySelector(`.champ-image-dediee[data-reseau="${caseDediee.dataset.reseau}"]`);
+        champ.hidden = !caseDediee.checked;
+        if (!caseDediee.checked) champ.value = "";
+      });
+    });
+
+    const boutonAdapter = document.getElementById("bouton-adapter");
+    const texteStatut = document.getElementById("texte-statut-adaptation");
+    boutonAdapter.addEventListener("click", async () => {
+      const texteBase = document.getElementById("texte-base").value.trim();
+      const reseauxCoches = casesReseaux.filter((c) => c.checked).map((c) => c.dataset.reseau);
+
+      texteStatut.hidden = false;
+      if (!texteBase) { texteStatut.textContent = "Écrivez d'abord le texte de base."; return; }
+      if (!reseauxCoches.length) { texteStatut.textContent = "Sélectionnez au moins un réseau."; return; }
+
+      boutonAdapter.disabled = true;
+      texteStatut.textContent = "Adaptation en cours...";
+
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/adapter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texte_base: texteBase, reseaux: reseauxCoches }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          texteStatut.textContent = donnees.erreur || "Échec de l'adaptation.";
+          return;
+        }
+        Object.entries(donnees.variantes).forEach(([reseau, texte]) => {
+          const zone = document.getElementById(`texte-${reseau}`);
+          if (zone) zone.value = texte;
+        });
+        texteStatut.textContent = "Textes adaptés — relisez avant de publier.";
+      } catch (erreur) {
+        texteStatut.textContent = "Erreur réseau lors de l'adaptation.";
+      } finally {
+        boutonAdapter.disabled = false;
+      }
+    });
+  })();
+</script>
+{% endblock %}

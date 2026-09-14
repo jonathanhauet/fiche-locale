@@ -633,3 +633,78 @@ def generer_plan_action_audit(
         if "{" in priorite["titre"] or "}" in priorite["titre"] or "{" in priorite["description"] or "}" in priorite["description"]:
             raise RuntimeError("Sortie IA malformee pour le plan d'action.")
     return priorites[:3]
+
+
+TONS_RESEAUX = {
+    "google": (
+        "Ton professionnel et informatif, oriente SEO local (met en avant un service ou un avantage "
+        "concret pour un client a proximite). Sobre, pas d'emoji."
+    ),
+    "facebook": (
+        "Ton chaleureux et communautaire, comme si on s'adressait directement aux habitants du quartier "
+        "ou de la ville. Peut etre un peu plus developpe et conversationnel qu'un post Google."
+    ),
+    "instagram": (
+        "Ton dynamique et accrocheur des la premiere ligne, phrases courtes, emojis bienvenus "
+        "(avec moderation, jamais plus de 3-4). Format plus visuel/rythme que les autres reseaux."
+    ),
+    "linkedin": (
+        "Ton professionnel qui valorise l'expertise et le savoir-faire, oriente credibilite plutot que "
+        "promotion directe. Pas d'emoji, phrases construites."
+    ),
+}
+
+NOMS_RESEAUX = {"google": "Google Business Profile", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn"}
+
+
+def adapter_post_multi_reseaux(texte_base: str, reseaux: list[str], contenu_site: str = "") -> dict[str, str]:
+    """
+    A partir d'un texte de post de base, genere une variante adaptee au ton
+    de chaque reseau demande (voir TONS_RESEAUX) - meme message de fond,
+    formulation differente. reseaux : sous-ensemble de TONS_RESEAUX.keys().
+    Renvoie {reseau: texte_adapte, ...} (memes cles que reseaux).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    reseaux = [r for r in reseaux if r in TONS_RESEAUX]
+    if not reseaux:
+        raise RuntimeError("Aucun reseau valide fourni.")
+
+    bloc_tons = "\n".join(f"- {NOMS_RESEAUX[r]} : {TONS_RESEAUX[r]}" for r in reseaux)
+    bloc_contexte = f"\nContexte sur l'entreprise (site web) :\n{contenu_site.strip()[:3000]}\n" if contenu_site.strip() else ""
+
+    prompt = (
+        f"Voici un texte de post de base a publier sur plusieurs reseaux sociaux :\n\n"
+        f'"{texte_base.strip()}"\n'
+        f"{bloc_contexte}\n"
+        "Adapte ce message pour chacun des reseaux suivants, en gardant le meme fond (memes informations, "
+        "meme offre, memes coordonnees le cas echeant) mais en ajustant le ton et la formulation :\n"
+        f"{bloc_tons}\n\n"
+        "Ne raccourcis ni n'allonge exagerement par rapport a l'original sauf si le ton du reseau l'exige "
+        "naturellement. N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points "
+        "ou un tiret simple (-)."
+    )
+
+    schema = {
+        "type": "object",
+        "properties": {r: {"type": "string"} for r in reseaux},
+        "required": reseaux,
+        "additionalProperties": False,
+    }
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=2048,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": schema}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    variantes = json.loads(bloc_texte)
+    return {r: _nettoyer_texte_genere(variantes[r]) for r in reseaux}

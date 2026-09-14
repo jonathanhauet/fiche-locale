@@ -74,7 +74,9 @@ from . import (
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
     envoyer_recaps_mensuels,
+    publier_posts_instagram_programmes,
     publier_posts_linkedin_programmes,
+    publier_posts_meta_programmes,
     rafraichir_tokens_instagram,
     verifier_avis_supprimes,
     verifier_et_publier_photos_programmees,
@@ -427,6 +429,19 @@ planificateur.add_job(
     "interval",
     minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
     id="publication_linkedin_programmee",
+)
+# Publication programmee Facebook/Instagram (voir publication-multi) : meme frequence.
+planificateur.add_job(
+    publier_posts_meta_programmes,
+    "interval",
+    minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
+    id="publication_meta_programmee",
+)
+planificateur.add_job(
+    publier_posts_instagram_programmes,
+    "interval",
+    minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
+    id="publication_instagram_programmee",
 )
 planificateur.start()
 
@@ -5111,6 +5126,277 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
         db.commit()
 
     return RedirectResponse("/linkedin/comptes", status_code=303)
+
+
+# --- Publication multi-reseaux (Google + Facebook + Instagram, LinkedIn a venir) ---
+
+
+def _reseaux_disponibles_client(client: "models.Client") -> dict:
+    """
+    LinkedIn absent : necessite le produit "Community Management API",
+    demande a LinkedIn et toujours en attente de validation au moment de
+    l'ecriture de cette fonction (voir /linkedin/comptes) - pas de gestion
+    de page entreprise possible tant que ce n'est pas accorde.
+    """
+    return {
+        "google": bool(client.account_id and client.location_id),
+        "facebook": bool(client.page_id_meta and client.token_page_meta),
+        "instagram": bool(client.instagram_id_meta and client.token_instagram),
+    }
+
+
+def _posts_multi_programmes(db: Session, client_id: int) -> dict:
+    return {
+        "google": (
+            db.query(models.Post)
+            .filter_by(client_id=client_id, statut="A_PUBLIER")
+            .order_by(models.Post.date_prevue)
+            .all()
+        ),
+        "facebook": (
+            db.query(models.PostMetaProgramme)
+            .filter_by(client_id=client_id, etat="EN_ATTENTE")
+            .order_by(models.PostMetaProgramme.publier_le)
+            .all()
+        ),
+        "instagram": (
+            db.query(models.PostInstagramProgramme)
+            .filter_by(client_id=client_id, etat="EN_ATTENTE")
+            .order_by(models.PostInstagramProgramme.publier_le)
+            .all()
+        ),
+    }
+
+
+def _contexte_publication_multi(
+    db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
+    variantes: dict = None, erreur: str = None, resultat: str = None,
+) -> dict:
+    return {
+        "client": client,
+        "reseaux_disponibles": _reseaux_disponibles_client(client),
+        "texte_base": texte_base,
+        "reseaux_coches": reseaux_coches or [],
+        "variantes": variantes or {},
+        "erreur": erreur,
+        "resultat": resultat,
+        "posts_programmes": _posts_multi_programmes(db, client.id),
+    }
+
+
+@app.get("/publication-multi", response_class=HTMLResponse)
+def publication_multi_choix_client(request: Request, client_id: int = None, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    if not client_id:
+        clients = db.query(models.Client).order_by(models.Client.nom).all()
+        return templates.TemplateResponse(request, "publication_multi_choix.html", {"clients": clients})
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return RedirectResponse("/publication-multi", status_code=303)
+
+    return templates.TemplateResponse(
+        request, "publication_multi.html", _contexte_publication_multi(db, client),
+    )
+
+
+@app.post("/publication-multi/{client_id}/adapter")
+async def publication_multi_adapter(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Appelee en JS (fetch) depuis publication_multi.html, pas en navigation
+    complete : un envoi de formulaire classique reinitialiserait le champ
+    fichier image deja selectionne (les navigateurs ne permettent pas de le
+    re-remplir apres un rechargement de page), ce qui obligerait a le
+    rejoindre une seconde fois avant de publier. Renvoie du JSON, pas du HTML.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    texte_base = (donnees.get("texte_base") or "").strip()
+    reseaux = donnees.get("reseaux") or []
+
+    if not texte_base:
+        return JSONResponse({"erreur": "Le texte de base est obligatoire."}, status_code=400)
+    if not reseaux:
+        return JSONResponse({"erreur": "Selectionnez au moins un reseau."}, status_code=400)
+
+    try:
+        variantes = claude_generation.adapter_post_multi_reseaux(texte_base, reseaux, client.contenu_site)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de l'adaptation IA : {e}"}, status_code=500)
+
+    return JSONResponse({"variantes": variantes})
+
+
+@app.post("/publication-multi/{client_id}/publier", response_class=HTMLResponse)
+async def publication_multi_publier(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Sans publier_date renseignee : publication immediate sur chaque reseau
+    coche. Avec une date (et une heure optionnelle) future : chaque reseau
+    coche est mis en attente (statut/etat propre a son modele) et publie
+    automatiquement par le planificateur correspondant.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return RedirectResponse("/publication-multi", status_code=303)
+
+    formulaire = await request.form()
+    reseaux = formulaire.getlist("reseaux")
+    texte_base = (formulaire.get("texte_base") or "").strip()
+    variantes_soumises = {r: (formulaire.get(f"texte_{r}") or "").strip() for r in ("google", "facebook", "instagram")}
+
+    def _erreur(message, code=400):
+        return templates.TemplateResponse(
+            request, "publication_multi.html",
+            _contexte_publication_multi(db, client, texte_base, reseaux, variantes_soumises, message),
+            status_code=code,
+        )
+
+    if not reseaux:
+        return _erreur("Selectionnez au moins un reseau a publier.")
+
+    reseaux_disponibles = _reseaux_disponibles_client(client)
+    indisponibles = [r for r in reseaux if not reseaux_disponibles.get(r)]
+    if indisponibles:
+        noms = ", ".join(claude_generation.NOMS_RESEAUX.get(r, r) for r in indisponibles)
+        return _erreur(f"Ce client n'a pas de compte connecte pour : {noms}.")
+
+    publier_le = None
+    publier_date = (formulaire.get("publier_date") or "").strip()
+    if publier_date:
+        try:
+            heure = (formulaire.get("publier_heure") or "").strip() or "00:00"
+            publier_le = datetime.strptime(f"{publier_date} {heure}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return _erreur("Date ou heure de publication invalide.")
+
+    # Image partagee (optionnelle), televersee une seule fois sur OVH et
+    # reutilisee pour chaque reseau sans image dediee.
+    image_partagee = formulaire.get("image")
+    url_partagee = None
+    if image_partagee is not None and getattr(image_partagee, "filename", ""):
+        octets = await image_partagee.read()
+        url_partagee = ovh_upload.envoyer_octets(octets, f"multi-{uuid.uuid4().hex[:10]}-{image_partagee.filename}")
+
+    urls_par_reseau = {}
+    for reseau in reseaux:
+        fichier_reseau = formulaire.get(f"image_{reseau}")
+        if fichier_reseau is not None and getattr(fichier_reseau, "filename", ""):
+            octets = await fichier_reseau.read()
+            urls_par_reseau[reseau] = ovh_upload.envoyer_octets(
+                octets, f"multi-{reseau}-{uuid.uuid4().hex[:10]}-{fichier_reseau.filename}",
+            )
+        else:
+            urls_par_reseau[reseau] = url_partagee
+
+    if "instagram" in reseaux and not urls_par_reseau.get("instagram"):
+        return _erreur("Instagram necessite une image (partagee ou dediee).")
+
+    echecs = []
+    for reseau in reseaux:
+        texte = variantes_soumises.get(reseau) or texte_base
+        if not texte:
+            echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : texte manquant.")
+            continue
+        try:
+            if reseau == "google":
+                post = models.Post(
+                    client_id=client.id, titre=texte[:60], texte=texte, image_url=urls_par_reseau.get("google") or "",
+                    statut="A_PUBLIER" if publier_le else "BROUILLON",
+                    date_prevue=publier_le.date() if publier_le else None,
+                    heure_prevue=publier_le.strftime("%H:%M") if publier_le else None,
+                )
+                db.add(post)
+                db.commit()
+                db.refresh(post)
+                if not publier_le:
+                    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+                    if not identifiants:
+                        raise RuntimeError("Google n'est pas connecte pour ce client.")
+                    google_publish.publier_et_verifier(db, identifiants, post)
+
+            elif reseau == "facebook":
+                if publier_le:
+                    db.add(models.PostMetaProgramme(
+                        client_id=client.id, texte=texte, image_url=urls_par_reseau.get("facebook"), publier_le=publier_le,
+                    ))
+                    db.commit()
+                else:
+                    meta_publish.publier_post_page(
+                        client.token_page_meta, client.page_id_meta, texte, urls_par_reseau.get("facebook"),
+                    )
+
+            elif reseau == "instagram":
+                if publier_le:
+                    db.add(models.PostInstagramProgramme(
+                        client_id=client.id, texte=texte, image_url=urls_par_reseau.get("instagram"), publier_le=publier_le,
+                    ))
+                    db.commit()
+                else:
+                    instagram_publish.publier_photo(
+                        client.token_instagram, client.instagram_id_meta, urls_par_reseau["instagram"], texte,
+                    )
+        except Exception as e:
+            echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
+
+    if echecs:
+        return templates.TemplateResponse(
+            request, "publication_multi.html",
+            _contexte_publication_multi(db, client, texte_base, reseaux, variantes_soumises, " / ".join(echecs)),
+            status_code=207,
+        )
+
+    return templates.TemplateResponse(
+        request, "publication_multi.html",
+        _contexte_publication_multi(
+            db, client, resultat=("programmé" if publier_le else "publié"),
+        ),
+    )
+
+
+@app.post("/publication-multi/facebook/{post_id}/annuler")
+def publication_multi_annuler_facebook(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post = db.get(models.PostMetaProgramme, post_id)
+    if post and post.etat == "EN_ATTENTE":
+        client_id = post.client_id
+        db.delete(post)
+        db.commit()
+        return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
+
+    return RedirectResponse("/publication-multi", status_code=303)
+
+
+@app.post("/publication-multi/instagram/{post_id}/annuler")
+def publication_multi_annuler_instagram(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post = db.get(models.PostInstagramProgramme, post_id)
+    if post and post.etat == "EN_ATTENTE":
+        client_id = post.client_id
+        db.delete(post)
+        db.commit()
+        return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
+
+    return RedirectResponse("/publication-multi", status_code=303)
 
 
 # --- Connexion Instagram (Business Login for Instagram, OAuth separe) -----

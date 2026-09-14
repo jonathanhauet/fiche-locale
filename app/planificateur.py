@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta
 
 from . import (
     google_business, google_location, google_oauth, google_publish, google_reviews,
-    instagram_oauth, linkedin_publish, models, rapport_donnees,
+    instagram_oauth, instagram_publish, linkedin_publish, meta_publish, models, rapport_donnees,
 )
 from .database import SessionLocal
 
@@ -435,6 +435,62 @@ def publier_posts_linkedin_programmes():
             try:
                 linkedin_publish.publier_post(
                     post.compte.access_token, post.compte.identifiant_membre, post.texte, post.image_donnees,
+                )
+                post.etat = "PUBLIE"
+            except Exception as erreur:
+                post.etat = "ECHEC"
+                post.erreur = str(erreur)
+            db.commit()
+    finally:
+        db.close()
+
+
+def publier_posts_meta_programmes():
+    """Publie automatiquement tous les posts Facebook 'EN_ATTENTE' dont la date/heure prevue est arrivee."""
+    db = SessionLocal()
+    try:
+        maintenant = datetime.now()
+        posts_a_publier = (
+            db.query(models.PostMetaProgramme)
+            .filter(models.PostMetaProgramme.etat == "EN_ATTENTE")
+            .filter(models.PostMetaProgramme.publier_le <= maintenant)
+            .all()
+        )
+        for post in posts_a_publier:
+            try:
+                if not post.client.page_id_meta or not post.client.token_page_meta:
+                    raise RuntimeError("Ce client n'a plus de Page Facebook associee.")
+                meta_publish.publier_post_page(
+                    post.client.token_page_meta, post.client.page_id_meta, post.texte, post.image_url,
+                )
+                post.etat = "PUBLIE"
+            except Exception as erreur:
+                post.etat = "ECHEC"
+                post.erreur = str(erreur)
+            db.commit()
+    finally:
+        db.close()
+
+
+def publier_posts_instagram_programmes():
+    """Publie automatiquement tous les posts Instagram 'EN_ATTENTE' dont la date/heure prevue est arrivee."""
+    db = SessionLocal()
+    try:
+        maintenant = datetime.now()
+        posts_a_publier = (
+            db.query(models.PostInstagramProgramme)
+            .filter(models.PostInstagramProgramme.etat == "EN_ATTENTE")
+            .filter(models.PostInstagramProgramme.publier_le <= maintenant)
+            .all()
+        )
+        for post in posts_a_publier:
+            try:
+                if not post.client.instagram_id_meta or not post.client.token_instagram:
+                    raise RuntimeError("Ce client n'a plus de compte Instagram associe.")
+                if not post.image_url:
+                    raise RuntimeError("Instagram necessite une image.")
+                instagram_publish.publier_photo(
+                    post.client.token_instagram, post.client.instagram_id_meta, post.image_url, post.texte,
                 )
                 post.etat = "PUBLIE"
             except Exception as erreur:
