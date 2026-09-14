@@ -22,6 +22,9 @@
   {% endfor %}
 </ul>
 {% else %}
-<p class="texte-vide">Aucun client avec une fiche Google associée pour l'instant.</p>
+<div class="etat-vide-carte">
+  <span class="badge-icone-vide">📍</span>
+  <p class="texte-vide">Aucun client avec une fiche Google associée pour l'instant.</p>
+</div>
 {% endif %}
 {% endblock %}

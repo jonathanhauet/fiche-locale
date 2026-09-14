@@ -25,7 +25,10 @@
   Google n'est pas connecté. <a href="/google/comptes">Connecter un compte Google</a>
 </div>
 {% elif not clients %}
-<p class="texte-vide">Aucun client avec une fiche Google associée pour l'instant.</p>
+<div class="etat-vide-carte">
+  <span class="badge-icone-vide">★</span>
+  <p class="texte-vide">Aucun client avec une fiche Google associée pour l'instant.</p>
+</div>
 {% else %}
 
 <div id="conteneur-progression-avis" class="conteneur-progression-avis" hidden>

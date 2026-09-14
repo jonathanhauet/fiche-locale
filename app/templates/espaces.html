@@ -14,7 +14,10 @@
 </p>
 
 {% if not espaces %}
-<p class="texte-vide">Aucun espace pour l'instant.</p>
+<div class="etat-vide-carte">
+  <span class="badge-icone-vide">🏢</span>
+  <p class="texte-vide">Aucun espace pour l'instant.</p>
+</div>
 {% else %}
 <div class="grille-espaces">
   {% for espace in espaces %}

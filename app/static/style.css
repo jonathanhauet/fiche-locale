@@ -828,6 +828,17 @@ button:active { transform: translateY(1px); }
 
 .etat-vide-carte .texte-vide { margin: 0; }
 
+.badge-icone-vide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: var(--accent-clair);
+  font-size: 1.2rem;
+}
+
 .bloc-variante-reseau {
   display: grid;
   grid-template-columns: 1fr 1fr;
