@@ -853,12 +853,19 @@ button:active { transform: translateY(1px); }
   gap: 0.5rem;
 }
 
+/* Carte d'apercu de post (publication multi-reseaux) - toutes les regles
+   sont scopees sous .apercu-post : .apercu-texte/.apercu-image sont aussi
+   utilisees ailleurs (revue des posts Google) avec un tout autre style, ne
+   jamais les redefinir sans ce prefixe. */
 .apercu-post {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--carte-bordure);
   border-radius: var(--rayon);
-  background: var(--fond);
-  padding: 0.9rem 1rem;
+  background: var(--carte);
+  padding: 0.9rem 1rem 0.5rem;
   align-self: start;
+  overflow: hidden;
 }
 
 .apercu-entete {
@@ -872,21 +879,73 @@ button:active { transform: translateY(1px); }
 
 .apercu-horodatage { font-size: 0.75rem; color: var(--texte-discret); }
 
-.apercu-texte {
-  margin: 0;
+.apercu-post .apercu-texte {
+  order: 1;
+  margin: 0 0 0.6rem;
   white-space: pre-wrap;
   font-size: 0.9rem;
   line-height: 1.4;
 }
 
-.apercu-image {
+.apercu-voir-plus {
+  margin-left: 0.15rem;
+  color: var(--texte-discret);
+  font-weight: 600;
+}
+
+.apercu-texte-cachee {
   display: block;
-  margin-top: 0.6rem;
-  max-width: 100%;
-  max-height: 220px;
-  border-radius: var(--rayon-petit);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--carte-bordure);
+  color: var(--texte-discret);
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.apercu-texte-cachee::before {
+  content: "Masqué tant que « voir plus » n'est pas cliqué : ";
+  font-style: normal;
+  font-weight: 600;
+}
+
+.apercu-cadre-image {
+  order: 2;
+  margin: 0 -1rem 0.4rem;
+}
+
+.apercu-post .apercu-image {
+  display: block;
+  width: 100%;
+  max-height: 260px;
   object-fit: cover;
 }
+
+.apercu-icones {
+  order: 3;
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 0 0.3rem;
+  font-size: 0.82rem;
+  color: var(--texte-discret);
+}
+
+.apercu-post[data-reseau="facebook"] .apercu-icones {
+  justify-content: space-around;
+  border-top: 1px solid var(--carte-bordure);
+  padding-top: 0.5rem;
+}
+
+/* Instagram : cadre carre, place avant le texte (comme le vrai flux), icones fines au-dessus de la legende */
+.apercu-post[data-reseau="instagram"] .apercu-cadre-image { order: 1; margin-bottom: 0; }
+.apercu-post[data-reseau="instagram"] .apercu-image { aspect-ratio: 1 / 1; }
+.apercu-post[data-reseau="instagram"] .apercu-icones { order: 2; font-size: 1.15rem; gap: 0.7rem; padding: 0.5rem 1rem 0.2rem; margin: 0 -1rem; }
+.apercu-post[data-reseau="instagram"] .apercu-icone-fin { margin-left: auto; }
+.apercu-post[data-reseau="instagram"] .apercu-texte { order: 3; margin-top: 0.3rem; padding: 0 0 0.3rem; }
+
+/* Google : image contenue avec coins arrondis, pas de bord a bord comme Facebook */
+.apercu-post[data-reseau="google"] .apercu-cadre-image { margin: 0 0 0.4rem; }
+.apercu-post[data-reseau="google"] .apercu-image { border-radius: var(--rayon-petit); max-height: 200px; }
 
 .rempli-recemment { animation: flash-remplissage 1.5s ease; }
 

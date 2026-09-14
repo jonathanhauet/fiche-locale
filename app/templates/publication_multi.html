@@ -60,7 +60,7 @@
         </label>
         <input type="file" name="image_{{ reseau }}" accept="image/*" class="champ-image-dediee" data-reseau="{{ reseau }}" hidden>
       </div>
-      <div class="apercu-post">
+      <div class="apercu-post" data-reseau="{{ reseau }}">
         <div class="apercu-entete">
           <span class="badge-reseau badge-reseau-{{ reseau }}">{{ initiales }}</span>
           <div class="apercu-identite">
@@ -68,8 +68,19 @@
             <span class="apercu-horodatage">À l'instant · {{ nom }}</span>
           </div>
         </div>
-        <p class="apercu-texte" data-reseau="{{ reseau }}">{{ variantes.get(reseau, "") or "Votre texte apparaîtra ici." }}</p>
-        <img class="apercu-image" data-reseau="{{ reseau }}" alt="Aperçu de l'image" hidden>
+        <p class="apercu-texte" data-reseau="{{ reseau }}">Votre texte apparaîtra ici.</p>
+        <div class="apercu-cadre-image" hidden>
+          <img class="apercu-image" data-reseau="{{ reseau }}" alt="Aperçu de l'image">
+        </div>
+        {% if reseau == "instagram" %}
+        <div class="apercu-icones">
+          <span>♡</span><span>💬</span><span>➤</span><span class="apercu-icone-fin">🔖</span>
+        </div>
+        {% elif reseau == "facebook" %}
+        <div class="apercu-icones">
+          <span>👍 J'aime</span><span>💬 Commenter</span><span>↗ Partager</span>
+        </div>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
@@ -172,13 +183,47 @@
         .addEventListener("change", () => actualiserApercuImage(caseDediee.dataset.reseau));
     });
 
-    // Aperçu du texte : recopie en direct dans la carte de previsualisation
-    // pendant la frappe, comme le ferait un vrai outil de planification.
+    // Aperçu du texte, avec simulation du point de troncature "Voir plus" de
+    // chaque reseau : des valeurs approximatives et couramment observees (les
+    // plateformes ne publient pas de seuil officiel, et il peut varier selon
+    // l'appareil/la mise en page), utiles pour se donner un ordre d'idee.
+    const LIMITES_TRONCATURE = { google: 100, facebook: 477, instagram: 125 };
+    const LIBELLES_VOIR_PLUS = { google: "…", facebook: "… Voir plus", instagram: "… plus" };
+
+    function echapperHtml(texte) {
+      const div = document.createElement("div");
+      div.textContent = texte;
+      return div.innerHTML;
+    }
+
+    function rendreApercuTexte(reseau, texte) {
+      const apercu = document.querySelector(`.apercu-texte[data-reseau="${reseau}"]`);
+      if (!apercu) return;
+      const propre = texte.trim();
+      if (!propre) {
+        apercu.innerHTML = "Votre texte apparaîtra ici.";
+        return;
+      }
+      const limite = LIMITES_TRONCATURE[reseau];
+      if (!limite || propre.length <= limite) {
+        apercu.innerHTML = echapperHtml(propre);
+        return;
+      }
+      const visible = echapperHtml(propre.slice(0, limite));
+      const cache = echapperHtml(propre.slice(limite));
+      apercu.innerHTML =
+        visible
+        + `<span class="apercu-voir-plus">${LIBELLES_VOIR_PLUS[reseau] || "…"}</span>`
+        + `<span class="apercu-texte-cachee">${cache}</span>`;
+    }
+
+    // Recopie en direct dans la carte de previsualisation pendant la frappe,
+    // comme le ferait un vrai outil de planification. Rendu initial aussi,
+    // au cas ou une variante est deja pre-remplie par le serveur (retour
+    // apres une erreur de publication, par exemple).
     document.querySelectorAll(".champ-texte-reseau").forEach((champ) => {
-      champ.addEventListener("input", () => {
-        const apercu = document.querySelector(`.apercu-texte[data-reseau="${champ.dataset.reseau}"]`);
-        if (apercu) apercu.textContent = champ.value.trim() || "Votre texte apparaîtra ici.";
-      });
+      rendreApercuTexte(champ.dataset.reseau, champ.value);
+      champ.addEventListener("input", () => rendreApercuTexte(champ.dataset.reseau, champ.value));
     });
 
     // Aperçu de l'image : partagee par defaut, sauf si le reseau a sa propre
@@ -196,10 +241,11 @@
       const champDedie = document.querySelector(`.champ-image-dediee[data-reseau="${reseau}"]`);
       const apercuImg = document.querySelector(`.apercu-image[data-reseau="${reseau}"]`);
       if (!apercuImg) return;
+      const cadre = apercuImg.closest(".apercu-cadre-image");
       const fichier = (champDedie && champDedie.files[0]) || champImagePartagee.files[0] || null;
       lireImageEnApercu(fichier, (src) => {
-        if (src) { apercuImg.src = src; apercuImg.hidden = false; }
-        else { apercuImg.removeAttribute("src"); apercuImg.hidden = true; }
+        if (src) { apercuImg.src = src; cadre.hidden = false; }
+        else { apercuImg.removeAttribute("src"); cadre.hidden = true; }
       });
     }
 
@@ -235,10 +281,9 @@
         }
         Object.entries(donnees.variantes).forEach(([reseau, texte]) => {
           const zone = document.getElementById(`texte-${reseau}`);
-          const apercu = document.querySelector(`.apercu-texte[data-reseau="${reseau}"]`);
           if (zone) {
             zone.value = texte;
-            if (apercu) apercu.textContent = texte;
+            rendreApercuTexte(reseau, texte);
             // Flash discret pour montrer visuellement ce qui vient d'etre rempli.
             zone.classList.remove("rempli-recemment");
             void zone.offsetWidth; // relance l'animation meme si elle vient de tourner
