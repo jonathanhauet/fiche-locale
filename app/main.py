@@ -4994,7 +4994,10 @@ def linkedin_comptes(request: Request, db: Session = Depends(obtenir_session)):
 
 
 @app.post("/linkedin/comptes/{compte_id}/publier")
-def linkedin_publier(compte_id: int, request: Request, texte: str = Form(...), db: Session = Depends(obtenir_session)):
+async def linkedin_publier(
+    compte_id: int, request: Request, texte: str = Form(...),
+    image: UploadFile = File(None), db: Session = Depends(obtenir_session),
+):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -5006,7 +5009,8 @@ def linkedin_publier(compte_id: int, request: Request, texte: str = Form(...), d
 
     erreur, resultat_publication = None, None
     try:
-        linkedin_publish.publier_texte(compte.access_token, compte.identifiant_membre, texte)
+        octets_image = await image.read() if image and image.filename else None
+        linkedin_publish.publier_post(compte.access_token, compte.identifiant_membre, texte, octets_image)
         resultat_publication = compte.libelle
     except Exception as e:
         erreur = f"Echec de la publication : {e}"

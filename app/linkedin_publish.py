@@ -1,18 +1,49 @@
 """
 Publication sur un profil LinkedIn personnel via l'API Posts (REST, scope
-w_member_social - voir linkedin_oauth.py). Texte uniquement pour l'instant :
-l'ajout d'image necessiterait un flux d'upload en deux etapes (Images API),
-pas construit dans cette premiere version.
+w_member_social - voir linkedin_oauth.py). Image optionnelle : flux
+d'upload en deux etapes (Images API) - LinkedIn fournit une URL de
+televersement pre-signee, pas besoin d'heberger l'image soi-meme au
+prealable (contrairement a Meta/Instagram).
 """
 
 import requests
 
 URL_POSTS = "https://api.linkedin.com/rest/posts"
+URL_IMAGES = "https://api.linkedin.com/rest/images"
 VERSION_API = "202409"
 
 
-def publier_texte(access_token: str, identifiant_membre: str, texte: str) -> str:
-    """Publie un post texte sur le profil du membre. Renvoie l'URN du post cree."""
+def _entetes(access_token: str) -> dict:
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": VERSION_API,
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json",
+    }
+
+
+def _initialiser_upload_image(access_token: str, identifiant_membre: str) -> tuple[str, str]:
+    """Renvoie (url_televersement, urn_image)."""
+    reponse = requests.post(
+        f"{URL_IMAGES}?action=initializeUpload",
+        json={"initializeUploadRequest": {"owner": f"urn:li:person:{identifiant_membre}"}},
+        headers=_entetes(access_token),
+        timeout=30,
+    )
+    if reponse.status_code not in (200, 201):
+        raise RuntimeError(f"Echec de l'initialisation de l'upload d'image LinkedIn (code {reponse.status_code}) : {reponse.text}")
+    valeur = reponse.json()["value"]
+    return valeur["uploadUrl"], valeur["image"]
+
+
+def _televerser_image(url_televersement: str, octets_image: bytes):
+    reponse = requests.put(url_televersement, data=octets_image, timeout=60)
+    if reponse.status_code not in (200, 201):
+        raise RuntimeError(f"Echec du televersement de l'image LinkedIn (code {reponse.status_code})")
+
+
+def publier_post(access_token: str, identifiant_membre: str, texte: str, octets_image: bytes = None) -> str:
+    """Publie un post (texte, avec image optionnelle) sur le profil du membre. Renvoie l'URN du post cree."""
     corps = {
         "author": f"urn:li:person:{identifiant_membre}",
         "commentary": texte,
@@ -25,17 +56,13 @@ def publier_texte(access_token: str, identifiant_membre: str, texte: str) -> str
         "lifecycleState": "PUBLISHED",
         "isReshareDisabledByAuthor": False,
     }
-    reponse = requests.post(
-        URL_POSTS,
-        json=corps,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "LinkedIn-Version": VERSION_API,
-            "X-Restli-Protocol-Version": "2.0.0",
-            "Content-Type": "application/json",
-        },
-        timeout=30,
-    )
+
+    if octets_image:
+        url_televersement, urn_image = _initialiser_upload_image(access_token, identifiant_membre)
+        _televerser_image(url_televersement, octets_image)
+        corps["content"] = {"media": {"id": urn_image}}
+
+    reponse = requests.post(URL_POSTS, json=corps, headers=_entetes(access_token), timeout=30)
     if reponse.status_code not in (200, 201):
         raise RuntimeError(f"Echec de la publication LinkedIn (code {reponse.status_code}) : {reponse.text}")
 

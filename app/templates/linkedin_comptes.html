@@ -54,9 +54,11 @@
 
 <h2>Publier un post</h2>
 {% for compte in comptes %}
-<form method="post" action="/linkedin/comptes/{{ compte.id }}/publier" class="formulaire">
+<form method="post" action="/linkedin/comptes/{{ compte.id }}/publier" class="formulaire" enctype="multipart/form-data">
   <label for="texte-{{ compte.id }}">Texte du post pour {{ compte.libelle }}</label>
   <textarea id="texte-{{ compte.id }}" name="texte" rows="5" required></textarea>
+  <label for="image-{{ compte.id }}">Image (optionnelle)</label>
+  <input type="file" id="image-{{ compte.id }}" name="image" accept="image/*">
   <button type="submit" class="bouton">Publier sur LinkedIn</button>
 </form>
 {% endfor %}
