@@ -74,6 +74,7 @@ from . import (
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
     envoyer_recaps_mensuels,
+    publier_posts_linkedin_programmes,
     rafraichir_tokens_instagram,
     verifier_avis_supprimes,
     verifier_et_publier_photos_programmees,
@@ -418,6 +419,14 @@ planificateur.add_job(
     hour=7,
     timezone="Europe/Brussels",
     id="rafraichissement_tokens_instagram",
+)
+# Publication programmee LinkedIn (voir planificateur.publier_posts_linkedin_programmes) :
+# meme frequence que la publication programmee Google.
+planificateur.add_job(
+    publier_posts_linkedin_programmes,
+    "interval",
+    minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
+    id="publication_linkedin_programmee",
 )
 planificateur.start()
 
@@ -4980,6 +4989,15 @@ def linkedin_callback(request: Request, db: Session = Depends(obtenir_session)):
     return RedirectResponse("/linkedin/comptes", status_code=303)
 
 
+def _posts_linkedin_programmes(db: Session):
+    return (
+        db.query(models.PostLinkedInProgramme)
+        .filter(models.PostLinkedInProgramme.etat == "EN_ATTENTE")
+        .order_by(models.PostLinkedInProgramme.publier_le)
+        .all()
+    )
+
+
 @app.get("/linkedin/comptes", response_class=HTMLResponse)
 def linkedin_comptes(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -4989,15 +5007,25 @@ def linkedin_comptes(request: Request, db: Session = Depends(obtenir_session)):
     comptes = linkedin_oauth.lister_comptes(db)
     return templates.TemplateResponse(
         request, "linkedin_comptes.html",
-        {"comptes": comptes, "erreur": None, "resultat_publication": None},
+        {
+            "comptes": comptes, "erreur": None, "resultat_publication": None,
+            "posts_programmes": _posts_linkedin_programmes(db),
+        },
     )
 
 
 @app.post("/linkedin/comptes/{compte_id}/publier")
 async def linkedin_publier(
     compte_id: int, request: Request, texte: str = Form(...),
+    publier_date: str = Form(""), publier_heure: str = Form(""),
     image: UploadFile = File(None), db: Session = Depends(obtenir_session),
 ):
+    """
+    Sans publier_date renseignee : publication immediate (comportement
+    d'origine). Avec une date (et une heure optionnelle) future : le post
+    est enregistre en attente, publie automatiquement par
+    planificateur.publier_posts_linkedin_programmes.
+    """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -5008,17 +5036,48 @@ async def linkedin_publier(
         return RedirectResponse("/linkedin/comptes", status_code=303)
 
     erreur, resultat_publication = None, None
-    try:
-        octets_image = await image.read() if image and image.filename else None
-        linkedin_publish.publier_post(compte.access_token, compte.identifiant_membre, texte, octets_image)
-        resultat_publication = compte.libelle
-    except Exception as e:
-        erreur = f"Echec de la publication : {e}"
+    octets_image = await image.read() if image and image.filename else None
+
+    if publier_date.strip():
+        try:
+            heure = publier_heure.strip() or "00:00"
+            publier_le = datetime.strptime(f"{publier_date.strip()} {heure}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            erreur = "Date ou heure de publication invalide."
+        else:
+            db.add(models.PostLinkedInProgramme(
+                compte_linkedin_id=compte.id, texte=texte, image_donnees=octets_image, publier_le=publier_le,
+            ))
+            db.commit()
+            resultat_publication = f"programmé pour le {publier_le.strftime('%d/%m/%Y à %H:%M')}"
+    else:
+        try:
+            linkedin_publish.publier_post(compte.access_token, compte.identifiant_membre, texte, octets_image)
+            resultat_publication = compte.libelle
+        except Exception as e:
+            erreur = f"Echec de la publication : {e}"
 
     return templates.TemplateResponse(
         request, "linkedin_comptes.html",
-        {"comptes": comptes, "erreur": erreur, "resultat_publication": resultat_publication},
+        {
+            "comptes": comptes, "erreur": erreur, "resultat_publication": resultat_publication,
+            "posts_programmes": _posts_linkedin_programmes(db),
+        },
     )
+
+
+@app.post("/linkedin/posts-programmes/{post_id}/annuler")
+def linkedin_annuler_post_programme(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post = db.get(models.PostLinkedInProgramme, post_id)
+    if post and post.etat == "EN_ATTENTE":
+        db.delete(post)
+        db.commit()
+
+    return RedirectResponse("/linkedin/comptes", status_code=303)
 
 
 @app.post("/linkedin/comptes/{compte_id}/deconnecter")
@@ -5029,6 +5088,25 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
 
     compte = db.get(models.CompteLinkedIn, compte_id)
     if compte:
+        posts_en_attente = (
+            db.query(models.PostLinkedInProgramme)
+            .filter_by(compte_linkedin_id=compte_id, etat="EN_ATTENTE")
+            .count()
+        )
+        if posts_en_attente:
+            comptes = linkedin_oauth.lister_comptes(db)
+            return templates.TemplateResponse(
+                request, "linkedin_comptes.html",
+                {
+                    "comptes": comptes, "resultat_publication": None,
+                    "posts_programmes": _posts_linkedin_programmes(db),
+                    "erreur": (
+                        f"Impossible de deconnecter ce compte : {posts_en_attente} post(s) programme(s) "
+                        "en attente. Annulez-les d'abord."
+                    ),
+                },
+                status_code=400,
+            )
         db.delete(compte)
         db.commit()
 

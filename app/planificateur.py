@@ -4,9 +4,12 @@ Remplace la tache planifiee Windows utilisee par les scripts en ligne de
 commande : ici, une tache de fond integree au processus web (APScheduler).
 """
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
-from . import google_business, google_location, google_oauth, google_publish, google_reviews, instagram_oauth, models, rapport_donnees
+from . import (
+    google_business, google_location, google_oauth, google_publish, google_reviews,
+    instagram_oauth, linkedin_publish, models, rapport_donnees,
+)
 from .database import SessionLocal
 
 
@@ -407,6 +410,36 @@ def rafraichir_tokens_instagram():
             for client in db.query(models.Client).filter_by(compte_instagram_id=compte.id).all():
                 client.token_instagram = nouveau_token
 
+            db.commit()
+    finally:
+        db.close()
+
+
+def publier_posts_linkedin_programmes():
+    """
+    Publie automatiquement tous les posts LinkedIn 'EN_ATTENTE' dont la
+    date/heure prevue est arrivee. Meme convention que
+    verifier_et_publier_posts_programmes (Google) : comparaison a
+    datetime.now(), heure locale du serveur.
+    """
+    db = SessionLocal()
+    try:
+        maintenant = datetime.now()
+        posts_a_publier = (
+            db.query(models.PostLinkedInProgramme)
+            .filter(models.PostLinkedInProgramme.etat == "EN_ATTENTE")
+            .filter(models.PostLinkedInProgramme.publier_le <= maintenant)
+            .all()
+        )
+        for post in posts_a_publier:
+            try:
+                linkedin_publish.publier_post(
+                    post.compte.access_token, post.compte.identifiant_membre, post.texte, post.image_donnees,
+                )
+                post.etat = "PUBLIE"
+            except Exception as erreur:
+                post.etat = "ECHEC"
+                post.erreur = str(erreur)
             db.commit()
     finally:
         db.close()

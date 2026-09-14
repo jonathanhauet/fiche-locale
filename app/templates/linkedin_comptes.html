@@ -59,9 +59,45 @@
   <textarea id="texte-{{ compte.id }}" name="texte" rows="5" required></textarea>
   <label for="image-{{ compte.id }}">Image (optionnelle)</label>
   <input type="file" id="image-{{ compte.id }}" name="image" accept="image/*">
-  <button type="submit" class="bouton">Publier sur LinkedIn</button>
+  <label for="date-{{ compte.id }}">Programmer pour plus tard (optionnel — laisser vide pour publier immédiatement)</label>
+  <div class="ligne-champs">
+    <input type="date" id="date-{{ compte.id }}" name="publier_date">
+    <input type="time" name="publier_heure">
+  </div>
+  <button type="submit" class="bouton">Publier / programmer sur LinkedIn</button>
 </form>
 {% endfor %}
+
+{% if posts_programmes %}
+<h2>Posts programmés en attente</h2>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th>Profil</th>
+        <th>Texte</th>
+        <th>Publication prévue</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for post in posts_programmes %}
+      <tr>
+        <td>{{ post.compte.libelle }}</td>
+        <td>{{ post.texte[:80] }}{% if post.texte|length > 80 %}…{% endif %}</td>
+        <td>{{ post.publier_le.strftime("%d/%m/%Y à %H:%M") }}</td>
+        <td>
+          <form method="post" action="/linkedin/posts-programmes/{{ post.id }}/annuler"
+                onsubmit="return confirm('Annuler ce post programmé ?');">
+            <button type="submit" class="bouton-danger">Annuler</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% else %}
 <p class="texte-vide">Aucun profil LinkedIn connecté pour l'instant.</p>
 {% endif %}

@@ -7,7 +7,7 @@ identifiants_fiches.json, posts_generes/*.txt, logs/journal_publications.csv).
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Table, Text, UniqueConstraint,
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Table, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -566,6 +566,30 @@ class CompteLinkedIn(Base):
     access_token = Column(Text, default="")
     expire_le = Column(DateTime, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class PostLinkedInProgramme(Base):
+    """
+    Post LinkedIn en attente de publication a une date/heure future (voir
+    linkedin_publish.py + planificateur.publier_posts_linkedin_programmes).
+    L'image est stockee directement en base (contrairement aux posts Google,
+    qui referencent une image_url hebergee ailleurs) : LinkedIn accepte un
+    televersement direct des octets au moment de la publication, pas besoin
+    d'hebergement intermediaire.
+    """
+
+    __tablename__ = "posts_linkedin_programmes"
+
+    id = Column(Integer, primary_key=True)
+    compte_linkedin_id = Column(Integer, ForeignKey("comptes_linkedin.id"), nullable=False)
+    texte = Column(Text, default="")
+    image_donnees = Column(LargeBinary, nullable=True)
+    publier_le = Column(DateTime, nullable=False)
+    etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
+    erreur = Column(Text, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    compte = relationship("CompteLinkedIn")
 
 
 class ParametreGoogleAds(Base):
