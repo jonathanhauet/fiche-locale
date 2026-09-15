@@ -695,6 +695,12 @@
     {% else %}
     <div class="ligne-actions-rapides">
       <a href="/posts/{{ post.id }}" class="bouton-secondaire">Ouvrir</a>
+      {% if post.statut != "PUBLIE_LIVE" %}
+      <form method="post" action="/posts/{{ post.id }}/statut_rapide"
+            onsubmit="return confirm('Supprimer ce post ?');">
+        <button type="submit" name="statut" value="SUPPRIME" class="bouton-danger" formnovalidate>🗑 Supprimer</button>
+      </form>
+      {% endif %}
     </div>
     {% endif %}
   </li>

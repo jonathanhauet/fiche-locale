@@ -2485,7 +2485,7 @@ def _reponse_detail_client(
 ):
     posts = (
         db.query(models.Post)
-        .filter_by(client_id=client.id)
+        .filter(models.Post.client_id == client.id, models.Post.statut != "SUPPRIME")
         .order_by(models.Post.cree_le.desc())
         .all()
     )
@@ -5970,10 +5970,12 @@ async def modifier_post(post_id: int, request: Request, db: Session = Depends(ob
 @app.post("/posts/{post_id}/statut_rapide")
 async def modifier_statut_rapide_post(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
-    Validation/rejet rapide depuis la liste des posts d'une fiche (sans passer
-    par la page de detail) : ne touche qu'au statut, et si valide, a la date
-    de publication et au bouton d'appel a l'action - laisse tous les autres
-    champs du post (texte, image...) intacts.
+    Validation/rejet/suppression rapide depuis la liste des posts d'une fiche
+    (sans passer par la page de detail) : ne touche qu'au statut, et si
+    valide, a la date de publication et au bouton d'appel a l'action - laisse
+    tous les autres champs du post (texte, image...) intacts. SUPPRIME est un
+    retrait logique (le post reste en base mais disparait de partout ou ca
+    compte - calendrier, contexte IA...), jamais un post deja PUBLIE_LIVE.
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -5985,8 +5987,10 @@ async def modifier_statut_rapide_post(post_id: int, request: Request, db: Sessio
 
     formulaire = await request.form()
     statut = formulaire.get("statut", "")
-    if statut not in ("A_PUBLIER", "IGNORE"):
+    if statut not in ("A_PUBLIER", "IGNORE", "SUPPRIME"):
         return HTMLResponse("Statut invalide.", status_code=400)
+    if statut == "SUPPRIME" and post.statut == "PUBLIE_LIVE":
+        return HTMLResponse("Un post deja publie ne peut pas etre supprime.", status_code=400)
 
     post.statut = statut
     if statut == "A_PUBLIER":
