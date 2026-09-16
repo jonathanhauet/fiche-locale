@@ -19,6 +19,7 @@
   <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir)</label>
   <div class="ligne-champs">
     <input type="text" id="theme-ia" placeholder="Ex : la dernière mise à jour Google AI Overviews" style="flex:1;">
+    <button type="button" id="bouton-micro-theme" class="bouton-micro" title="Dicter à la voix" hidden>🎤</button>
     <button type="button" id="bouton-generer-texte" class="bouton-secondaire">
       <span class="spinner" id="spinner-generer-texte" hidden></span>
       💡 Générer le texte (IA)
@@ -28,6 +29,10 @@
 
   <label for="texte-base">Texte de base</label>
   <textarea id="texte-base" name="texte_base" rows="4" required>{{ texte_base }}</textarea>
+  <div class="ligne-champs">
+    <button type="button" id="bouton-micro-texte" class="bouton-micro" title="Dicter à la voix" hidden>🎤</button>
+    <span class="texte-discret">Dicter à la voix</span>
+  </div>
 
   <label>Réseaux</label>
   <div class="grille-cartes-reseaux">
@@ -305,6 +310,56 @@
       if (champImagePartagee.files[0]) champImageUrlIA.value = "";
       actualiserToutesLesApercusImage();
     });
+
+    // Dictee vocale (API navigateur, pas de serveur implique) : le bouton
+    // micro reste cache si le navigateur ne supporte pas la reconnaissance
+    // vocale (ex : Firefox) plutot que d'afficher un bouton casse.
+    function activerDictee(bouton, champ) {
+      if (!bouton || !champ) return;
+      const Reconnaissance = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Reconnaissance) return;
+
+      const reconnaissance = new Reconnaissance();
+      reconnaissance.lang = "fr-FR";
+      reconnaissance.continuous = true;
+      reconnaissance.interimResults = false;
+
+      let enEcoute = false;
+      let baseAvantDictee = "";
+
+      reconnaissance.addEventListener("result", (evenement) => {
+        let texteFinal = "";
+        for (let i = evenement.resultIndex; i < evenement.results.length; i++) {
+          if (evenement.results[i].isFinal) texteFinal += evenement.results[i][0].transcript;
+        }
+        if (!texteFinal) return;
+        const separateur = baseAvantDictee && !/[\s\n]$/.test(baseAvantDictee) ? " " : "";
+        champ.value = baseAvantDictee + separateur + texteFinal;
+        baseAvantDictee = champ.value;
+        champ.dispatchEvent(new Event("input"));
+      });
+
+      function arreterEcoute() {
+        enEcoute = false;
+        bouton.classList.remove("actif");
+        bouton.textContent = "🎤";
+      }
+      reconnaissance.addEventListener("end", arreterEcoute);
+      reconnaissance.addEventListener("error", arreterEcoute);
+
+      bouton.hidden = false;
+      bouton.addEventListener("click", () => {
+        if (enEcoute) { reconnaissance.stop(); return; }
+        baseAvantDictee = champ.value;
+        enEcoute = true;
+        bouton.classList.add("actif");
+        bouton.textContent = "⬤";
+        reconnaissance.start();
+      });
+    }
+
+    activerDictee(document.getElementById("bouton-micro-theme"), document.getElementById("theme-ia"));
+    activerDictee(document.getElementById("bouton-micro-texte"), document.getElementById("texte-base"));
 
     const boutonGenererTexte = document.getElementById("bouton-generer-texte");
     const spinnerGenererTexte = document.getElementById("spinner-generer-texte");
