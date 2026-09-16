@@ -905,7 +905,13 @@ def adapter_post_multi_reseaux(texte_base: str, reseaux: list[str], contenu_site
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
         model=MODELE_CLAUDE,
-        max_tokens=2048,
+        # 2048 etait trop juste avec 4 reseaux et un texte de base long (ex. le
+        # generateur expert produit jusqu'a 1300 caracteres) : la reponse JSON
+        # se faisait tronquer en plein milieu d'une chaine ("Unterminated
+        # string" au parsing). Large marge plutot que de recalculer un budget
+        # precis par nombre de reseaux/longueur, le cout supplementaire est
+        # negligeable pour du texte.
+        max_tokens=6144,
         thinking={"type": "disabled"},
         output_config={"format": {"type": "json_schema", "schema": schema}},
         messages=[{"role": "user", "content": prompt}],

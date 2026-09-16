@@ -997,6 +997,7 @@ button:active { transform: translateY(1px); }
   height: 2.4rem;
   border: 1px solid var(--carte-bordure);
   background: var(--fond);
+  color: var(--texte);
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -1037,6 +1038,7 @@ button:active { transform: translateY(1px); }
   border: 1px solid var(--carte-bordure);
   border-radius: var(--rayon-petit);
   background: var(--fond);
+  color: var(--texte);
   cursor: pointer;
 }
 
