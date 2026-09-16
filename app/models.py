@@ -140,6 +140,12 @@ class Client(Base):
     envois_recap = relationship("EnvoiRecap", back_populates="client", cascade="all, delete-orphan")
     requetes_visibilite_ia = relationship("RequeteVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
     resultats_visibilite_ia = relationship("ResultatVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
+    avis_connus = relationship("AvisConnu", back_populates="client", cascade="all, delete-orphan")
+    alertes_protection = relationship("AlerteProtectionFiche", back_populates="client", cascade="all, delete-orphan")
+    alertes_statut = relationship("AlerteStatutFiche", back_populates="client", cascade="all, delete-orphan")
+    posts_meta_programmes = relationship("PostMetaProgramme", back_populates="client", cascade="all, delete-orphan")
+    posts_instagram_programmes = relationship("PostInstagramProgramme", back_populates="client", cascade="all, delete-orphan")
+    suggestions_sujet_jour = relationship("SuggestionSujetJour", back_populates="client", cascade="all, delete-orphan")
 
 
 class Post(Base):
@@ -281,7 +287,7 @@ class AvisConnu(Base):
     derniere_confirmation_le = Column(DateTime, default=datetime.utcnow)
     supprime_le = Column(DateTime, nullable=True)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="avis_connus")
 
 
 class AlerteProtectionFiche(Base):
@@ -305,7 +311,7 @@ class AlerteProtectionFiche(Base):
     traite_le = Column(DateTime, nullable=True)
     action = Column(String, nullable=True)  # RESTAURE, IGNORE, MASQUE
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="alertes_protection")
 
 
 class AlerteStatutFiche(Base):
@@ -328,7 +334,7 @@ class AlerteStatutFiche(Base):
     detecte_le = Column(DateTime, default=datetime.utcnow)
     traite_le = Column(DateTime, nullable=True)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="alertes_statut")
 
 
 class LeadAudit(Base):
@@ -618,7 +624,7 @@ class PostMetaProgramme(Base):
     erreur = Column(Text, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="posts_meta_programmes")
 
 
 class PostInstagramProgramme(Base):
@@ -635,7 +641,7 @@ class PostInstagramProgramme(Base):
     erreur = Column(Text, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="posts_instagram_programmes")
 
 
 class ParametreGoogleAds(Base):
@@ -661,9 +667,9 @@ class SuggestionSujetJour(Base):
     planificateur.generer_suggestions_quotidiennes) pour une fiche, a partir
     de veille_actualite + claude_generation.suggerer_sujets_actualite -
     permet au composeur multi-reseaux de les afficher deja prets a
-    l'ouverture, sans attendre un appel IA en direct, et de les envoyer par
-    email. Le lot du jour remplace celui de la veille (voir la tache qui les
-    genere) plutot que de s'accumuler indefiniment.
+    l'ouverture, sans attendre un appel IA en direct. Le lot du jour remplace
+    celui de la veille (voir la tache qui les genere) plutot que de
+    s'accumuler indefiniment.
     """
 
     __tablename__ = "suggestions_sujet_jour"
@@ -677,4 +683,4 @@ class SuggestionSujetJour(Base):
     extrait = Column(Text, default="")
     genere_le = Column(DateTime, default=datetime.utcnow)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="suggestions_sujet_jour")
