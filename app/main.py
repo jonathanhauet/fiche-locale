@@ -4978,6 +4978,31 @@ def meta_lier_page(
     return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
 
 
+@app.post("/meta/comptes/{compte_id}/pages/delier")
+def meta_delier_page(compte_id: int, request: Request, client_id: int = Form(...), db: Session = Depends(obtenir_session)):
+    """
+    Detache la Page Facebook (et l'Instagram lie via cette Page) d'UN client
+    precis, sans toucher au compte Meta partage (utilise par les autres
+    clients) ni a un eventuel compte Instagram connecte separement (voir
+    instagram_oauth.py, non concerne par ce lien Page-Facebook).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if client and client.compte_meta_id == compte_id:
+        client.compte_meta_id = None
+        client.page_id_meta = ""
+        client.page_nom_meta = ""
+        client.token_page_meta = ""
+        client.instagram_id_meta = ""
+        client.instagram_nom_meta = ""
+        db.commit()
+
+    return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
+
+
 @app.post("/meta/comptes/{compte_id}/deconnecter")
 def meta_deconnecter_compte(compte_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

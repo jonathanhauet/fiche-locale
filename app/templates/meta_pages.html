@@ -37,7 +37,7 @@
           {{ client_lie.nom if client_lie else "—" }}
         </td>
         <td>
-          <form method="post" action="/meta/comptes/{{ compte.id }}/pages/lier">
+          <form method="post" action="/meta/comptes/{{ compte.id }}/pages/lier" class="formulaire-ligne">
             <input type="hidden" name="page_id" value="{{ page.id }}">
             <input type="hidden" name="page_nom" value="{{ page.nom }}">
             <input type="hidden" name="token_page" value="{{ page.token_page }}">
@@ -51,6 +51,13 @@
             </select>
             <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
           </form>
+          {% if client_lie %}
+          <form method="post" action="/meta/comptes/{{ compte.id }}/pages/delier"
+                onsubmit="return confirm('Detacher cette Page du client {{ client_lie.nom }} ? Le compte Meta partage n\'est pas touche, seul ce client ne sera plus relie a cette Page.');">
+            <input type="hidden" name="client_id" value="{{ client_lie.id }}">
+            <button type="submit" class="bouton-danger">Délier</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
