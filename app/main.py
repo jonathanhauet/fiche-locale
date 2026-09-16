@@ -5388,6 +5388,35 @@ async def publication_multi_adapter(client_id: int, request: Request, db: Sessio
     return JSONResponse({"variantes": variantes})
 
 
+@app.post("/publication-multi/{client_id}/generer_texte")
+async def publication_multi_generer_texte(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Genere le texte de base via claude_generation.generer_post_expert (voix
+    a la premiere personne, prise de position affirmee) plutot que le
+    generateur generique utilise sur /posts (volontairement neutre, pense
+    pour un post publiable tel quel sur n'importe quelle fiche cliente) -
+    pertinent ici car la fiche EST l'auteur (ex : Jonathan sur sa propre
+    fiche), pas un post generique a dupliquer sur d'autres clients.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    theme = (donnees.get("theme") or "").strip()
+
+    try:
+        post_genere = claude_generation.generer_post_expert(theme, _contexte_ia_client(client))
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
+
+    return JSONResponse(post_genere)
+
+
 @app.post("/publication-multi/{client_id}/generer_image")
 async def publication_multi_generer_image(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """

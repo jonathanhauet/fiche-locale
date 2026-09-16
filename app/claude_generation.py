@@ -277,6 +277,80 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
+def generer_post_expert(theme: str = "", contexte_expert: str = "") -> dict:
+    """
+    Variante de generer_post_generique() pensee pour une seule fiche bien
+    precise, dont le proprietaire EST l'expert (typiquement Jonathan
+    lui-meme) : contrairement au post generique (volontairement neutre et
+    publiable sur n'importe quelle fiche), ici on veut au contraire une prise
+    de position personnelle et affirmee, a la premiere personne, sur
+    l'actualite ou un sujet de fond lie au SEO local / Google Business
+    Profile / Google AI Overviews / Google Local Services Ads - de quoi
+    construire une image d'expert reconnu sur ces sujets, pas juste informer.
+    theme et/ou contexte_expert (contenu du site de la fiche, repris pour le
+    ton et l'angle d'expertise) : au moins l'un des deux doit etre fourni.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not theme.strip() and not contexte_expert.strip():
+        raise RuntimeError("Fournissez un sujet ou une fiche de reference.")
+
+    bloc_theme = f"\nSujet demande :\n« {theme.strip()} »\n" if theme.strip() else ""
+    bloc_contexte = (
+        "\nContenu du site de l'auteur, pour retrouver son ton et son angle "
+        "d'expertise (pas pour du remplissage litteral) :\n"
+        f"{contexte_expert.strip()}\n"
+        if contexte_expert.strip() else ""
+    )
+
+    prompt = (
+        "Tu rediges, a la premiere personne, un post pour les reseaux sociaux et "
+        "Google Business Profile d'un expert reconnu en referencement local (SEO local), "
+        "specialise sur Google Business Profile, Google AI Overviews et Google Local "
+        "Services Ads. L'objectif n'est PAS d'informer platement, mais de construire une "
+        "image d'expert que les lecteurs ont envie de suivre : une vraie prise de position, "
+        "une analyse, un conseil concret tire de l'experience terrain - pas un simple resume "
+        "d'actualite.\n"
+        f"{bloc_theme}"
+        f"{bloc_contexte}\n"
+        "Consignes :\n"
+        "- Ecris a la premiere personne (« je », « j'ai vu », « ce que je recommande »...).\n"
+        "- Commence par une accroche qui donne envie de lire la suite (une observation "
+        "surprenante, une question, un constat tranche) - pas une formule plate du type "
+        "« Aujourd'hui, parlons de... ».\n"
+        "- Prends position : un avis clair, un conseil actionnable, ou une mise en garde. "
+        "Evite le ton neutre et consensuel d'un article encyclopedique.\n"
+        "- Reste factuellement prudent sur l'actualite recente (dates, fonctionnalites "
+        "precises) si le sujet fourni ne donne pas assez de details fiables : dans ce cas, "
+        "privilegie une analyse de fond plutot que d'inventer des faits.\n"
+        "- Aucune reference geographique ni nom de ville (l'auteur n'est rattache a aucune "
+        "localite en particulier ici).\n"
+        "- Ton professionnel mais humain, pas de jargon inutile, pas de tiret cadratin (—) : "
+        "remplace par une virgule, un deux-points ou un tiret simple (-).\n"
+        "- Longueur : entre 800 et 1300 caracteres (espaces compris) - un texte de base "
+        "assez court pour rester adaptable a chaque reseau ensuite.\n"
+        "- Passe des lignes entre les idees (\\n\\n) plutot qu'un bloc compact.\n"
+        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images "
+        "(illustration conceptuelle liee au sujet, professionnelle, sans texte incruste, "
+        "sans logo, sans visage reconnaissable)."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=2048,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_POST_UNIQUE}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    return _nettoyer_champs_post(json.loads(bloc_texte))
+
+
 def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", nombre_posts: int = 5) -> list[dict]:
     """
     Variante de generer_post_generique() qui produit plusieurs propositions

@@ -318,8 +318,11 @@
       texteStatutGeneration.textContent = "Génération en cours...";
 
       try {
-        const corps = new URLSearchParams({ theme: theme, client_reference_id: "{{ client.id }}" });
-        const reponse = await fetch("/posts/generer_generique", { method: "POST", body: corps });
+        const reponse = await fetch("/publication-multi/{{ client.id }}/generer_texte", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ theme: theme }),
+        });
         const donnees = await reponse.json();
         if (!reponse.ok) {
           texteStatutGeneration.textContent = donnees.erreur || "Échec de la génération.";
