@@ -5513,7 +5513,10 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
         return JSONResponse({"erreur": "Aucun prompt image fourni."}, status_code=400)
 
     try:
-        octets_image = gemini_images.generer_image(prompt_image)
+        # Carre plutot que paysage : reste correct sur Google/Facebook/LinkedIn
+        # et evite le format mal adapte a Instagram (bandes noires) qui
+        # resulterait du format paysage par defaut.
+        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio="1:1")
         nom_fichier = f"multi-ia-{uuid.uuid4().hex[:10]}.png"
         url_image = ovh_upload.envoyer_octets(octets_image, nom_fichier)
     except Exception as e:

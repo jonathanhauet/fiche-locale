@@ -14,11 +14,23 @@ MODELE_GEMINI = "gemini-3.1-flash-image"
 CLE_GEMINI = os.getenv("GEMINI_API_KEY")
 
 
-def generer_image(prompt_image: str) -> bytes:
-    """Genere une image via Gemini a partir d'un prompt et renvoie les octets (PNG)."""
+def generer_image(prompt_image: str, aspect_ratio: str = None) -> bytes:
+    """
+    Genere une image via Gemini a partir d'un prompt et renvoie les octets
+    (PNG). aspect_ratio optionnel (ex. "1:1", "4:5", "16:9") : sans lui,
+    Gemini renvoie son format par defaut (paysage large, ~1408x768) - laisse
+    tel quel pour les appelants existants (post Google Business Profile
+    unique), mais a fournir explicitement pour une image partagee entre
+    plusieurs reseaux (voir /publication-multi/{client_id}/generer_image),
+    Instagram affichant tres mal une image en paysage contrairement aux
+    3 autres reseaux.
+    """
     if not CLE_GEMINI:
         raise RuntimeError("GEMINI_API_KEY manquant dans plateforme_web/.env.")
 
     client = genai.Client(api_key=CLE_GEMINI)
-    interaction = client.interactions.create(model=MODELE_GEMINI, input=prompt_image)
+    parametres = {"model": MODELE_GEMINI, "input": prompt_image}
+    if aspect_ratio:
+        parametres["response_format"] = {"type": "image", "aspect_ratio": aspect_ratio}
+    interaction = client.interactions.create(**parametres)
     return base64.b64decode(interaction.output_image.data)
