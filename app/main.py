@@ -70,6 +70,7 @@ from . import (
     rapport_pdf,
     recap_mensuel,
     soldes_api,
+    veille_actualite,
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
@@ -5415,6 +5416,33 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
 
     return JSONResponse(post_genere)
+
+
+@app.post("/publication-multi/{client_id}/sujets_tendance")
+def publication_multi_sujets_tendance(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Propose 5 sujets a commenter, bases sur une veille d'actualite gratuite
+    (flux RSS Google Actualites, voir veille_actualite.py) reformulee par
+    l'IA en angles de post concrets (voir claude_generation.
+    suggerer_sujets_actualite) - pas de Google Trends (pas d'API officielle
+    gratuite, et les tendances generiques du jour n'ont de toute facon aucun
+    rapport avec le SEO local). Purement informatif, ne modifie rien en base.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    try:
+        articles = veille_actualite.rechercher_actualites()
+        suggestions = claude_generation.suggerer_sujets_actualite(articles, nombre=5)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la veille : {e}"}, status_code=500)
+
+    return JSONResponse({"suggestions": suggestions})
 
 
 @app.post("/publication-multi/{client_id}/generer_image")

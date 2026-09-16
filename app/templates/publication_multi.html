@@ -27,6 +27,15 @@
   </div>
   <p id="texte-statut-generation" class="texte-vide" hidden></p>
 
+  <button type="button" id="bouton-sujets-tendance" class="bouton-secondaire">
+    <span class="spinner" id="spinner-sujets-tendance" hidden></span>
+    🔥 Sujets tendance du jour (IA)
+  </button>
+  <div id="zone-sujets-tendance" hidden>
+    <p id="texte-statut-sujets" class="texte-vide" hidden></p>
+    <ul id="liste-sujets-tendance" class="liste-sujets-tendance"></ul>
+  </div>
+
   <label for="texte-base">Texte de base</label>
   <textarea id="texte-base" name="texte_base" rows="4" required>{{ texte_base }}</textarea>
   <div class="ligne-champs">
@@ -360,6 +369,55 @@
 
     activerDictee(document.getElementById("bouton-micro-theme"), document.getElementById("theme-ia"));
     activerDictee(document.getElementById("bouton-micro-texte"), document.getElementById("texte-base"));
+
+    const boutonSujetsTendance = document.getElementById("bouton-sujets-tendance");
+    const spinnerSujetsTendance = document.getElementById("spinner-sujets-tendance");
+    const zoneSujetsTendance = document.getElementById("zone-sujets-tendance");
+    const listeSujetsTendance = document.getElementById("liste-sujets-tendance");
+    const texteStatutSujets = document.getElementById("texte-statut-sujets");
+
+    boutonSujetsTendance.addEventListener("click", async () => {
+      zoneSujetsTendance.hidden = false;
+      texteStatutSujets.hidden = false;
+      texteStatutSujets.textContent = "Recherche des sujets du moment...";
+      listeSujetsTendance.innerHTML = "";
+      boutonSujetsTendance.disabled = true;
+      spinnerSujetsTendance.hidden = false;
+
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/sujets_tendance", { method: "POST" });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          texteStatutSujets.textContent = donnees.erreur || "Échec de la recherche.";
+          return;
+        }
+        if (!donnees.suggestions.length) {
+          texteStatutSujets.textContent = "Aucun sujet trouvé pour le moment.";
+          return;
+        }
+        texteStatutSujets.hidden = true;
+        donnees.suggestions.forEach((suggestion) => {
+          const li = document.createElement("li");
+          const bouton = document.createElement("button");
+          bouton.type = "button";
+          bouton.className = "carte-sujet-tendance";
+          bouton.innerHTML =
+            `<span class="texte-sujet-tendance">${echapperHtml(suggestion.sujet)}</span>`
+            + `<span class="source-sujet-tendance">${echapperHtml(suggestion.source || "Source")} — ${echapperHtml(suggestion.titre_article)}</span>`;
+          bouton.addEventListener("click", () => {
+            document.getElementById("theme-ia").value = suggestion.sujet;
+          });
+          li.appendChild(bouton);
+          listeSujetsTendance.appendChild(li);
+        });
+      } catch (erreur) {
+        texteStatutSujets.hidden = false;
+        texteStatutSujets.textContent = "Erreur réseau lors de la recherche.";
+      } finally {
+        boutonSujetsTendance.disabled = false;
+        spinnerSujetsTendance.hidden = true;
+      }
+    });
 
     const boutonGenererTexte = document.getElementById("bouton-generer-texte");
     const spinnerGenererTexte = document.getElementById("spinner-generer-texte");

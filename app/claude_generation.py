@@ -351,6 +351,95 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "") -> dict:
     return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
+SCHEMA_SUGGESTIONS_SUJETS = {
+    "type": "object",
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "sujet": {"type": "string"},
+                    "index_article": {"type": "integer"},
+                },
+                "required": ["sujet", "index_article"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["suggestions"],
+    "additionalProperties": False,
+}
+
+
+def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5) -> list[dict]:
+    """
+    A partir d'articles d'actualite deja recuperes (voir veille_actualite.py),
+    fait choisir et reformuler par l'IA les {nombre} sujets les plus
+    interessants a commenter pour un expert SEO local/Google Business Profile
+    - pas une simple liste de titres recopies, mais des angles de post
+    concrets (utilisables tels quels dans le champ "sujet" du generateur de
+    post). Renvoie [{"sujet", "titre_article", "source", "url"}, ...], chaque
+    suggestion reliee a l'article qui l'a inspiree (index renvoye par l'IA,
+    remappe ici vers l'article reel plutot que de faire confiance a l'IA
+    pour recopier une URL sans erreur).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not articles:
+        raise RuntimeError("Aucun article d'actualite disponible pour le moment.")
+
+    liste_articles = "\n".join(
+        f"{i}. {a['titre']} ({a['source'] or 'source inconnue'}, "
+        f"{a['date_publication'].strftime('%d/%m/%Y') if a['date_publication'] else 'date inconnue'})"
+        for i, a in enumerate(articles)
+    )
+
+    prompt = (
+        "Voici une liste d'articles d'actualite recente sur le SEO local, Google Business "
+        "Profile, Google AI Overviews et Google Local Services Ads :\n\n"
+        f"{liste_articles}\n\n"
+        f"Choisis les {nombre} articles les plus interessants a commenter pour un expert "
+        "SEO local qui veut publier du contenu qui donne envie de le suivre (pas juste "
+        "relayer l'info). Pour chacun, reformule un sujet de post concret et accrocheur "
+        "(une phrase courte, en francais, prete a etre utilisee comme angle de redaction - "
+        "pas juste le titre de l'article recopie), et indique l'index de l'article source.\n"
+        "Consignes :\n"
+        f"- Exactement {nombre} suggestions, toutes sur des articles differents.\n"
+        "- Privilegie les sujets les plus recents et les plus specifiques (evite les "
+        "generalites deja connues).\n"
+        "- Chaque sujet doit donner un angle clair (ex : une consequence pratique, une "
+        "question que ca souleve, un conseil qui en decoule), pas juste redire le titre."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=1536,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_SUGGESTIONS_SUJETS}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    suggestions = []
+    for item in json.loads(bloc_texte)["suggestions"]:
+        index = item.get("index_article")
+        if not isinstance(index, int) or not (0 <= index < len(articles)):
+            continue
+        article = articles[index]
+        suggestions.append({
+            "sujet": item["sujet"].strip(),
+            "titre_article": article["titre"],
+            "source": article["source"],
+            "url": article["url"],
+        })
+    return suggestions
+
+
 def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", nombre_posts: int = 5) -> list[dict]:
     """
     Variante de generer_post_generique() qui produit plusieurs propositions

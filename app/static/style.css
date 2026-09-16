@@ -1018,6 +1018,41 @@ button:active { transform: translateY(1px); }
   50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
 }
 
+.liste-sujets-tendance {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.carte-sujet-tendance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon-petit);
+  background: var(--fond);
+  cursor: pointer;
+}
+
+.carte-sujet-tendance:hover {
+  border-color: var(--accent);
+}
+
+.texte-sujet-tendance {
+  font-weight: 600;
+}
+
+.source-sujet-tendance {
+  font-size: 0.8rem;
+  color: var(--texte-discret);
+}
+
 @media (max-width: 720px) {
   .bloc-variante-reseau { grid-template-columns: 1fr; }
 }
