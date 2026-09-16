@@ -5426,7 +5426,9 @@ def publication_multi_sujets_tendance(client_id: int, request: Request, db: Sess
     l'IA en angles de post concrets (voir claude_generation.
     suggerer_sujets_actualite) - pas de Google Trends (pas d'API officielle
     gratuite, et les tendances generiques du jour n'ont de toute facon aucun
-    rapport avec le SEO local). Purement informatif, ne modifie rien en base.
+    rapport avec le SEO local). Tient compte des sujets deja traites sur
+    cette fiche (voir _sujets_deja_traites_client) pour eviter de reproposer
+    un angle deja utilise. Purement informatif, ne modifie rien en base.
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -5438,7 +5440,8 @@ def publication_multi_sujets_tendance(client_id: int, request: Request, db: Sess
 
     try:
         articles = veille_actualite.rechercher_actualites()
-        suggestions = claude_generation.suggerer_sujets_actualite(articles, nombre=5)
+        sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
+        suggestions = claude_generation.suggerer_sujets_actualite(articles, nombre=5, sujets_deja_traites=sujets_deja_traites)
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la veille : {e}"}, status_code=500)
 

@@ -372,7 +372,7 @@ SCHEMA_SUGGESTIONS_SUJETS = {
 }
 
 
-def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5) -> list[dict]:
+def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5, sujets_deja_traites: list[str] = None) -> list[dict]:
     """
     A partir d'articles d'actualite deja recuperes (voir veille_actualite.py),
     fait choisir et reformuler par l'IA les {nombre} sujets les plus
@@ -383,6 +383,10 @@ def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5) -> list[dic
     suggestion reliee a l'article qui l'a inspiree (index renvoye par l'IA,
     remappe ici vers l'article reel plutot que de faire confiance a l'IA
     pour recopier une URL sans erreur).
+    sujets_deja_traites : sujets des posts precedents de cette fiche (voir
+    _sujets_deja_traites_client dans main.py), pour que l'IA evite de
+    reformuler un angle deja utilise recemment - meme logique que pour la
+    generation de posts classique.
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
@@ -395,10 +399,19 @@ def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5) -> list[dic
         for i, a in enumerate(articles)
     )
 
+    bloc_deja_traites = ""
+    if sujets_deja_traites:
+        liste_deja_traites = "\n".join(f"- {s}" for s in sujets_deja_traites)
+        bloc_deja_traites = (
+            "\nSujets deja traites recemment sur cette fiche (evite de reformuler un angle "
+            f"trop proche de l'un de ceux-ci, meme sur un article different) :\n{liste_deja_traites}\n"
+        )
+
     prompt = (
         "Voici une liste d'articles d'actualite recente sur le SEO local, Google Business "
         "Profile, Google AI Overviews et Google Local Services Ads :\n\n"
-        f"{liste_articles}\n\n"
+        f"{liste_articles}\n"
+        f"{bloc_deja_traites}\n"
         f"Choisis les {nombre} articles les plus interessants a commenter pour un expert "
         "SEO local qui veut publier du contenu qui donne envie de le suivre (pas juste "
         "relayer l'info). Pour chacun, reformule un sujet de post concret et accrocheur "
