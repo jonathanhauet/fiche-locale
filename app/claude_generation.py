@@ -277,7 +277,7 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
-def generer_post_expert(theme: str = "", contexte_expert: str = "") -> dict:
+def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_article: str = "") -> dict:
     """
     Variante de generer_post_generique() pensee pour une seule fiche bien
     precise, dont le proprietaire EST l'expert (typiquement Jonathan
@@ -289,6 +289,11 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "") -> dict:
     construire une image d'expert reconnu sur ces sujets, pas juste informer.
     theme et/ou contexte_expert (contenu du site de la fiche, repris pour le
     ton et l'angle d'expertise) : au moins l'un des deux doit etre fourni.
+    contenu_article (optionnel) : extrait reel d'un article source (voir
+    veille_actualite.py + suggerer_sujets_actualite) quand le sujet vient
+    d'une suggestion tendance - impose de s'en tenir aux faits qu'il contient
+    plutot que d'inventer, et de reformuler plutot que de recopier (voir
+    consignes ci-dessous).
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
@@ -302,8 +307,32 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "") -> dict:
         f"{contexte_expert.strip()}\n"
         if contexte_expert.strip() else ""
     )
+    bloc_article = (
+        "\nExtrait reel de l'article source sur lequel porte ce sujet - c'est ta SEULE "
+        "source de faits sur cette actualite precise, ne t'appuie sur aucune autre "
+        "connaissance pour les details factuels (dates, chiffres, noms de fonctionnalites) :\n"
+        f"« {contenu_article.strip()} »\n"
+        if contenu_article.strip() else ""
+    )
+
+    consigne_sourcage = (
+        "- Base-toi strictement sur les faits presents dans l'extrait source fourni : "
+        "n'invente aucun detail factuel (date, chiffre, fonctionnalite, citation) qui n'y "
+        "figure pas. Si l'extrait ne suffit pas a etayer un point, reste general ou passe a "
+        "l'analyse/l'avis plutot que de combler par une supposition presentee comme un fait.\n"
+        "- Reformule entierement avec tes propres mots et ta propre structure : ne recopie "
+        "aucune phrase ni formulation de l'extrait source, meme partiellement (pas de "
+        "plagiat). L'objectif est ton avis et ta voix sur ce que dit l'article, pas un "
+        "resume ou une traduction de celui-ci.\n"
+        if contenu_article.strip() else
+        "- Reste factuellement prudent sur l'actualite recente (dates, fonctionnalites "
+        "precises) si le sujet fourni ne donne pas assez de details fiables : dans ce cas, "
+        "privilegie une analyse de fond plutot que d'inventer des faits.\n"
+    )
 
     prompt = (
+        f"Nous sommes le {date.today().strftime('%d/%m/%Y')} - utilise cette date comme repere "
+        "temporel reel (n'ecris jamais une annee anterieure par reflexe).\n"
         "Tu rediges, a la premiere personne, un post pour les reseaux sociaux et "
         "Google Business Profile d'un expert reconnu en referencement local (SEO local), "
         "specialise sur Google Business Profile, Google AI Overviews et Google Local "
@@ -312,7 +341,8 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "") -> dict:
         "une analyse, un conseil concret tire de l'experience terrain - pas un simple resume "
         "d'actualite.\n"
         f"{bloc_theme}"
-        f"{bloc_contexte}\n"
+        f"{bloc_contexte}"
+        f"{bloc_article}\n"
         "Consignes :\n"
         "- Ecris a la premiere personne (« je », « j'ai vu », « ce que je recommande »...).\n"
         "- Commence par une accroche qui donne envie de lire la suite (une observation "
@@ -320,9 +350,7 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "") -> dict:
         "« Aujourd'hui, parlons de... ».\n"
         "- Prends position : un avis clair, un conseil actionnable, ou une mise en garde. "
         "Evite le ton neutre et consensuel d'un article encyclopedique.\n"
-        "- Reste factuellement prudent sur l'actualite recente (dates, fonctionnalites "
-        "precises) si le sujet fourni ne donne pas assez de details fiables : dans ce cas, "
-        "privilegie une analyse de fond plutot que d'inventer des faits.\n"
+        f"{consigne_sourcage}"
         "- Aucune reference geographique ni nom de ville (l'auteur n'est rattache a aucune "
         "localite en particulier ici).\n"
         "- Ton professionnel mais humain, pas de jargon inutile, pas de tiret cadratin (—) : "
@@ -449,6 +477,11 @@ def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5, sujets_deja
             "titre_article": article["titre"],
             "source": article["source"],
             "url": article["url"],
+            # Contenu reel de l'article (voir veille_actualite.py), transmis au
+            # navigateur pour etre renvoye tel quel a generer_post_expert le
+            # moment venu - evite d'avoir a re-televerser toute la veille pour
+            # retrouver l'article d'origine au moment de la redaction.
+            "extrait": article.get("extrait", ""),
         })
     return suggestions
 

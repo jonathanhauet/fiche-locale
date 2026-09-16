@@ -19,12 +19,14 @@
   <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir)</label>
   <div class="ligne-champs">
     <input type="text" id="theme-ia" placeholder="Ex : la dernière mise à jour Google AI Overviews" style="flex:1;">
+    <input type="hidden" id="champ-contexte-article-ia">
     <button type="button" id="bouton-micro-theme" class="bouton-micro" title="Dicter à la voix" hidden>🎤</button>
     <button type="button" id="bouton-generer-texte" class="bouton-secondaire">
       <span class="spinner" id="spinner-generer-texte" hidden></span>
       💡 Générer le texte (IA)
     </button>
   </div>
+  <p id="texte-source-article-ia" class="texte-vide" hidden></p>
   <p id="texte-statut-generation" class="texte-vide" hidden></p>
 
   <button type="button" id="bouton-sujets-tendance" class="bouton-secondaire">
@@ -367,6 +369,14 @@
       });
     }
 
+    // Si le sujet est modifie a la main (ou dicte) apres avoir choisi une
+    // suggestion tendance, l'article source associe n'est plus forcement
+    // pertinent : on retire le lien plutot que de garder un ancrage perime.
+    document.getElementById("theme-ia").addEventListener("input", () => {
+      document.getElementById("champ-contexte-article-ia").value = "";
+      document.getElementById("texte-source-article-ia").hidden = true;
+    });
+
     activerDictee(document.getElementById("bouton-micro-theme"), document.getElementById("theme-ia"));
     activerDictee(document.getElementById("bouton-micro-texte"), document.getElementById("texte-base"));
 
@@ -406,6 +416,10 @@
             + `<span class="source-sujet-tendance">${echapperHtml(suggestion.source || "Source")} — ${echapperHtml(suggestion.titre_article)}</span>`;
           bouton.addEventListener("click", () => {
             document.getElementById("theme-ia").value = suggestion.sujet;
+            document.getElementById("champ-contexte-article-ia").value = suggestion.extrait || "";
+            const statutSource = document.getElementById("texte-source-article-ia");
+            statutSource.hidden = false;
+            statutSource.textContent = `Texte généré à partir de : ${suggestion.titre_article} (${suggestion.source || "source"}).`;
           });
           li.appendChild(bouton);
           listeSujetsTendance.appendChild(li);
@@ -424,17 +438,20 @@
     const texteStatutGeneration = document.getElementById("texte-statut-generation");
     boutonGenererTexte.addEventListener("click", async () => {
       const theme = document.getElementById("theme-ia").value.trim();
+      const contenuArticle = document.getElementById("champ-contexte-article-ia").value;
 
       boutonGenererTexte.disabled = true;
       spinnerGenererTexte.hidden = false;
       texteStatutGeneration.hidden = false;
-      texteStatutGeneration.textContent = "Génération en cours...";
+      texteStatutGeneration.textContent = contenuArticle
+        ? "Génération en cours (à partir de l'article source)..."
+        : "Génération en cours...";
 
       try {
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_texte", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ theme: theme }),
+          body: JSON.stringify({ theme: theme, contenu_article: contenuArticle }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {

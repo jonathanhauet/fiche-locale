@@ -5398,6 +5398,10 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
     pour un post publiable tel quel sur n'importe quelle fiche cliente) -
     pertinent ici car la fiche EST l'auteur (ex : Jonathan sur sa propre
     fiche), pas un post generique a dupliquer sur d'autres clients.
+    contenu_article (optionnel) : extrait reel transmis par le navigateur
+    quand le theme vient d'une suggestion de /sujets_tendance, pour ancrer
+    la redaction sur les faits reels plutot que de laisser l'IA deviner a
+    partir du seul titre (voir generer_post_expert).
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -5409,9 +5413,10 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
 
     donnees = await request.json()
     theme = (donnees.get("theme") or "").strip()
+    contenu_article = (donnees.get("contenu_article") or "").strip()
 
     try:
-        post_genere = claude_generation.generer_post_expert(theme, _contexte_ia_client(client))
+        post_genere = claude_generation.generer_post_expert(theme, _contexte_ia_client(client), contenu_article)
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
 
