@@ -10,7 +10,7 @@ import requests
 
 URL_POSTS = "https://api.linkedin.com/rest/posts"
 URL_IMAGES = "https://api.linkedin.com/rest/images"
-VERSION_API = "202409"
+VERSION_API = "202606"  # LinkedIn ne garde une version active qu'environ 1 an ; a avancer periodiquement (voir "LinkedIn-Version" dans la doc developer LinkedIn)
 
 
 def _entetes(access_token: str) -> dict:
