@@ -2179,6 +2179,26 @@ def ignorer_alerte_protection(alerte_id: int, request: Request, db: Session = De
     return RedirectResponse("/alertes", status_code=303)
 
 
+@app.post("/alertes/protection/{alerte_id}/masquer")
+def masquer_alerte_protection(alerte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Retire l'alerte de la liste sans rien changer (ni ecriture sur Google, ni
+    mise a jour de la reference) - pour un cas que Jonathan ne veut pas
+    traiter maintenant. La reference restant inchangee, si l'ecart persiste
+    encore le lendemain, verifier_protection_fiches la re-signalera.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    alerte = db.get(models.AlerteProtectionFiche, alerte_id)
+    if alerte and alerte.traite_le is None:
+        alerte.traite_le = datetime.utcnow()
+        alerte.action = "MASQUE"
+        db.commit()
+    return RedirectResponse("/alertes", status_code=303)
+
+
 @app.get("/clients/nouveau", response_class=HTMLResponse)
 def nouveau_client_formulaire(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

@@ -298,7 +298,7 @@ class AlerteProtectionFiche(Base):
     valeur_detectee = Column(String, default="")
     detecte_le = Column(DateTime, default=datetime.utcnow)
     traite_le = Column(DateTime, nullable=True)
-    action = Column(String, nullable=True)  # RESTAURE, IGNORE
+    action = Column(String, nullable=True)  # RESTAURE, IGNORE, MASQUE
 
     client = relationship("Client")
 

@@ -110,6 +110,10 @@
             onsubmit="return confirm('Accepter ce changement comme nouvelle référence ? Il ne sera plus signalé.');">
         <button type="submit" class="bouton-secondaire">✓ C'est normal, accepter</button>
       </form>
+      <form method="post" action="/alertes/protection/{{ alerte.id }}/masquer"
+            onsubmit="return confirm('Masquer cette alerte sans rien changer ? Si l\'écart persiste encore demain, elle réapparaîtra.');">
+        <button type="submit" class="bouton-danger">✕ Masquer</button>
+      </form>
     </div>
   </li>
   {% endfor %}
