@@ -167,6 +167,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_instagram_id INTEGER"))
         if "token_instagram" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN token_instagram TEXT DEFAULT ''"))
+        if "compte_linkedin_id" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_linkedin_id INTEGER"))
 
         if "leads_audit" in inspecteur.get_table_names():
             colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
@@ -5123,13 +5125,38 @@ def linkedin_comptes(request: Request, db: Session = Depends(obtenir_session)):
         return redirection
 
     comptes = linkedin_oauth.lister_comptes(db)
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
+    clients_par_compte_id = {c.compte_linkedin_id: c for c in clients if c.compte_linkedin_id}
     return templates.TemplateResponse(
         request, "linkedin_comptes.html",
         {
             "comptes": comptes, "erreur": None, "resultat_publication": None,
             "posts_programmes": _posts_linkedin_programmes(db),
+            "clients": clients, "clients_par_compte_id": clients_par_compte_id,
         },
     )
+
+
+@app.post("/linkedin/comptes/{compte_id}/lier")
+def linkedin_lier_compte(compte_id: int, request: Request, client_id: int = Form(...), db: Session = Depends(obtenir_session)):
+    """
+    Associe un profil LinkedIn personnel a un client, pour le rendre
+    selectionnable dans le composeur multi-reseaux (/publication-multi) -
+    pertinent quand le profil personnel du client EST la presence a publier
+    (ex : Jonathan lui-meme), pas pour une page entreprise (voir
+    Community Management API, toujours en attente cote LinkedIn).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteLinkedIn, compte_id)
+    client = db.get(models.Client, client_id)
+    if compte and client:
+        client.compte_linkedin_id = compte.id
+        db.commit()
+
+    return RedirectResponse("/linkedin/comptes", status_code=303)
 
 
 @app.post("/linkedin/comptes/{compte_id}/publier")
@@ -5175,11 +5202,13 @@ async def linkedin_publier(
         except Exception as e:
             erreur = f"Echec de la publication : {e}"
 
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
     return templates.TemplateResponse(
         request, "linkedin_comptes.html",
         {
             "comptes": comptes, "erreur": erreur, "resultat_publication": resultat_publication,
             "posts_programmes": _posts_linkedin_programmes(db),
+            "clients": clients, "clients_par_compte_id": {c.compte_linkedin_id: c for c in clients if c.compte_linkedin_id},
         },
     )
 
@@ -5206,22 +5235,33 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
 
     compte = db.get(models.CompteLinkedIn, compte_id)
     if compte:
+        clients = db.query(models.Client).order_by(models.Client.nom).all()
+        clients_par_compte_id = {c.compte_linkedin_id: c for c in clients if c.compte_linkedin_id}
         posts_en_attente = (
             db.query(models.PostLinkedInProgramme)
             .filter_by(compte_linkedin_id=compte_id, etat="EN_ATTENTE")
             .count()
         )
-        if posts_en_attente:
+        clients_lies = clients_par_compte_id.get(compte_id)
+        if posts_en_attente or clients_lies:
             comptes = linkedin_oauth.lister_comptes(db)
+            if posts_en_attente:
+                message = (
+                    f"Impossible de deconnecter ce compte : {posts_en_attente} post(s) programme(s) "
+                    "en attente. Annulez-les d'abord."
+                )
+            else:
+                message = (
+                    f"Impossible de deconnecter ce compte : le client {clients_lies.nom} y est encore "
+                    "rattache. Reliez-le a un autre compte d'abord (ou retirez le lien)."
+                )
             return templates.TemplateResponse(
                 request, "linkedin_comptes.html",
                 {
                     "comptes": comptes, "resultat_publication": None,
                     "posts_programmes": _posts_linkedin_programmes(db),
-                    "erreur": (
-                        f"Impossible de deconnecter ce compte : {posts_en_attente} post(s) programme(s) "
-                        "en attente. Annulez-les d'abord."
-                    ),
+                    "clients": clients, "clients_par_compte_id": clients_par_compte_id,
+                    "erreur": message,
                 },
                 status_code=400,
             )
@@ -5231,42 +5271,50 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
     return RedirectResponse("/linkedin/comptes", status_code=303)
 
 
-# --- Publication multi-reseaux (Google + Facebook + Instagram, LinkedIn a venir) ---
+# --- Publication multi-reseaux (Google + Facebook + Instagram) ---
 
 
 def _reseaux_disponibles_client(client: "models.Client") -> dict:
     """
-    LinkedIn absent : necessite le produit "Community Management API",
-    demande a LinkedIn et toujours en attente de validation au moment de
-    l'ecriture de cette fonction (voir /linkedin/comptes) - pas de gestion
-    de page entreprise possible tant que ce n'est pas accorde.
+    LinkedIn : uniquement le profil personnel (voir /linkedin/comptes), lie
+    au client via compte_linkedin_id - pas de gestion de page entreprise
+    possible pour l'instant (produit "Community Management API" toujours en
+    attente de validation cote LinkedIn).
     """
     return {
         "google": bool(client.account_id and client.location_id),
         "facebook": bool(client.page_id_meta and client.token_page_meta),
         "instagram": bool(client.instagram_id_meta and client.token_instagram),
+        "linkedin": bool(client.compte_linkedin_id),
     }
 
 
-def _posts_multi_programmes(db: Session, client_id: int) -> dict:
+def _posts_multi_programmes(db: Session, client: "models.Client") -> dict:
     return {
         "google": (
             db.query(models.Post)
-            .filter_by(client_id=client_id, statut="A_PUBLIER")
+            .filter_by(client_id=client.id, statut="A_PUBLIER")
             .order_by(models.Post.date_prevue)
             .all()
         ),
         "facebook": (
             db.query(models.PostMetaProgramme)
-            .filter_by(client_id=client_id, etat="EN_ATTENTE")
+            .filter_by(client_id=client.id, etat="EN_ATTENTE")
             .order_by(models.PostMetaProgramme.publier_le)
             .all()
         ),
         "instagram": (
             db.query(models.PostInstagramProgramme)
-            .filter_by(client_id=client_id, etat="EN_ATTENTE")
+            .filter_by(client_id=client.id, etat="EN_ATTENTE")
             .order_by(models.PostInstagramProgramme.publier_le)
             .all()
+        ),
+        "linkedin": (
+            db.query(models.PostLinkedInProgramme)
+            .filter_by(compte_linkedin_id=client.compte_linkedin_id, etat="EN_ATTENTE")
+            .order_by(models.PostLinkedInProgramme.publier_le)
+            .all()
+            if client.compte_linkedin_id else []
         ),
     }
 
@@ -5283,7 +5331,7 @@ def _contexte_publication_multi(
         "variantes": variantes or {},
         "erreur": erreur,
         "resultat": resultat,
-        "posts_programmes": _posts_multi_programmes(db, client.id),
+        "posts_programmes": _posts_multi_programmes(db, client),
     }
 
 
@@ -5359,7 +5407,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     formulaire = await request.form()
     reseaux = formulaire.getlist("reseaux")
     texte_base = (formulaire.get("texte_base") or "").strip()
-    variantes_soumises = {r: (formulaire.get(f"texte_{r}") or "").strip() for r in ("google", "facebook", "instagram")}
+    variantes_soumises = {r: (formulaire.get(f"texte_{r}") or "").strip() for r in ("google", "facebook", "instagram", "linkedin")}
 
     def _erreur(message, code=400):
         return templates.TemplateResponse(
@@ -5452,6 +5500,26 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     instagram_publish.publier_photo(
                         client.token_instagram, client.instagram_id_meta, urls_par_reseau["instagram"], texte,
                     )
+
+            elif reseau == "linkedin":
+                compte_linkedin = db.get(models.CompteLinkedIn, client.compte_linkedin_id)
+                if not compte_linkedin:
+                    raise RuntimeError("LinkedIn n'est pas connecte pour ce client.")
+                # linkedin_publish attend les octets de l'image (televersement direct
+                # a l'API LinkedIn), contrairement aux autres reseaux qui n'ont besoin
+                # que d'une URL publique - on retelecharge donc depuis l'hebergement
+                # OVH ou l'image vient d'etre envoyee.
+                url_image = urls_par_reseau.get("linkedin")
+                octets_image = requests.get(url_image, timeout=30).content if url_image else None
+                if publier_le:
+                    db.add(models.PostLinkedInProgramme(
+                        compte_linkedin_id=compte_linkedin.id, texte=texte, image_donnees=octets_image, publier_le=publier_le,
+                    ))
+                    db.commit()
+                else:
+                    linkedin_publish.publier_post(
+                        compte_linkedin.access_token, compte_linkedin.identifiant_membre, texte, octets_image,
+                    )
         except Exception as e:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
 
@@ -5498,6 +5566,23 @@ def publication_multi_annuler_instagram(post_id: int, request: Request, db: Sess
         db.delete(post)
         db.commit()
         return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
+
+    return RedirectResponse("/publication-multi", status_code=303)
+
+
+@app.post("/publication-multi/linkedin/{post_id}/annuler")
+def publication_multi_annuler_linkedin(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post = db.get(models.PostLinkedInProgramme, post_id)
+    if post and post.etat == "EN_ATTENTE":
+        client = db.query(models.Client).filter_by(compte_linkedin_id=post.compte_linkedin_id).first()
+        db.delete(post)
+        db.commit()
+        if client:
+            return RedirectResponse(f"/publication-multi?client_id={client.id}", status_code=303)
 
     return RedirectResponse("/publication-multi", status_code=303)
 

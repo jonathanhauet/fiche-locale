@@ -21,7 +21,7 @@
 
   <label>Réseaux</label>
   <div class="grille-cartes-reseaux">
-    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG")] %}
+    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn (profil personnel)", "in")] %}
     <label class="carte-reseau carte-reseau-{{ reseau }}{{ ' indisponible' if not reseaux_disponibles[reseau] else '' }}">
       <input type="checkbox" name="reseaux" value="{{ reseau }}" class="case-reseau-input" data-reseau="{{ reseau }}"
              {% if not reseaux_disponibles[reseau] %}disabled{% endif %}
@@ -31,12 +31,6 @@
       {% if not reseaux_disponibles[reseau] %}<span class="etat-carte-reseau">Non connecté</span>{% endif %}
     </label>
     {% endfor %}
-    <label class="carte-reseau carte-reseau-linkedin indisponible">
-      <input type="checkbox" disabled>
-      <span class="badge-reseau badge-reseau-linkedin">in</span>
-      <span class="nom-carte-reseau">LinkedIn</span>
-      <span class="etat-carte-reseau">En attente d'approbation</span>
-    </label>
   </div>
 
   <label for="image-partagee">Image (optionnelle — partagée par défaut sur tous les réseaux, Instagram en a besoin)</label>
@@ -49,7 +43,7 @@
   <p id="texte-statut-adaptation" class="texte-vide" hidden></p>
 
   <div id="zone-variantes">
-    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG")] %}
+    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn", "in")] %}
     <div class="bloc-variante-reseau" data-reseau="{{ reseau }}" {% if reseau not in reseaux_coches %}hidden{% endif %}>
       <div class="colonne-edition-reseau">
         <label for="texte-{{ reseau }}">Texte pour {{ nom }}</label>
@@ -80,6 +74,10 @@
         <div class="apercu-icones">
           <span>👍 J'aime</span><span>💬 Commenter</span><span>↗ Partager</span>
         </div>
+        {% elif reseau == "linkedin" %}
+        <div class="apercu-icones">
+          <span>👍 J'aime</span><span>💬 Commenter</span><span>🔁 Republier</span><span>✉️ Envoyer</span>
+        </div>
         {% endif %}
       </div>
     </div>
@@ -95,7 +93,7 @@
   <button type="submit" class="bouton">Publier / programmer sur les réseaux sélectionnés</button>
 </form>
 
-{% if posts_programmes.google or posts_programmes.facebook or posts_programmes.instagram %}
+{% if posts_programmes.google or posts_programmes.facebook or posts_programmes.instagram or posts_programmes.linkedin %}
 <h2>Publications programmées pour {{ client.nom }}</h2>
 
 {% if posts_programmes.google %}
@@ -155,6 +153,29 @@
   </table>
 </div>
 {% endif %}
+
+{% if posts_programmes.linkedin %}
+<h3>LinkedIn</h3>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Texte</th><th>Publication prévue</th><th></th></tr></thead>
+    <tbody>
+      {% for post in posts_programmes.linkedin %}
+      <tr>
+        <td>{{ post.texte[:80] }}{% if post.texte|length > 80 %}…{% endif %}</td>
+        <td>{{ post.publier_le.strftime("%d/%m/%Y à %H:%M") }}</td>
+        <td>
+          <form method="post" action="/publication-multi/linkedin/{{ post.id }}/annuler"
+                onsubmit="return confirm('Annuler ce post programmé ?');">
+            <button type="submit" class="bouton-danger">Annuler</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endif %}
 
 <script>
@@ -187,8 +208,8 @@
     // chaque reseau : des valeurs approximatives et couramment observees (les
     // plateformes ne publient pas de seuil officiel, et il peut varier selon
     // l'appareil/la mise en page), utiles pour se donner un ordre d'idee.
-    const LIMITES_TRONCATURE = { google: 100, facebook: 477, instagram: 125 };
-    const LIBELLES_VOIR_PLUS = { google: "…", facebook: "… Voir plus", instagram: "… plus" };
+    const LIMITES_TRONCATURE = { google: 100, facebook: 477, instagram: 125, linkedin: 210 };
+    const LIBELLES_VOIR_PLUS = { google: "…", facebook: "… Voir plus", instagram: "… plus", linkedin: "… voir plus" };
 
     function echapperHtml(texte) {
       const div = document.createElement("div");

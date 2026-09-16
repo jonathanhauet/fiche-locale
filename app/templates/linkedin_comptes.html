@@ -24,6 +24,10 @@
 {% endif %}
 
 {% if comptes %}
+<p class="texte-discret">
+  Relier un profil à un client le rend sélectionnable dans la publication multi-réseaux de ce client
+  (pertinent quand le profil personnel du client EST la présence à publier — ex : votre propre fiche).
+</p>
 <div class="conteneur-tableau">
   <table class="tableau-historique">
     <thead>
@@ -31,11 +35,13 @@
         <th>Profil</th>
         <th>Connecté le</th>
         <th>Expire le</th>
+        <th>Client associé</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for compte in comptes %}
+      {% set client_lie = clients_par_compte_id.get(compte.id) %}
       <tr>
         <td>
           <span class="ligne-compte-reseau">
@@ -45,7 +51,17 @@
         </td>
         <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
         <td>{{ compte.expire_le.strftime("%Y-%m-%d") if compte.expire_le else "-" }}</td>
+        <td>{{ client_lie.nom if client_lie else "—" }}</td>
         <td>
+          <form method="post" action="/linkedin/comptes/{{ compte.id }}/lier">
+            <select name="client_id" required>
+              <option value="" disabled {{ "selected" if not client_lie else "" }}>Choisir un client…</option>
+              {% for client in clients %}
+              <option value="{{ client.id }}" {{ "selected" if client_lie and client_lie.id == client.id else "" }}>{{ client.nom }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
+          </form>
           <form method="post" action="/linkedin/comptes/{{ compte.id }}/deconnecter"
                 onsubmit="return confirm('Deconnecter ce profil LinkedIn ?');">
             <button type="submit" class="bouton-danger">Déconnecter</button>
@@ -59,19 +75,78 @@
 
 <h2>Publier un post</h2>
 {% for compte in comptes %}
-<form method="post" action="/linkedin/comptes/{{ compte.id }}/publier" class="formulaire" enctype="multipart/form-data">
-  <label for="texte-{{ compte.id }}">Texte du post pour {{ compte.libelle }}</label>
-  <textarea id="texte-{{ compte.id }}" name="texte" rows="5" required></textarea>
-  <label for="image-{{ compte.id }}">Image (optionnelle)</label>
-  <input type="file" id="image-{{ compte.id }}" name="image" accept="image/*">
-  <label for="date-{{ compte.id }}">Programmer pour plus tard (optionnel — laisser vide pour publier immédiatement)</label>
-  <div class="ligne-champs">
-    <input type="date" id="date-{{ compte.id }}" name="publier_date">
-    <input type="time" name="publier_heure">
+<form method="post" action="/linkedin/comptes/{{ compte.id }}/publier" class="formulaire formulaire-avec-apercu" enctype="multipart/form-data">
+  <div class="colonne-edition-reseau">
+    <label for="texte-{{ compte.id }}">Texte du post pour {{ compte.libelle }}</label>
+    <textarea id="texte-{{ compte.id }}" name="texte" rows="5" required class="champ-texte-linkedin" data-compte-id="{{ compte.id }}"></textarea>
+    <label for="image-{{ compte.id }}">Image (optionnelle)</label>
+    <input type="file" id="image-{{ compte.id }}" name="image" accept="image/*" class="champ-image-linkedin" data-compte-id="{{ compte.id }}">
+    <label for="date-{{ compte.id }}">Programmer pour plus tard (optionnel — laisser vide pour publier immédiatement)</label>
+    <div class="ligne-champs">
+      <input type="date" id="date-{{ compte.id }}" name="publier_date">
+      <input type="time" name="publier_heure">
+    </div>
+    <button type="submit" class="bouton">Publier / programmer sur LinkedIn</button>
   </div>
-  <button type="submit" class="bouton">Publier / programmer sur LinkedIn</button>
+  <div class="apercu-post" data-reseau="linkedin">
+    <div class="apercu-entete">
+      <span class="badge-reseau badge-reseau-linkedin">in</span>
+      <div class="apercu-identite">
+        <strong>{{ compte.libelle }}</strong>
+        <span class="apercu-horodatage">À l'instant · LinkedIn</span>
+      </div>
+    </div>
+    <p class="apercu-texte" data-compte-id="{{ compte.id }}">Votre texte apparaîtra ici.</p>
+    <div class="apercu-cadre-image" hidden>
+      <img class="apercu-image" data-compte-id="{{ compte.id }}" alt="Aperçu de l'image">
+    </div>
+    <div class="apercu-icones">
+      <span>👍 J'aime</span><span>💬 Commenter</span><span>🔁 Republier</span><span>✉️ Envoyer</span>
+    </div>
+  </div>
 </form>
 {% endfor %}
+
+<script>
+  (function () {
+    const LIMITE_TRONCATURE_LINKEDIN = 210; // valeur approximative couramment observee, non documentee officiellement
+
+    function echapperHtml(texte) {
+      const div = document.createElement("div");
+      div.textContent = texte;
+      return div.innerHTML;
+    }
+
+    function rendreApercuTexte(compteId, texte) {
+      const apercu = document.querySelector(`.apercu-texte[data-compte-id="${compteId}"]`);
+      if (!apercu) return;
+      const propre = texte.trim();
+      if (!propre) { apercu.innerHTML = "Votre texte apparaîtra ici."; return; }
+      if (propre.length <= LIMITE_TRONCATURE_LINKEDIN) { apercu.innerHTML = echapperHtml(propre); return; }
+      const visible = echapperHtml(propre.slice(0, LIMITE_TRONCATURE_LINKEDIN));
+      const cache = echapperHtml(propre.slice(LIMITE_TRONCATURE_LINKEDIN));
+      apercu.innerHTML = visible
+        + '<span class="apercu-voir-plus">… voir plus</span>'
+        + `<span class="apercu-texte-cachee">${cache}</span>`;
+    }
+
+    document.querySelectorAll(".champ-texte-linkedin").forEach((champ) => {
+      champ.addEventListener("input", () => rendreApercuTexte(champ.dataset.compteId, champ.value));
+    });
+
+    document.querySelectorAll(".champ-image-linkedin").forEach((champ) => {
+      champ.addEventListener("change", () => {
+        const apercuImg = document.querySelector(`.apercu-image[data-compte-id="${champ.dataset.compteId}"]`);
+        const cadre = apercuImg.closest(".apercu-cadre-image");
+        const fichier = champ.files[0];
+        if (!fichier) { apercuImg.removeAttribute("src"); cadre.hidden = true; return; }
+        const lecteur = new FileReader();
+        lecteur.onload = () => { apercuImg.src = lecteur.result; cadre.hidden = false; };
+        lecteur.readAsDataURL(fichier);
+      });
+    });
+  })();
+</script>
 
 {% if posts_programmes %}
 <h2>Posts programmés en attente</h2>

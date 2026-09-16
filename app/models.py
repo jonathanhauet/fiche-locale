@@ -121,6 +121,11 @@ class Client(Base):
     # for Instagram" n'a rien a voir avec "Facebook Login for Business".
     compte_instagram_id = Column(Integer, ForeignKey("comptes_instagram.id"), nullable=True)
     token_instagram = Column(Text, default="")
+    # Profil LinkedIn personnel lie (voir linkedin_oauth.py) - pas de gestion
+    # de page entreprise possible pour l'instant (Community Management API en
+    # attente cote LinkedIn), donc uniquement pertinent pour un client dont le
+    # profil personnel EST la presence a publier (ex: Jonathan lui-meme).
+    compte_linkedin_id = Column(Integer, ForeignKey("comptes_linkedin.id"), nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")

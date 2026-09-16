@@ -947,6 +947,27 @@ button:active { transform: translateY(1px); }
 .apercu-post[data-reseau="google"] .apercu-cadre-image { margin: 0 0 0.4rem; }
 .apercu-post[data-reseau="google"] .apercu-image { border-radius: var(--rayon-petit); max-height: 200px; }
 
+/* LinkedIn : meme agencement que Google/Facebook (texte puis image), barre de reactions dediee */
+.apercu-post[data-reseau="linkedin"] .apercu-cadre-image { margin: 0 0 0.4rem; }
+.apercu-post[data-reseau="linkedin"] .apercu-image { border-radius: var(--rayon-petit); max-height: 220px; }
+.apercu-post[data-reseau="linkedin"] .apercu-icones {
+  justify-content: space-around;
+  border-top: 1px solid var(--carte-bordure);
+  padding-top: 0.5rem;
+}
+
+/* Formulaire de publication LinkedIn : edition + apercu cote a cote, comme la publication multi-reseaux */
+.formulaire-avec-apercu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .formulaire-avec-apercu { grid-template-columns: 1fr; }
+}
+
 .rempli-recemment { animation: flash-remplissage 1.5s ease; }
 
 @keyframes flash-remplissage {
