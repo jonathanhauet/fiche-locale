@@ -5388,6 +5388,38 @@ async def publication_multi_adapter(client_id: int, request: Request, db: Sessio
     return JSONResponse({"variantes": variantes})
 
 
+@app.post("/publication-multi/{client_id}/generer_image")
+async def publication_multi_generer_image(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Genere une image via Gemini a partir d'un prompt (voir gemini_images.py -
+    meme mecanisme que la generation d'image sur un post deja cree, mais ici
+    rien n'est encore enregistre en base : la composition multi-reseaux n'est
+    qu'un formulaire tant qu'elle n'est pas publiee/programmee). Renvoie
+    l'URL hebergee sur OVH, prete a servir d'image partagee du formulaire.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    prompt_image = (donnees.get("prompt_image") or "").strip()
+    if not prompt_image:
+        return JSONResponse({"erreur": "Aucun prompt image fourni."}, status_code=400)
+
+    try:
+        octets_image = gemini_images.generer_image(prompt_image)
+        nom_fichier = f"multi-ia-{uuid.uuid4().hex[:10]}.png"
+        url_image = ovh_upload.envoyer_octets(octets_image, nom_fichier)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la generation de l'image : {e}"}, status_code=500)
+
+    return JSONResponse({"url": url_image})
+
+
 @app.post("/publication-multi/{client_id}/publier", response_class=HTMLResponse)
 async def publication_multi_publier(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -5435,12 +5467,16 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
             return _erreur("Date ou heure de publication invalide.")
 
     # Image partagee (optionnelle), televersee une seule fois sur OVH et
-    # reutilisee pour chaque reseau sans image dediee.
+    # reutilisee pour chaque reseau sans image dediee. Un fichier choisi a la
+    # main est prioritaire ; sinon on reprend l'image deja generee par IA
+    # (deja hebergee sur OVH via /generer_image, pas besoin de la retraiter).
     image_partagee = formulaire.get("image")
     url_partagee = None
     if image_partagee is not None and getattr(image_partagee, "filename", ""):
         octets = await image_partagee.read()
         url_partagee = ovh_upload.envoyer_octets(octets, f"multi-{uuid.uuid4().hex[:10]}-{image_partagee.filename}")
+    else:
+        url_partagee = (formulaire.get("image_url_ia") or "").strip() or None
 
     urls_par_reseau = {}
     for reseau in reseaux:

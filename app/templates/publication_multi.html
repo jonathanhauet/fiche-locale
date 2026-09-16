@@ -16,6 +16,16 @@
 {% endif %}
 
 <form method="post" action="/publication-multi/{{ client.id }}/publier" enctype="multipart/form-data" class="formulaire">
+  <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir)</label>
+  <div class="ligne-champs">
+    <input type="text" id="theme-ia" placeholder="Ex : la dernière mise à jour Google AI Overviews" style="flex:1;">
+    <button type="button" id="bouton-generer-texte" class="bouton-secondaire">
+      <span class="spinner" id="spinner-generer-texte" hidden></span>
+      💡 Générer le texte (IA)
+    </button>
+  </div>
+  <p id="texte-statut-generation" class="texte-vide" hidden></p>
+
   <label for="texte-base">Texte de base</label>
   <textarea id="texte-base" name="texte_base" rows="4" required>{{ texte_base }}</textarea>
 
@@ -35,6 +45,15 @@
 
   <label for="image-partagee">Image (optionnelle — partagée par défaut sur tous les réseaux, Instagram en a besoin)</label>
   <input type="file" id="image-partagee" name="image" accept="image/*">
+  <div class="ligne-champs">
+    <input type="text" id="prompt-image-ia" placeholder="Description de l'image à générer (remplie automatiquement après « Générer le texte »)" style="flex:1;">
+    <button type="button" id="bouton-generer-image" class="bouton-secondaire">
+      <span class="spinner" id="spinner-generer-image" hidden></span>
+      🎨 Générer une image (IA)
+    </button>
+  </div>
+  <input type="hidden" name="image_url_ia" id="champ-image-url-ia">
+  <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
 
   <button type="button" id="bouton-adapter" class="bouton-secondaire">
     <span class="spinner" id="spinner-adapter" hidden></span>
@@ -248,8 +267,10 @@
     });
 
     // Aperçu de l'image : partagee par defaut, sauf si le reseau a sa propre
-    // image dediee activee (voir case-activer-image-dediee ci-dessus).
+    // image dediee activee (voir case-activer-image-dediee ci-dessus). En
+    // dernier recours, l'image generee par IA (deja hebergee, voir plus bas).
     const champImagePartagee = document.getElementById("image-partagee");
+    const champImageUrlIA = document.getElementById("champ-image-url-ia");
 
     function lireImageEnApercu(fichier, callback) {
       if (!fichier) { callback(null); return; }
@@ -264,14 +285,92 @@
       if (!apercuImg) return;
       const cadre = apercuImg.closest(".apercu-cadre-image");
       const fichier = (champDedie && champDedie.files[0]) || champImagePartagee.files[0] || null;
-      lireImageEnApercu(fichier, (src) => {
-        if (src) { apercuImg.src = src; cadre.hidden = false; }
-        else { apercuImg.removeAttribute("src"); cadre.hidden = true; }
-      });
+      if (fichier) {
+        lireImageEnApercu(fichier, (src) => {
+          if (src) { apercuImg.src = src; cadre.hidden = false; }
+          else { apercuImg.removeAttribute("src"); cadre.hidden = true; }
+        });
+        return;
+      }
+      if (champImageUrlIA.value) { apercuImg.src = champImageUrlIA.value; cadre.hidden = false; return; }
+      apercuImg.removeAttribute("src");
+      cadre.hidden = true;
+    }
+
+    function actualiserToutesLesApercusImage() {
+      document.querySelectorAll(".bloc-variante-reseau").forEach((bloc) => actualiserApercuImage(bloc.dataset.reseau));
     }
 
     champImagePartagee.addEventListener("change", () => {
-      document.querySelectorAll(".bloc-variante-reseau").forEach((bloc) => actualiserApercuImage(bloc.dataset.reseau));
+      if (champImagePartagee.files[0]) champImageUrlIA.value = "";
+      actualiserToutesLesApercusImage();
+    });
+
+    const boutonGenererTexte = document.getElementById("bouton-generer-texte");
+    const spinnerGenererTexte = document.getElementById("spinner-generer-texte");
+    const texteStatutGeneration = document.getElementById("texte-statut-generation");
+    boutonGenererTexte.addEventListener("click", async () => {
+      const theme = document.getElementById("theme-ia").value.trim();
+
+      boutonGenererTexte.disabled = true;
+      spinnerGenererTexte.hidden = false;
+      texteStatutGeneration.hidden = false;
+      texteStatutGeneration.textContent = "Génération en cours...";
+
+      try {
+        const corps = new URLSearchParams({ theme: theme, client_reference_id: "{{ client.id }}" });
+        const reponse = await fetch("/posts/generer_generique", { method: "POST", body: corps });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          texteStatutGeneration.textContent = donnees.erreur || "Échec de la génération.";
+          return;
+        }
+        const zoneTexte = document.getElementById("texte-base");
+        zoneTexte.value = donnees.texte;
+        document.getElementById("prompt-image-ia").value = donnees.prompt_image || "";
+        texteStatutGeneration.textContent = "Texte généré — relisez avant de publier (vous pouvez aussi générer une image ci-dessous).";
+      } catch (erreur) {
+        texteStatutGeneration.textContent = "Erreur réseau lors de la génération.";
+      } finally {
+        boutonGenererTexte.disabled = false;
+        spinnerGenererTexte.hidden = true;
+      }
+    });
+
+    const boutonGenererImage = document.getElementById("bouton-generer-image");
+    const spinnerGenererImage = document.getElementById("spinner-generer-image");
+    const texteStatutImageIA = document.getElementById("texte-statut-image-ia");
+    boutonGenererImage.addEventListener("click", async () => {
+      const promptImage = document.getElementById("prompt-image-ia").value.trim();
+
+      texteStatutImageIA.hidden = false;
+      if (!promptImage) { texteStatutImageIA.textContent = "Décrivez d'abord l'image souhaitée (ou générez le texte, qui la propose automatiquement)."; return; }
+
+      boutonGenererImage.disabled = true;
+      spinnerGenererImage.hidden = false;
+      texteStatutImageIA.textContent = "Génération de l'image en cours (peut prendre quelques secondes)...";
+
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/generer_image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_image: promptImage }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          texteStatutImageIA.textContent = donnees.erreur || "Échec de la génération de l'image.";
+          return;
+        }
+        champImagePartagee.value = "";
+        champImageUrlIA.value = donnees.url;
+        actualiserToutesLesApercusImage();
+        texteStatutImageIA.textContent = "Image générée — visible dans les aperçus ci-dessous.";
+      } catch (erreur) {
+        texteStatutImageIA.textContent = "Erreur réseau lors de la génération de l'image.";
+      } finally {
+        boutonGenererImage.disabled = false;
+        spinnerGenererImage.hidden = true;
+      }
     });
 
     const boutonAdapter = document.getElementById("bouton-adapter");
