@@ -4916,6 +4916,36 @@ def meta_callback(request: Request, db: Session = Depends(obtenir_session)):
     return RedirectResponse("/meta/comptes", status_code=303)
 
 
+@app.post("/meta/comptes/connecter_token")
+def meta_connecter_token(request: Request, access_token: str = Form(...), db: Session = Depends(obtenir_session)):
+    """
+    Connexion alternative avec un jeton d'utilisateur systeme colle directement
+    (genere depuis Business Settings > Utilisateurs systeme > Generer un jeton).
+    Utile quand la fenetre de connexion habituelle (/meta/connecter) refuse de
+    partager une Page appartenant au meme portefeuille business que l'app
+    elle-meme - Meta bloque ce partage "vers soi-meme" dans cette fenetre,
+    mais un jeton systeme genere manuellement dans Business Settings n'est pas
+    concerne par cette limite.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    access_token = access_token.strip()
+    try:
+        meta_oauth.lister_pages(access_token)
+    except Exception as erreur:
+        comptes = meta_oauth.lister_comptes(db)
+        return templates.TemplateResponse(
+            request, "meta_comptes.html",
+            {"comptes": comptes, "erreur": f"Jeton invalide ou permissions insuffisantes : {erreur}"},
+            status_code=400,
+        )
+
+    meta_oauth.enregistrer_compte(db, access_token)
+    return RedirectResponse("/meta/comptes", status_code=303)
+
+
 @app.get("/meta/comptes", response_class=HTMLResponse)
 def meta_comptes(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

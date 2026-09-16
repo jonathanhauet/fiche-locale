@@ -52,4 +52,18 @@
   <p class="texte-vide">Aucun compte Meta connecté pour l'instant.</p>
 </div>
 {% endif %}
+
+<details class="bloc-repliable">
+  <summary>Connexion avancée avec un jeton système (si "Connecter un compte Meta" refuse une Page)</summary>
+  <p class="texte-discret">
+    Si Meta bloque le partage d'une Page dans la fenêtre habituelle (cas d'une Page qui appartient
+    au même portefeuille business que l'application elle-même), génère un jeton directement depuis
+    Business Settings → Utilisateurs système → sélectionne l'utilisateur système → "Générer un token"
+    (coche les permissions Pages et Instagram nécessaires), puis colle-le ici.
+  </p>
+  <form method="post" action="/meta/comptes/connecter_token" class="formulaire-ligne">
+    <input type="text" name="access_token" placeholder="Coller le jeton système ici" required style="flex:1;">
+    <button type="submit" class="bouton-secondaire">Connecter avec ce jeton</button>
+  </form>
+</details>
 {% endblock %}
