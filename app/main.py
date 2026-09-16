@@ -2524,6 +2524,7 @@ def _reponse_detail_client(
             "erreur_citations": erreur_citations,
             "erreur_protection": erreur_protection,
             "libelles_statut_ouverture": google_location.LIBELLES_STATUT_OUVERTURE,
+            "intervalle_planificateur_minutes": INTERVALLE_PLANIFICATEUR_MINUTES,
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -3138,6 +3139,15 @@ def programmer_photos_client(
 
     taille_lot = max(1, taille_lot)
     intervalle_valeur = max(1, intervalle_valeur)
+    if intervalle_unite == "minutes" and intervalle_valeur < INTERVALLE_PLANIFICATEUR_MINUTES:
+        return _reponse_detail_client(
+            request, db, client,
+            erreur_photo=(
+                f"L'espacement minimum est de {INTERVALLE_PLANIFICATEUR_MINUTES} minutes "
+                "(fréquence de vérification du planificateur) : en dessous, plusieurs lots "
+                "partiraient regroupés au même passage."
+            ),
+        )
     unite_timedelta = DUREES_INTERVALLE_PHOTOS.get(intervalle_unite, "days")
     pas = timedelta(**{unite_timedelta: intervalle_valeur})
 

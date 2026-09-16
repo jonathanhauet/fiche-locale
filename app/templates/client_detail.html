@@ -394,7 +394,8 @@
 
 <div class="actions-avis">
   <button type="button" id="bouton-publier-photos" class="bouton-publier">Publier maintenant sur la fiche</button>
-  <form class="formulaire-ligne formulaire-programmer-photos" method="post" action="/clients/{{ client.id }}/photos/programmer">
+  <form class="formulaire-ligne formulaire-programmer-photos" method="post" action="/clients/{{ client.id }}/photos/programmer"
+        data-intervalle-min-minutes="{{ intervalle_planificateur_minutes }}">
     <label>
       Première date
       <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
@@ -413,10 +414,10 @@
     </label>
     <label>
       Tous les
-      <input type="number" name="intervalle_valeur" value="3" min="1" style="width:4.5rem;">
+      <input type="number" name="intervalle_valeur" id="champ-intervalle-valeur-photos" value="3" min="1" style="width:4.5rem;">
     </label>
     <label>
-      <select name="intervalle_unite">
+      <select name="intervalle_unite" id="champ-intervalle-unite-photos">
         <option value="minutes">minutes</option>
         <option value="heures">heures</option>
         <option value="jours" selected>jours</option>
@@ -787,6 +788,23 @@
       this.replaceWith(remplacement);
     });
   });
+
+  const formulaireProgrammerPhotos = document.querySelector(".formulaire-programmer-photos");
+  if (formulaireProgrammerPhotos) {
+    formulaireProgrammerPhotos.addEventListener("submit", (evenement) => {
+      const minimumMinutes = parseInt(formulaireProgrammerPhotos.dataset.intervalleMinMinutes, 10) || 15;
+      const unite = document.getElementById("champ-intervalle-unite-photos").value;
+      const valeur = parseInt(document.getElementById("champ-intervalle-valeur-photos").value, 10) || 0;
+      if (unite === "minutes" && valeur < minimumMinutes) {
+        evenement.preventDefault();
+        alert(
+          `L'espacement minimum est de ${minimumMinutes} minutes : c'est la fréquence à laquelle `
+          + "la plateforme vérifie s'il y a des envois à faire. En dessous, plusieurs lots partiraient "
+          + "regroupés au même moment au lieu d'être vraiment espacés."
+        );
+      }
+    });
+  }
 
   const boutonPublierPhotos = document.getElementById("bouton-publier-photos");
   if (boutonPublierPhotos) {
