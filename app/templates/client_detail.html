@@ -355,7 +355,7 @@
     <img src="{{ photo.url_image }}" alt="{{ photo.categorie }}">
     <figcaption>
       <span class="etiquette-statut etiquette-{{ photo.statut|lower }}">
-        {% if photo.statut == "A_PUBLIER" and photo.date_prevue %}Programmée {{ photo.date_prevue.strftime("%d/%m/%Y") }}
+        {% if photo.statut == "A_PUBLIER" and photo.date_prevue %}Programmée {{ photo.date_prevue.strftime("%d/%m/%Y") }}{% if photo.heure_prevue %} à {{ photo.heure_prevue }}{% endif %}
         {% elif photo.statut == "ECHEC_PUBLICATION" %}Échec
         {% else %}Brouillon{% endif %}
       </span>
@@ -402,13 +402,25 @@
         <input type="hidden" class="champ-date-valeur" name="date_prevue">
       </div>
     </label>
+    <div class="choix-heure choix-heure-compact">
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
+    </div>
     <label>
       Par lot de
       <input type="number" name="taille_lot" value="{{ [photos_en_preparation|length, 10] | min }}" min="1" style="width:4.5rem;">
     </label>
     <label>
       Tous les
-      <input type="number" name="intervalle_jours" value="3" min="1" max="30" style="width:4.5rem;"> jours
+      <input type="number" name="intervalle_valeur" value="3" min="1" style="width:4.5rem;">
+    </label>
+    <label>
+      <select name="intervalle_unite">
+        <option value="minutes">minutes</option>
+        <option value="heures">heures</option>
+        <option value="jours" selected>jours</option>
+      </select>
     </label>
     <button type="submit" class="bouton-secondaire">Programmer l'envoi</button>
   </form>

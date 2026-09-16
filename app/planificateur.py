@@ -67,20 +67,23 @@ def verifier_et_publier_posts_programmes():
 
 
 def verifier_et_publier_photos_programmees():
-    """Publie automatiquement toutes les photos 'A_PUBLIER' dont la date prevue est arrivee."""
+    """Publie automatiquement toutes les photos 'A_PUBLIER' dont la date et l'heure prevues sont arrivees."""
     db = SessionLocal()
     try:
         if not google_oauth.google_est_connecte(db):
             return
 
-        aujourdhui = date.today()
-        photos_a_publier = (
+        maintenant = datetime.now()
+        photos_candidates = (
             db.query(models.PhotoFiche)
             .filter(models.PhotoFiche.statut == "A_PUBLIER")
             .filter(models.PhotoFiche.date_prevue.isnot(None))
-            .filter(models.PhotoFiche.date_prevue <= aujourdhui)
+            .filter(models.PhotoFiche.date_prevue <= maintenant.date())
             .all()
         )
+        photos_a_publier = [
+            p for p in photos_candidates if _heure_prevue_atteinte(p.date_prevue, p.heure_prevue, maintenant)
+        ]
         if not photos_a_publier:
             return
 

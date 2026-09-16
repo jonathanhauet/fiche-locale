@@ -224,6 +224,7 @@ class PhotoFiche(Base):
     # BROUILLON, A_PUBLIER, PUBLIE_LIVE, ECHEC_PUBLICATION
     statut = Column(String, default="BROUILLON")
     date_prevue = Column(Date, nullable=True)
+    heure_prevue = Column(String, nullable=True)  # "HH:MM", utilise avec date_prevue pour la programmation
     id_media_google = Column(String, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
     maj_le = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

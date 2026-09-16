@@ -11,7 +11,7 @@ import calendar
 import json
 import os
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
@@ -185,6 +185,8 @@ def _migrer_vers_multi_comptes():
                 connexion.execute(text("ALTER TABLE photos_fiche ADD COLUMN latitude REAL"))
             if "longitude" not in colonnes_photos:
                 connexion.execute(text("ALTER TABLE photos_fiche ADD COLUMN longitude REAL"))
+            if "heure_prevue" not in colonnes_photos:
+                connexion.execute(text("ALTER TABLE photos_fiche ADD COLUMN heure_prevue TEXT"))
 
         if "posts" in inspecteur.get_table_names():
             colonnes_posts = [c["name"] for c in inspecteur.get_columns("posts")]
@@ -3094,20 +3096,28 @@ def publier_photo_client(client_id: int, photo_id: int, request: Request, db: Se
     return JSONResponse({"ok": True})
 
 
+DUREES_INTERVALLE_PHOTOS = {"minutes": "minutes", "heures": "hours", "jours": "days"}
+
+
 @app.post("/clients/{client_id}/photos/programmer")
 def programmer_photos_client(
     client_id: int, request: Request,
     date_prevue: str = Form(...),
     taille_lot: int = Form(...),
-    intervalle_jours: int = Form(1),
+    intervalle_valeur: int = Form(1),
+    intervalle_unite: str = Form("jours"),
+    heure_mode: str = Form("0830"),
+    heure_h: int = Form(8),
+    heure_m: int = Form(30),
     db: Session = Depends(obtenir_session),
 ):
     """
     Programme l'envoi de toutes les photos actuellement en BROUILLON pour ce
-    client, par lots espaces (ex : 10 photos tous les 3 jours) plutot que
-    toutes a la meme date - utile pour un import en masse (ex : une
-    trentaine de photos d'un coup) qu'on ne veut pas voir arriver toutes le
-    meme jour sur la fiche Google.
+    client, par lots espaces (ex : 10 photos tous les 3 jours, ou toutes les
+    30 minutes) plutot que toutes a la meme date - utile pour un import en
+    masse (ex : une centaine de photos d'un coup) qu'on ne veut pas voir
+    arriver toutes le meme jour sur la fiche Google (Google peut bloquer les
+    envois trop massifs en une seule fois).
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -3122,8 +3132,14 @@ def programmer_photos_client(
     except ValueError:
         return _reponse_detail_client(request, db, client, erreur_photo="Date invalide.")
 
+    heure_debut = _heure_depuis_formulaire({"heure_mode": heure_mode, "heure_h": heure_h, "heure_m": heure_m})
+    heure_debut_h, heure_debut_m = (int(x) for x in heure_debut.split(":"))
+    datetime_debut = datetime.combine(date_debut, time(hour=heure_debut_h, minute=heure_debut_m))
+
     taille_lot = max(1, taille_lot)
-    intervalle_jours = max(1, intervalle_jours)
+    intervalle_valeur = max(1, intervalle_valeur)
+    unite_timedelta = DUREES_INTERVALLE_PHOTOS.get(intervalle_unite, "days")
+    pas = timedelta(**{unite_timedelta: intervalle_valeur})
 
     photos = (
         db.query(models.PhotoFiche)
@@ -3133,7 +3149,9 @@ def programmer_photos_client(
     )
     for index, photo in enumerate(photos):
         groupe = index // taille_lot
-        photo.date_prevue = date_debut + timedelta(days=groupe * intervalle_jours)
+        moment_prevu = datetime_debut + pas * groupe
+        photo.date_prevue = moment_prevu.date()
+        photo.heure_prevue = moment_prevu.strftime("%H:%M")
         photo.statut = "A_PUBLIER"
     db.commit()
 
