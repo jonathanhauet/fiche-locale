@@ -29,6 +29,7 @@ SOURCES_VEILLE = [
     "https://www.abondance.com/feed",
     "https://searchengineland.com/feed",
     "https://www.blogdumoderateur.com/feed/",
+    "https://www.seroundtable.com/index.rdf",
 ]
 
 MOTS_CLES_PERTINENCE = [
