@@ -75,6 +75,7 @@ from . import (
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
     envoyer_recaps_mensuels,
+    generer_suggestions_quotidiennes,
     publier_posts_instagram_programmes,
     publier_posts_linkedin_programmes,
     publier_posts_meta_programmes,
@@ -377,6 +378,16 @@ planificateur.add_job(
     hour=8,
     timezone="Europe/Brussels",
     id="recap_mensuel",
+)
+# Sujets tendance du jour (voir planificateur.generer_suggestions_quotidiennes) :
+# avant le recap mensuel a 8h, pour que la publication multi-reseaux ait deja
+# ses suggestions pretes des le debut de journee.
+planificateur.add_job(
+    generer_suggestions_quotidiennes,
+    "cron",
+    hour=7,
+    timezone="Europe/Brussels",
+    id="suggestions_sujet_jour",
 )
 # Solde DataForSEO affiche dans la barre laterale : rafraichi peu apres le
 # demarrage (next_run_time proche mais pas immediat, pour ne pas retarder le
@@ -5275,6 +5286,31 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---
 
 
+def _suggestions_du_jour_json(db: Session, client_id: int) -> str:
+    """
+    Sujets tendance deja generes ce matin par le planificateur (voir
+    planificateur.generer_suggestions_quotidiennes), en JSON - permet au
+    composeur de les afficher directement a l'ouverture, sans appel IA en
+    direct via le bouton "Sujets tendance du jour" (qui reste disponible en
+    repli si le lot du jour est vide ou perime). Meme forme que la reponse
+    de /publication-multi/{client_id}/sujets_tendance pour reutiliser le
+    meme code JS de rendu.
+    """
+    suggestions = (
+        db.query(models.SuggestionSujetJour)
+        .filter_by(client_id=client_id)
+        .order_by(models.SuggestionSujetJour.id)
+        .all()
+    )
+    return json.dumps([
+        {
+            "sujet": s.sujet, "titre_article": s.titre_article,
+            "source": s.source, "url": s.url, "extrait": s.extrait,
+        }
+        for s in suggestions
+    ])
+
+
 def _reseaux_disponibles_client(client: "models.Client") -> dict:
     """
     LinkedIn : uniquement le profil personnel (voir /linkedin/comptes), lie
@@ -5333,6 +5369,7 @@ def _contexte_publication_multi(
         "erreur": erreur,
         "resultat": resultat,
         "posts_programmes": _posts_multi_programmes(db, client),
+        "suggestions_du_jour_json": _suggestions_du_jour_json(db, client.id),
     }
 
 

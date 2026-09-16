@@ -29,9 +29,9 @@
   <p id="texte-source-article-ia" class="texte-vide" hidden></p>
   <p id="texte-statut-generation" class="texte-vide" hidden></p>
 
-  <button type="button" id="bouton-sujets-tendance" class="bouton-secondaire">
+  <button type="button" id="bouton-sujets-tendance" class="bouton-secondaire" data-suggestions-du-jour="{{ suggestions_du_jour_json }}">
     <span class="spinner" id="spinner-sujets-tendance" hidden></span>
-    🔥 Sujets tendance du jour (IA)
+    <span id="libelle-bouton-sujets-tendance">🔥 Sujets tendance du jour (IA)</span>
   </button>
   <div id="zone-sujets-tendance" hidden>
     <p id="texte-statut-sujets" class="texte-vide" hidden></p>
@@ -382,9 +382,38 @@
 
     const boutonSujetsTendance = document.getElementById("bouton-sujets-tendance");
     const spinnerSujetsTendance = document.getElementById("spinner-sujets-tendance");
+    const libelleBoutonSujetsTendance = document.getElementById("libelle-bouton-sujets-tendance");
     const zoneSujetsTendance = document.getElementById("zone-sujets-tendance");
     const listeSujetsTendance = document.getElementById("liste-sujets-tendance");
     const texteStatutSujets = document.getElementById("texte-statut-sujets");
+
+    function afficherSuggestions(suggestions) {
+      listeSujetsTendance.innerHTML = "";
+      if (!suggestions.length) {
+        texteStatutSujets.hidden = false;
+        texteStatutSujets.textContent = "Aucun sujet trouvé pour le moment.";
+        return;
+      }
+      texteStatutSujets.hidden = true;
+      suggestions.forEach((suggestion) => {
+        const li = document.createElement("li");
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.className = "carte-sujet-tendance";
+        bouton.innerHTML =
+          `<span class="texte-sujet-tendance">${echapperHtml(suggestion.sujet)}</span>`
+          + `<span class="source-sujet-tendance">${echapperHtml(suggestion.source || "Source")} — ${echapperHtml(suggestion.titre_article)}</span>`;
+        bouton.addEventListener("click", () => {
+          document.getElementById("theme-ia").value = suggestion.sujet;
+          document.getElementById("champ-contexte-article-ia").value = suggestion.extrait || "";
+          const statutSource = document.getElementById("texte-source-article-ia");
+          statutSource.hidden = false;
+          statutSource.textContent = `Texte généré à partir de : ${suggestion.titre_article} (${suggestion.source || "source"}).`;
+        });
+        li.appendChild(bouton);
+        listeSujetsTendance.appendChild(li);
+      });
+    }
 
     boutonSujetsTendance.addEventListener("click", async () => {
       zoneSujetsTendance.hidden = false;
@@ -398,32 +427,11 @@
         const reponse = await fetch("/publication-multi/{{ client.id }}/sujets_tendance", { method: "POST" });
         const donnees = await reponse.json();
         if (!reponse.ok) {
+          texteStatutSujets.hidden = false;
           texteStatutSujets.textContent = donnees.erreur || "Échec de la recherche.";
           return;
         }
-        if (!donnees.suggestions.length) {
-          texteStatutSujets.textContent = "Aucun sujet trouvé pour le moment.";
-          return;
-        }
-        texteStatutSujets.hidden = true;
-        donnees.suggestions.forEach((suggestion) => {
-          const li = document.createElement("li");
-          const bouton = document.createElement("button");
-          bouton.type = "button";
-          bouton.className = "carte-sujet-tendance";
-          bouton.innerHTML =
-            `<span class="texte-sujet-tendance">${echapperHtml(suggestion.sujet)}</span>`
-            + `<span class="source-sujet-tendance">${echapperHtml(suggestion.source || "Source")} — ${echapperHtml(suggestion.titre_article)}</span>`;
-          bouton.addEventListener("click", () => {
-            document.getElementById("theme-ia").value = suggestion.sujet;
-            document.getElementById("champ-contexte-article-ia").value = suggestion.extrait || "";
-            const statutSource = document.getElementById("texte-source-article-ia");
-            statutSource.hidden = false;
-            statutSource.textContent = `Texte généré à partir de : ${suggestion.titre_article} (${suggestion.source || "source"}).`;
-          });
-          li.appendChild(bouton);
-          listeSujetsTendance.appendChild(li);
-        });
+        afficherSuggestions(donnees.suggestions);
       } catch (erreur) {
         texteStatutSujets.hidden = false;
         texteStatutSujets.textContent = "Erreur réseau lors de la recherche.";
@@ -432,6 +440,20 @@
         spinnerSujetsTendance.hidden = true;
       }
     });
+
+    // Sujets deja prepares ce matin par le planificateur (voir
+    // planificateur.generer_suggestions_quotidiennes) : affiches directement,
+    // sans attendre un clic - le bouton sert alors a en demander de nouveaux.
+    try {
+      const suggestionsDuJour = JSON.parse(boutonSujetsTendance.dataset.suggestionsDuJour || "[]");
+      if (suggestionsDuJour.length) {
+        zoneSujetsTendance.hidden = false;
+        afficherSuggestions(suggestionsDuJour);
+        libelleBoutonSujetsTendance.textContent = "🔄 Actualiser les sujets tendance (IA)";
+      }
+    } catch (erreur) {
+      // Lot du jour illisible (ne devrait pas arriver) : le bouton reste utilisable normalement.
+    }
 
     const boutonGenererTexte = document.getElementById("bouton-generer-texte");
     const spinnerGenererTexte = document.getElementById("spinner-generer-texte");

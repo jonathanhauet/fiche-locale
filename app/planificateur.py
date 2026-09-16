@@ -4,13 +4,17 @@ Remplace la tache planifiee Windows utilisee par les scripts en ligne de
 commande : ici, une tache de fond integree au processus web (APScheduler).
 """
 
+import os
 from datetime import date, datetime, time, timedelta
 
 from . import (
-    google_business, google_location, google_oauth, google_publish, google_reviews,
-    instagram_oauth, instagram_publish, linkedin_publish, meta_publish, models, rapport_donnees,
+    brevo_email, claude_generation, google_business, google_location, google_oauth, google_publish,
+    google_reviews, instagram_oauth, instagram_publish, linkedin_publish, meta_publish, models,
+    rapport_donnees, veille_actualite,
 )
 from .database import SessionLocal
+
+URL_PLATEFORME = os.getenv("URL_PLATEFORME", "https://web-production-bf59a.up.railway.app")
 
 
 def _heure_prevue_atteinte(date_prevue: date, heure_prevue: str, maintenant: datetime) -> bool:
@@ -137,6 +141,97 @@ def envoyer_recaps_mensuels():
         cache_groupes_etiquette = {}
         for client in clients_eligibles:
             rapport_donnees.envoyer_recap_client(db, client, mois, annee, cache_groupes_etiquette)
+    finally:
+        db.close()
+
+
+def _sujets_deja_traites(db, client_id: int, limite: int = 15) -> list[str]:
+    """
+    Meme logique que main._sujets_deja_traites_client, dupliquee ici : main
+    importe planificateur (pas l'inverse), un import direct creerait un
+    cycle. Fonction volontairement petite pour que la duplication reste sans
+    risque de divergence significative.
+    """
+    posts = (
+        db.query(models.Post)
+        .filter(models.Post.client_id == client_id, models.Post.statut != "SUPPRIME")
+        .order_by(models.Post.cree_le.desc())
+        .limit(limite)
+        .all()
+    )
+    return [f"{post.titre} — {post.texte[:150].strip()}" for post in posts if post.texte.strip()]
+
+
+def _email_suggestions_quotidiennes(client: models.Client, suggestions: list[dict]) -> str:
+    lignes = "".join(f"""
+    <div style="background:#f9fafb;border-left:3px solid #4f46e5;padding:12px 16px;margin:10px 0;border-radius:4px;">
+      <p style="margin:0 0 4px;color:#1f2937;font-size:14px;font-weight:600;">{s['sujet']}</p>
+      <p style="margin:0;color:#6b7280;font-size:13px;">{s['source'] or 'Source'} — {s['titre_article']}</p>
+    </div>""" for s in suggestions)
+
+    return f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;">
+      <h1 style="font-size:19px;color:#1f2937;">Vos 5 sujets tendance du jour</h1>
+      <p style="color:#6b7280;font-size:14px;">
+        Bases sur l'actualite Google Business Profile, Google AI Overviews, Google Local Services Ads
+        et SEO local - choisissez-en un dans la publication multi-reseaux pour generer un post pret a relire.
+      </p>
+      {lignes}
+      <p style="margin-top:20px;">
+        <a href="{URL_PLATEFORME}/publication-multi?client_id={client.id}" style="color:#4f46e5;">
+          Ouvrir la publication multi-reseaux
+        </a>
+      </p>
+    </div>
+    """
+
+
+def generer_suggestions_quotidiennes():
+    """
+    Prepare chaque matin les sujets tendance de la fiche de Jonathan (voir
+    veille_actualite.py + claude_generation.suggerer_sujets_actualite), pour
+    que /publication-multi les affiche deja prets a l'ouverture plutot que
+    d'attendre un appel IA en direct sur place, et envoie un recap par email.
+    Se limite a la fiche "Jonathan Hauet Marketing" : generer_post_expert
+    (voix a la premiere personne, prise de position) n'a de sens que pour
+    une fiche dont le proprietaire EST l'auteur, pas pour une fiche cliente
+    classique. Le lot du jour remplace celui de la veille (voir le delete
+    avant l'ajout) plutot que de s'accumuler indefiniment.
+    """
+    db = SessionLocal()
+    try:
+        client = db.query(models.Client).filter(models.Client.nom == "Jonathan Hauet Marketing").first()
+        if not client:
+            return
+
+        try:
+            articles = veille_actualite.rechercher_actualites()
+            suggestions = claude_generation.suggerer_sujets_actualite(
+                articles, nombre=5, sujets_deja_traites=_sujets_deja_traites(db, client.id),
+            )
+        except Exception:
+            return
+
+        db.query(models.SuggestionSujetJour).filter_by(client_id=client.id).delete()
+        for suggestion in suggestions:
+            db.add(models.SuggestionSujetJour(
+                client_id=client.id,
+                sujet=suggestion["sujet"],
+                titre_article=suggestion["titre_article"],
+                source=suggestion["source"],
+                url=suggestion["url"],
+                extrait=suggestion["extrait"],
+            ))
+        db.commit()
+
+        if client.email and brevo_email.identifiants_configures():
+            try:
+                brevo_email.envoyer_email(
+                    client.email, client.prenom or client.nom,
+                    "Vos 5 sujets tendance du jour", _email_suggestions_quotidiennes(client, suggestions),
+                )
+            except Exception:
+                pass  # les suggestions restent utilisables sur la plateforme meme si l'email echoue
     finally:
         db.close()
 

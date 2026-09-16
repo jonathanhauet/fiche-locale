@@ -653,3 +653,28 @@ class ParametreGoogleAds(Base):
     customer_id = Column(String, default="")  # 10 chiffres, sans tirets
     refresh_token = Column(Text, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class SuggestionSujetJour(Base):
+    """
+    Sujets tendance generes automatiquement chaque matin (voir
+    planificateur.generer_suggestions_quotidiennes) pour une fiche, a partir
+    de veille_actualite + claude_generation.suggerer_sujets_actualite -
+    permet au composeur multi-reseaux de les afficher deja prets a
+    l'ouverture, sans attendre un appel IA en direct, et de les envoyer par
+    email. Le lot du jour remplace celui de la veille (voir la tache qui les
+    genere) plutot que de s'accumuler indefiniment.
+    """
+
+    __tablename__ = "suggestions_sujet_jour"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    sujet = Column(Text, default="")
+    titre_article = Column(Text, default="")
+    source = Column(String, default="")
+    url = Column(Text, default="")
+    extrait = Column(Text, default="")
+    genere_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client")
