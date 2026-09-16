@@ -404,7 +404,7 @@
     </label>
     <label>
       Par lot de
-      <input type="number" name="taille_lot" value="{{ photos_en_preparation|length }}" min="1" style="width:4.5rem;">
+      <input type="number" name="taille_lot" value="{{ [photos_en_preparation|length, 10] | min }}" min="1" style="width:4.5rem;">
     </label>
     <label>
       Tous les
@@ -782,6 +782,16 @@
       const grille = document.getElementById("grille-photos-preparation");
       const cartes = grille ? Array.from(grille.querySelectorAll(".carte-photo-preparation")) : [];
       if (!cartes.length) return;
+
+      if (cartes.length > 20) {
+        const continuer = confirm(
+          `Vous allez envoyer ${cartes.length} photos d'un coup à Google. `
+          + "Google peut bloquer ou ralentir les imports trop massifs en une seule fois. "
+          + "Il est plus sûr d'utiliser Programmer l'envoi ci-dessous pour les étaler par lots. "
+          + "Continuer quand même avec l'envoi immédiat ?"
+        );
+        if (!continuer) return;
+      }
 
       const conteneurProgression = document.getElementById("conteneur-progression-photos");
       const barreProgression = document.getElementById("barre-progression-photos");
