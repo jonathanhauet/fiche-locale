@@ -5469,8 +5469,11 @@ def publication_multi_sujets_tendance(client_id: int, request: Request, db: Sess
     suggerer_sujets_actualite) - pas de Google Trends (pas d'API officielle
     gratuite, et les tendances generiques du jour n'ont de toute facon aucun
     rapport avec le SEO local). Tient compte des sujets deja traites sur
-    cette fiche (voir _sujets_deja_traites_client) pour eviter de reproposer
-    un angle deja utilise. Purement informatif, ne modifie rien en base.
+    cette fiche (voir _sujets_deja_traites_client) ET du lot actuellement
+    affiche (pour qu'un "Actualiser" repete ne reproduise pas les memes
+    suggestions), et remplace ce lot par le nouveau une fois genere, pour
+    qu'un rechargement de page reste coherent avec ce qui vient d'etre
+    affiche plutot que de revenir au lot du matin.
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -5482,10 +5485,26 @@ def publication_multi_sujets_tendance(client_id: int, request: Request, db: Sess
 
     try:
         articles = veille_actualite.rechercher_actualites()
-        sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
+        suggestions_actuelles = db.query(models.SuggestionSujetJour).filter_by(client_id=client.id).all()
+        sujets_deja_traites = (
+            _sujets_deja_traites_client(db, client.id, limite=15)
+            + [s.sujet for s in suggestions_actuelles]
+        )
         suggestions = claude_generation.suggerer_sujets_actualite(articles, nombre=5, sujets_deja_traites=sujets_deja_traites)
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la veille : {e}"}, status_code=500)
+
+    db.query(models.SuggestionSujetJour).filter_by(client_id=client.id).delete()
+    for suggestion in suggestions:
+        db.add(models.SuggestionSujetJour(
+            client_id=client.id,
+            sujet=suggestion["sujet"],
+            titre_article=suggestion["titre_article"],
+            source=suggestion["source"],
+            url=suggestion["url"],
+            extrait=suggestion["extrait"],
+        ))
+    db.commit()
 
     return JSONResponse({"suggestions": suggestions})
 
