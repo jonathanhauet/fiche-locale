@@ -180,8 +180,18 @@ def generer_suggestions_quotidiennes():
 
         try:
             articles = veille_actualite.rechercher_actualites()
+            # Les sujets deja publies (_sujets_deja_traites) ne suffisent pas a
+            # eviter une repetition d'un jour sur l'autre : si Jonathan regarde
+            # les suggestions sans en publier une, rien n'indique a l'IA
+            # qu'elles ont deja ete montrees - le lot de la veille (sur le
+            # point d'etre remplace juste en dessous) sert donc aussi de liste
+            # a eviter, en plus des sujets reellement publies.
+            suggestions_veille = (
+                db.query(models.SuggestionSujetJour).filter_by(client_id=client.id).all()
+            )
+            sujets_a_eviter = _sujets_deja_traites(db, client.id) + [s.sujet for s in suggestions_veille]
             suggestions = claude_generation.suggerer_sujets_actualite(
-                articles, nombre=5, sujets_deja_traites=_sujets_deja_traites(db, client.id),
+                articles, nombre=5, sujets_deja_traites=sujets_a_eviter,
             )
         except Exception:
             return
