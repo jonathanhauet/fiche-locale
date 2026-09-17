@@ -495,6 +495,86 @@ def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5, sujets_deja
     return suggestions
 
 
+SCHEMA_SUGGESTIONS_EVERGREEN = {
+    "type": "object",
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "sujet": {"type": "string"},
+                    "categorie": {"type": "string"},
+                },
+                "required": ["sujet", "categorie"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["suggestions"],
+    "additionalProperties": False,
+}
+
+
+def suggerer_sujets_evergreen(contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5) -> list[dict]:
+    """
+    Sujets de post independants de l'actualite du jour (contrairement a
+    suggerer_sujets_actualite) : la veille peut manquer de matiere fraiche
+    certains jours (rien de neuf publie sur un creneau aussi precis), alors
+    que ce type de sujet ne s'epuise jamais - utile pour garder un rythme de
+    publication regulier sans etre bloque par un jour calme cote actualite.
+    Renvoie [{"sujet", "categorie"}, ...] (pas d'article source, donc pas de
+    grounding a transmettre a generer_post_expert - ces sujets s'appuient sur
+    l'expertise de l'auteur, pas sur un fait d'actualite precis).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    bloc_contexte = (
+        f"\nContenu du site de l'auteur, pour ancrer les sujets dans son activite reelle :\n{contexte_expert.strip()}\n"
+        if contexte_expert.strip() else ""
+    )
+    bloc_deja_traites = ""
+    if sujets_deja_traites:
+        liste = "\n".join(f"- {s}" for s in sujets_deja_traites)
+        bloc_deja_traites = f"\nSujets deja traites recemment (evite de reformuler un angle trop proche) :\n{liste}\n"
+
+    prompt = (
+        f"Propose {nombre} sujets de post pour un expert en referencement local (SEO local), "
+        "specialise Google Business Profile, Google AI Overviews et Google Local Services Ads, "
+        "qui veut publier regulierement pour construire sa visibilite - meme les jours ou il n'y "
+        "a pas d'actualite fraiche sur ces sujets precis.\n"
+        f"{bloc_contexte}"
+        f"{bloc_deja_traites}\n"
+        "Varie les types d'angles, par exemple (sans s'y limiter) : demonter un mythe ou une idee "
+        "recue repandue sur le SEO local, repondre a une question que les clients posent "
+        "frequemment, proposer un test ou une verification que le lecteur peut faire lui-meme en "
+        "quelques minutes, un avant/apres ou un cas concret type, une prediction ou une tendance a "
+        "surveiller. Chaque sujet doit etre concret et actionnable, pas une generalite deja vue "
+        "partout (« l'importance du SEO local » par exemple).\n"
+        f"Pour chacun, indique aussi sa categorie (2-3 mots, ex : \"Mythe demonte\", \"Question "
+        "frequente\", \"Test pratique\")."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=1536,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_SUGGESTIONS_EVERGREEN}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    return [
+        {"sujet": item["sujet"].strip(), "categorie": item["categorie"].strip()}
+        for item in json.loads(bloc_texte)["suggestions"]
+    ]
+
+
 def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", nombre_posts: int = 5) -> list[dict]:
     """
     Variante de generer_post_generique() qui produit plusieurs propositions

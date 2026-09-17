@@ -29,13 +29,26 @@
   <p id="texte-source-article-ia" class="texte-vide" hidden></p>
   <p id="texte-statut-generation" class="texte-vide" hidden></p>
 
-  <button type="button" id="bouton-sujets-tendance" class="bouton-secondaire" data-suggestions-du-jour="{{ suggestions_du_jour_json }}">
-    <span class="spinner" id="spinner-sujets-tendance" hidden></span>
-    <span id="libelle-bouton-sujets-tendance">🔥 Sujets tendance du jour (IA)</span>
-  </button>
+  <div class="ligne-champs">
+    <button type="button" id="bouton-sujets-tendance" class="bouton-secondaire" data-suggestions-du-jour="{{ suggestions_du_jour_json }}">
+      <span class="spinner" id="spinner-sujets-tendance" hidden></span>
+      <span id="libelle-bouton-sujets-tendance">🔥 Sujets tendance du jour (IA)</span>
+    </button>
+    <button type="button" id="bouton-sujets-evergreen" class="bouton-secondaire">
+      <span class="spinner" id="spinner-sujets-evergreen" hidden></span>
+      📌 Idées evergreen (IA)
+    </button>
+  </div>
+  <p class="texte-discret">
+    Tendance : basé sur l'actualité récente. Evergreen : des idées qui ne s'épuisent jamais, utile les jours calmes côté actualité.
+  </p>
   <div id="zone-sujets-tendance" hidden>
     <p id="texte-statut-sujets" class="texte-vide" hidden></p>
     <ul id="liste-sujets-tendance" class="liste-sujets-tendance"></ul>
+  </div>
+  <div id="zone-sujets-evergreen" hidden>
+    <p id="texte-statut-sujets-evergreen" class="texte-vide" hidden></p>
+    <ul id="liste-sujets-evergreen" class="liste-sujets-tendance"></ul>
   </div>
 
   <label for="texte-base">Texte de base</label>
@@ -454,6 +467,66 @@
     } catch (erreur) {
       // Lot du jour illisible (ne devrait pas arriver) : le bouton reste utilisable normalement.
     }
+
+    const boutonSujetsEvergreen = document.getElementById("bouton-sujets-evergreen");
+    const spinnerSujetsEvergreen = document.getElementById("spinner-sujets-evergreen");
+    const zoneSujetsEvergreen = document.getElementById("zone-sujets-evergreen");
+    const listeSujetsEvergreen = document.getElementById("liste-sujets-evergreen");
+    const texteStatutSujetsEvergreen = document.getElementById("texte-statut-sujets-evergreen");
+
+    function afficherSuggestionsEvergreen(suggestions) {
+      listeSujetsEvergreen.innerHTML = "";
+      if (!suggestions.length) {
+        texteStatutSujetsEvergreen.hidden = false;
+        texteStatutSujetsEvergreen.textContent = "Aucune idée trouvée pour le moment.";
+        return;
+      }
+      texteStatutSujetsEvergreen.hidden = true;
+      suggestions.forEach((suggestion) => {
+        const li = document.createElement("li");
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.className = "carte-sujet-tendance";
+        bouton.innerHTML =
+          `<span class="texte-sujet-tendance">${echapperHtml(suggestion.sujet)}</span>`
+          + `<span class="source-sujet-tendance">${echapperHtml(suggestion.categorie || "Idée evergreen")}</span>`;
+        bouton.addEventListener("click", () => {
+          document.getElementById("theme-ia").value = suggestion.sujet;
+          // Pas d'article source pour une idee evergreen : on efface un
+          // eventuel ancrage laisse par une suggestion tendance precedente.
+          document.getElementById("champ-contexte-article-ia").value = "";
+          document.getElementById("texte-source-article-ia").hidden = true;
+        });
+        li.appendChild(bouton);
+        listeSujetsEvergreen.appendChild(li);
+      });
+    }
+
+    boutonSujetsEvergreen.addEventListener("click", async () => {
+      zoneSujetsEvergreen.hidden = false;
+      texteStatutSujetsEvergreen.hidden = false;
+      texteStatutSujetsEvergreen.textContent = "Recherche d'idées en cours...";
+      listeSujetsEvergreen.innerHTML = "";
+      boutonSujetsEvergreen.disabled = true;
+      spinnerSujetsEvergreen.hidden = false;
+
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/sujets_evergreen", { method: "POST" });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          texteStatutSujetsEvergreen.hidden = false;
+          texteStatutSujetsEvergreen.textContent = donnees.erreur || "Échec de la recherche.";
+          return;
+        }
+        afficherSuggestionsEvergreen(donnees.suggestions);
+      } catch (erreur) {
+        texteStatutSujetsEvergreen.hidden = false;
+        texteStatutSujetsEvergreen.textContent = "Erreur réseau lors de la recherche.";
+      } finally {
+        boutonSujetsEvergreen.disabled = false;
+        spinnerSujetsEvergreen.hidden = true;
+      }
+    });
 
     const boutonGenererTexte = document.getElementById("bouton-generer-texte");
     const spinnerGenererTexte = document.getElementById("spinner-generer-texte");

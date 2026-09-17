@@ -5509,6 +5509,35 @@ def publication_multi_sujets_tendance(client_id: int, request: Request, db: Sess
     return JSONResponse({"suggestions": suggestions})
 
 
+@app.post("/publication-multi/{client_id}/sujets_evergreen")
+def publication_multi_sujets_evergreen(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Propose 5 sujets independants de l'actualite du jour (voir
+    claude_generation.suggerer_sujets_evergreen) - complement aux sujets
+    tendance quand la veille manque de matiere fraiche, pour garder un
+    rythme de publication regulier. Pas de persistance (contrairement aux
+    sujets tendance) : ces sujets ne perimeent pas d'un jour sur l'autre,
+    pas besoin de les precalculer chaque matin.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    try:
+        sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
+        suggestions = claude_generation.suggerer_sujets_evergreen(
+            _contexte_ia_client(client), sujets_deja_traites, nombre=5,
+        )
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
+
+    return JSONResponse({"suggestions": suggestions})
+
+
 @app.post("/publication-multi/{client_id}/generer_image")
 async def publication_multi_generer_image(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
