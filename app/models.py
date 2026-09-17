@@ -126,6 +126,11 @@ class Client(Base):
     # attente cote LinkedIn), donc uniquement pertinent pour un client dont le
     # profil personnel EST la presence a publier (ex: Jonathan lui-meme).
     compte_linkedin_id = Column(Integer, ForeignKey("comptes_linkedin.id"), nullable=True)
+    # Numero WhatsApp (format international, ex "33612345678") pour le mode
+    # rapide vocal par WhatsApp - voir whatsapp_business.py. Optionnel, non
+    # lie a une connexion OAuth (pas de "compte" a proprement parler cote
+    # WhatsApp, juste un numero de destinataire).
+    numero_whatsapp = Column(String, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
@@ -684,3 +689,48 @@ class SuggestionSujetJour(Base):
     genere_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="suggestions_sujet_jour")
+
+
+class EtatConversationWhatsApp(Base):
+    """
+    Suivi d'une conversation WhatsApp en cours (voir whatsapp_business.py et
+    le webhook /whatsapp/webhook) : questions envoyees, question choisie par
+    numero (reponse "1" a "5"), photo eventuellement recue avant le vocal -
+    necessaire car le webhook n'a pas de session navigateur pour garder cet
+    etat entre deux messages recus. Supprime des qu'un BrouillonWhatsApp est
+    genere avec succes.
+    """
+
+    __tablename__ = "etat_conversation_whatsapp"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    numero = Column(String, nullable=False, unique=True)
+    questions_json = Column(Text, default="[]")
+    question_choisie = Column(Text, nullable=True)
+    image_url = Column(String, nullable=True)
+    maj_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client")
+
+
+class BrouillonWhatsApp(Base):
+    """
+    Post pret, genere a partir d'une reponse vocale recue par WhatsApp (voir
+    claude_generation.generer_post_depuis_reponse). La generation se fait au
+    moment de la reception du vocal (dans le webhook, sans session
+    navigateur) : le resultat attend ici que Jonathan ouvre la plateforme
+    pour le charger dans le composeur multi-reseaux (voir /publication-multi
+    et le bandeau "brouillon WhatsApp pret").
+    """
+
+    __tablename__ = "brouillons_whatsapp"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    texte = Column(Text, default="")
+    prompt_image = Column(Text, default="")
+    image_url = Column(String, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client")

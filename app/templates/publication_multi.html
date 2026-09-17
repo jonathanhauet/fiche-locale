@@ -16,6 +16,15 @@
 <div class="bandeau-info">Publication {{ resultat }} avec succès sur les réseaux sélectionnés.</div>
 {% endif %}
 
+{% for brouillon in brouillons_whatsapp_en_attente %}
+<div class="bandeau-info bandeau-brouillon-whatsapp">
+  <span>📱 Un brouillon est prêt à partir de votre réponse WhatsApp du {{ brouillon.cree_le.strftime("%d/%m/%Y à %H:%M") }}.</span>
+  <form method="post" action="/publication-multi/{{ client.id }}/charger_brouillon_whatsapp/{{ brouillon.id }}">
+    <button type="submit" class="bouton-secondaire">Charger dans le composeur</button>
+  </form>
+</div>
+{% endfor %}
+
 <form method="post" action="/publication-multi/{{ client.id }}/publier" enctype="multipart/form-data" class="formulaire">
   <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir)</label>
   <div class="ligne-champs">
@@ -84,7 +93,7 @@
       🎨 Générer une image (IA)
     </button>
   </div>
-  <input type="hidden" name="image_url_ia" id="champ-image-url-ia">
+  <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
 
   <button type="button" id="bouton-adapter" class="bouton-secondaire">
@@ -337,6 +346,9 @@
       if (champImagePartagee.files[0]) champImageUrlIA.value = "";
       actualiserToutesLesApercusImage();
     });
+
+    // Image deja preremplie au chargement (brouillon vocal / WhatsApp avec photo).
+    if (champImageUrlIA.value) actualiserToutesLesApercusImage();
 
     // Dictee vocale (API navigateur, pas de serveur implique) : le bouton
     // micro reste cache si le navigateur ne supporte pas la reconnaissance

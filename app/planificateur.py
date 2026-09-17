@@ -4,12 +4,13 @@ Remplace la tache planifiee Windows utilisee par les scripts en ligne de
 commande : ici, une tache de fond integree au processus web (APScheduler).
 """
 
+import json
 from datetime import date, datetime, time, timedelta
 
 from . import (
     claude_generation, google_business, google_location, google_oauth, google_publish,
     google_reviews, instagram_oauth, instagram_publish, linkedin_publish, meta_publish, models,
-    rapport_donnees, veille_actualite,
+    rapport_donnees, veille_actualite, whatsapp_business,
 )
 from .database import SessionLocal
 
@@ -157,6 +158,62 @@ def _sujets_deja_traites(db, client_id: int, limite: int = 15) -> list[str]:
         .all()
     )
     return [f"{post.titre} — {post.texte[:150].strip()}" for post in posts if post.texte.strip()]
+
+
+def _contexte_ia_client(client: models.Client) -> str:
+    """Meme logique que main._contexte_ia_client, dupliquee ici pour la meme raison que _sujets_deja_traites (pas d'import circulaire possible)."""
+    morceaux = []
+    if client.contenu_site and client.contenu_site.strip():
+        morceaux.append(client.contenu_site.strip())
+    for document in client.documents_connaissance:
+        morceaux.append(f"--- Document : {document.nom_fichier} ---\n{document.texte_extrait}")
+    return "\n\n".join(morceaux)
+
+
+def envoyer_questions_whatsapp_hebdomadaire():
+    """
+    Envoie chaque mercredi les 5 questions du mode rapide vocal par WhatsApp
+    (voir whatsapp_business.py) a la fiche de Jonathan, via le modele
+    approuve WHATSAPP_TEMPLATE_QUESTIONS. Se limite pour l'instant a la
+    fiche "Jonathan Hauet Marketing" (voir generer_suggestions_quotidiennes,
+    meme restriction et memes raisons - generer_post_depuis_reponse suppose
+    que le proprietaire de la fiche EST l'auteur).
+    """
+    db = SessionLocal()
+    try:
+        if not whatsapp_business.identifiants_configures():
+            return
+
+        client = db.query(models.Client).filter(models.Client.nom == "Jonathan Hauet Marketing").first()
+        if not client or not client.numero_whatsapp:
+            return
+
+        try:
+            questions = claude_generation.generer_questions_interview(_contexte_ia_client(client), nombre=5)
+        except Exception:
+            return
+        if not questions:
+            return
+
+        etat = db.query(models.EtatConversationWhatsApp).filter_by(numero=client.numero_whatsapp).first()
+        if not etat:
+            etat = models.EtatConversationWhatsApp(client_id=client.id, numero=client.numero_whatsapp)
+            db.add(etat)
+        etat.questions_json = json.dumps(questions)
+        etat.question_choisie = None
+        etat.image_url = None
+        etat.maj_le = datetime.utcnow()
+        db.commit()
+
+        corps = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
+        try:
+            whatsapp_business.envoyer_message_template(
+                client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", [corps],
+            )
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 def generer_suggestions_quotidiennes():

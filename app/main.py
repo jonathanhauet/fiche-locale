@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import requests
@@ -71,9 +71,11 @@ from . import (
     recap_mensuel,
     soldes_api,
     veille_actualite,
+    whatsapp_business,
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
+    envoyer_questions_whatsapp_hebdomadaire,
     envoyer_recaps_mensuels,
     generer_suggestions_quotidiennes,
     publier_posts_instagram_programmes,
@@ -171,6 +173,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN token_instagram TEXT DEFAULT ''"))
         if "compte_linkedin_id" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_linkedin_id INTEGER"))
+        if "numero_whatsapp" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN numero_whatsapp TEXT DEFAULT ''"))
 
         if "leads_audit" in inspecteur.get_table_names():
             colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
@@ -388,6 +392,16 @@ planificateur.add_job(
     hour=7,
     timezone="Europe/Brussels",
     id="suggestions_sujet_jour",
+)
+# Questions du mode rapide vocal par WhatsApp (voir
+# planificateur.envoyer_questions_whatsapp_hebdomadaire) : chaque mercredi matin.
+planificateur.add_job(
+    envoyer_questions_whatsapp_hebdomadaire,
+    "cron",
+    day_of_week="wed",
+    hour=9,
+    timezone="Europe/Brussels",
+    id="questions_whatsapp_hebdomadaire",
 )
 # Solde DataForSEO affiche dans la barre laterale : rafraichi peu apres le
 # demarrage (next_run_time proche mais pas immediat, pour ne pas retarder le
@@ -5359,7 +5373,7 @@ def _posts_multi_programmes(db: Session, client: "models.Client") -> dict:
 def _contexte_publication_multi(
     db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
     variantes: dict = None, erreur: str = None, resultat: str = None,
-    prompt_image_initial: str = "", origine_vocale: bool = False,
+    prompt_image_initial: str = "", origine_vocale: bool = False, image_url_initial: str = "",
 ) -> dict:
     return {
         "client": client,
@@ -5373,6 +5387,10 @@ def _contexte_publication_multi(
         "suggestions_du_jour_json": _suggestions_du_jour_json(db, client.id),
         "prompt_image_initial": prompt_image_initial,
         "origine_vocale": origine_vocale,
+        "image_url_initial": image_url_initial,
+        "brouillons_whatsapp_en_attente": (
+            db.query(models.BrouillonWhatsApp).filter_by(client_id=client.id).order_by(models.BrouillonWhatsApp.id).all()
+        ),
     }
 
 
@@ -5400,6 +5418,7 @@ def publication_multi_choix_client(request: Request, client_id: int = None, db: 
             _contexte_publication_multi(
                 db, client, texte_base=brouillon_vocal.get("texte", ""),
                 prompt_image_initial=brouillon_vocal.get("prompt_image", ""), origine_vocale=True,
+                image_url_initial=brouillon_vocal.get("image_url") or "",
             ),
         )
 
@@ -5631,6 +5650,144 @@ async def publication_multi_generer_depuis_reponse(
         "client_id": client.id, "texte": post["texte"], "prompt_image": post.get("prompt_image", ""),
     }
     return RedirectResponse(f"/publication-multi?client_id={client.id}", status_code=303)
+
+
+# --- Mode rapide vocal par WhatsApp -----------------------------------------
+
+
+@app.get("/whatsapp/webhook")
+def whatsapp_webhook_verification(request: Request):
+    """Poignee de main exigee par Meta au moment de configurer le webhook (voir Business Settings)."""
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge", "")
+    if mode == "subscribe" and whatsapp_business.VERIFY_TOKEN and token == whatsapp_business.VERIFY_TOKEN:
+        return PlainTextResponse(challenge)
+    return PlainTextResponse("Verification token invalide.", status_code=403)
+
+
+def _traiter_message_whatsapp(db: Session, message: dict) -> None:
+    """
+    Machine a etats minimale (voir models.EtatConversationWhatsApp) pour une
+    conversation WhatsApp : texte "1" a "5" -> choisit la question, photo ->
+    memorisee, vocal -> transcrit et poste genere (voir
+    claude_generation.generer_post_depuis_reponse). Chaque erreur est
+    avalee : un webhook qui repond une erreur HTTP a Meta declenche des
+    reessais automatiques repetes, pire que de simplement ignorer un
+    message qu'on n'a pas su traiter.
+    """
+    numero = message.get("from", "")
+    type_message = message.get("type")
+    if not numero or not type_message:
+        return
+
+    client = db.query(models.Client).filter(models.Client.numero_whatsapp == numero).first()
+    if not client:
+        return
+
+    etat = db.query(models.EtatConversationWhatsApp).filter_by(numero=numero).first()
+    if not etat:
+        etat = models.EtatConversationWhatsApp(client_id=client.id, numero=numero)
+        db.add(etat)
+        db.commit()
+        db.refresh(etat)
+
+    if type_message == "text":
+        texte = (message.get("text", {}).get("body") or "").strip()
+        if texte in {"1", "2", "3", "4", "5"}:
+            questions = json.loads(etat.questions_json or "[]")
+            index = int(texte) - 1
+            if 0 <= index < len(questions):
+                etat.question_choisie = questions[index]
+                etat.maj_le = datetime.utcnow()
+                db.commit()
+                try:
+                    whatsapp_business.envoyer_message_texte(
+                        numero,
+                        "Noté ! Envoyez votre réponse vocale (et une photo si vous voulez) quand vous êtes prêt.",
+                    )
+                except Exception:
+                    pass
+        return
+
+    if type_message == "image":
+        try:
+            media_id = message["image"]["id"]
+            octets, mime = whatsapp_business.telecharger_media(media_id)
+            extension = ".png" if "png" in mime else ".jpg"
+            nom_fichier = f"whatsapp_{client.id}_{uuid.uuid4().hex[:10]}{extension}"
+            etat.image_url = ovh_upload.envoyer_octets(octets, nom_fichier)
+            etat.maj_le = datetime.utcnow()
+            db.commit()
+        except Exception:
+            pass
+        return
+
+    if type_message == "audio":
+        if not etat.question_choisie:
+            try:
+                whatsapp_business.envoyer_message_texte(
+                    numero, "Répondez d'abord avec le numéro (1 à 5) de la question choisie, puis renvoyez votre vocal.",
+                )
+            except Exception:
+                pass
+            return
+        try:
+            media_id = message["audio"]["id"]
+            octets, mime = whatsapp_business.telecharger_media(media_id)
+            transcription = whatsapp_business.transcrire_audio(octets, mime)
+            post = claude_generation.generer_post_depuis_reponse(
+                etat.question_choisie, transcription, _contexte_ia_client(client),
+            )
+            db.add(models.BrouillonWhatsApp(
+                client_id=client.id, texte=post["texte"], prompt_image=post.get("prompt_image", ""),
+                image_url=etat.image_url,
+            ))
+            db.delete(etat)
+            db.commit()
+            whatsapp_business.envoyer_message_texte(
+                numero, "C'est noté, votre post est prêt : ouvrez la plateforme pour le relire et le publier.",
+            )
+        except Exception:
+            try:
+                whatsapp_business.envoyer_message_texte(numero, "Un souci est survenu pendant la génération, réessayez dans un instant.")
+            except Exception:
+                pass
+        return
+
+
+@app.post("/whatsapp/webhook")
+async def whatsapp_webhook_reception(request: Request, db: Session = Depends(obtenir_session)):
+    donnees = await request.json()
+    try:
+        for entree in donnees.get("entry", []):
+            for changement in entree.get("changes", []):
+                for message in changement.get("value", {}).get("messages", []):
+                    _traiter_message_whatsapp(db, message)
+    except Exception:
+        pass
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/publication-multi/{client_id}/charger_brouillon_whatsapp/{brouillon_id}")
+def publication_multi_charger_brouillon_whatsapp(
+    client_id: int, brouillon_id: int, request: Request, db: Session = Depends(obtenir_session),
+):
+    """Charge un brouillon genere depuis une reponse WhatsApp (voir models.BrouillonWhatsApp) dans le composeur, puis le supprime (usage unique)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    brouillon = db.get(models.BrouillonWhatsApp, brouillon_id)
+    if brouillon and brouillon.client_id == client_id:
+        request.session["brouillon_vocal"] = {
+            "client_id": client_id, "texte": brouillon.texte, "prompt_image": brouillon.prompt_image,
+            "image_url": brouillon.image_url,
+        }
+        db.delete(brouillon)
+        db.commit()
+
+    return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
 
 
 @app.post("/publication-multi/{client_id}/generer_image")
