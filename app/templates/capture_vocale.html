@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% set page_actuelle = "publication_multi" %}
+{% block titre %}Mode rapide (vocal) — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/publication-multi?client_id={{ client.id }}">&larr; Retour au composeur complet</a></p>
+
+<div class="barre-titre">
+  <h1>Mode rapide — {{ client.nom }}</h1>
+</div>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+<p class="texte-discret">
+  Une question, une réponse à l'oral, un post prêt à relire — pensé pour publier en quelques minutes depuis le téléphone.
+</p>
+
+<div class="carte-ia">
+  <div id="etape-questions">
+    <button type="button" id="bouton-questions" class="bouton">
+      <span class="spinner" id="spinner-questions" hidden></span>
+      🎙️ Me proposer 5 questions
+    </button>
+    <p id="texte-statut-questions" class="texte-vide" hidden></p>
+    <ul id="liste-questions" class="liste-sujets-tendance"></ul>
+  </div>
+
+  <div id="etape-reponse" hidden>
+    <p class="fil-retour"><a href="#" id="lien-changer-question">&larr; Choisir une autre question</a></p>
+    <p class="question-capture-vocale" id="texte-question-choisie"></p>
+
+    <div class="bloc-micro-central">
+      <button type="button" id="bouton-micro-reponse" class="bouton-micro-grand" hidden>🎤</button>
+      <p class="texte-discret" id="texte-statut-micro">Appuyez pour parler, appuyez à nouveau pour arrêter.</p>
+    </div>
+
+    <form method="post" action="/publication-multi/{{ client.id }}/generer_depuis_reponse" id="formulaire-valider" class="formulaire">
+      <input type="hidden" name="question" id="champ-question-cachee">
+      <label for="champ-reponse">Votre réponse (modifiable avant de valider)</label>
+      <textarea name="reponse" id="champ-reponse" rows="6" required placeholder="Votre réponse apparaîtra ici pendant que vous parlez..."></textarea>
+      <button type="submit" class="bouton" id="bouton-valider">✓ Valider et générer le post</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function () {
+    function echapperHtml(texte) {
+      const div = document.createElement("div");
+      div.textContent = texte;
+      return div.innerHTML;
+    }
+
+    const boutonQuestions = document.getElementById("bouton-questions");
+    const spinnerQuestions = document.getElementById("spinner-questions");
+    const texteStatutQuestions = document.getElementById("texte-statut-questions");
+    const listeQuestions = document.getElementById("liste-questions");
+    const etapeQuestions = document.getElementById("etape-questions");
+    const etapeReponse = document.getElementById("etape-reponse");
+    const texteQuestionChoisie = document.getElementById("texte-question-choisie");
+    const champReponse = document.getElementById("champ-reponse");
+    const champQuestionCachee = document.getElementById("champ-question-cachee");
+    const boutonMicroReponse = document.getElementById("bouton-micro-reponse");
+    const boutonValider = document.getElementById("bouton-valider");
+    const formulaireValider = document.getElementById("formulaire-valider");
+
+    boutonQuestions.addEventListener("click", async () => {
+      texteStatutQuestions.hidden = false;
+      texteStatutQuestions.textContent = "Génération des questions...";
+      listeQuestions.innerHTML = "";
+      boutonQuestions.disabled = true;
+      spinnerQuestions.hidden = false;
+
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/questions_interview", { method: "POST" });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          texteStatutQuestions.textContent = donnees.erreur || "Échec de la génération.";
+          return;
+        }
+        if (!donnees.questions.length) {
+          texteStatutQuestions.textContent = "Aucune question générée, réessayez.";
+          return;
+        }
+        texteStatutQuestions.hidden = true;
+        donnees.questions.forEach((question) => {
+          const li = document.createElement("li");
+          const bouton = document.createElement("button");
+          bouton.type = "button";
+          bouton.className = "carte-sujet-tendance";
+          bouton.innerHTML = `<span class="texte-sujet-tendance">${echapperHtml(question)}</span>`;
+          bouton.addEventListener("click", () => choisirQuestion(question));
+          li.appendChild(bouton);
+          listeQuestions.appendChild(li);
+        });
+      } catch (erreur) {
+        texteStatutQuestions.hidden = false;
+        texteStatutQuestions.textContent = "Erreur réseau lors de la génération.";
+      } finally {
+        boutonQuestions.disabled = false;
+        spinnerQuestions.hidden = true;
+      }
+    });
+
+    function choisirQuestion(question) {
+      texteQuestionChoisie.textContent = question;
+      champQuestionCachee.value = question;
+      champReponse.value = "";
+      etapeQuestions.hidden = true;
+      etapeReponse.hidden = false;
+      champReponse.focus();
+    }
+
+    document.getElementById("lien-changer-question").addEventListener("click", (evenement) => {
+      evenement.preventDefault();
+      etapeReponse.hidden = true;
+      etapeQuestions.hidden = false;
+    });
+
+    // Dictee vocale (API navigateur, meme mecanisme que le composeur classique) :
+    // le bouton reste cache si le navigateur ne supporte pas la reconnaissance
+    // vocale (ex Firefox), avec un message invitant a ecrire directement.
+    const Reconnaissance = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const texteStatutMicro = document.getElementById("texte-statut-micro");
+    if (Reconnaissance) {
+      const reconnaissance = new Reconnaissance();
+      reconnaissance.lang = "fr-FR";
+      reconnaissance.continuous = true;
+      reconnaissance.interimResults = false;
+
+      let enEcoute = false;
+      let baseAvantDictee = "";
+
+      reconnaissance.addEventListener("result", (evenement) => {
+        let texteFinal = "";
+        for (let i = evenement.resultIndex; i < evenement.results.length; i++) {
+          if (evenement.results[i].isFinal) texteFinal += evenement.results[i][0].transcript;
+        }
+        if (!texteFinal) return;
+        const separateur = baseAvantDictee && !/[\s\n]$/.test(baseAvantDictee) ? " " : "";
+        champReponse.value = baseAvantDictee + separateur + texteFinal;
+        baseAvantDictee = champReponse.value;
+      });
+
+      function arreterEcoute() {
+        enEcoute = false;
+        boutonMicroReponse.classList.remove("actif");
+        boutonMicroReponse.textContent = "🎤";
+        texteStatutMicro.textContent = "Appuyez pour parler, appuyez à nouveau pour arrêter.";
+      }
+      reconnaissance.addEventListener("end", arreterEcoute);
+      reconnaissance.addEventListener("error", arreterEcoute);
+
+      boutonMicroReponse.hidden = false;
+      boutonMicroReponse.addEventListener("click", () => {
+        if (enEcoute) { reconnaissance.stop(); return; }
+        baseAvantDictee = champReponse.value;
+        enEcoute = true;
+        boutonMicroReponse.classList.add("actif");
+        boutonMicroReponse.textContent = "⬤";
+        texteStatutMicro.textContent = "Je vous écoute... appuyez à nouveau pour arrêter.";
+        reconnaissance.start();
+      });
+    } else {
+      texteStatutMicro.textContent = "La dictée vocale n'est pas disponible sur ce navigateur — écrivez votre réponse directement ci-dessous.";
+    }
+
+    formulaireValider.addEventListener("submit", (evenement) => {
+      if (!champReponse.value.trim()) {
+        evenement.preventDefault();
+        alert("Dictez ou écrivez votre réponse avant de valider.");
+        return;
+      }
+      boutonValider.disabled = true;
+      boutonValider.textContent = "Génération en cours...";
+    });
+  })();
+</script>
+{% endblock %}

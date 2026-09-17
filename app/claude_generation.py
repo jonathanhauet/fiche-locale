@@ -388,6 +388,142 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_arti
     return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
+SCHEMA_QUESTIONS_INTERVIEW = {
+    "type": "object",
+    "properties": {
+        "questions": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["questions"],
+    "additionalProperties": False,
+}
+
+
+def generer_questions_interview(contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5) -> list[str]:
+    """
+    Questions courtes, pensees pour etre repondues a l'oral en 30-90 secondes
+    (voir capture vocale mobile) plutot que pour etre publiees telles
+    quelles - contrairement a suggerer_sujets_evergreen qui donne des angles
+    de post, ici on demande une vraie question a laquelle l'auteur repond
+    spontanement (son avis, son experience terrain, une anecdote client...),
+    la redaction du post se faisant ensuite a partir de cette reponse (voir
+    generer_post_depuis_reponse).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    bloc_contexte = (
+        f"\nContenu du site de l'auteur, pour ancrer les questions dans son activite reelle :\n{contexte_expert.strip()}\n"
+        if contexte_expert.strip() else ""
+    )
+    bloc_deja_traites = ""
+    if sujets_deja_traites:
+        liste = "\n".join(f"- {s}" for s in sujets_deja_traites)
+        bloc_deja_traites = f"\nSujets/questions deja traites recemment (evite de reposer une question trop proche) :\n{liste}\n"
+
+    prompt = (
+        f"Propose {nombre} questions courtes a poser a un expert en referencement local (SEO "
+        "local), specialise Google Business Profile, Google AI Overviews et Google Local "
+        "Services Ads, pour l'aider a produire du contenu regulierement sans avoir a partir "
+        "d'une page blanche.\n"
+        f"{bloc_contexte}"
+        f"{bloc_deja_traites}\n"
+        "Consignes :\n"
+        "- Chaque question doit se repondre spontanement a l'oral en 30 a 90 secondes, sans "
+        "recherche ni preparation : elle porte sur son avis, son experience terrain, une "
+        "anecdote client, une erreur qu'il voit souvent, un conseil qu'il donne souvent - pas "
+        "sur un fait precis qu'il faudrait verifier.\n"
+        "- Formulee directement a la deuxieme personne, comme si on la lui posait a l'oral "
+        "(« Quel est... », « Racontez... », « Qu'est-ce que vous repondez quand... »), pas a "
+        "la troisieme personne.\n"
+        "- Varie les angles (avis tranche, anecdote, conseil pratique, erreur frequente, "
+        "prediction) plutot que de poser 5 variantes de la meme question.\n"
+        "- Courte et concrete, jamais une generalite deja vue partout."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=1024,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_QUESTIONS_INTERVIEW}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    return [q.strip() for q in json.loads(bloc_texte)["questions"] if q.strip()]
+
+
+def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expert: str = "") -> dict:
+    """
+    Transforme une reponse orale (dictee, donc transcription brute :
+    hesitations, phrases incompletes, repetitions) a une question
+    d'interview (voir generer_questions_interview) en post structure, meme
+    style que generer_post_expert (accroche, phrases courtes, chute
+    memorable). Contrairement a generer_post_expert, la source de verite ici
+    EST la reponse de l'auteur, pas un article externe : jamais un fait
+    ajoute qu'il n'a pas dit, mais reformulation/structuration/polissage
+    assumes - une transcription orale brute n'est pas destinee a etre
+    publiee telle quelle.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not reponse_orale.strip():
+        raise RuntimeError("Aucune reponse fournie.")
+
+    bloc_contexte = (
+        f"\nContenu du site de l'auteur, pour retrouver son ton et son angle d'expertise :\n{contexte_expert.strip()}\n"
+        if contexte_expert.strip() else ""
+    )
+
+    prompt = (
+        f"Nous sommes le {date.today().strftime('%d/%m/%Y')} - utilise cette date comme repere "
+        "temporel reel (n'ecris jamais une annee anterieure par reflexe).\n"
+        "Tu transformes une reponse orale dictee (transcription automatique, donc parfois "
+        "hesitante ou mal structuree) d'un expert en referencement local (SEO local), "
+        "specialise Google Business Profile, Google AI Overviews et Google Local Services "
+        "Ads, en un post structure pour les reseaux sociaux, a la premiere personne.\n"
+        f"\nQuestion posee :\n« {question.strip()} »\n"
+        f"\nSa reponse orale (transcription brute) :\n« {reponse_orale.strip()} »\n"
+        f"{bloc_contexte}\n"
+        "Consignes :\n"
+        "- Cette transcription EST la seule source de faits/avis a utiliser : n'ajoute aucun "
+        "detail, chiffre ou exemple qu'elle ne contient pas. En revanche, tu peux librement "
+        "corriger les hesitations, reformuler les phrases incompletes, couper les repetitions "
+        "et reorganiser l'ordre pour que ca se lise bien - un oral brut n'est pas publiable "
+        "tel quel, mais le fond doit rester exactement le sien.\n"
+        "- La toute premiere ligne doit se suffire a elle-meme et accrocher (avant la coupure "
+        "« voir plus » sur la plupart des reseaux) - jamais une formule plate.\n"
+        "- Phrases courtes, un paragraphe = une seule idee (1 a 3 phrases max).\n"
+        "- Termine sur une phrase forte et memorable plutot qu'une formule generique.\n"
+        "- Ton professionnel mais humain, pas de jargon marketing creux, pas de tiret "
+        "cadratin (—) : remplace par une virgule, un deux-points ou un tiret simple (-).\n"
+        "- Aucune reference geographique ni nom de ville.\n"
+        "- Longueur : entre 800 et 1300 caracteres (espaces compris).\n"
+        "- Passe des lignes entre chaque paragraphe (\\n\\n) plutot qu'un bloc compact.\n"
+        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images "
+        "(illustration conceptuelle liee au sujet, professionnelle, sans texte incruste, "
+        "sans logo, sans visage reconnaissable)."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=2048,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_POST_UNIQUE}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    return _nettoyer_champs_post(json.loads(bloc_texte))
+
+
 SCHEMA_SUGGESTIONS_SUJETS = {
     "type": "object",
     "properties": {

@@ -6,6 +6,7 @@
 
 <div class="barre-titre">
   <h1>Publication multi-réseaux — {{ client.nom }}</h1>
+  <a class="bouton-secondaire" href="/publication-multi/{{ client.id }}/vocal">🎙️ Mode rapide (vocal)</a>
 </div>
 
 {% if erreur %}
@@ -26,7 +27,9 @@
       💡 Générer le texte (IA)
     </button>
   </div>
-  <p id="texte-source-article-ia" class="texte-vide" hidden></p>
+  <p id="texte-source-article-ia" class="texte-vide" {% if not origine_vocale %}hidden{% endif %}>
+    {% if origine_vocale %}Texte généré à partir de votre réponse vocale — relisez avant de publier.{% endif %}
+  </p>
   <p id="texte-statut-generation" class="texte-vide" hidden></p>
 
   <div class="ligne-champs">
@@ -75,7 +78,7 @@
   <label for="image-partagee">Image (optionnelle — partagée par défaut sur tous les réseaux, Instagram en a besoin)</label>
   <input type="file" id="image-partagee" name="image" accept="image/*">
   <div class="ligne-champs">
-    <input type="text" id="prompt-image-ia" placeholder="Description de l'image à générer (remplie automatiquement après « Générer le texte »)" style="flex:1;">
+    <input type="text" id="prompt-image-ia" value="{{ prompt_image_initial }}" placeholder="Description de l'image à générer (remplie automatiquement après « Générer le texte »)" style="flex:1;">
     <button type="button" id="bouton-generer-image" class="bouton-secondaire">
       <span class="spinner" id="spinner-generer-image" hidden></span>
       🎨 Générer une image (IA)

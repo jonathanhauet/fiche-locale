@@ -1055,6 +1055,45 @@ button:active { transform: translateY(1px); }
   color: var(--texte-discret);
 }
 
+.question-capture-vocale {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--texte);
+  background: var(--fond);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon-petit);
+  padding: 0.9rem 1rem;
+  margin: 0.5rem 0 1.25rem;
+}
+
+.bloc-micro-central {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.bouton-micro-grand {
+  width: 5rem;
+  height: 5rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bouton-micro-grand.actif {
+  background: #ef4444;
+  animation: pulsation-micro 1.2s ease-in-out infinite;
+}
+
 @media (max-width: 720px) {
   .bloc-variante-reseau { grid-template-columns: 1fr; }
 }

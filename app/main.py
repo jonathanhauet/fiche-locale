@@ -5359,6 +5359,7 @@ def _posts_multi_programmes(db: Session, client: "models.Client") -> dict:
 def _contexte_publication_multi(
     db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
     variantes: dict = None, erreur: str = None, resultat: str = None,
+    prompt_image_initial: str = "", origine_vocale: bool = False,
 ) -> dict:
     return {
         "client": client,
@@ -5370,6 +5371,8 @@ def _contexte_publication_multi(
         "resultat": resultat,
         "posts_programmes": _posts_multi_programmes(db, client),
         "suggestions_du_jour_json": _suggestions_du_jour_json(db, client.id),
+        "prompt_image_initial": prompt_image_initial,
+        "origine_vocale": origine_vocale,
     }
 
 
@@ -5386,6 +5389,19 @@ def publication_multi_choix_client(request: Request, client_id: int = None, db: 
     client = db.get(models.Client, client_id)
     if not client:
         return RedirectResponse("/publication-multi", status_code=303)
+
+    # Brouillon issu de la capture vocale (voir /publication-multi/{id}/vocal) :
+    # laisse dans la session le temps d'une redirection plutot que via un
+    # query param (texte potentiellement long) ou une table dediee.
+    brouillon_vocal = request.session.pop("brouillon_vocal", None)
+    if brouillon_vocal and brouillon_vocal.get("client_id") == client.id:
+        return templates.TemplateResponse(
+            request, "publication_multi.html",
+            _contexte_publication_multi(
+                db, client, texte_base=brouillon_vocal.get("texte", ""),
+                prompt_image_initial=brouillon_vocal.get("prompt_image", ""), origine_vocale=True,
+            ),
+        )
 
     return templates.TemplateResponse(
         request, "publication_multi.html", _contexte_publication_multi(db, client),
@@ -5536,6 +5552,85 @@ def publication_multi_sujets_evergreen(client_id: int, request: Request, db: Ses
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
 
     return JSONResponse({"suggestions": suggestions})
+
+
+@app.get("/publication-multi/{client_id}/vocal", response_class=HTMLResponse)
+def publication_multi_vocal(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Capture rapide au telephone : 5 questions -> reponse dictee a la voix ->
+    post genere automatiquement (voir claude_generation.
+    generer_post_depuis_reponse), avant de rejoindre le composeur classique
+    (reseaux, image, programmation) deja pret a publier. Page volontairement
+    separee et minimaliste plutot qu'integree au composeur complet, pense
+    mobile en premier.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return RedirectResponse("/publication-multi", status_code=303)
+
+    return templates.TemplateResponse(request, "capture_vocale.html", {"client": client})
+
+
+@app.post("/publication-multi/{client_id}/questions_interview")
+def publication_multi_questions_interview(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Propose 5 questions pensees pour etre repondues a l'oral (voir claude_generation.generer_questions_interview)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    try:
+        sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
+        questions = claude_generation.generer_questions_interview(
+            _contexte_ia_client(client), sujets_deja_traites, nombre=5,
+        )
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
+
+    return JSONResponse({"questions": questions})
+
+
+@app.post("/publication-multi/{client_id}/generer_depuis_reponse")
+async def publication_multi_generer_depuis_reponse(
+    client_id: int, request: Request, question: str = Form(...), reponse: str = Form(...),
+    db: Session = Depends(obtenir_session),
+):
+    """
+    Transforme la reponse dictee (voir claude_generation.
+    generer_post_depuis_reponse) en post, puis redirige vers le composeur
+    complet avec le texte deja pret (voir le brouillon_vocal en session,
+    consomme par publication_multi_choix_client) - reutilise tout le
+    parcours existant (reseaux, image, programmation) plutot que de
+    dupliquer cette logique ici.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return RedirectResponse("/publication-multi", status_code=303)
+
+    try:
+        post = claude_generation.generer_post_depuis_reponse(question, reponse, _contexte_ia_client(client))
+    except Exception as e:
+        return templates.TemplateResponse(
+            request, "capture_vocale.html",
+            {"client": client, "erreur": f"Echec de la generation : {e}", "question": question, "reponse": reponse},
+            status_code=500,
+        )
+
+    request.session["brouillon_vocal"] = {
+        "client_id": client.id, "texte": post["texte"], "prompt_image": post.get("prompt_image", ""),
+    }
+    return RedirectResponse(f"/publication-multi?client_id={client.id}", status_code=303)
 
 
 @app.post("/publication-multi/{client_id}/generer_image")
