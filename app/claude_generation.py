@@ -1117,7 +1117,12 @@ def adapter_post_multi_reseaux(texte_base: str, reseaux: list[str], contenu_site
         f"{bloc_tons}\n\n"
         "Ne raccourcis ni n'allonge exagerement par rapport a l'original sauf si le ton du reseau l'exige "
         "naturellement. N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points "
-        "ou un tiret simple (-)."
+        "ou un tiret simple (-).\n"
+        "Conserve strictement la meme personne grammaticale que le texte d'origine (s'il est ecrit a la "
+        "premiere personne du singulier \"je\", reste en \"je\" : ne bascule jamais vers un \"nous\" "
+        "d'entreprise generique).\n"
+        "Phrases courtes, un paragraphe = une seule idee (1 a 3 phrases max), et passe des lignes entre "
+        "chaque paragraphe (\\n\\n) plutot qu'un bloc compact : c'est ce qui rend un post lisible sur mobile."
     )
 
     schema = {
