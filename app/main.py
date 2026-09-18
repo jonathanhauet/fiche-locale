@@ -183,6 +183,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_opt_in_confirme BOOLEAN DEFAULT FALSE"))
         if "hashtags_fixes" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN hashtags_fixes TEXT DEFAULT ''"))
+        if "favori_publication_multi" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
 
         if "leads_audit" in inspecteur.get_table_names():
             colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
@@ -5498,6 +5500,21 @@ def _contexte_publication_multi(
     }
 
 
+@app.post("/publication-multi/{client_id}/favori/basculer")
+def publication_multi_basculer_favori(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Bascule le statut favori (etoile) d'un client sur la liste de choix de /publication-multi."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if client:
+        client.favori_publication_multi = not client.favori_publication_multi
+        db.commit()
+
+    return RedirectResponse("/publication-multi", status_code=303)
+
+
 @app.get("/publication-multi", response_class=HTMLResponse)
 def publication_multi_choix_client(request: Request, client_id: int = None, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -5505,7 +5522,11 @@ def publication_multi_choix_client(request: Request, client_id: int = None, db: 
         return redirection
 
     if not client_id:
-        clients = db.query(models.Client).order_by(models.Client.nom).all()
+        clients = (
+            db.query(models.Client)
+            .order_by(models.Client.favori_publication_multi.desc(), models.Client.nom)
+            .all()
+        )
         return templates.TemplateResponse(request, "publication_multi_choix.html", {"clients": clients})
 
     client = db.get(models.Client, client_id)

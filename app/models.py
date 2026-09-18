@@ -147,6 +147,10 @@ class Client(Base):
     # (voir claude_generation.adapter_post_multi_reseaux) - uniquement pour
     # les reseaux qui utilisent des hashtags (Instagram, LinkedIn).
     hashtags_fixes = Column(String, default="")
+    # Client mis en avant en haut de la liste de choix de /publication-multi
+    # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
+    # clients publiés le plus souvent.
+    favori_publication_multi = Column(Boolean, default=False)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")

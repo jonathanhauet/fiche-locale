@@ -1455,6 +1455,20 @@ button:active { transform: translateY(1px); }
   flex-shrink: 0;
 }
 
+.bouton-favori-client {
+  background: none;
+  border: none;
+  color: var(--texte-discret);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.1rem 0.2rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.bouton-favori-client.favori-actif { color: var(--attention); }
+.bouton-favori-client:hover { color: var(--attention); }
+
 .etiquette-avertissement {
   font-size: 0.72rem;
   background: var(--attention-clair);

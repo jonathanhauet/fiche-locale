@@ -17,7 +17,12 @@
 
 <ul class="liste-clients">
   {% for client in clients %}
-  <li class="ligne-client-filtrable" data-recherche="{{ client.nom|lower }}">
+  <li class="ligne-client-filtrable ligne-client-avec-favori" data-recherche="{{ client.nom|lower }}">
+    <form method="post" action="/publication-multi/{{ client.id }}/favori/basculer">
+      <button type="submit" class="bouton-favori-client{{ ' favori-actif' if client.favori_publication_multi else '' }}" title="{{ 'Retirer des favoris' if client.favori_publication_multi else 'Mettre en favori' }}">
+        {{ '★' if client.favori_publication_multi else '☆' }}
+      </button>
+    </form>
     <a href="/publication-multi?client_id={{ client.id }}">
       <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
       <span>{{ client.nom }}</span>
