@@ -938,7 +938,7 @@ button:active { transform: translateY(1px); }
 
 /* Instagram : cadre carre, place avant le texte (comme le vrai flux), icones fines au-dessus de la legende */
 .apercu-post[data-reseau="instagram"] .apercu-cadre-image { order: 1; margin-bottom: 0; }
-.apercu-post[data-reseau="instagram"] .apercu-image { aspect-ratio: 1 / 1; }
+.apercu-post[data-reseau="instagram"] .apercu-image { aspect-ratio: 1 / 1; max-height: none; }
 .apercu-post[data-reseau="instagram"] .apercu-icones { order: 2; font-size: 1.15rem; gap: 0.7rem; padding: 0.5rem 1rem 0.2rem; margin: 0 -1rem; }
 .apercu-post[data-reseau="instagram"] .apercu-icone-fin { margin-left: auto; }
 .apercu-post[data-reseau="instagram"] .apercu-texte { order: 3; margin-top: 0.3rem; padding: 0 0 0.3rem; }
