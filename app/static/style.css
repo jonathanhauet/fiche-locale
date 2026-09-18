@@ -1451,6 +1451,52 @@ button:active { transform: translateY(1px); }
   margin: -0.8rem 0 1.3rem;
 }
 
+.selecteur-jours-whatsapp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.4rem 0;
+}
+
+.case-jour-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: normal;
+  background: var(--fond);
+  border: 1px solid var(--carte-bordure);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  color: var(--texte);
+  cursor: pointer;
+}
+
+.liste-reponses-interview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.carte-reponse-interview {
+  background: var(--fond);
+  border: 1px solid var(--carte-bordure);
+  border-radius: var(--rayon-petit);
+  padding: 0.7rem 0.9rem;
+}
+
+.question-reponse-interview {
+  font-weight: 600;
+  color: var(--texte);
+  margin: 0 0 0.3rem;
+}
+
+.texte-reponse-interview {
+  color: var(--texte);
+  margin: 0 0 0.3rem;
+  white-space: pre-wrap;
+}
+
 .etiquette-supprimable {
   display: inline-flex;
   align-items: center;

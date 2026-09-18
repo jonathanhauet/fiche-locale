@@ -75,7 +75,7 @@ from . import (
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
-    envoyer_questions_whatsapp_hebdomadaire,
+    envoyer_questions_whatsapp_si_prevu,
     envoyer_recaps_mensuels,
     generer_suggestions_quotidiennes,
     publier_posts_instagram_programmes,
@@ -175,6 +175,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_linkedin_id INTEGER"))
         if "numero_whatsapp" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN numero_whatsapp TEXT DEFAULT ''"))
+        if "whatsapp_jours" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_jours TEXT DEFAULT ''"))
 
         if "leads_audit" in inspecteur.get_table_names():
             colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
@@ -394,11 +396,11 @@ planificateur.add_job(
     id="suggestions_sujet_jour",
 )
 # Questions du mode rapide vocal par WhatsApp (voir
-# planificateur.envoyer_questions_whatsapp_hebdomadaire) : chaque mercredi matin.
+# planificateur.envoyer_questions_whatsapp_si_prevu) : verifie chaque matin si
+# le jour courant fait partie des jours choisis par le client (Client.whatsapp_jours).
 planificateur.add_job(
-    envoyer_questions_whatsapp_hebdomadaire,
+    envoyer_questions_whatsapp_si_prevu,
     "cron",
-    day_of_week="wed",
     hour=9,
     timezone="Europe/Brussels",
     id="questions_whatsapp_hebdomadaire",
@@ -2573,6 +2575,13 @@ def _reponse_detail_client(
             "erreur_protection": erreur_protection,
             "libelles_statut_ouverture": google_location.LIBELLES_STATUT_OUVERTURE,
             "intervalle_planificateur_minutes": INTERVALLE_PLANIFICATEUR_MINUTES,
+            "reponses_interview": (
+                db.query(models.ReponseInterviewClient)
+                .filter(models.ReponseInterviewClient.client_id == client.id)
+                .order_by(models.ReponseInterviewClient.cree_le.desc())
+                .limit(20)
+                .all()
+            ),
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -4788,6 +4797,7 @@ def modifier_client(
     email: str = Form(""),
     prenom: str = Form(""),
     numero_whatsapp: str = Form(""),
+    whatsapp_jours: list[str] = Form(default=[]),
     etiquettes: list[str] = Form(default=[]),
     localisation_active: bool = Form(False),
     localisation_ville: str = Form(""),
@@ -4812,6 +4822,7 @@ def modifier_client(
     client.email = email.strip()
     client.prenom = prenom.strip()
     client.numero_whatsapp = numero_whatsapp.strip().replace(" ", "").replace("+", "")
+    client.whatsapp_jours = ",".join(sorted(set(whatsapp_jours), key=int)[:3])
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     client.localisation_active = localisation_active
     client.localisation_ville = localisation_ville.strip()
@@ -5744,6 +5755,9 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             db.add(models.BrouillonWhatsApp(
                 client_id=client.id, texte=post["texte"], prompt_image=post.get("prompt_image", ""),
                 image_url=etat.image_url,
+            ))
+            db.add(models.ReponseInterviewClient(
+                client_id=client.id, question=etat.question_choisie, reponse_transcrite=transcription,
             ))
             db.delete(etat)
             db.commit()

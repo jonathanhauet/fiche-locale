@@ -170,14 +170,37 @@ def _contexte_ia_client(client: models.Client) -> str:
     return "\n\n".join(morceaux)
 
 
-def envoyer_questions_whatsapp_hebdomadaire():
+def _contexte_positionnement_client(db, client_id: int, limite: int = 8) -> str:
     """
-    Envoie chaque mercredi les 5 questions du mode rapide vocal par WhatsApp
-    (voir whatsapp_business.py) a la fiche de Jonathan, via le modele
-    approuve WHATSAPP_TEMPLATE_QUESTIONS. Se limite pour l'instant a la
-    fiche "Jonathan Hauet Marketing" (voir generer_suggestions_quotidiennes,
-    meme restriction et memes raisons - generer_post_depuis_reponse suppose
-    que le proprietaire de la fiche EST l'auteur).
+    Resume des reponses vocales precedentes du client (voir
+    ReponseInterviewClient, alimente par main._traiter_message_whatsapp),
+    ajoute au contexte envoye a l'IA pour la generation des nouvelles
+    questions - permet de creuser des angles pas encore abordes plutot que
+    de reposer des variantes de ce qui est deja connu.
+    """
+    reponses = (
+        db.query(models.ReponseInterviewClient)
+        .filter(models.ReponseInterviewClient.client_id == client_id)
+        .order_by(models.ReponseInterviewClient.cree_le.desc())
+        .limit(limite)
+        .all()
+    )
+    if not reponses:
+        return ""
+    morceaux = [f"Q: {r.question}\nR: {r.reponse_transcrite[:400].strip()}" for r in reponses]
+    return "Reponses precedentes du client, deja connues (ne pas reposer une question sur les memes elements) :\n" + "\n\n".join(morceaux)
+
+
+def envoyer_questions_whatsapp_si_prevu():
+    """
+    Envoie les questions du mode rapide vocal par WhatsApp (voir
+    whatsapp_business.py) aux jours choisis par le client (Client.whatsapp_jours,
+    "0" = lundi ... "6" = dimanche), via le modele approuve
+    WHATSAPP_TEMPLATE_QUESTIONS. Tourne quotidiennement (voir main.py) et ne
+    fait rien les jours non choisis. Se limite pour l'instant a la fiche
+    "Jonathan Hauet Marketing" (voir generer_suggestions_quotidiennes, meme
+    restriction et memes raisons - generer_post_depuis_reponse suppose que le
+    proprietaire de la fiche EST l'auteur).
     """
     db = SessionLocal()
     try:
@@ -185,11 +208,33 @@ def envoyer_questions_whatsapp_hebdomadaire():
             return
 
         client = db.query(models.Client).filter(models.Client.nom == "Jonathan Hauet Marketing").first()
-        if not client or not client.numero_whatsapp:
+        if not client or not client.numero_whatsapp or not client.whatsapp_jours:
             return
 
+        jour_aujourdhui = str(date.today().weekday())
+        if jour_aujourdhui not in client.whatsapp_jours.split(","):
+            return
+
+        # Les questions doivent toujours etre renouvelees : on exclut a la
+        # fois les questions deja envoyees recemment (QuestionWhatsAppPosee)
+        # et on enrichit le contexte avec les reponses deja obtenues, pour
+        # creuser de nouveaux angles plutot que de tourner en rond.
+        questions_recentes = (
+            db.query(models.QuestionWhatsAppPosee)
+            .filter(models.QuestionWhatsAppPosee.client_id == client.id)
+            .order_by(models.QuestionWhatsAppPosee.posee_le.desc())
+            .limit(20)
+            .all()
+        )
+        contexte = _contexte_ia_client(client)
+        contexte_positionnement = _contexte_positionnement_client(db, client.id)
+        if contexte_positionnement:
+            contexte = f"{contexte}\n\n{contexte_positionnement}" if contexte else contexte_positionnement
+
         try:
-            questions = claude_generation.generer_questions_interview(_contexte_ia_client(client), nombre=5)
+            questions = claude_generation.generer_questions_interview(
+                contexte, sujets_deja_traites=[q.question for q in questions_recentes], nombre=5,
+            )
         except Exception:
             return
         if not questions:
@@ -203,6 +248,8 @@ def envoyer_questions_whatsapp_hebdomadaire():
         etat.question_choisie = None
         etat.image_url = None
         etat.maj_le = datetime.utcnow()
+        for question in questions:
+            db.add(models.QuestionWhatsAppPosee(client_id=client.id, question=question))
         db.commit()
 
         corps = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))

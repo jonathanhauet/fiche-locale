@@ -119,10 +119,24 @@
 
     <div class="ligne-champs">
       <label>
-        Numéro WhatsApp (pour les questions hebdomadaires "mode rapide vocal")
+        Numéro WhatsApp (pour les questions "mode rapide vocal")
         <input type="text" name="numero_whatsapp" value="{{ client.numero_whatsapp }}" placeholder="Ex : 32470123456 (indicatif pays, sans le +)">
       </label>
     </div>
+
+    <label>
+      Jours d'envoi des questions WhatsApp (3 maximum, questions toujours renouvelées)
+      <div class="selecteur-jours-whatsapp" id="selecteur-jours-whatsapp">
+        {% set jours_coches = (client.whatsapp_jours or "").split(",") %}
+        {% for code, libelle in [("0","Lun"),("1","Mar"),("2","Mer"),("3","Jeu"),("4","Ven"),("5","Sam"),("6","Dim")] %}
+        <label class="case-jour-whatsapp">
+          <input type="checkbox" name="whatsapp_jours" value="{{ code }}" {% if code in jours_coches %}checked{% endif %}>
+          {{ libelle }}
+        </label>
+        {% endfor %}
+      </div>
+      <span class="texte-discret" id="message-limite-jours-whatsapp" hidden>3 jours maximum par semaine : décochez-en un avant d'en choisir un autre.</span>
+    </label>
 
     <div class="ligne-champs">
       <label>
@@ -224,6 +238,24 @@
         onsubmit="return confirm('Supprimer ce client et tous ses posts ?');">
     <button type="submit" class="bouton-danger">Supprimer ce client</button>
   </form>
+</details>
+
+<details class="bloc-repliable">
+  <summary>Historique interview WhatsApp ({{ reponses_interview|length }})</summary>
+  {% if reponses_interview %}
+  <div class="liste-reponses-interview">
+    {% for reponse in reponses_interview %}
+    <div class="carte-reponse-interview">
+      <p class="question-reponse-interview">{{ reponse.question }}</p>
+      <p class="texte-reponse-interview">{{ reponse.reponse_transcrite }}</p>
+      <p class="texte-discret">{{ reponse.cree_le.strftime('%d/%m/%Y') }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="texte-discret">Ces réponses servent à enrichir les nouvelles questions envoyées par WhatsApp (pour ne pas reposer les mêmes sujets).</p>
+  {% else %}
+  <p class="texte-vide">Aucune réponse reçue par WhatsApp pour l'instant.</p>
+  {% endif %}
 </details>
 
 <details class="bloc-repliable" {% if resultats_citations or erreur_citations %}open{% endif %}>
@@ -1197,6 +1229,26 @@
     texteVilleLocalisationSelectionnee.hidden = false;
     resultatsLocalisation.hidden = true;
     champRechercheLocalisation.value = "";
+  });
+})();
+</script>
+
+<script>
+(function () {
+  const conteneurJoursWhatsapp = document.getElementById("selecteur-jours-whatsapp");
+  const messageLimiteJours = document.getElementById("message-limite-jours-whatsapp");
+  if (!conteneurJoursWhatsapp) return;
+  const casesJours = conteneurJoursWhatsapp.querySelectorAll("input[type=checkbox]");
+  casesJours.forEach((caseJour) => {
+    caseJour.addEventListener("change", () => {
+      const nombreCoches = Array.from(casesJours).filter((c) => c.checked).length;
+      if (nombreCoches > 3) {
+        caseJour.checked = false;
+        messageLimiteJours.hidden = false;
+      } else {
+        messageLimiteJours.hidden = true;
+      }
+    });
   });
 })();
 </script>

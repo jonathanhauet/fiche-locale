@@ -131,6 +131,10 @@ class Client(Base):
     # lie a une connexion OAuth (pas de "compte" a proprement parler cote
     # WhatsApp, juste un numero de destinataire).
     numero_whatsapp = Column(String, default="")
+    # Jours d'envoi des questions hebdomadaires WhatsApp, cle "jour ISO" (0 =
+    # lundi ... 6 = dimanche) separes par des virgules, ex "0,2,4" pour
+    # lundi/mercredi/vendredi. Vide = pas d'envoi automatique.
+    whatsapp_jours = Column(String, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
@@ -151,6 +155,10 @@ class Client(Base):
     posts_meta_programmes = relationship("PostMetaProgramme", back_populates="client", cascade="all, delete-orphan")
     posts_instagram_programmes = relationship("PostInstagramProgramme", back_populates="client", cascade="all, delete-orphan")
     suggestions_sujet_jour = relationship("SuggestionSujetJour", back_populates="client", cascade="all, delete-orphan")
+    questions_whatsapp_posees = relationship("QuestionWhatsAppPosee", back_populates="client", cascade="all, delete-orphan")
+    reponses_interview = relationship("ReponseInterviewClient", back_populates="client", cascade="all, delete-orphan")
+    etats_conversation_whatsapp = relationship("EtatConversationWhatsApp", back_populates="client", cascade="all, delete-orphan")
+    brouillons_whatsapp = relationship("BrouillonWhatsApp", back_populates="client", cascade="all, delete-orphan")
 
 
 class Post(Base):
@@ -711,7 +719,45 @@ class EtatConversationWhatsApp(Base):
     image_url = Column(String, nullable=True)
     maj_le = Column(DateTime, default=datetime.utcnow)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="etats_conversation_whatsapp")
+
+
+class QuestionWhatsAppPosee(Base):
+    """
+    Historique des questions deja envoyees par WhatsApp a un client (voir
+    planificateur.envoyer_questions_whatsapp_si_prevu) : sert a exclure les
+    questions trop proches lors de la generation suivante, puisque chaque
+    envoi doit proposer des questions renouvelees.
+    """
+
+    __tablename__ = "questions_whatsapp_posees"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    question = Column(Text, default="")
+    posee_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="questions_whatsapp_posees")
+
+
+class ReponseInterviewClient(Base):
+    """
+    Reponse vocale (transcrite) donnee par un client a une question
+    d'interview WhatsApp, conservee durablement sur la fiche (contrairement a
+    BrouillonWhatsApp qui est supprime une fois charge dans le composeur) :
+    sert de memoire du positionnement du client pour affiner les questions
+    suivantes (voir planificateur.envoyer_questions_whatsapp_si_prevu).
+    """
+
+    __tablename__ = "reponses_interview_client"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    question = Column(Text, default="")
+    reponse_transcrite = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="reponses_interview")
 
 
 class BrouillonWhatsApp(Base):
@@ -733,4 +779,4 @@ class BrouillonWhatsApp(Base):
     image_url = Column(String, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="brouillons_whatsapp")
