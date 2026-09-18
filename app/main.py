@@ -4787,6 +4787,7 @@ def modifier_client(
     consignes_avis: str = Form(""),
     email: str = Form(""),
     prenom: str = Form(""),
+    numero_whatsapp: str = Form(""),
     etiquettes: list[str] = Form(default=[]),
     localisation_active: bool = Form(False),
     localisation_ville: str = Form(""),
@@ -4810,6 +4811,7 @@ def modifier_client(
     client.consignes_avis = consignes_avis
     client.email = email.strip()
     client.prenom = prenom.strip()
+    client.numero_whatsapp = numero_whatsapp.strip().replace(" ", "").replace("+", "")
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     client.localisation_active = localisation_active
     client.localisation_ville = localisation_ville.strip()
