@@ -5766,10 +5766,12 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             ))
             db.delete(etat)
             db.commit()
+            # Le lien vers le composeur (acces reserve a la plateforme) part
+            # uniquement via la notification push, jamais par WhatsApp : le
+            # numero qui repond ici peut etre celui d'un client, qui ne doit
+            # pas recevoir de lien d'administration.
+            whatsapp_business.envoyer_message_texte(numero, "Merci, c'est bien reçu ! Votre contenu est en cours de préparation.")
             lien_composeur = f"https://web-production-bf59a.up.railway.app/publication-multi/{client.id}"
-            whatsapp_business.envoyer_message_texte(
-                numero, f"C'est noté, votre post est prêt : {lien_composeur} pour le relire et le publier.",
-            )
             notifications.notifier(
                 "Post pret a valider",
                 f"{client.nom} : un post genere depuis WhatsApp attend votre relecture.",
