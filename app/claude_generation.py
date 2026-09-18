@@ -257,8 +257,12 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
         "utilise des sauts de ligne (\\n\\n) entre les paragraphes.\n"
         "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
         "un tiret simple (-).\n"
-        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images "
-        "(illustration adaptee au theme, sans texte incruste ni logo, sans reference geographique)."
+        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images. "
+        "Vise une scene concrete et specifique, directement liee au sujet precis (un lieu, un "
+        "objet ou une situation reconnaissable, pas une metaphore abstraite). Evite les cliches "
+        "d'illustration IA generique (cadenas/bouclier de securite, tableau de bord abstrait, "
+        "ampoule, poignee de main, reseau de points/globe connecte, engrenages) sauf si le sujet "
+        "les impose vraiment. Sans texte incruste, sans logo, sans reference geographique."
     )
 
     client = Anthropic(api_key=CLE_API)
@@ -367,9 +371,12 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_arti
         "- Longueur : entre 800 et 1300 caracteres (espaces compris) - un texte de base "
         "assez court pour rester adaptable a chaque reseau ensuite.\n"
         "- Passe des lignes entre chaque paragraphe (\\n\\n) plutot qu'un bloc compact.\n"
-        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images "
-        "(illustration conceptuelle liee au sujet, professionnelle, sans texte incruste, "
-        "sans logo, sans visage reconnaissable)."
+        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images. "
+        "Vise une scene concrete et specifique, directement liee au sujet precis (un lieu, un "
+        "objet ou une situation reconnaissable, pas une metaphore abstraite). Evite les cliches "
+        "d'illustration IA generique (cadenas/bouclier de securite, tableau de bord abstrait, "
+        "ampoule, poignee de main, reseau de points/globe connecte, engrenages) sauf si le sujet "
+        "les impose vraiment. Sans texte incruste, sans logo, sans visage reconnaissable."
     )
 
     client = Anthropic(api_key=CLE_API)
@@ -507,9 +514,12 @@ def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expe
         "- Aucune reference geographique ni nom de ville.\n"
         "- Longueur : entre 800 et 1300 caracteres (espaces compris).\n"
         "- Passe des lignes entre chaque paragraphe (\\n\\n) plutot qu'un bloc compact.\n"
-        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images "
-        "(illustration conceptuelle liee au sujet, professionnelle, sans texte incruste, "
-        "sans logo, sans visage reconnaissable)."
+        "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images. "
+        "Vise une scene concrete et specifique, directement liee au sujet precis (un lieu, un "
+        "objet ou une situation reconnaissable, pas une metaphore abstraite). Evite les cliches "
+        "d'illustration IA generique (cadenas/bouclier de securite, tableau de bord abstrait, "
+        "ampoule, poignee de main, reseau de points/globe connecte, engrenages) sauf si le sujet "
+        "les impose vraiment. Sans texte incruste, sans logo, sans visage reconnaissable."
     )
 
     client = Anthropic(api_key=CLE_API)
