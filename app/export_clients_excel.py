@@ -15,7 +15,7 @@ from . import google_business, google_location, google_oauth, google_reviews
 ENTETES = [
     "Nom", "Prénom", "Email", "Compte Google", "Étiquettes",
     "Téléphone", "Site web", "Adresse", "Catégorie principale",
-    "Complétude fiche", "Note moyenne", "Nombre d'avis",
+    "Statut d'ouverture", "Complétude fiche", "Note moyenne", "Nombre d'avis",
     "Photos sur la fiche", "Posts publiés (plateforme)",
     "Lien fiche Google", "Erreur",
 ]
@@ -46,7 +46,7 @@ def generer_export(db, clients: list) -> bytes:
             client.email,
             client.compte_google.libelle if client.compte_google else "",
             ", ".join(e.nom for e in client.etiquettes),
-            "", "", "", "", "", "", "", "",
+            "", "", "", "", "", "", "", "", "",
             nb_posts,
             "", "",
         ]
@@ -68,25 +68,27 @@ def generer_export(db, clients: list) -> bytes:
                     categorie_principale = ((infos.get("categories") or {}).get("primaryCategory") or {}).get(
                         "displayName", ""
                     )
+                    statut_ouverture = (infos.get("openInfo") or {}).get("status", "")
                     ligne[5] = (infos.get("phoneNumbers") or {}).get("primaryPhone", "")
                     ligne[6] = infos.get("websiteUri", "")
                     ligne[7] = _adresse_lisible(infos)
                     ligne[8] = categorie_principale
-                    ligne[9] = f"{completude['score']}/{completude['total']}"
-                    ligne[14] = (infos.get("metadata") or {}).get("mapsUri", "")
+                    ligne[9] = google_location.LIBELLES_STATUT_OUVERTURE.get(statut_ouverture, statut_ouverture)
+                    ligne[10] = f"{completude['score']}/{completude['total']}"
+                    ligne[15] = (infos.get("metadata") or {}).get("mapsUri", "")
                 except Exception as erreur:
                     erreurs.append(f"Fiche : {erreur}")
 
                 try:
                     resume_avis = google_reviews.resume_rapide(identifiants, client.account_id, client.location_id)
-                    ligne[10] = resume_avis["note_moyenne"] if resume_avis["note_moyenne"] is not None else ""
-                    ligne[11] = resume_avis["total_avis"]
+                    ligne[11] = resume_avis["note_moyenne"] if resume_avis["note_moyenne"] is not None else ""
+                    ligne[12] = resume_avis["total_avis"]
                 except Exception as erreur:
                     erreurs.append(f"Avis : {erreur}")
 
                 try:
                     photos = google_business.lister_photos(identifiants, client.account_id, client.location_id)
-                    ligne[12] = len(photos)
+                    ligne[13] = len(photos)
                 except Exception as erreur:
                     erreurs.append(f"Photos : {erreur}")
 
