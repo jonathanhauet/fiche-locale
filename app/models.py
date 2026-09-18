@@ -135,6 +135,13 @@ class Client(Base):
     # lundi ... 6 = dimanche) separes par des virgules, ex "0,2,4" pour
     # lundi/mercredi/vendredi. Vide = pas d'envoi automatique.
     whatsapp_jours = Column(String, default="")
+    # A cocher manuellement une fois que CE client (pas Jonathan) a donne son
+    # accord pour recevoir les messages WhatsApp automatiques - obligatoire
+    # avant tout envoi cote Meta (regles anti-spam sur les messages business
+    # a l'initiative de l'entreprise) : sans opt-in confirme, le numero
+    # WhatsApp business de l'agence risque d'etre signale/restreint. Non
+    # coche par defaut, y compris pour la propre fiche de Jonathan.
+    whatsapp_opt_in_confirme = Column(Boolean, default=False)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")

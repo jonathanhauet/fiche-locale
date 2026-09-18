@@ -191,74 +191,85 @@ def _contexte_positionnement_client(db, client_id: int, limite: int = 8) -> str:
     return "Reponses precedentes du client, deja connues (ne pas reposer une question sur les memes elements) :\n" + "\n\n".join(morceaux)
 
 
+def _envoyer_questions_whatsapp_pour_client(db, client) -> None:
+    """Genere et envoie les 5 questions de la semaine a un client donne (voir envoyer_questions_whatsapp_si_prevu)."""
+    # Les questions doivent toujours etre renouvelees : on exclut a la fois
+    # les questions deja envoyees recemment (QuestionWhatsAppPosee) et on
+    # enrichit le contexte avec les reponses deja obtenues, pour creuser de
+    # nouveaux angles plutot que de tourner en rond.
+    questions_recentes = (
+        db.query(models.QuestionWhatsAppPosee)
+        .filter(models.QuestionWhatsAppPosee.client_id == client.id)
+        .order_by(models.QuestionWhatsAppPosee.posee_le.desc())
+        .limit(20)
+        .all()
+    )
+    contexte = _contexte_ia_client(client)
+    contexte_positionnement = _contexte_positionnement_client(db, client.id)
+    if contexte_positionnement:
+        contexte = f"{contexte}\n\n{contexte_positionnement}" if contexte else contexte_positionnement
+
+    try:
+        questions = claude_generation.generer_questions_interview(
+            contexte, sujets_deja_traites=[q.question for q in questions_recentes], nombre=5,
+        )
+    except Exception:
+        return
+    if not questions:
+        return
+
+    etat = db.query(models.EtatConversationWhatsApp).filter_by(numero=client.numero_whatsapp).first()
+    if not etat:
+        etat = models.EtatConversationWhatsApp(client_id=client.id, numero=client.numero_whatsapp)
+        db.add(etat)
+    etat.questions_json = json.dumps(questions)
+    etat.question_choisie = None
+    etat.image_url = None
+    etat.maj_le = datetime.utcnow()
+    for question in questions:
+        db.add(models.QuestionWhatsAppPosee(client_id=client.id, question=question))
+    db.commit()
+
+    corps = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
+    try:
+        whatsapp_business.envoyer_message_template(
+            client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", [corps],
+        )
+    except Exception:
+        pass
+
+
 def envoyer_questions_whatsapp_si_prevu():
     """
     Envoie les questions du mode rapide vocal par WhatsApp (voir
-    whatsapp_business.py) aux jours choisis par le client (Client.whatsapp_jours,
-    "0" = lundi ... "6" = dimanche), via le modele approuve
-    WHATSAPP_TEMPLATE_QUESTIONS. Tourne quotidiennement (voir main.py) et ne
-    fait rien les jours non choisis. Se limite pour l'instant a la fiche
-    "Jonathan Hauet Marketing" (voir generer_suggestions_quotidiennes, meme
-    restriction et memes raisons - generer_post_depuis_reponse suppose que le
-    proprietaire de la fiche EST l'auteur).
+    whatsapp_business.py) a chaque client eligible, aux jours qu'il a
+    choisis (Client.whatsapp_jours, "0" = lundi ... "6" = dimanche), via le
+    modele approuve WHATSAPP_TEMPLATE_QUESTIONS. Tourne quotidiennement (voir
+    main.py) et ne fait rien pour un client les jours non choisis.
+
+    Un client n'est eligible que si whatsapp_opt_in_confirme est coche : les
+    messages "template" envoyes ici sont a l'initiative de l'entreprise (pas
+    une reponse a un message recu), ce qui declenche les regles anti-spam de
+    Meta si le destinataire n'a pas explicitement donne son accord - sans
+    cette securite, le numero WhatsApp Business de l'agence risquerait d'etre
+    signale/restreint des le premier client non consentant.
     """
     db = SessionLocal()
     try:
         if not whatsapp_business.identifiants_configures():
             return
 
-        client = db.query(models.Client).filter(models.Client.nom == "Jonathan Hauet Marketing").first()
-        if not client or not client.numero_whatsapp or not client.whatsapp_jours:
-            return
-
         jour_aujourdhui = str(date.today().weekday())
-        if jour_aujourdhui not in client.whatsapp_jours.split(","):
-            return
-
-        # Les questions doivent toujours etre renouvelees : on exclut a la
-        # fois les questions deja envoyees recemment (QuestionWhatsAppPosee)
-        # et on enrichit le contexte avec les reponses deja obtenues, pour
-        # creuser de nouveaux angles plutot que de tourner en rond.
-        questions_recentes = (
-            db.query(models.QuestionWhatsAppPosee)
-            .filter(models.QuestionWhatsAppPosee.client_id == client.id)
-            .order_by(models.QuestionWhatsAppPosee.posee_le.desc())
-            .limit(20)
+        clients_eligibles = (
+            db.query(models.Client)
+            .filter(models.Client.numero_whatsapp != "", models.Client.whatsapp_jours != "")
+            .filter(models.Client.whatsapp_opt_in_confirme.is_(True))
             .all()
         )
-        contexte = _contexte_ia_client(client)
-        contexte_positionnement = _contexte_positionnement_client(db, client.id)
-        if contexte_positionnement:
-            contexte = f"{contexte}\n\n{contexte_positionnement}" if contexte else contexte_positionnement
-
-        try:
-            questions = claude_generation.generer_questions_interview(
-                contexte, sujets_deja_traites=[q.question for q in questions_recentes], nombre=5,
-            )
-        except Exception:
-            return
-        if not questions:
-            return
-
-        etat = db.query(models.EtatConversationWhatsApp).filter_by(numero=client.numero_whatsapp).first()
-        if not etat:
-            etat = models.EtatConversationWhatsApp(client_id=client.id, numero=client.numero_whatsapp)
-            db.add(etat)
-        etat.questions_json = json.dumps(questions)
-        etat.question_choisie = None
-        etat.image_url = None
-        etat.maj_le = datetime.utcnow()
-        for question in questions:
-            db.add(models.QuestionWhatsAppPosee(client_id=client.id, question=question))
-        db.commit()
-
-        corps = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
-        try:
-            whatsapp_business.envoyer_message_template(
-                client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", [corps],
-            )
-        except Exception:
-            pass
+        for client in clients_eligibles:
+            if jour_aujourdhui not in client.whatsapp_jours.split(","):
+                continue
+            _envoyer_questions_whatsapp_pour_client(db, client)
     finally:
         db.close()
 

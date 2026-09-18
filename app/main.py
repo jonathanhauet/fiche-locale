@@ -177,6 +177,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN numero_whatsapp TEXT DEFAULT ''"))
         if "whatsapp_jours" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_jours TEXT DEFAULT ''"))
+        if "whatsapp_opt_in_confirme" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_opt_in_confirme BOOLEAN DEFAULT FALSE"))
 
         if "leads_audit" in inspecteur.get_table_names():
             colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
@@ -4798,6 +4800,7 @@ def modifier_client(
     prenom: str = Form(""),
     numero_whatsapp: str = Form(""),
     whatsapp_jours: list[str] = Form(default=[]),
+    whatsapp_opt_in_confirme: bool = Form(False),
     etiquettes: list[str] = Form(default=[]),
     localisation_active: bool = Form(False),
     localisation_ville: str = Form(""),
@@ -4823,6 +4826,7 @@ def modifier_client(
     client.prenom = prenom.strip()
     client.numero_whatsapp = numero_whatsapp.strip().replace(" ", "").replace("+", "")
     client.whatsapp_jours = ",".join(sorted(set(whatsapp_jours), key=int)[:3])
+    client.whatsapp_opt_in_confirme = whatsapp_opt_in_confirme
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     client.localisation_active = localisation_active
     client.localisation_ville = localisation_ville.strip()

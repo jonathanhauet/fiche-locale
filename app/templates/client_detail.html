@@ -138,6 +138,12 @@
       <span class="texte-discret" id="message-limite-jours-whatsapp" hidden>3 jours maximum par semaine : décochez-en un avant d'en choisir un autre.</span>
     </label>
 
+    <label class="filtre-case">
+      <input type="checkbox" name="whatsapp_opt_in_confirme" value="true" {% if client.whatsapp_opt_in_confirme %}checked{% endif %}>
+      Ce client a donné son accord pour recevoir les messages WhatsApp automatiques
+    </label>
+    <p class="texte-discret">Obligatoire avant tout envoi automatique (règles Meta anti-spam) : sans cette case cochée, aucune question hebdomadaire ne sera envoyée à ce numéro, même si des jours sont sélectionnés ci-dessus.</p>
+
     <div class="ligne-champs">
       <label>
         Identifiant du compte Google (account_id)
