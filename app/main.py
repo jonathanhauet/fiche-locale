@@ -5769,8 +5769,23 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             octets, mime = whatsapp_business.telecharger_media(media_id)
             extension = ".png" if "png" in mime else ".jpg"
             nom_fichier = f"whatsapp_{client.id}_{uuid.uuid4().hex[:10]}{extension}"
-            etat.image_url = ovh_upload.envoyer_octets(octets, nom_fichier)
+            url_image = ovh_upload.envoyer_octets(octets, nom_fichier)
+            etat.image_url = url_image
             etat.maj_le = datetime.utcnow()
+            # Photo envoyee APRES le vocal (l'etat a deja ete supprime puis
+            # recree vide par le vocal) : on la rattache au dernier brouillon
+            # WhatsApp de ce client pas encore charge dans le composeur,
+            # sinon elle serait perdue (stockee sur un etat orphelin que plus
+            # rien ne relit).
+            if not etat.question_choisie:
+                dernier_brouillon = (
+                    db.query(models.BrouillonWhatsApp)
+                    .filter(models.BrouillonWhatsApp.client_id == client.id, models.BrouillonWhatsApp.image_url.is_(None))
+                    .order_by(models.BrouillonWhatsApp.cree_le.desc())
+                    .first()
+                )
+                if dernier_brouillon:
+                    dernier_brouillon.image_url = url_image
             db.commit()
         except Exception:
             pass
