@@ -5,6 +5,44 @@
 <p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
 <h1>Historique des publications — {{ client.nom }}</h1>
 
+<h2>Résumé multi-réseaux</h2>
+<p class="texte-discret">Publications suivies par la plateforme, tous réseaux confondus (Google, Facebook, Instagram, LinkedIn).</p>
+{% if publications_multi_reseaux %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Publication</th>
+        <th>Date</th>
+        <th>Statut</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ligne in publications_multi_reseaux %}
+      <tr>
+        <td>
+          <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}" title="{{ ligne.reseau|capitalize }}">
+            {{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}
+          </span>
+        </td>
+        <td>
+          <div class="ligne-publication-resume">
+            {% if ligne.image_url %}<img src="{{ ligne.image_url }}" alt="" class="miniature-publication-resume">{% endif %}
+            <span class="apercu-texte">{{ ligne.titre }}</span>
+          </div>
+        </td>
+        <td>{{ ligne.date.strftime("%d/%m/%Y") }}</td>
+        <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="texte-vide">Aucune publication pour l'instant.</p>
+{% endif %}
+
 <div class="barre-titre">
   <h2>Actuellement sur la fiche</h2>
   <button type="button" class="bouton-secondaire" onclick="window.location.reload()">⟳ Rafraîchir</button>

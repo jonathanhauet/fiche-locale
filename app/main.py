@@ -886,6 +886,69 @@ def historique(request: Request, db: Session = Depends(obtenir_session)):
     return templates.TemplateResponse(request, "historique.html", {"evenements": evenements})
 
 
+STATUTS_POST_GOOGLE_RESUME = {
+    "PUBLIE_LIVE": "Publié",
+    "A_PUBLIER": "Programmé",
+    "PUBLIE_REJECTED": "Rejeté",
+    "ECHEC_PUBLICATION": "Échec",
+}
+LIBELLES_ETAT_RESEAU_RESUME = {"PUBLIE": "Publié", "EN_ATTENTE": "Programmé", "ECHEC": "Échec"}
+
+
+def _publications_multi_reseaux(db: Session, client: "models.Client", limite: int = 30) -> list:
+    """
+    Vue unifiee, tous reseaux confondus, des publications suivies par la
+    plateforme pour ce client (programmees, publiees ou en echec) - melange
+    Post (Google), PostMetaProgramme (Facebook), PostInstagramProgramme et
+    PostLinkedInProgramme, triees par date decroissante. Ne couvre que ce que
+    la plateforme a elle-meme publie/programme, pas les posts Google publies
+    hors plateforme (voir posts_en_ligne, lu en direct, plus bas sur la page).
+    """
+    lignes = []
+
+    for post in (
+        db.query(models.Post)
+        .filter(models.Post.client_id == client.id, models.Post.statut.in_(STATUTS_POST_GOOGLE_RESUME.keys()))
+        .all()
+    ):
+        lignes.append({
+            "reseau": "google",
+            "titre": post.titre or (post.texte[:60] + "…" if len(post.texte) > 60 else post.texte),
+            "image_url": post.image_url,
+            "date": post.date_prevue or post.cree_le.date(),
+            "statut_brut": post.statut,
+            "statut_libelle": STATUTS_POST_GOOGLE_RESUME[post.statut],
+        })
+
+    for reseau, modele, filtre in [
+        ("facebook", models.PostMetaProgramme, {"client_id": client.id}),
+        ("instagram", models.PostInstagramProgramme, {"client_id": client.id}),
+    ]:
+        for post in db.query(modele).filter_by(**filtre).all():
+            lignes.append({
+                "reseau": reseau,
+                "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
+                "image_url": post.image_url,
+                "date": post.publier_le.date(),
+                "statut_brut": post.etat,
+                "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
+            })
+
+    if client.compte_linkedin_id:
+        for post in db.query(models.PostLinkedInProgramme).filter_by(compte_linkedin_id=client.compte_linkedin_id).all():
+            lignes.append({
+                "reseau": "linkedin",
+                "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
+                "image_url": None,  # stockee en octets, pas d'URL directe (voir PostLinkedInProgramme)
+                "date": post.publier_le.date(),
+                "statut_brut": post.etat,
+                "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
+            })
+
+    lignes.sort(key=lambda l: l["date"], reverse=True)
+    return lignes[:limite]
+
+
 @app.get("/clients/{client_id}/historique", response_class=HTMLResponse)
 def historique_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -924,6 +987,7 @@ def historique_client(client_id: int, request: Request, db: Session = Depends(ob
             "evenements": evenements,
             "posts_en_ligne": posts_en_ligne,
             "erreur_posts_en_ligne": erreur_posts_en_ligne,
+            "publications_multi_reseaux": _publications_multi_reseaux(db, client),
         },
     )
 
