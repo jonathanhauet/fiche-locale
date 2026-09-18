@@ -5791,8 +5791,14 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
                 if dernier_brouillon:
                     dernier_brouillon.image_url = url_image
             db.commit()
-        except Exception:
-            pass
+            try:
+                whatsapp_business.envoyer_message_texte(
+                    numero, "Photo bien reçue 📸 (si vous en aviez déjà envoyé une, celle-ci la remplace).",
+                )
+            except Exception:
+                pass
+        except Exception as erreur:
+            notifications.notifier("Echec photo WhatsApp", f"Photo de {numero} non enregistree : {erreur}")
         return
 
     if type_message == "audio":
