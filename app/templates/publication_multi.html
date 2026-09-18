@@ -106,7 +106,13 @@
     {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn", "in")] %}
     <div class="bloc-variante-reseau" data-reseau="{{ reseau }}" {% if reseau not in reseaux_coches %}hidden{% endif %}>
       <div class="colonne-edition-reseau">
-        <label for="texte-{{ reseau }}">Texte pour {{ nom }}</label>
+        <div class="ligne-label-avec-bouton">
+          <label for="texte-{{ reseau }}">Texte pour {{ nom }}</label>
+          <button type="button" class="bouton-regenerer-reseau" data-reseau="{{ reseau }}" title="Régénérer uniquement ce réseau">
+            <span class="spinner spinner-regenerer" data-reseau="{{ reseau }}" hidden></span>
+            🔄
+          </button>
+        </div>
         <textarea id="texte-{{ reseau }}" name="texte_{{ reseau }}" rows="4" class="champ-texte-reseau" data-reseau="{{ reseau }}">{{ variantes.get(reseau, "") }}</textarea>
         <label>
           <input type="checkbox" class="case-activer-image-dediee" data-reseau="{{ reseau }}">
@@ -619,27 +625,25 @@
     const boutonAdapter = document.getElementById("bouton-adapter");
     const spinnerAdapter = document.getElementById("spinner-adapter");
     const texteStatut = document.getElementById("texte-statut-adaptation");
-    boutonAdapter.addEventListener("click", async () => {
+
+    // Partagee entre "Adapter le texte par reseau" (tous les reseaux coches)
+    // et le bouton 🔄 par carte (un seul reseau) : meme endpoint, meme
+    // application du resultat aux champs/apercus concernes.
+    async function adapterReseaux(listeReseaux, { onStatut, onFinally } = {}) {
       const texteBase = document.getElementById("texte-base").value.trim();
-      const reseauxCoches = casesReseaux.filter((c) => c.checked).map((c) => c.dataset.reseau);
+      if (!texteBase) { onStatut && onStatut("Écrivez d'abord le texte de base."); return; }
+      if (!listeReseaux.length) { onStatut && onStatut("Sélectionnez au moins un réseau."); return; }
 
-      texteStatut.hidden = false;
-      if (!texteBase) { texteStatut.textContent = "Écrivez d'abord le texte de base."; return; }
-      if (!reseauxCoches.length) { texteStatut.textContent = "Sélectionnez au moins un réseau."; return; }
-
-      boutonAdapter.disabled = true;
-      spinnerAdapter.hidden = false;
-      texteStatut.textContent = "Adaptation en cours...";
-
+      onStatut && onStatut("Adaptation en cours...");
       try {
         const reponse = await fetch("/publication-multi/{{ client.id }}/adapter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texte_base: texteBase, reseaux: reseauxCoches }),
+          body: JSON.stringify({ texte_base: texteBase, reseaux: listeReseaux }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {
-          texteStatut.textContent = donnees.erreur || "Échec de l'adaptation.";
+          onStatut && onStatut(donnees.erreur || "Échec de l'adaptation.");
           return;
         }
         Object.entries(donnees.variantes).forEach(([reseau, texte]) => {
@@ -654,13 +658,37 @@
             setTimeout(() => zone.classList.remove("rempli-recemment"), 1500);
           }
         });
-        texteStatut.textContent = "Textes adaptés — relisez avant de publier.";
+        onStatut && onStatut("Textes adaptés — relisez avant de publier.");
       } catch (erreur) {
-        texteStatut.textContent = "Erreur réseau lors de l'adaptation.";
+        onStatut && onStatut("Erreur réseau lors de l'adaptation.");
       } finally {
-        boutonAdapter.disabled = false;
-        spinnerAdapter.hidden = true;
+        onFinally && onFinally();
       }
+    }
+
+    boutonAdapter.addEventListener("click", () => {
+      texteStatut.hidden = false;
+      const reseauxCoches = casesReseaux.filter((c) => c.checked).map((c) => c.dataset.reseau);
+      boutonAdapter.disabled = true;
+      spinnerAdapter.hidden = false;
+      adapterReseaux(reseauxCoches, {
+        onStatut: (msg) => { texteStatut.textContent = msg; },
+        onFinally: () => { boutonAdapter.disabled = false; spinnerAdapter.hidden = true; },
+      });
+    });
+
+    document.querySelectorAll(".bouton-regenerer-reseau").forEach((bouton) => {
+      bouton.addEventListener("click", () => {
+        const reseau = bouton.dataset.reseau;
+        const spinner = document.querySelector(`.spinner-regenerer[data-reseau="${reseau}"]`);
+        texteStatut.hidden = false;
+        bouton.disabled = true;
+        if (spinner) spinner.hidden = false;
+        adapterReseaux([reseau], {
+          onStatut: (msg) => { texteStatut.textContent = msg; },
+          onFinally: () => { bouton.disabled = false; if (spinner) spinner.hidden = true; },
+        });
+      });
     });
   })();
 </script>

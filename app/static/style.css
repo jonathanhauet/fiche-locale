@@ -1275,6 +1275,26 @@ button:active { transform: translateY(1px); }
 
 .bouton-secondaire:hover { background: var(--carte-bordure); }
 
+.ligne-label-avec-bouton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.bouton-regenerer-reseau {
+  background: none;
+  border: none;
+  color: var(--texte-discret);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  cursor: pointer;
+}
+
+.bouton-regenerer-reseau:hover { color: var(--texte); }
+.bouton-regenerer-reseau:disabled { opacity: 0.5; cursor: default; }
+
 .bouton-danger {
   background: var(--danger-clair);
   color: var(--danger);

@@ -160,6 +160,11 @@
       <textarea name="contenu_site" rows="14">{{ client.contenu_site }}</textarea>
     </label>
 
+    <label>
+      Hashtags de marque (toujours inclus en plus des hashtags générés, sur Instagram et LinkedIn uniquement)
+      <input type="text" name="hashtags_fixes" value="{{ client.hashtags_fixes }}" placeholder="Ex : #NicoSerrurerie #SerrurierMarseille">
+    </label>
+
     <div class="choix-image-bloc" id="bloc-localisation-ia">
       <span class="choix-image-titre">Localisation ciblée pour les posts IA (optionnel)</span>
       <label class="filtre-case">

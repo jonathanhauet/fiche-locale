@@ -142,6 +142,11 @@ class Client(Base):
     # WhatsApp business de l'agence risque d'etre signale/restreint. Non
     # coche par defaut, y compris pour la propre fiche de Jonathan.
     whatsapp_opt_in_confirme = Column(Boolean, default=False)
+    # Hashtags "de marque" propres a ce client, toujours inclus en plus des
+    # hashtags contextuels generes par l'IA lors de l'adaptation multi-reseaux
+    # (voir claude_generation.adapter_post_multi_reseaux) - uniquement pour
+    # les reseaux qui utilisent des hashtags (Instagram, LinkedIn).
+    hashtags_fixes = Column(String, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")
