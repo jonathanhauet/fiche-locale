@@ -5762,7 +5762,9 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             db.delete(etat)
             db.commit()
             whatsapp_business.envoyer_message_texte(
-                numero, "C'est noté, votre post est prêt : ouvrez la plateforme pour le relire et le publier.",
+                numero,
+                "C'est noté, votre post est prêt : "
+                f"https://web-production-bf59a.up.railway.app/publication-multi/{client.id} pour le relire et le publier.",
             )
         except Exception:
             try:
