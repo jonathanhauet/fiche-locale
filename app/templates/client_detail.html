@@ -240,6 +240,17 @@
     <p class="texte-discret">PDF, Word (.docx) ou texte (.txt) — vient compléter le "Contenu du site" ci-dessus, pas le remplacer. Seul le texte est conservé, pas le fichier d'origine.</p>
   </div>
 
+  {% if client.numero_whatsapp and client.whatsapp_opt_in_confirme %}
+  <div class="bloc-section">
+    {% if request.query_params.get("whatsapp_envoye") == "1" %}
+    <p class="message-succes">Questions envoyées sur WhatsApp — la réponse arrivera en brouillon ici une fois le vocal reçu.</p>
+    {% endif %}
+    <form method="post" action="/clients/{{ client.id }}/whatsapp/envoyer-maintenant">
+      <button type="submit" class="bouton-secondaire">Envoyer les questions WhatsApp maintenant (test)</button>
+    </form>
+  </div>
+  {% endif %}
+
   <form method="post" action="/clients/{{ client.id }}/supprimer"
         onsubmit="return confirm('Supprimer ce client et tous ses posts ?');">
     <button type="submit" class="bouton-danger">Supprimer ce client</button>

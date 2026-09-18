@@ -191,8 +191,14 @@ def _contexte_positionnement_client(db, client_id: int, limite: int = 8) -> str:
     return "Reponses precedentes du client, deja connues (ne pas reposer une question sur les memes elements) :\n" + "\n\n".join(morceaux)
 
 
-def _envoyer_questions_whatsapp_pour_client(db, client) -> None:
-    """Genere et envoie les 5 questions de la semaine a un client donne (voir envoyer_questions_whatsapp_si_prevu)."""
+def envoyer_questions_whatsapp_pour_client(db, client) -> None:
+    """
+    Genere et envoie les 5 questions de la semaine a un client donne (voir
+    envoyer_questions_whatsapp_si_prevu, qui appelle cette fonction pour
+    chaque client eligible du jour). Aussi utilisee pour un envoi manuel
+    immediat depuis la fiche client (bouton "Envoyer maintenant"), pratique
+    pour tester le circuit complet sans attendre le jour programme.
+    """
     # Les questions doivent toujours etre renouvelees : on exclut a la fois
     # les questions deja envoyees recemment (QuestionWhatsAppPosee) et on
     # enrichit le contexte avec les reponses deja obtenues, pour creuser de
@@ -269,7 +275,7 @@ def envoyer_questions_whatsapp_si_prevu():
         for client in clients_eligibles:
             if jour_aujourdhui not in client.whatsapp_jours.split(","):
                 continue
-            _envoyer_questions_whatsapp_pour_client(db, client)
+            envoyer_questions_whatsapp_pour_client(db, client)
     finally:
         db.close()
 

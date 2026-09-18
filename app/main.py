@@ -76,6 +76,7 @@ from . import (
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
+    envoyer_questions_whatsapp_pour_client,
     envoyer_questions_whatsapp_si_prevu,
     envoyer_recaps_mensuels,
     generer_suggestions_quotidiennes,
@@ -4845,6 +4846,23 @@ def modifier_client(
     client.localisation_rayon_km = max(1, localisation_rayon_km)
     db.commit()
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+@app.post("/clients/{client_id}/whatsapp/envoyer-maintenant")
+def envoyer_questions_whatsapp_maintenant(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Envoi manuel immediat des 5 questions WhatsApp (voir planificateur.envoyer_questions_whatsapp_pour_client) : pour tester sans attendre le jour programme."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    if client.numero_whatsapp and client.whatsapp_opt_in_confirme and whatsapp_business.identifiants_configures():
+        envoyer_questions_whatsapp_pour_client(db, client)
+        return RedirectResponse(f"/clients/{client_id}?whatsapp_envoye=1", status_code=303)
+    return RedirectResponse(f"/clients/{client_id}?whatsapp_envoye=0", status_code=303)
 
 
 @app.post("/clients/{client_id}/supprimer")
