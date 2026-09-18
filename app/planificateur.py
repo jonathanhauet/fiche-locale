@@ -240,7 +240,11 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> str | None:
         db.add(models.QuestionWhatsAppPosee(client_id=client.id, question=question))
     db.commit()
 
-    corps = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
+    # Une variable de modele WhatsApp ne peut pas contenir de saut de ligne
+    # (retours a la ligne/tabulations refuses par l'API, code 132018) : les 5
+    # questions sont donc separees par " | " plutot qu'un saut de ligne par
+    # question.
+    corps = " | ".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
     try:
         whatsapp_business.envoyer_message_template(
             client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", [corps],
