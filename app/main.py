@@ -64,6 +64,7 @@ from . import (
     meta_oauth,
     meta_publish,
     models,
+    notifications,
     ovh_upload,
     rank_tracking,
     rapport_donnees,
@@ -5765,10 +5766,14 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             ))
             db.delete(etat)
             db.commit()
+            lien_composeur = f"https://web-production-bf59a.up.railway.app/publication-multi/{client.id}"
             whatsapp_business.envoyer_message_texte(
-                numero,
-                "C'est noté, votre post est prêt : "
-                f"https://web-production-bf59a.up.railway.app/publication-multi/{client.id} pour le relire et le publier.",
+                numero, f"C'est noté, votre post est prêt : {lien_composeur} pour le relire et le publier.",
+            )
+            notifications.notifier(
+                "Post pret a valider",
+                f"{client.nom} : un post genere depuis WhatsApp attend votre relecture.",
+                url=lien_composeur,
             )
         except Exception:
             try:
