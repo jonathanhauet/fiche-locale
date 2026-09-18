@@ -245,6 +245,9 @@
     {% if request.query_params.get("whatsapp_envoye") == "1" %}
     <p class="message-succes">Questions envoyées sur WhatsApp — la réponse arrivera en brouillon ici une fois le vocal reçu.</p>
     {% endif %}
+    {% if erreur_whatsapp_test %}
+    <p class="message-erreur">Échec de l'envoi WhatsApp : {{ erreur_whatsapp_test }}</p>
+    {% endif %}
     <form method="post" action="/clients/{{ client.id }}/whatsapp/envoyer-maintenant">
       <button type="submit" class="bouton-secondaire">Envoyer les questions WhatsApp maintenant (test)</button>
     </form>

@@ -2595,6 +2595,7 @@ def _reponse_detail_client(
                 .limit(20)
                 .all()
             ),
+            "erreur_whatsapp_test": request.session.pop("erreur_whatsapp_test", None),
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -4859,10 +4860,17 @@ def envoyer_questions_whatsapp_maintenant(client_id: int, request: Request, db: 
     if not client:
         return HTMLResponse("Client introuvable.", status_code=404)
 
-    if client.numero_whatsapp and client.whatsapp_opt_in_confirme and whatsapp_business.identifiants_configures():
-        envoyer_questions_whatsapp_pour_client(db, client)
-        return RedirectResponse(f"/clients/{client_id}?whatsapp_envoye=1", status_code=303)
-    return RedirectResponse(f"/clients/{client_id}?whatsapp_envoye=0", status_code=303)
+    if not (client.numero_whatsapp and client.whatsapp_opt_in_confirme and whatsapp_business.identifiants_configures()):
+        request.session["erreur_whatsapp_test"] = (
+            "Numéro WhatsApp, case d'accord ou identifiants WhatsApp (Railway) manquants."
+        )
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+    erreur = envoyer_questions_whatsapp_pour_client(db, client)
+    if erreur:
+        request.session["erreur_whatsapp_test"] = erreur
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+    return RedirectResponse(f"/clients/{client_id}?whatsapp_envoye=1", status_code=303)
 
 
 @app.post("/clients/{client_id}/supprimer")

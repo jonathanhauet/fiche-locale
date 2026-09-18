@@ -191,13 +191,17 @@ def _contexte_positionnement_client(db, client_id: int, limite: int = 8) -> str:
     return "Reponses precedentes du client, deja connues (ne pas reposer une question sur les memes elements) :\n" + "\n\n".join(morceaux)
 
 
-def envoyer_questions_whatsapp_pour_client(db, client) -> None:
+def envoyer_questions_whatsapp_pour_client(db, client) -> str | None:
     """
     Genere et envoie les 5 questions de la semaine a un client donne (voir
     envoyer_questions_whatsapp_si_prevu, qui appelle cette fonction pour
-    chaque client eligible du jour). Aussi utilisee pour un envoi manuel
-    immediat depuis la fiche client (bouton "Envoyer maintenant"), pratique
-    pour tester le circuit complet sans attendre le jour programme.
+    chaque client eligible du jour et ignore la valeur de retour - un echec
+    ne doit pas interrompre les autres clients du lot). Aussi utilisee pour
+    un envoi manuel immediat depuis la fiche client (bouton "Envoyer
+    maintenant"), ou le message d'erreur est lui affiche a Jonathan pour
+    diagnostiquer (token expire, numero pas autorise sur le numero de test
+    Meta, modele introuvable...). Renvoie None si tout s'est bien passe,
+    sinon un message d'erreur.
     """
     # Les questions doivent toujours etre renouvelees : on exclut a la fois
     # les questions deja envoyees recemment (QuestionWhatsAppPosee) et on
@@ -219,10 +223,10 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> None:
         questions = claude_generation.generer_questions_interview(
             contexte, sujets_deja_traites=[q.question for q in questions_recentes], nombre=5,
         )
-    except Exception:
-        return
+    except Exception as erreur:
+        return f"Echec de la generation des questions : {erreur}"
     if not questions:
-        return
+        return "Aucune question generee."
 
     etat = db.query(models.EtatConversationWhatsApp).filter_by(numero=client.numero_whatsapp).first()
     if not etat:
@@ -241,8 +245,9 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> None:
         whatsapp_business.envoyer_message_template(
             client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", [corps],
         )
-    except Exception:
-        pass
+    except Exception as erreur:
+        return f"Echec de l'envoi WhatsApp : {erreur}"
+    return None
 
 
 def envoyer_questions_whatsapp_si_prevu():
