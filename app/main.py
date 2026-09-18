@@ -846,6 +846,15 @@ def reinitialiser_2fa(request: Request, db: Session = Depends(obtenir_session)):
     return RedirectResponse("/parametres/securite", status_code=303)
 
 
+@app.post("/parametres/notifications/tester")
+def tester_notification(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    notifications.notifier("Test de notification", "Si vous voyez ceci, tout fonctionne !")
+    return RedirectResponse("/parametres/securite?notification_testee=1", status_code=303)
+
+
 @app.get("/deconnexion")
 def deconnexion(request: Request):
     request.session.clear()
