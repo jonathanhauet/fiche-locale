@@ -245,6 +245,31 @@
     <p class="texte-discret">PDF, Word (.docx) ou texte (.txt) — vient compléter le "Contenu du site" ci-dessus, pas le remplacer. Seul le texte est conservé, pas le fichier d'origine.</p>
   </div>
 
+  <div class="choix-image-bloc">
+    <span class="choix-image-titre">Photos de référence (pour apparaître dans les images générées par l'IA)</span>
+    {% if client.photos_reference %}
+    <div class="grille-photos-reference">
+      {% for photo in client.photos_reference %}
+      <div class="carte-photo-reference">
+        <img src="{{ photo.image_url }}" alt="Photo de référence">
+        <form method="post" action="/clients/{{ client.id }}/photos_reference/{{ photo.id }}/supprimer" onsubmit="return confirm('Retirer cette photo de référence ?');">
+          <button type="submit" class="bouton-supprimer-photo-reference" title="Retirer">×</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="texte-vide">Aucune photo de référence pour l'instant.</p>
+    {% endif %}
+    {% if client.photos_reference|length < 5 %}
+    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/photos_reference" enctype="multipart/form-data">
+      <input type="file" name="fichier" accept="image/*" required>
+      <button type="submit" class="bouton-secondaire">Ajouter</button>
+    </form>
+    {% endif %}
+    <p class="texte-discret">3 à 5 photos sous différents angles, bien visible et bien éclairé. 5 maximum. Utilisées uniquement quand la case "M'inclure dans l'image" est cochée au moment de générer une image.</p>
+  </div>
+
   {% if client.numero_whatsapp and client.whatsapp_opt_in_confirme %}
   <div class="bloc-section">
     {% if request.query_params.get("whatsapp_envoye") == "1" %}

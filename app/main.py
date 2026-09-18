@@ -2938,6 +2938,53 @@ def supprimer_document_client(client_id: int, document_id: int, request: Request
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
+NB_MAX_PHOTOS_REFERENCE = 5
+
+
+@app.post("/clients/{client_id}/photos_reference")
+def ajouter_photo_reference_client(
+    client_id: int, request: Request, fichier: UploadFile = File(...), db: Session = Depends(obtenir_session)
+):
+    """Ajoute une photo de reference du client (voir models.PhotoReferenceClient), utilisee pour l'inclure comme sujet des images IA."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    if len(client.photos_reference) >= NB_MAX_PHOTOS_REFERENCE:
+        return _reponse_detail_client(request, db, client, erreur_document=f"Maximum {NB_MAX_PHOTOS_REFERENCE} photos de reference.", code=400)
+
+    try:
+        octets = fichier.file.read()
+        extension = ".png" if "png" in (fichier.content_type or "") else ".jpg"
+        nom_fichier = f"reference_{client.id}_{uuid.uuid4().hex[:10]}{extension}"
+        url_image = ovh_upload.envoyer_octets(octets, nom_fichier)
+    except Exception as erreur:
+        return _reponse_detail_client(request, db, client, erreur_document=str(erreur), code=400)
+
+    db.add(models.PhotoReferenceClient(client_id=client.id, image_url=url_image))
+    db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+@app.post("/clients/{client_id}/photos_reference/{photo_id}/supprimer")
+def supprimer_photo_reference_client(client_id: int, photo_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    photo = db.get(models.PhotoReferenceClient, photo_id)
+    if photo and photo.client_id == client_id:
+        db.delete(photo)
+        db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
 @app.get("/geocodage")
 def geocodage_route(request: Request, q: str = ""):
     """Recherche de lieux (JSON) pour le champ de geotag des photos."""
@@ -5920,14 +5967,26 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
 
     donnees = await request.json()
     prompt_image = (donnees.get("prompt_image") or "").strip()
+    inclure_reference = bool(donnees.get("inclure_reference"))
     if not prompt_image:
         return JSONResponse({"erreur": "Aucun prompt image fourni."}, status_code=400)
+
+    images_reference = None
+    if inclure_reference and client.photos_reference:
+        images_reference = []
+        for photo in client.photos_reference:
+            try:
+                images_reference.append(requests.get(photo.image_url, timeout=20).content)
+            except Exception:
+                continue
+        if not images_reference:
+            return JSONResponse({"erreur": "Impossible de recuperer les photos de reference."}, status_code=500)
 
     try:
         # Carre plutot que paysage : reste correct sur Google/Facebook/LinkedIn
         # et evite le format mal adapte a Instagram (bandes noires) qui
         # resulterait du format paysage par defaut.
-        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio="1:1")
+        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio="1:1", images_reference=images_reference)
         nom_fichier = f"multi-ia-{uuid.uuid4().hex[:10]}.png"
         url_image = ovh_upload.envoyer_octets(octets_image, nom_fichier)
     except Exception as e:

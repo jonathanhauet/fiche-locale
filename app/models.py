@@ -171,6 +171,7 @@ class Client(Base):
     reponses_interview = relationship("ReponseInterviewClient", back_populates="client", cascade="all, delete-orphan")
     etats_conversation_whatsapp = relationship("EtatConversationWhatsApp", back_populates="client", cascade="all, delete-orphan")
     brouillons_whatsapp = relationship("BrouillonWhatsApp", back_populates="client", cascade="all, delete-orphan")
+    photos_reference = relationship("PhotoReferenceClient", back_populates="client", cascade="all, delete-orphan")
 
 
 class Post(Base):
@@ -792,3 +793,23 @@ class BrouillonWhatsApp(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="brouillons_whatsapp")
+
+
+class PhotoReferenceClient(Base):
+    """
+    Photo de reference du client (visage, sous differents angles), fournie
+    volontairement par le client pour apparaitre comme sujet des images
+    generees par l'IA - voir gemini_images.generer_image (parametre
+    images_reference) et la case "M'inclure dans l'image" du composeur
+    multi-reseaux. Limitee a quelques photos par client (voir la route
+    d'upload), tres en dessous des 14 images de reference max de Gemini.
+    """
+
+    __tablename__ = "photos_reference_client"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    image_url = Column(String, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="photos_reference")

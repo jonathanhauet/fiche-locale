@@ -1491,6 +1491,45 @@ button:active { transform: translateY(1px); }
   cursor: pointer;
 }
 
+.grille-photos-reference {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.carte-photo-reference {
+  position: relative;
+  width: 84px;
+  height: 84px;
+}
+
+.carte-photo-reference img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--carte-bordure);
+}
+
+.carte-photo-reference form {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+}
+
+.bouton-supprimer-photo-reference {
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--carte);
+  color: var(--texte);
+  border: 1px solid var(--carte-bordure);
+  cursor: pointer;
+  line-height: 1;
+  font-size: 0.85rem;
+}
+
 .liste-reponses-interview {
   display: flex;
   flex-direction: column;

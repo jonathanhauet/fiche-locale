@@ -93,6 +93,12 @@
       🎨 Générer une image (IA)
     </button>
   </div>
+  {% if client.photos_reference %}
+  <label class="filtre-case">
+    <input type="checkbox" id="case-inclure-reference">
+    M'inclure dans l'image (à partir des photos de référence de la fiche)
+  </label>
+  {% endif %}
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
 
@@ -589,6 +595,7 @@
     const boutonGenererImage = document.getElementById("bouton-generer-image");
     const spinnerGenererImage = document.getElementById("spinner-generer-image");
     const texteStatutImageIA = document.getElementById("texte-statut-image-ia");
+    const caseInclureReference = document.getElementById("case-inclure-reference");
     boutonGenererImage.addEventListener("click", async () => {
       const promptImage = document.getElementById("prompt-image-ia").value.trim();
 
@@ -603,7 +610,10 @@
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt_image: promptImage }),
+          body: JSON.stringify({
+            prompt_image: promptImage,
+            inclure_reference: caseInclureReference ? caseInclureReference.checked : false,
+          }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {
