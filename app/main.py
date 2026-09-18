@@ -5820,14 +5820,36 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
         return
 
 
+def _traiter_statut_whatsapp(statut: dict) -> None:
+    """
+    Notifie l'evolution de statut d'un message business-initie (envoye,
+    distribue, echec...) - Meta renvoie ces mises a jour sur le meme webhook
+    que les messages recus, mais elles etaient jusque-la ignorees. Utile
+    pour diagnostiquer un envoi qui n'arrive pas sans avoir a se fier a
+    l'historique d'activite du Gestionnaire WhatsApp (qui ne liste que les
+    actions de configuration, pas les statuts de livraison).
+    """
+    etat = statut.get("status")
+    destinataire = statut.get("recipient_id", "")
+    if etat == "failed":
+        erreurs = statut.get("errors", [])
+        detail = "; ".join(e.get("title", "erreur inconnue") for e in erreurs) or "erreur inconnue"
+        notifications.notifier("Echec envoi WhatsApp", f"Message vers {destinataire} : {detail}")
+    elif etat in {"sent", "delivered"}:
+        notifications.notifier("Statut message WhatsApp", f"{etat} - vers {destinataire}")
+
+
 @app.post("/whatsapp/webhook")
 async def whatsapp_webhook_reception(request: Request, db: Session = Depends(obtenir_session)):
     donnees = await request.json()
     try:
         for entree in donnees.get("entry", []):
             for changement in entree.get("changes", []):
-                for message in changement.get("value", {}).get("messages", []):
+                valeur = changement.get("value", {})
+                for message in valeur.get("messages", []):
                     _traiter_message_whatsapp(db, message)
+                for statut in valeur.get("statuses", []):
+                    _traiter_statut_whatsapp(statut)
     except Exception:
         pass
     return JSONResponse({"status": "ok"})
