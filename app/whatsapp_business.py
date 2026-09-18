@@ -55,17 +55,24 @@ def envoyer_message_texte(numero_destinataire: str, texte: str) -> None:
         raise RuntimeError(f"Echec de l'envoi WhatsApp (code {reponse.status_code}) : {reponse.text}")
 
 
-def envoyer_message_template(numero_destinataire: str, nom_template: str, langue: str, parametres_corps: list[str] = None) -> None:
+def envoyer_message_template(numero_destinataire: str, nom_template: str, langue: str, parametres_corps: dict[str, str] = None) -> None:
     """
     Message a partir d'un modele approuve par Meta - seul type de message
     autorise pour initier une conversation (le destinataire n'a pas ecrit
     dans les 24h precedentes), ex : la relance hebdomadaire du mercredi.
+    parametres_corps associe chaque nom de variable du modele (cree via
+    "+ Ajouter une variable" dans le Gestionnaire WhatsApp, ex
+    "questions_semaine") a sa valeur - l'API rejette un parametre sans
+    parameter_name des qu'un modele utilise des variables nommees plutot que
+    l'ancien format positionnel {{1}}.
     """
     composants = []
     if parametres_corps:
         composants.append({
             "type": "body",
-            "parameters": [{"type": "text", "text": valeur} for valeur in parametres_corps],
+            "parameters": [
+                {"type": "text", "parameter_name": nom, "text": valeur} for nom, valeur in parametres_corps.items()
+            ],
         })
 
     reponse = requests.post(

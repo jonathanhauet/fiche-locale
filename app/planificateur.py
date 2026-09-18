@@ -247,7 +247,8 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> str | None:
     corps = " | ".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
     try:
         whatsapp_business.envoyer_message_template(
-            client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", [corps],
+            client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_QUESTIONS_HEBDO, "fr",
+            {"questions_semaine": corps},
         )
     except Exception as erreur:
         return f"Echec de l'envoi WhatsApp : {erreur}"
