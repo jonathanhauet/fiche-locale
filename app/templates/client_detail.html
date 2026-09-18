@@ -647,26 +647,44 @@
 </details>
 
 <div class="barre-titre">
-  <h2>Déjà sur la fiche Google</h2>
+  <h2>Résumé multi-réseaux</h2>
   <a class="bouton-secondaire" href="/clients/{{ client.id }}/historique">Voir tout l'historique</a>
 </div>
-<p class="texte-discret">Les {{ posts_en_ligne|length }} derniers posts lus en direct sur la fiche (y compris ceux publiés autrement que via cette plateforme).</p>
-{% if posts_en_ligne %}
-<ul class="liste-posts">
-  {% for post in posts_en_ligne %}
-  <li>
-    {% if post.url_recherche %}<a class="lien-post" href="{{ post.url_recherche }}" target="_blank" rel="noopener">{% else %}<div class="lien-post">{% endif %}
-      <div class="ligne-post-titre">
-        <strong>{{ post.date_creation }}</strong>
-        <span class="etiquette-statut etiquette-{{ post.etat|lower }}">{{ post.etat }}</span>
-      </div>
-      <p class="apercu-texte">{{ post.texte[:180] }}{% if post.texte|length > 180 %}…{% endif %}</p>
-    {% if post.url_recherche %}</a>{% else %}</div>{% endif %}
-  </li>
-  {% endfor %}
-</ul>
+<p class="texte-discret">Publications suivies par la plateforme, tous réseaux confondus (Google, Facebook, Instagram, LinkedIn).</p>
+{% if publications_multi_reseaux %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Publication</th>
+        <th>Date</th>
+        <th>Statut</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ligne in publications_multi_reseaux %}
+      <tr>
+        <td>
+          <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}" title="{{ ligne.reseau|capitalize }}">
+            {{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}
+          </span>
+        </td>
+        <td>
+          <div class="ligne-publication-resume">
+            {% if ligne.image_url %}<img src="{{ ligne.image_url }}" alt="" class="miniature-publication-resume">{% endif %}
+            <span class="apercu-texte">{{ ligne.titre }}</span>
+          </div>
+        </td>
+        <td>{{ ligne.date.strftime("%d/%m/%Y") }}</td>
+        <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
-<p class="texte-vide">Aucun post actuellement visible sur cette fiche.</p>
+<p class="texte-vide">Aucune publication pour l'instant.</p>
 {% endif %}
 
 {% set brouillons = posts|selectattr("statut", "equalto", "BROUILLON")|list %}
@@ -704,22 +722,17 @@
 </div>
 {% endif %}
 
-<h2>Posts ({{ posts|length }})</h2>
-{% if posts %}
+<h2>Brouillons à valider ({{ brouillons|length }})</h2>
+<p class="texte-discret">Les posts déjà programmés, publiés ou rejetés apparaissent dans le résumé multi-réseaux ci-dessus.</p>
+{% if brouillons %}
 <ul class="liste-posts">
-  {% for post in posts %}
+  {% for post in brouillons %}
   <li class="carte-post-revue" id="post-{{ post.id }}">
     <div class="ligne-post-titre">
       <strong>{{ post.titre }}</strong>
       <span class="etiquette-statut etiquette-{{ post.statut|lower }}">
-        {% if post.statut == "A_PUBLIER" and post.date_prevue %}Programmé {{ post.date_prevue.strftime("%d/%m/%Y") }}
-        {% elif post.statut == "BROUILLON" and post.date_prevue %}Brouillon — {{ post.date_prevue.strftime("%d/%m/%Y") }}
-        {% elif post.statut == "BROUILLON" %}Brouillon
-        {% elif post.statut == "ECHEC_PUBLICATION" %}Échec
-        {% elif post.statut == "PUBLIE_LIVE" %}Publié
-        {% elif post.statut == "IGNORE" %}Rejeté
-        {% elif post.statut == "PUBLIE_REJECTED" %}Rejeté par Google
-        {% else %}{{ post.statut }}{% endif %}
+        {% if post.date_prevue %}Brouillon — {{ post.date_prevue.strftime("%d/%m/%Y") }}
+        {% else %}Brouillon{% endif %}
       </span>
     </div>
     {% if post.image_url %}
@@ -733,7 +746,6 @@
     {% endif %}
     <p class="texte-complet-post">{{ post.texte }}</p>
 
-    {% if post.statut == "BROUILLON" %}
     {% if not post.image_url %}
     <div class="ligne-actions-rapides actions-image-rapides">
       {% if post.prompt_image %}
@@ -794,22 +806,11 @@
         <a href="/posts/{{ post.id }}" class="bouton-secondaire">Modifier</a>
       </div>
     </form>
-    {% else %}
-    <div class="ligne-actions-rapides">
-      <a href="/posts/{{ post.id }}" class="bouton-secondaire">Ouvrir</a>
-      {% if post.statut != "PUBLIE_LIVE" %}
-      <form method="post" action="/posts/{{ post.id }}/statut_rapide"
-            onsubmit="return confirm('Supprimer ce post ?');">
-        <button type="submit" name="statut" value="SUPPRIME" class="bouton-danger" formnovalidate>🗑 Supprimer</button>
-      </form>
-      {% endif %}
-    </div>
-    {% endif %}
   </li>
   {% endfor %}
 </ul>
 {% else %}
-<p class="texte-vide">Aucun post généré pour l'instant.</p>
+<p class="texte-vide">Aucun brouillon à valider pour l'instant.</p>
 {% endif %}
 
 <div class="modale-recadrage" id="modale-recadrage" hidden>

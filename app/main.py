@@ -2636,7 +2636,7 @@ def _reponse_detail_client(
         {
             "client": client,
             "posts": posts,
-            "posts_en_ligne": tous_posts_en_ligne[:5],
+            "publications_multi_reseaux": _publications_multi_reseaux(db, client),
             "erreur_generation": erreur_generation,
             "photos": _photos_pour_client(db, client),
             "photos_en_preparation": photos_en_preparation,
