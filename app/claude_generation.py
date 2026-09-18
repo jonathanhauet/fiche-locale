@@ -1076,19 +1076,25 @@ def generer_plan_action_audit(
 TONS_RESEAUX = {
     "google": (
         "Ton professionnel et informatif, oriente SEO local (met en avant un service ou un avantage "
-        "concret pour un client a proximite). Sobre, pas d'emoji."
+        "concret pour un client a proximite). Sobre, pas d'emoji, pas de hashtag."
     ),
     "facebook": (
         "Ton chaleureux et communautaire, comme si on s'adressait directement aux habitants du quartier "
-        "ou de la ville. Peut etre un peu plus developpe et conversationnel qu'un post Google."
+        "ou de la ville. Peut etre un peu plus developpe et conversationnel qu'un post Google. Pas de "
+        "hashtag (peu efficaces sur Facebook, contrairement a Instagram)."
     ),
     "instagram": (
         "Ton dynamique et accrocheur des la premiere ligne, phrases courtes, emojis bienvenus "
-        "(avec moderation, jamais plus de 3-4). Format plus visuel/rythme que les autres reseaux."
+        "(avec moderation, jamais plus de 3-4). Format plus visuel/rythme que les autres reseaux. "
+        "Termine par 5 a 15 hashtags pertinents et specifiques (pas de hashtags generiques ou hors "
+        "sujet type #love #instagood), sur une ligne separee a la fin du texte."
     ),
     "linkedin": (
         "Ton professionnel qui valorise l'expertise et le savoir-faire, oriente credibilite plutot que "
-        "promotion directe. Pas d'emoji, phrases construites."
+        "promotion directe. Phrases construites, avec un saut de ligne entre presque chaque phrase pour "
+        "la lisibilite (format tres aere, typique de LinkedIn). Emoji tres discret et fonctionnel "
+        "uniquement si utile pour structurer (ex. avant une liste), jamais decoratif. Termine par 1 a 3 "
+        "hashtags cibles (pas plus)."
     ),
 }
 
