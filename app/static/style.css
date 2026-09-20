@@ -2273,6 +2273,32 @@ h3 { font-size: 0.95rem; margin: 1.3rem 0 0.8rem; color: var(--texte-discret); }
 
 .conteneur-tableau { overflow-x: auto; }
 
+/* Colonne "Client associe + actions" des tables de comptes connectes
+   (Instagram, LinkedIn) : select compact + boutons sur une seule ligne, qui
+   passe a la ligne plutot que de faire deborder le tableau. */
+.cellule-actions-compte {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+}
+
+.cellule-actions-compte form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.cellule-actions-compte select {
+  width: auto;
+  min-width: 11rem;
+  max-width: 15rem;
+  margin: 0;
+}
+
+.cellule-actions-compte button { width: auto; margin: 0; white-space: nowrap; }
+
 .tableau-historique {
   width: 100%;
   border-collapse: collapse;
