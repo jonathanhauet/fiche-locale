@@ -2292,10 +2292,14 @@ h3 { font-size: 0.95rem; margin: 1.3rem 0 0.8rem; color: var(--texte-discret); }
 
 .cellule-actions-compte select {
   width: auto;
-  min-width: 11rem;
-  max-width: 15rem;
+  min-width: 9rem;
+  max-width: 12rem;
   margin: 0;
 }
+
+/* Le nom du compte/de la Page (1re colonne) peut passer a la ligne : c'est
+   lui qui, seul, faisait deborder le tableau sur les noms longs. */
+.tableau-comptes td:first-child { white-space: normal; }
 
 .cellule-actions-compte button { width: auto; margin: 0; white-space: nowrap; }
 

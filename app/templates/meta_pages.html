@@ -18,13 +18,12 @@
   Une Page déjà liée à un client l'indique ci-dessous.
 </p>
 <div class="conteneur-tableau">
-  <table class="tableau-historique">
+  <table class="tableau-historique tableau-comptes">
     <thead>
       <tr>
         <th>Page</th>
         <th>Instagram lié</th>
         <th>Client associé</th>
-        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -34,30 +33,29 @@
         <td>{{ page.instagram_nom or "—" }}</td>
         <td>
           {% set client_lie = clients_par_page_id.get(page.id) %}
-          {{ client_lie.nom if client_lie else "—" }}
-        </td>
-        <td>
-          <form method="post" action="/meta/comptes/{{ compte.id }}/pages/lier" class="formulaire-ligne">
-            <input type="hidden" name="page_id" value="{{ page.id }}">
-            <input type="hidden" name="page_nom" value="{{ page.nom }}">
-            <input type="hidden" name="token_page" value="{{ page.token_page }}">
-            <input type="hidden" name="instagram_id" value="{{ page.instagram_id }}">
-            <input type="hidden" name="instagram_nom" value="{{ page.instagram_nom }}">
-            <select name="client_id" required>
-              <option value="" disabled {{ "selected" if not client_lie else "" }}>Choisir un client…</option>
-              {% for client in clients %}
-              <option value="{{ client.id }}" {{ "selected" if client_lie and client_lie.id == client.id else "" }}>{{ client.nom }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
-          </form>
-          {% if client_lie %}
-          <form method="post" action="/meta/comptes/{{ compte.id }}/pages/delier"
-                onsubmit="return confirm('Detacher cette Page du client {{ client_lie.nom }} ? Le compte Meta partage n\'est pas touche, seul ce client ne sera plus relie a cette Page.');">
-            <input type="hidden" name="client_id" value="{{ client_lie.id }}">
-            <button type="submit" class="bouton-danger">Délier</button>
-          </form>
-          {% endif %}
+          <div class="cellule-actions-compte">
+            <form method="post" action="/meta/comptes/{{ compte.id }}/pages/lier">
+              <input type="hidden" name="page_id" value="{{ page.id }}">
+              <input type="hidden" name="page_nom" value="{{ page.nom }}">
+              <input type="hidden" name="token_page" value="{{ page.token_page }}">
+              <input type="hidden" name="instagram_id" value="{{ page.instagram_id }}">
+              <input type="hidden" name="instagram_nom" value="{{ page.instagram_nom }}">
+              <select name="client_id" required>
+                <option value="" disabled {{ "selected" if not client_lie else "" }}>Choisir un client…</option>
+                {% for client in clients %}
+                <option value="{{ client.id }}" {{ "selected" if client_lie and client_lie.id == client.id else "" }}>{{ client.nom }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
+            </form>
+            {% if client_lie %}
+            <form method="post" action="/meta/comptes/{{ compte.id }}/pages/delier"
+                  onsubmit="return confirm('Detacher cette Page du client {{ client_lie.nom }} ? Le compte Meta partage n\'est pas touche, seul ce client ne sera plus relie a cette Page.');">
+              <input type="hidden" name="client_id" value="{{ client_lie.id }}">
+              <button type="submit" class="bouton-danger">Délier</button>
+            </form>
+            {% endif %}
+          </div>
         </td>
       </tr>
       {% endfor %}
