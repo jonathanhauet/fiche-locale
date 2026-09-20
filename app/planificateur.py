@@ -10,7 +10,7 @@ from datetime import date, datetime, time, timedelta
 from . import (
     claude_generation, google_business, google_location, google_oauth, google_publish,
     google_reviews, instagram_oauth, instagram_publish, linkedin_publish, meta_publish, models,
-    rapport_donnees, veille_actualite, whatsapp_business,
+    notifications, rapport_donnees, veille_actualite, whatsapp_business,
 )
 from .database import SessionLocal
 
@@ -286,6 +286,55 @@ def envoyer_questions_whatsapp_si_prevu():
             if jour_aujourdhui not in client.whatsapp_jours.split(","):
                 continue
             envoyer_questions_whatsapp_pour_client(db, client)
+    finally:
+        db.close()
+
+
+JOURS_PREAVIS_EXPIRATION_LINKEDIN = 3
+
+
+def notifier_expirations_linkedin():
+    """
+    Previent (ntfy) qu'un profil LinkedIn arrive a expiration dans 3 jours
+    ou moins (jusqu'a 1 jour apres, pour ne pas laisser passer un profil
+    expire dans la nuit) : LinkedIn ne renouvelle pas le token tout seul
+    (voir linkedin_oauth.py), il faut reconnecter le profil a la main. Tourne
+    chaque jour, donc un meme profil declenche jusqu'a 3-4 rappels
+    successifs plutot qu'un seul, sans avoir besoin d'un champ "deja notifie".
+    Un profil deja reconnecte depuis (une ligne plus recente avec le meme
+    identifiant_membre) est ignore : la reconnexion cree une nouvelle ligne
+    sans supprimer l'ancienne, qui continuerait sinon a alerter a tort.
+    """
+    db = SessionLocal()
+    try:
+        maintenant = datetime.utcnow()
+        comptes = db.query(models.CompteLinkedIn).filter(models.CompteLinkedIn.expire_le.isnot(None)).all()
+        for compte in comptes:
+            reste = compte.expire_le - maintenant
+            if not (timedelta(days=-1) <= reste <= timedelta(days=JOURS_PREAVIS_EXPIRATION_LINKEDIN)):
+                continue
+            deja_reconnecte = any(
+                autre.id != compte.id
+                and autre.identifiant_membre == compte.identifiant_membre
+                and autre.expire_le
+                and autre.expire_le > compte.expire_le
+                for autre in comptes
+            )
+            if deja_reconnecte:
+                continue
+
+            if reste.total_seconds() <= 0:
+                message = f"Le profil LinkedIn {compte.libelle} a expiré : reconnectez-le pour reprendre les publications."
+            else:
+                jours = max(1, -(-int(reste.total_seconds()) // 86400))
+                message = (
+                    f"Le profil LinkedIn {compte.libelle} expire dans {jours} jour{'s' if jours > 1 else ''} : "
+                    "pensez à le reconnecter."
+                )
+            notifications.notifier(
+                "LinkedIn : reconnexion a prevoir", message,
+                url="https://web-production-bf59a.up.railway.app/linkedin/comptes",
+            )
     finally:
         db.close()
 

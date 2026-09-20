@@ -80,6 +80,7 @@ from .planificateur import (
     envoyer_questions_whatsapp_si_prevu,
     envoyer_recaps_mensuels,
     generer_suggestions_quotidiennes,
+    notifier_expirations_linkedin,
     publier_posts_instagram_programmes,
     publier_posts_linkedin_programmes,
     publier_posts_meta_programmes,
@@ -412,6 +413,16 @@ planificateur.add_job(
     hour=9,
     timezone="Europe/Brussels",
     id="questions_whatsapp_hebdomadaire",
+)
+# Rappel ntfy avant l'expiration d'un profil LinkedIn (voir
+# planificateur.notifier_expirations_linkedin) : une fois par jour.
+planificateur.add_job(
+    notifier_expirations_linkedin,
+    "cron",
+    hour=9,
+    minute=15,
+    timezone="Europe/Brussels",
+    id="expirations_linkedin",
 )
 # Solde DataForSEO affiche dans la barre laterale : rafraichi peu apres le
 # demarrage (next_run_time proche mais pas immediat, pour ne pas retarder le
