@@ -49,7 +49,9 @@ def publier_post_page(token_page: str, page_id: str, message: str, image_url=Non
                 timeout=60,
             )
             if envoi.status_code != 200:
-                raise RuntimeError(f"Echec de l'envoi de la photo {indice + 1} sur la Page (code {envoi.status_code}) : {envoi.text}")
+                raise RuntimeError(
+                    f"Echec de l'envoi de la photo {indice + 1} sur la Page ({url_image}) (code {envoi.status_code}) : {envoi.text}"
+                )
             donnees[f"attached_media[{indice}]"] = json.dumps({"media_fbid": envoi.json()["id"]})
 
     reponse = requests.post(url, data=donnees, timeout=30)

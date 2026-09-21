@@ -126,6 +126,16 @@
           Utiliser une image différente pour ce réseau
         </label>
         <input type="file" name="image_{{ reseau }}" accept="image/*" class="champ-image-dediee" data-reseau="{{ reseau }}" hidden>
+        {% if reseau == "google" %}
+        <label for="select-cta-google">Bouton d'appel à l'action (Google)</label>
+        <select id="select-cta-google" name="type_appel_action_google">
+          {% for valeur, libelle in options_appel_action %}
+          <option value="{{ valeur }}" {% if valeur == "CALL" %}selected{% endif %}>{{ libelle }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" id="champ-url-cta-google" name="url_appel_action_google" placeholder="https://..." hidden>
+        <p class="texte-discret" id="texte-cta-telephone-google">Le numéro de la fiche sera utilisé automatiquement.</p>
+        {% endif %}
       </div>
       <div class="apercu-post" data-reseau="{{ reseau }}">
         <div class="apercu-entete">
@@ -361,6 +371,22 @@
 
     function actualiserToutesLesApercusImage() {
       document.querySelectorAll(".bloc-variante-reseau").forEach((bloc) => actualiserApercuImage(bloc.dataset.reseau));
+    }
+
+    // Bouton d'appel a l'action Google : URL demandee sauf pour "Appeler
+    // maintenant" (numero de la fiche, automatique) et "Aucun".
+    const selectCtaGoogle = document.getElementById("select-cta-google");
+    const champUrlCtaGoogle = document.getElementById("champ-url-cta-google");
+    const texteCtaTelephoneGoogle = document.getElementById("texte-cta-telephone-google");
+    function actualiserChampsCtaGoogle() {
+      const valeur = selectCtaGoogle.value;
+      const besoinUrl = valeur !== "" && valeur !== "CALL";
+      champUrlCtaGoogle.hidden = !besoinUrl;
+      texteCtaTelephoneGoogle.hidden = valeur !== "CALL";
+    }
+    if (selectCtaGoogle) {
+      selectCtaGoogle.addEventListener("change", actualiserChampsCtaGoogle);
+      actualiserChampsCtaGoogle();
     }
 
     champImagePartagee.addEventListener("change", () => {

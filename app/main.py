@@ -8,6 +8,7 @@ puis ouvrir http://localhost:8000
 
 import base64
 import calendar
+import io
 import json
 import os
 import uuid
@@ -25,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import requests
+from PIL import Image, ImageOps
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -915,6 +917,34 @@ def _extrait_court(texte: str, longueur: int = 60) -> str:
 
 
 NB_MAX_IMAGES_PUBLICATION = 10  # limite d'un carrousel Instagram
+COTE_MAX_IMAGE_PUBLICATION = 2048
+
+
+def _televerser_image_publication(octets: bytes, prefixe: str) -> str:
+    """
+    Normalise une image choisie par l'utilisateur puis l'heberge sur OVH, sous
+    un nom neutre. Deux raisons : (1) Facebook/Instagram telechargent l'image
+    depuis son URL, et un nom d'origine avec espaces, parentheses ou accents
+    (photos de telephone, WhatsApp : "IMG 2026 (1).jpg") donne une URL qu'ils
+    rejettent (erreur 324 "Missing or invalid image file") ; (2) les photos de
+    telephone de plusieurs Mo depassent parfois leurs limites de taille.
+    Renvoie l'URL publique ; ValueError si le fichier n'est pas une image lisible.
+    """
+    try:
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(octets)))
+    except Exception:
+        raise ValueError("image illisible ou format non pris en charge (utilisez un fichier JPG ou PNG).")
+    if image.mode in ("RGBA", "LA", "P"):
+        image = image.convert("RGBA")
+        fond = Image.new("RGB", image.size, "white")
+        fond.paste(image, mask=image.split()[-1])
+        image = fond
+    else:
+        image = image.convert("RGB")
+    image.thumbnail((COTE_MAX_IMAGE_PUBLICATION, COTE_MAX_IMAGE_PUBLICATION))
+    tampon = io.BytesIO()
+    image.save(tampon, "JPEG", quality=88, optimize=True)
+    return ovh_upload.envoyer_octets(tampon.getvalue(), f"{prefixe}-{uuid.uuid4().hex[:12]}.jpg")
 FUSEAU_PARIS = ZoneInfo("Europe/Brussels")
 DUREE_CACHE_PUBLICATIONS_EXTERNES = 300  # secondes
 _cache_publications_externes: dict = {}
@@ -5702,6 +5732,7 @@ def _contexte_publication_multi(
         "posts_programmes": _posts_multi_programmes(db, client),
         "suggestions_du_jour_json": _suggestions_du_jour_json(db, client.id),
         "prompt_image_initial": prompt_image_initial,
+        "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
         "origine_vocale": origine_vocale,
         "image_url_initial": image_url_initial,
         "brouillons_whatsapp_en_attente": (
@@ -6276,6 +6307,20 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     # reutilisee pour chaque reseau sans image dediee. Un fichier choisi a la
     # main est prioritaire ; sinon on reprend l'image deja generee par IA
     # (deja hebergee sur OVH via /generer_image, pas besoin de la retraiter).
+    # Bouton d'appel a l'action Google (voir OPTIONS_APPEL_ACTION) : "Appeler
+    # maintenant" par defaut (comme sur /posts), URL obligatoire pour les
+    # autres boutons. Valide avant toute publication pour ne rien envoyer a
+    # moitie sur les autres reseaux.
+    valeur_cta_google = formulaire.get("type_appel_action_google")
+    type_cta_google = "CALL" if valeur_cta_google is None else valeur_cta_google.strip()  # "" = aucun bouton, choix explicite
+    url_cta_google = (formulaire.get("url_appel_action_google") or "").strip()
+    if type_cta_google not in {valeur for valeur, _ in google_publish.OPTIONS_APPEL_ACTION}:
+        type_cta_google = "CALL"
+    if type_cta_google in ("", "CALL"):
+        url_cta_google = ""
+    elif "google" in reseaux and not url_cta_google:
+        return _erreur("Google : l'adresse (URL) du bouton d'appel à l'action est obligatoire pour ce type de bouton.")
+
     # Plusieurs images possibles par televersement (carrousel Instagram, post
     # multi-photos Facebook) ; l'image generee par IA reste unique. Google et
     # LinkedIn n'utilisent que la premiere. Une image dediee a un reseau
@@ -6285,24 +6330,23 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
         return _erreur(f"{NB_MAX_IMAGES_PUBLICATION} images maximum par publication.")
 
     urls_partagees = []
-    if fichiers_partages:
-        for fichier in fichiers_partages:
-            octets = await fichier.read()
-            urls_partagees.append(ovh_upload.envoyer_octets(octets, f"multi-{uuid.uuid4().hex[:10]}-{fichier.filename}"))
-    else:
-        url_ia = (formulaire.get("image_url_ia") or "").strip()
-        urls_partagees = [url_ia] if url_ia else []
-
     urls_par_reseau = {}
-    for reseau in reseaux:
-        fichier_reseau = formulaire.get(f"image_{reseau}")
-        if fichier_reseau is not None and getattr(fichier_reseau, "filename", ""):
-            octets = await fichier_reseau.read()
-            urls_par_reseau[reseau] = [ovh_upload.envoyer_octets(
-                octets, f"multi-{reseau}-{uuid.uuid4().hex[:10]}-{fichier_reseau.filename}",
-            )]
+    try:
+        if fichiers_partages:
+            for fichier in fichiers_partages:
+                urls_partagees.append(_televerser_image_publication(await fichier.read(), "multi"))
         else:
-            urls_par_reseau[reseau] = list(urls_partagees)
+            url_ia = (formulaire.get("image_url_ia") or "").strip()
+            urls_partagees = [url_ia] if url_ia else []
+
+        for reseau in reseaux:
+            fichier_reseau = formulaire.get(f"image_{reseau}")
+            if fichier_reseau is not None and getattr(fichier_reseau, "filename", ""):
+                urls_par_reseau[reseau] = [_televerser_image_publication(await fichier_reseau.read(), f"multi-{reseau}")]
+            else:
+                urls_par_reseau[reseau] = list(urls_partagees)
+    except ValueError as erreur_image:
+        return _erreur(f"Image refusée : {erreur_image}")
 
     if "instagram" in reseaux and not urls_par_reseau.get("instagram"):
         return _erreur("Instagram necessite une image (partagee ou dediee).")
@@ -6317,6 +6361,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
             if reseau == "google":
                 post = models.Post(
                     client_id=client.id, titre=texte[:60], texte=texte, image_url=(urls_par_reseau.get("google") or [""])[0],
+                    type_appel_action=type_cta_google, url_appel_action=url_cta_google,
                     statut="A_PUBLIER" if publier_le else "BROUILLON",
                     date_prevue=publier_le.date() if publier_le else None,
                     heure_prevue=publier_le.strftime("%H:%M") if publier_le else None,
