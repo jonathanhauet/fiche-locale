@@ -6,6 +6,7 @@ commande : ici, une tache de fond integree au processus web (APScheduler).
 
 import json
 from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from . import (
     claude_generation, google_business, google_location, google_oauth, google_publish,
@@ -13,6 +14,20 @@ from . import (
     notifications, rapport_donnees, veille_actualite, whatsapp_business,
 )
 from .database import SessionLocal
+
+
+FUSEAU_LOCAL = ZoneInfo("Europe/Brussels")
+
+
+def _maintenant_local() -> datetime:
+    """
+    Heure actuelle "murale" de Paris/Bruxelles (sans fuseau), a comparer aux
+    dates/heures de programmation saisies par l'utilisateur, qui sont
+    stockees telles quelles, sans fuseau. datetime.now() renvoie l'heure du
+    serveur : sur Railway c'est l'UTC, soit 2h de retard sur Paris en ete -
+    un post programme a 08h30 ne partait qu'a 10h30 (heure de Paris).
+    """
+    return datetime.now(FUSEAU_LOCAL).replace(tzinfo=None)
 
 
 def _heure_prevue_atteinte(date_prevue: date, heure_prevue: str, maintenant: datetime) -> bool:
@@ -31,7 +46,7 @@ def verifier_et_publier_posts_programmes():
         if not google_oauth.google_est_connecte(db):
             return
 
-        maintenant = datetime.now()
+        maintenant = _maintenant_local()
         posts_candidats = (
             db.query(models.Post)
             .filter(models.Post.statut == "A_PUBLIER")
@@ -75,7 +90,7 @@ def verifier_et_publier_photos_programmees():
         if not google_oauth.google_est_connecte(db):
             return
 
-        maintenant = datetime.now()
+        maintenant = _maintenant_local()
         photos_candidates = (
             db.query(models.PhotoFiche)
             .filter(models.PhotoFiche.statut == "A_PUBLIER")
@@ -673,11 +688,11 @@ def publier_posts_linkedin_programmes():
     Publie automatiquement tous les posts LinkedIn 'EN_ATTENTE' dont la
     date/heure prevue est arrivee. Meme convention que
     verifier_et_publier_posts_programmes (Google) : comparaison a
-    datetime.now(), heure locale du serveur.
+    _maintenant_local() (heure de Paris, pas celle du serveur).
     """
     db = SessionLocal()
     try:
-        maintenant = datetime.now()
+        maintenant = _maintenant_local()
         posts_a_publier = (
             db.query(models.PostLinkedInProgramme)
             .filter(models.PostLinkedInProgramme.etat == "EN_ATTENTE")
@@ -702,7 +717,7 @@ def publier_posts_meta_programmes():
     """Publie automatiquement tous les posts Facebook 'EN_ATTENTE' dont la date/heure prevue est arrivee."""
     db = SessionLocal()
     try:
-        maintenant = datetime.now()
+        maintenant = _maintenant_local()
         posts_a_publier = (
             db.query(models.PostMetaProgramme)
             .filter(models.PostMetaProgramme.etat == "EN_ATTENTE")
@@ -729,7 +744,7 @@ def publier_posts_instagram_programmes():
     """Publie automatiquement tous les posts Instagram 'EN_ATTENTE' dont la date/heure prevue est arrivee."""
     db = SessionLocal()
     try:
-        maintenant = datetime.now()
+        maintenant = _maintenant_local()
         posts_a_publier = (
             db.query(models.PostInstagramProgramme)
             .filter(models.PostInstagramProgramme.etat == "EN_ATTENTE")

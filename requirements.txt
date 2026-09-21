@@ -23,3 +23,4 @@ qrcode
 openpyxl
 google-ads
 staticmap
+tzdata

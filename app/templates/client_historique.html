@@ -32,7 +32,7 @@
             <span class="apercu-texte">{{ ligne.titre }}</span>
           </div>
         </td>
-        <td>{{ ligne.date.strftime("%d/%m/%Y") }}</td>
+        <td>{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
         <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
       </tr>
       {% endfor %}

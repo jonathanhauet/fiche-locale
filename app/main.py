@@ -927,6 +927,7 @@ def _publications_multi_reseaux(db: Session, client: "models.Client", limite: in
             "titre": post.titre or (post.texte[:60] + "…" if len(post.texte) > 60 else post.texte),
             "image_url": post.image_url,
             "date": post.date_prevue or post.cree_le.date(),
+            "heure": post.heure_prevue or "",
             "statut_brut": post.statut,
             "statut_libelle": STATUTS_POST_GOOGLE_RESUME[post.statut],
         })
@@ -941,6 +942,7 @@ def _publications_multi_reseaux(db: Session, client: "models.Client", limite: in
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
                 "image_url": post.image_url,
                 "date": post.publier_le.date(),
+                "heure": post.publier_le.strftime("%H:%M"),
                 "statut_brut": post.etat,
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
             })
@@ -952,6 +954,7 @@ def _publications_multi_reseaux(db: Session, client: "models.Client", limite: in
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
                 "image_url": None,  # stockee en octets, pas d'URL directe (voir PostLinkedInProgramme)
                 "date": post.publier_le.date(),
+                "heure": post.publier_le.strftime("%H:%M"),
                 "statut_brut": post.etat,
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
             })
