@@ -36,6 +36,59 @@ def _attendre_conteneur_pret(instagram_id: str, conteneur_id: str, token_instagr
     raise RuntimeError("Le conteneur media Instagram n'est pas devenu pret a temps.")
 
 
+def _publier_conteneur(token_instagram: str, instagram_id: str, conteneur_id: str) -> dict:
+    _attendre_conteneur_pret(instagram_id, conteneur_id, token_instagram)
+    reponse = requests.post(
+        f"{URL_GRAPH}/{instagram_id}/media_publish",
+        data={"creation_id": conteneur_id, "access_token": token_instagram},
+        timeout=30,
+    )
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la publication du conteneur Instagram (code {reponse.status_code}) : {reponse.text}")
+    return reponse.json()
+
+
+def publier_carrousel(token_instagram: str, instagram_id: str, image_urls: list[str], caption: str = "") -> dict:
+    """
+    Carrousel (2 a 10 images) : 1) un conteneur "element de carrousel" par
+    image, chacun attendu jusqu'a FINISHED, 2) un conteneur CAROUSEL qui les
+    reference et porte la legende, 3) publication de celui-ci. Toutes les
+    images sont recadrees au format de la premiere par Instagram.
+    """
+    enfants = []
+    for indice, url_image in enumerate(image_urls, start=1):
+        reponse = requests.post(
+            f"{URL_GRAPH}/{instagram_id}/media",
+            data={"image_url": url_image, "is_carousel_item": "true", "access_token": token_instagram},
+            timeout=30,
+        )
+        if reponse.status_code != 200:
+            raise RuntimeError(
+                f"Echec de la creation de l'image {indice} du carrousel Instagram (code {reponse.status_code}) : {reponse.text}"
+            )
+        enfants.append(reponse.json()["id"])
+    for enfant in enfants:
+        _attendre_conteneur_pret(instagram_id, enfant, token_instagram)
+
+    reponse_carrousel = requests.post(
+        f"{URL_GRAPH}/{instagram_id}/media",
+        data={"media_type": "CAROUSEL", "children": ",".join(enfants), "caption": caption, "access_token": token_instagram},
+        timeout=30,
+    )
+    if reponse_carrousel.status_code != 200:
+        raise RuntimeError(
+            f"Echec de la creation du carrousel Instagram (code {reponse_carrousel.status_code}) : {reponse_carrousel.text}"
+        )
+    return _publier_conteneur(token_instagram, instagram_id, reponse_carrousel.json()["id"])
+
+
+def publier_medias(token_instagram: str, instagram_id: str, image_urls: list[str], caption: str = "") -> dict:
+    """Une image : publication classique. Plusieurs : carrousel."""
+    if len(image_urls) > 1:
+        return publier_carrousel(token_instagram, instagram_id, image_urls, caption)
+    return publier_photo(token_instagram, instagram_id, image_urls[0], caption)
+
+
 def publier_photo(token_instagram: str, instagram_id: str, image_url: str, caption: str = "") -> dict:
     """
     Publication en trois temps : 1) creer un conteneur media (l'image doit

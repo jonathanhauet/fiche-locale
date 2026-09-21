@@ -84,8 +84,9 @@
     {% endfor %}
   </div>
 
-  <label for="image-partagee">Image (optionnelle — partagée par défaut sur tous les réseaux, Instagram en a besoin)</label>
-  <input type="file" id="image-partagee" name="image" accept="image/*">
+  <label for="image-partagee">Image(s) (optionnelles — partagées par défaut sur tous les réseaux, Instagram en a besoin)</label>
+  <input type="file" id="image-partagee" name="image" accept="image/*" multiple>
+  <p class="texte-discret">Jusqu'à 10 images : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique.</p>
   <div class="ligne-champs">
     <input type="text" id="prompt-image-ia" value="{{ prompt_image_initial }}" placeholder="Description de l'image à générer (remplie automatiquement après « Générer le texte »)" style="flex:1;">
     <button type="button" id="bouton-generer-image" class="bouton-secondaire">
@@ -136,6 +137,7 @@
         </div>
         <p class="apercu-texte" data-reseau="{{ reseau }}">Votre texte apparaîtra ici.</p>
         <div class="apercu-cadre-image" hidden>
+          <span class="badge-nb-images" data-reseau="{{ reseau }}" hidden></span>
           <img class="apercu-image" data-reseau="{{ reseau }}" alt="Aperçu de l'image">
         </div>
         {% if reseau == "instagram" %}
@@ -337,7 +339,14 @@
       const apercuImg = document.querySelector(`.apercu-image[data-reseau="${reseau}"]`);
       if (!apercuImg) return;
       const cadre = apercuImg.closest(".apercu-cadre-image");
+      const badgeNb = cadre.querySelector(".badge-nb-images");
       const fichier = (champDedie && champDedie.files[0]) || champImagePartagee.files[0] || null;
+      // Plusieurs images partagees : seuls Facebook et Instagram les publient toutes.
+      const nbImages = (champDedie && champDedie.files[0]) ? 1 : champImagePartagee.files.length;
+      if (badgeNb) {
+        badgeNb.hidden = !(nbImages > 1 && (reseau === "facebook" || reseau === "instagram"));
+        badgeNb.textContent = `1/${nbImages}`;
+      }
       if (fichier) {
         lireImageEnApercu(fichier, (src) => {
           if (src) { apercuImg.src = src; cadre.hidden = false; }
@@ -355,6 +364,10 @@
     }
 
     champImagePartagee.addEventListener("change", () => {
+      if (champImagePartagee.files.length > 10) {
+        alert("10 images maximum par publication.");
+        champImagePartagee.value = "";
+      }
       if (champImagePartagee.files[0]) champImageUrlIA.value = "";
       actualiserToutesLesApercusImage();
     });

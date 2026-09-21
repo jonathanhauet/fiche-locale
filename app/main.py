@@ -914,6 +914,7 @@ def _extrait_court(texte: str, longueur: int = 60) -> str:
     return texte[:longueur] + ("…" if len(texte) > longueur else "")
 
 
+NB_MAX_IMAGES_PUBLICATION = 10  # limite d'un carrousel Instagram
 FUSEAU_PARIS = ZoneInfo("Europe/Brussels")
 DUREE_CACHE_PUBLICATIONS_EXTERNES = 300  # secondes
 _cache_publications_externes: dict = {}
@@ -1058,7 +1059,7 @@ def _publications_multi_reseaux(
             lignes.append({
                 "reseau": reseau,
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
-                "image_url": post.image_url,
+                "image_url": (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
                 "date": post.publier_le.date(),
                 "heure": post.publier_le.strftime("%H:%M"),
                 "statut_brut": post.etat,
@@ -6275,24 +6276,33 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     # reutilisee pour chaque reseau sans image dediee. Un fichier choisi a la
     # main est prioritaire ; sinon on reprend l'image deja generee par IA
     # (deja hebergee sur OVH via /generer_image, pas besoin de la retraiter).
-    image_partagee = formulaire.get("image")
-    url_partagee = None
-    if image_partagee is not None and getattr(image_partagee, "filename", ""):
-        octets = await image_partagee.read()
-        url_partagee = ovh_upload.envoyer_octets(octets, f"multi-{uuid.uuid4().hex[:10]}-{image_partagee.filename}")
+    # Plusieurs images possibles par televersement (carrousel Instagram, post
+    # multi-photos Facebook) ; l'image generee par IA reste unique. Google et
+    # LinkedIn n'utilisent que la premiere. Une image dediee a un reseau
+    # (case "image differente pour ce reseau") reste unique et prioritaire.
+    fichiers_partages = [f for f in formulaire.getlist("image") if getattr(f, "filename", "")]
+    if len(fichiers_partages) > NB_MAX_IMAGES_PUBLICATION:
+        return _erreur(f"{NB_MAX_IMAGES_PUBLICATION} images maximum par publication.")
+
+    urls_partagees = []
+    if fichiers_partages:
+        for fichier in fichiers_partages:
+            octets = await fichier.read()
+            urls_partagees.append(ovh_upload.envoyer_octets(octets, f"multi-{uuid.uuid4().hex[:10]}-{fichier.filename}"))
     else:
-        url_partagee = (formulaire.get("image_url_ia") or "").strip() or None
+        url_ia = (formulaire.get("image_url_ia") or "").strip()
+        urls_partagees = [url_ia] if url_ia else []
 
     urls_par_reseau = {}
     for reseau in reseaux:
         fichier_reseau = formulaire.get(f"image_{reseau}")
         if fichier_reseau is not None and getattr(fichier_reseau, "filename", ""):
             octets = await fichier_reseau.read()
-            urls_par_reseau[reseau] = ovh_upload.envoyer_octets(
+            urls_par_reseau[reseau] = [ovh_upload.envoyer_octets(
                 octets, f"multi-{reseau}-{uuid.uuid4().hex[:10]}-{fichier_reseau.filename}",
-            )
+            )]
         else:
-            urls_par_reseau[reseau] = url_partagee
+            urls_par_reseau[reseau] = list(urls_partagees)
 
     if "instagram" in reseaux and not urls_par_reseau.get("instagram"):
         return _erreur("Instagram necessite une image (partagee ou dediee).")
@@ -6306,7 +6316,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
         try:
             if reseau == "google":
                 post = models.Post(
-                    client_id=client.id, titre=texte[:60], texte=texte, image_url=urls_par_reseau.get("google") or "",
+                    client_id=client.id, titre=texte[:60], texte=texte, image_url=(urls_par_reseau.get("google") or [""])[0],
                     statut="A_PUBLIER" if publier_le else "BROUILLON",
                     date_prevue=publier_le.date() if publier_le else None,
                     heure_prevue=publier_le.strftime("%H:%M") if publier_le else None,
@@ -6323,7 +6333,8 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
             elif reseau == "facebook":
                 if publier_le:
                     db.add(models.PostMetaProgramme(
-                        client_id=client.id, texte=texte, image_url=urls_par_reseau.get("facebook"), publier_le=publier_le,
+                        client_id=client.id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls_par_reseau.get("facebook")),
+                        publier_le=publier_le,
                     ))
                     db.commit()
                 else:
@@ -6334,11 +6345,12 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
             elif reseau == "instagram":
                 if publier_le:
                     db.add(models.PostInstagramProgramme(
-                        client_id=client.id, texte=texte, image_url=urls_par_reseau.get("instagram"), publier_le=publier_le,
+                        client_id=client.id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls_par_reseau.get("instagram")),
+                        publier_le=publier_le,
                     ))
                     db.commit()
                 else:
-                    instagram_publish.publier_photo(
+                    instagram_publish.publier_medias(
                         client.token_instagram, client.instagram_id_meta, urls_par_reseau["instagram"], texte,
                     )
 
@@ -6350,8 +6362,8 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 # a l'API LinkedIn), contrairement aux autres reseaux qui n'ont besoin
                 # que d'une URL publique - on retelecharge donc depuis l'hebergement
                 # OVH ou l'image vient d'etre envoyee.
-                url_image = urls_par_reseau.get("linkedin")
-                octets_image = requests.get(url_image, timeout=30).content if url_image else None
+                urls_linkedin = urls_par_reseau.get("linkedin") or []
+                octets_image = requests.get(urls_linkedin[0], timeout=30).content if urls_linkedin else None
                 if publier_le:
                     db.add(models.PostLinkedInProgramme(
                         compte_linkedin_id=compte_linkedin.id, texte=texte, image_donnees=octets_image, publier_le=publier_le,

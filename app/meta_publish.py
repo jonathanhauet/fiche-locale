@@ -6,22 +6,51 @@ compte Meta connecte. La publication Instagram est un flux separe, voir
 instagram_publish.py.
 """
 
+import json
+
 import requests
 
 from .meta_oauth import URL_GRAPH
 
 
-def publier_post_page(token_page: str, page_id: str, message: str, image_url: str = None) -> dict:
+def urls_depuis_champ(champ: str) -> list[str]:
     """
-    Publie sur le fil de la Page - avec image (POST /photos, la legende tient
-    lieu de texte du post) ou en texte seul (POST /feed).
+    Les posts programmes (PostMetaProgramme, PostInstagramProgramme) gardent
+    leurs images dans une seule colonne texte, une URL par ligne : evite une
+    migration de schema pour passer d'une image a plusieurs.
     """
-    if image_url:
+    return [url.strip() for url in (champ or "").split("\n") if url.strip()]
+
+
+def champ_depuis_urls(urls: list[str]):
+    return "\n".join(urls) if urls else None
+
+
+def publier_post_page(token_page: str, page_id: str, message: str, image_url=None) -> dict:
+    """
+    Publie sur le fil de la Page. image_url : une URL, une liste d'URL ou None.
+    Une image : POST /photos (la legende tient lieu de texte du post). Plusieurs
+    : chaque photo est d'abord envoyee "non publiee" puis rattachee a un seul
+    post via attached_media. Aucune image : texte seul (POST /feed).
+    """
+    urls = [image_url] if isinstance(image_url, str) else list(image_url or [])
+    urls = [u for u in urls if u]
+
+    if len(urls) == 1:
         url = f"{URL_GRAPH}/{page_id}/photos"
-        donnees = {"url": image_url, "caption": message, "access_token": token_page}
+        donnees = {"url": urls[0], "caption": message, "access_token": token_page}
     else:
         url = f"{URL_GRAPH}/{page_id}/feed"
         donnees = {"message": message, "access_token": token_page}
+        for indice, url_image in enumerate(urls):
+            envoi = requests.post(
+                f"{URL_GRAPH}/{page_id}/photos",
+                data={"url": url_image, "published": "false", "access_token": token_page},
+                timeout=60,
+            )
+            if envoi.status_code != 200:
+                raise RuntimeError(f"Echec de l'envoi de la photo {indice + 1} sur la Page (code {envoi.status_code}) : {envoi.text}")
+            donnees[f"attached_media[{indice}]"] = json.dumps({"media_fbid": envoi.json()["id"]})
 
     reponse = requests.post(url, data=donnees, timeout=30)
     if reponse.status_code != 200:

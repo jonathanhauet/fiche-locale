@@ -915,6 +915,21 @@ button:active { transform: translateY(1px); }
 .apercu-cadre-image {
   order: 2;
   margin: 0 -1rem 0.4rem;
+  position: relative;
+}
+
+/* Indicateur "1/N" quand plusieurs images partagees sont publiees (Facebook, Instagram) */
+.badge-nb-images {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
 }
 
 .apercu-post .apercu-image {
