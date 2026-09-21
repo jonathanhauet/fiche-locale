@@ -1562,6 +1562,30 @@ button:active { transform: translateY(1px); }
   font-size: 0.85rem;
 }
 
+/* Edition des images d'un post programme : miniature + case "Garder"/"Supprimer" dessous */
+.grille-images-edition {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.carte-image-edition {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  width: 110px;
+}
+
+.carte-image-edition img {
+  width: 110px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--carte-bordure);
+}
+
 .liste-reponses-interview {
   display: flex;
   flex-direction: column;

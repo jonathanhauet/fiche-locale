@@ -6521,7 +6521,12 @@ def _reponse_modifier_post_programme(request: Request, reseau: str, post, client
         {
             "reseau": reseau, "nom_reseau": NOMS_RESEAUX_PROGRAMMES[reseau], "post": post, "client": client,
             "date_iso": post.publier_le.strftime("%Y-%m-%d"), "heure": post.publier_le.strftime("%H:%M"),
-            "images": images, "a_une_image_linkedin": reseau == "linkedin" and bool(post.image_donnees),
+            "images": images,
+            "image_linkedin_uri": (
+                "data:image/jpeg;base64," + base64.b64encode(post.image_donnees).decode()
+                if reseau == "linkedin" and post.image_donnees else ""
+            ),
+            "nb_max_images": NB_MAX_IMAGES_PUBLICATION,
             "erreur": erreur,
         },
         status_code=code,
@@ -6542,7 +6547,14 @@ def publication_multi_modifier_formulaire(reseau: str, post_id: int, request: Re
 
 @app.post("/publication-multi/{reseau}/{post_id}/modifier")
 async def publication_multi_modifier(reseau: str, post_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """Modifie le texte et la date/heure d'un post programme (pas ses images : il faut alors le supprimer et le reprogrammer)."""
+    """
+    Modifie le texte, la date/heure et les images d'un post programme.
+    Images Facebook/Instagram : on coche celles a garder ("garder_image", parmi
+    les URL actuelles uniquement) et on peut en ajouter (fichiers "image") ;
+    LinkedIn n'a qu'une image (octets en base) : remplacer ou supprimer.
+    Les images ne sont touchees que si le formulaire porte "images_gerees" :
+    une page ouverte avant cette fonctionnalite ne doit pas tout effacer.
+    """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -6563,8 +6575,39 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
     except ValueError:
         return _reponse_modifier_post_programme(request, reseau, post, client, erreur="Date ou heure de publication invalide.", code=400)
 
+    nouveaux_fichiers = [f for f in formulaire.getlist("image") if getattr(f, "filename", "")]
+    gerer_images = bool(formulaire.get("images_gerees"))
+    images_finales = None        # Facebook / Instagram : liste d'URL
+    nouvelle_image_linkedin = "inchangee"   # LinkedIn : octets, None (supprimer) ou "inchangee"
+    if gerer_images and reseau == "linkedin":
+        try:
+            if nouveaux_fichiers:
+                nouvelle_image_linkedin = _jpeg_normalise(await nouveaux_fichiers[0].read())
+            elif formulaire.get("supprimer_image"):
+                nouvelle_image_linkedin = None
+        except ValueError as erreur_image:
+            return _reponse_modifier_post_programme(request, reseau, post, client, erreur=f"Image refusée : {erreur_image}", code=400)
+    elif gerer_images:
+        a_garder = set(formulaire.getlist("garder_image"))
+        gardees = [url for url in meta_publish.urls_depuis_champ(post.image_url) if url in a_garder]
+        if len(gardees) + len(nouveaux_fichiers) > NB_MAX_IMAGES_PUBLICATION:
+            return _reponse_modifier_post_programme(
+                request, reseau, post, client, erreur=f"{NB_MAX_IMAGES_PUBLICATION} images maximum par publication.", code=400,
+            )
+        if reseau == "instagram" and not gardees and not nouveaux_fichiers:
+            return _reponse_modifier_post_programme(request, reseau, post, client, erreur="Instagram nécessite au moins une image.", code=400)
+        try:
+            ajoutees = [_televerser_image_publication(await f.read(), "multi") for f in nouveaux_fichiers]
+        except ValueError as erreur_image:
+            return _reponse_modifier_post_programme(request, reseau, post, client, erreur=f"Image refusée : {erreur_image}", code=400)
+        images_finales = gardees + ajoutees
+
     post.texte = texte
     post.publier_le = publier_le
+    if images_finales is not None:
+        post.image_url = meta_publish.champ_depuis_urls(images_finales)
+    if nouvelle_image_linkedin != "inchangee":
+        post.image_donnees = nouvelle_image_linkedin
     db.commit()
     return RedirectResponse(f"/clients/{client.id}", status_code=303)
 

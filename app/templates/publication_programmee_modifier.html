@@ -12,7 +12,9 @@
 <p class="message-erreur">{{ erreur }}</p>
 {% endif %}
 
-<form class="formulaire" method="post" action="/publication-multi/{{ reseau }}/{{ post.id }}/modifier">
+<form class="formulaire" method="post" action="/publication-multi/{{ reseau }}/{{ post.id }}/modifier" enctype="multipart/form-data">
+  <input type="hidden" name="images_gerees" value="1">
+
   <label>
     Texte du post
     <textarea name="texte" rows="10" required>{{ post.texte }}</textarea>
@@ -29,17 +31,44 @@
     </label>
   </div>
 
+  {% if reseau == "linkedin" %}
+  <span class="choix-image-titre">Image</span>
+  {% if image_linkedin_uri %}
+  <div class="grille-images-edition">
+    <div class="carte-image-edition">
+      <img src="{{ image_linkedin_uri }}" alt="Image du post">
+      <label class="filtre-case"><input type="checkbox" name="supprimer_image" value="1"> Supprimer</label>
+    </div>
+  </div>
+  {% else %}
+  <p class="texte-vide">Aucune image sur ce post.</p>
+  {% endif %}
+  <label>
+    {{ "Remplacer par une autre image" if image_linkedin_uri else "Ajouter une image" }}
+    <input type="file" name="image" accept="image/*">
+  </label>
+  {% else %}
+  <span class="choix-image-titre">Images ({{ nb_max_images }} maximum)</span>
   {% if images %}
-  <div class="grille-photos-reference">
+  <div class="grille-images-edition">
     {% for url in images %}
-    <div class="carte-photo-reference"><img src="{{ url }}" alt="Image du post"></div>
+    <div class="carte-image-edition">
+      <img src="{{ url }}" alt="Image {{ loop.index }} du post">
+      <label class="filtre-case"><input type="checkbox" name="garder_image" value="{{ url }}" checked> Garder</label>
+    </div>
     {% endfor %}
   </div>
+  {% else %}
+  <p class="texte-vide">Aucune image sur ce post.</p>
   {% endif %}
-  {% if images or a_une_image_linkedin %}
+  <label>
+    Ajouter des images
+    <input type="file" name="image" accept="image/*" multiple>
+  </label>
   <p class="texte-discret">
-    Les images ne se modifient pas ici. Pour en changer, supprimez ce post et reprogrammez-le depuis la
-    publication multi-réseaux.
+    Décochez "Garder" pour retirer une image.
+    {% if reseau == "instagram" %}Instagram exige au moins une image, et recadre toutes les images au format de la première.{% else %}La première image est celle mise en avant.{% endif %}
+    Les nouvelles images sont ajoutées à la suite des images gardées.
   </p>
   {% endif %}
 
