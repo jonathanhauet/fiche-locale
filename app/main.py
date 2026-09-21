@@ -11,9 +11,12 @@ import calendar
 import json
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
+from time import monotonic
 from types import SimpleNamespace
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -911,14 +914,124 @@ def _extrait_court(texte: str, longueur: int = 60) -> str:
     return texte[:longueur] + ("…" if len(texte) > longueur else "")
 
 
-def _publications_multi_reseaux(db: Session, client: "models.Client", limite: int = 30) -> list:
+FUSEAU_PARIS = ZoneInfo("Europe/Brussels")
+DUREE_CACHE_PUBLICATIONS_EXTERNES = 300  # secondes
+_cache_publications_externes: dict = {}
+
+
+def _maintenant_paris() -> datetime:
+    """Heure murale de Paris sans fuseau : meme convention que les dates de programmation (voir planificateur._maintenant_local)."""
+    return datetime.now(FUSEAU_PARIS).replace(tzinfo=None)
+
+
+def _datetime_paris(iso: str):
+    """Convertit un horodatage ISO d'une API (UTC, "Z" ou "+0000") en heure de Paris sans fuseau ; None si illisible."""
+    if not iso:
+        return None
+    texte = iso.strip().replace("Z", "+0000")
+    for format_ in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z"):
+        try:
+            return datetime.strptime(texte.replace("+00:00", "+0000"), format_).astimezone(FUSEAU_PARIS).replace(tzinfo=None)
+        except ValueError:
+            continue
+    return None
+
+
+def _cle_texte(texte: str) -> str:
+    """Debut du texte normalise : sert a reconnaitre un meme post entre la base locale et la lecture en direct."""
+    return " ".join((texte or "").lower().split())[:40]
+
+
+def _publications_externes(client: "models.Client", posts_google_en_ligne: list, ids_google_connus: set) -> list:
     """
-    Vue unifiee, tous reseaux confondus, des publications suivies par la
-    plateforme pour ce client (programmees, publiees ou en echec) - melange
-    Post (Google), PostMetaProgramme (Facebook), PostInstagramProgramme et
-    PostLinkedInProgramme, triees par date decroissante. Ne couvre que ce que
-    la plateforme a elle-meme publie/programme, pas les posts Google publies
-    hors plateforme (voir posts_en_ligne, lu en direct, plus bas sur la page).
+    Publications lues en direct chez les reseaux, y compris celles faites hors
+    plateforme : Google (posts_google_en_ligne, deja lus par l'appelant, ~7
+    derniers jours seulement cote API Google), Facebook et Instagram (les 10
+    derniers). LinkedIn n'en fait pas partie : son API ne permet pas de relire
+    les posts d'un profil (scope r_member_social reserve) - voir
+    _journaliser_publication_linkedin. Une erreur d'un reseau est ignoree : le
+    resume doit s'afficher meme si un jeton est expire. Cache de quelques
+    minutes pour ne pas refaire ces appels a chaque affichage de la fiche.
+    """
+    lignes = []
+    for post in posts_google_en_ligne or []:
+        if post.get("id_post_google") in ids_google_connus or post.get("etat") not in ("LIVE", "REJECTED"):
+            continue
+        moment = _datetime_paris(post.get("date_creation_brute", ""))
+        if not moment:
+            continue
+        rejete = post["etat"] == "REJECTED"
+        lignes.append({
+            "reseau": "google", "titre": _extrait_court(post.get("texte", "")), "image_url": post.get("url_image", ""),
+            "date": moment.date(), "heure": moment.strftime("%H:%M"), "url": post.get("url_recherche", ""),
+            "statut_brut": "PUBLIE_REJECTED" if rejete else "PUBLIE_LIVE", "statut_libelle": "Rejeté" if rejete else "Publié",
+            "externe": True,
+        })
+
+    maintenant = monotonic()
+    en_cache = _cache_publications_externes.get(client.id)
+    if en_cache and maintenant - en_cache[0] < DUREE_CACHE_PUBLICATIONS_EXTERNES:
+        reseaux_lus = en_cache[1]
+    else:
+        def lire_facebook():
+            if not (client.page_id_meta and client.token_page_meta):
+                return []
+            return meta_engagement.lister_posts_publies(client.token_page_meta, client.page_id_meta)
+
+        def lire_instagram():
+            if not (client.instagram_id_meta and client.token_instagram):
+                return []
+            return instagram_engagement.lister_medias_recents(client.token_instagram, client.instagram_id_meta)
+
+        def proteger(lecture):
+            try:
+                return lecture()
+            except Exception:
+                return []
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futur_facebook = pool.submit(proteger, lire_facebook)
+            futur_instagram = pool.submit(proteger, lire_instagram)
+            reseaux_lus = {"facebook": futur_facebook.result(), "instagram": futur_instagram.result()}
+        _cache_publications_externes[client.id] = (maintenant, reseaux_lus)
+
+    for reseau, posts in reseaux_lus.items():
+        for post in posts:
+            moment = _datetime_paris(post.get("cree_le", ""))
+            if not moment:
+                continue
+            lignes.append({
+                "reseau": reseau, "titre": _extrait_court(post.get("texte", "")), "image_url": post.get("image_url", ""),
+                "date": moment.date(), "heure": moment.strftime("%H:%M"), "url": post.get("url", ""),
+                "statut_brut": "PUBLIE", "statut_libelle": "Publié", "externe": True,
+            })
+    return lignes
+
+
+def _journaliser_publication_linkedin(db: Session, compte_linkedin_id: int, texte: str) -> None:
+    """
+    LinkedIn ne permet pas de relire les posts d'un profil : on garde donc une
+    trace de ceux publies immediatement via la plateforme, en reutilisant
+    PostLinkedInProgramme (etat PUBLIE, sans image : inutile, et lourde a
+    stocker) pour qu'ils apparaissent dans le resume multi-reseaux.
+    """
+    db.add(models.PostLinkedInProgramme(
+        compte_linkedin_id=compte_linkedin_id, texte=texte, image_donnees=None,
+        publier_le=_maintenant_paris(), etat="PUBLIE",
+    ))
+    db.commit()
+
+
+def _publications_multi_reseaux(
+    db: Session, client: "models.Client", limite: int = 30, posts_google_en_ligne: list = None,
+) -> list:
+    """
+    Vue unifiee, tous reseaux confondus, des publications d'un client
+    (programmees, publiees ou en echec) : ce que la plateforme suit en base
+    (Post pour Google, PostMetaProgramme, PostInstagramProgramme,
+    PostLinkedInProgramme) completee par la lecture en direct des publications
+    faites hors plateforme (voir _publications_externes), sans doublon.
+    Triee par date et heure decroissantes.
     """
     lignes = []
 
@@ -964,7 +1077,19 @@ def _publications_multi_reseaux(db: Session, client: "models.Client", limite: in
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
             })
 
-    lignes.sort(key=lambda l: l["date"], reverse=True)
+    ids_google_connus = {
+        id_post for (id_post,) in db.query(models.Post.id_post_google).filter(
+            models.Post.client_id == client.id, models.Post.id_post_google != "",
+        ).all()
+    }
+    cles_deja_suivies = {(l["reseau"], _cle_texte(l["titre"])) for l in lignes if l["reseau"] != "google"}
+    # Les titres locaux sont tronques a 60 caracteres, la cle en garde 40 : comparables.
+    for externe in _publications_externes(client, posts_google_en_ligne, ids_google_connus):
+        if externe["reseau"] != "google" and (externe["reseau"], _cle_texte(externe["titre"])) in cles_deja_suivies:
+            continue
+        lignes.append(externe)
+
+    lignes.sort(key=lambda l: (l["date"], l.get("heure") or "00:00"), reverse=True)
     return lignes[:limite]
 
 
@@ -1006,7 +1131,7 @@ def historique_client(client_id: int, request: Request, db: Session = Depends(ob
             "evenements": evenements,
             "posts_en_ligne": posts_en_ligne,
             "erreur_posts_en_ligne": erreur_posts_en_ligne,
-            "publications_multi_reseaux": _publications_multi_reseaux(db, client),
+            "publications_multi_reseaux": _publications_multi_reseaux(db, client, posts_google_en_ligne=posts_en_ligne),
         },
     )
 
@@ -2655,7 +2780,7 @@ def _reponse_detail_client(
         {
             "client": client,
             "posts": posts,
-            "publications_multi_reseaux": _publications_multi_reseaux(db, client),
+            "publications_multi_reseaux": _publications_multi_reseaux(db, client, posts_google_en_ligne=tous_posts_en_ligne),
             "erreur_generation": erreur_generation,
             "photos": _photos_pour_client(db, client),
             "photos_en_preparation": photos_en_preparation,
@@ -5413,6 +5538,7 @@ async def linkedin_publier(
     else:
         try:
             linkedin_publish.publier_post(compte.access_token, compte.identifiant_membre, texte, octets_image)
+            _journaliser_publication_linkedin(db, compte.id, texte)
             resultat_publication = compte.libelle
         except Exception as e:
             erreur = f"Echec de la publication : {e}"
@@ -6235,6 +6361,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     linkedin_publish.publier_post(
                         compte_linkedin.access_token, compte_linkedin.identifiant_membre, texte, octets_image,
                     )
+                    _journaliser_publication_linkedin(db, compte_linkedin.id, texte)
         except Exception as e:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
 

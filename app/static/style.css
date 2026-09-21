@@ -1781,6 +1781,22 @@ button:active { transform: translateY(1px); }
    d'elargir le tableau ; date/heure et statut restent sur une ligne. */
 .tableau-resume td:nth-child(2) { white-space: normal; min-width: 12rem; }
 
+.tableau-resume .apercu-texte a { color: inherit; text-decoration: none; }
+.tableau-resume .apercu-texte a:hover { text-decoration: underline; }
+
+.mention-hors-plateforme {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--texte-discret);
+  background: var(--fond);
+  border: 1px solid var(--carte-bordure);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 .ligne-publication-resume {
   display: flex;
   align-items: center;

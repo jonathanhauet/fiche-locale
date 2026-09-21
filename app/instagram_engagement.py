@@ -56,6 +56,34 @@ def lister_medias_avec_commentaires(token_instagram: str, instagram_id: str, lim
     return medias
 
 
+def lister_medias_recents(token_instagram: str, instagram_id: str, limite: int = 10) -> list[dict]:
+    """
+    Dernieres publications du compte, sans les commentaires (un appel par
+    media dans lister_medias_avec_commentaires, trop lent pour un resume) -
+    inclut celles publiees hors plateforme. Pour une video, thumbnail_url
+    sert de miniature (media_url pointe alors vers la video elle-meme).
+    """
+    reponse = requests.get(
+        f"{URL_GRAPH}/{instagram_id}/media",
+        params={
+            "fields": "caption,timestamp,permalink,media_url,thumbnail_url,media_type",
+            "limit": limite, "access_token": token_instagram,
+        },
+        timeout=15,
+    )
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la lecture des publications Instagram (code {reponse.status_code}) : {reponse.text}")
+    return [
+        {
+            "texte": media.get("caption", ""),
+            "cree_le": media.get("timestamp", ""),
+            "url": media.get("permalink", ""),
+            "image_url": media.get("thumbnail_url") or (media.get("media_url", "") if media.get("media_type") != "VIDEO" else ""),
+        }
+        for media in reponse.json().get("data", [])
+    ]
+
+
 def obtenir_insights(token_instagram: str, instagram_id: str) -> list[dict]:
     reponse = requests.get(
         f"{URL_GRAPH}/{instagram_id}/insights",

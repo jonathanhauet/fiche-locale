@@ -45,6 +45,30 @@ def lister_posts_avec_commentaires(token_page: str, page_id: str, limite: int = 
     return posts
 
 
+def lister_posts_publies(token_page: str, page_id: str, limite: int = 10) -> list[dict]:
+    """
+    Derniers posts publies sur la Page, sans les commentaires (plus leger que
+    lister_posts_avec_commentaires) - inclut ceux publies hors plateforme.
+    Sert au resume multi-reseaux d'un client.
+    """
+    reponse = requests.get(
+        f"{URL_GRAPH}/{page_id}/posts",
+        params={"fields": "message,created_time,permalink_url,full_picture", "limit": limite, "access_token": token_page},
+        timeout=15,
+    )
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la lecture des posts de la Page (code {reponse.status_code}) : {reponse.text}")
+    return [
+        {
+            "texte": post.get("message", ""),
+            "cree_le": post.get("created_time", ""),
+            "url": post.get("permalink_url", ""),
+            "image_url": post.get("full_picture", ""),
+        }
+        for post in reponse.json().get("data", [])
+    ]
+
+
 def obtenir_insights_page(token_page: str, page_id: str) -> list[dict]:
     reponse = requests.get(
         f"{URL_GRAPH}/{page_id}/insights",

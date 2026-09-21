@@ -673,7 +673,7 @@
         <td>
           <div class="ligne-publication-resume">
             {% if ligne.image_url %}<img src="{{ ligne.image_url }}" alt="" class="miniature-publication-resume">{% endif %}
-            <span class="apercu-texte">{{ ligne.titre }}</span>
+            <span class="apercu-texte">{% if ligne.url %}<a href="{{ ligne.url }}" target="_blank" rel="noopener">{{ ligne.titre }}</a>{% else %}{{ ligne.titre }}{% endif %}{% if ligne.externe %}<span class="mention-hors-plateforme">Hors plateforme</span>{% endif %}</span>
           </div>
         </td>
         <td>{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
