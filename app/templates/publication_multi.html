@@ -652,6 +652,7 @@
           body: JSON.stringify({
             prompt_image: promptImage,
             inclure_reference: caseInclureReference ? caseInclureReference.checked : false,
+            texte_post: document.getElementById("texte-base").value,
           }),
         });
         const donnees = await reponse.json();
@@ -662,7 +663,8 @@
         champImagePartagee.value = "";
         champImageUrlIA.value = donnees.url;
         actualiserToutesLesApercusImage();
-        texteStatutImageIA.textContent = "Image générée — visible dans les aperçus ci-dessous.";
+        texteStatutImageIA.textContent = "Image générée — visible dans les aperçus ci-dessous."
+          + (donnees.prompt_utilise ? " Scène demandée à l'IA (avec vous comme sujet) : « " + donnees.prompt_utilise + " »" : "");
       } catch (erreur) {
         texteStatutImageIA.textContent = "Erreur réseau lors de la génération de l'image.";
       } finally {

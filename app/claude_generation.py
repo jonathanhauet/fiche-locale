@@ -1111,6 +1111,45 @@ TONS_RESEAUX = {
 NOMS_RESEAUX = {"google": "Google Business Profile", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn"}
 
 
+def prompt_image_avec_auteur(prompt_image: str, texte_post: str = "") -> str:
+    """
+    Reecrit un prompt d'image pour que l'AUTEUR du post (la personne des
+    photos de reference envoyees a Gemini) en soit le sujet principal. Les
+    prompts produits par les generateurs de post decrivent des scenes sans
+    personne (ecrans, icones, mains...) : envoyes tels quels avec des photos
+    de reference, Gemini ne les utilise pas et l'auteur n'apparait jamais.
+    Le physique n'est volontairement jamais decrit : le visage vient des
+    photos, pas du texte.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    prompt = (
+        "Voici le prompt (en anglais) prevu pour illustrer un post de reseau social, puis le texte du post.\n\n"
+        f"Prompt d'origine :\n{prompt_image.strip()}\n\n"
+        f"Texte du post :\n{texte_post.strip()[:1500] or '(non fourni)'}\n\n"
+        "Reecris ce prompt, en anglais, pour une PHOTOGRAPHIE REALISTE dans laquelle l'auteur du post est le "
+        "sujet principal. L'auteur est la personne des photos de reference jointes a la generation : ecris "
+        "\"the person from the reference photos\" et ne decris JAMAIS son physique (visage, cheveux, age, "
+        "vetements) - le visage vient des photos.\n"
+        "Contraintes : plan moyen ou plan rapproche, visage bien visible (de face ou de trois quarts, "
+        "jamais de dos ni de loin), regard naturel ; situation credible et liee au sujet du post (au travail "
+        "avec un ordinateur ou un telephone, en discussion, en train d'expliquer...) ; lumiere naturelle, "
+        "ambiance professionnelle mais chaleureuse ; pas d'illustration vectorielle ni de style dessin ; "
+        "aucun texte incruste, aucun logo.\n"
+        "Reponds uniquement par le nouveau prompt, en 2 a 4 phrases, sans introduction ni guillemets."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=500, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), "").strip().strip('"')
+    if not texte:
+        raise RuntimeError("L'IA n'a renvoye aucun prompt exploitable.")
+    return _nettoyer_texte_genere(texte)
+
+
 def adapter_post_multi_reseaux(
     texte_base: str, reseaux: list[str], contenu_site: str = "", hashtags_fixes: str = "",
 ) -> dict[str, str]:

@@ -2,6 +2,7 @@
 
 import base64
 import os
+import re
 
 from dotenv import load_dotenv
 from google import genai
@@ -12,6 +13,29 @@ load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
 
 MODELE_GEMINI = "gemini-3.1-flash-image"
 CLE_GEMINI = os.getenv("GEMINI_API_KEY")
+
+
+INSTRUCTION_PERSONNE = (
+    "The attached photos show one real person (the author) from several angles. Create a photorealistic "
+    "image in which THIS SAME PERSON is clearly the main subject, with a recognizable face that stays "
+    "faithful to the reference photos (facial features, hair, skin tone, age, build). The face must be "
+    "clearly visible: not turned away, not tiny, not hidden. Scene to depict: "
+)
+
+# Les prompts de post demandent souvent "no recognizable faces" / "no people" : contradictoire
+# (et prioritaire, selon Gemini) quand on veut justement qu'une personne apparaisse.
+_INTERDICTIONS_VISAGE = re.compile(
+    r"(?:,\s*|\.\s*|\s+)?\b(?:no|without|avoid(?:ing)?|zero)\s+(?:any\s+)?"
+    r"(?:(?:recogni[sz]able|identifiable|visible|human|real)\s+)*"
+    r"(?:faces?|people|persons?|humans?|individuals?)\b[^,.;]*|\bfaceless\b",
+    re.IGNORECASE,
+)
+
+
+def _prompt_avec_personne(prompt_image: str) -> str:
+    """Prefixe le prompt d'une consigne explicite sur les photos de reference et en retire les interdictions de visage."""
+    nettoye = re.sub(r"\s*,(?:\s*,)+", ",", _INTERDICTIONS_VISAGE.sub("", prompt_image)).strip(" ,.")
+    return f"{INSTRUCTION_PERSONNE}{nettoye}"
 
 
 def generer_image(prompt_image: str, aspect_ratio: str = None, images_reference: list[bytes] = None) -> bytes:
@@ -36,7 +60,7 @@ def generer_image(prompt_image: str, aspect_ratio: str = None, images_reference:
 
     client = genai.Client(api_key=CLE_GEMINI)
     if images_reference:
-        entree = [{"type": "text", "text": prompt_image}] + [
+        entree = [{"type": "text", "text": _prompt_avec_personne(prompt_image)}] + [
             {"type": "image", "data": base64.b64encode(octets).decode("utf-8"), "mime_type": "image/jpeg"}
             for octets in images_reference
         ]

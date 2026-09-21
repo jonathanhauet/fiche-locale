@@ -920,16 +920,8 @@ NB_MAX_IMAGES_PUBLICATION = 10  # limite d'un carrousel Instagram
 COTE_MAX_IMAGE_PUBLICATION = 2048
 
 
-def _televerser_image_publication(octets: bytes, prefixe: str) -> str:
-    """
-    Normalise une image choisie par l'utilisateur puis l'heberge sur OVH, sous
-    un nom neutre. Deux raisons : (1) Facebook/Instagram telechargent l'image
-    depuis son URL, et un nom d'origine avec espaces, parentheses ou accents
-    (photos de telephone, WhatsApp : "IMG 2026 (1).jpg") donne une URL qu'ils
-    rejettent (erreur 324 "Missing or invalid image file") ; (2) les photos de
-    telephone de plusieurs Mo depassent parfois leurs limites de taille.
-    Renvoie l'URL publique ; ValueError si le fichier n'est pas une image lisible.
-    """
+def _jpeg_normalise(octets: bytes, cote_max: int = COTE_MAX_IMAGE_PUBLICATION) -> bytes:
+    """Image quelconque -> JPEG RGB, orientation EXIF appliquee, cote max reduit. ValueError si illisible."""
     try:
         image = ImageOps.exif_transpose(Image.open(io.BytesIO(octets)))
     except Exception:
@@ -941,10 +933,25 @@ def _televerser_image_publication(octets: bytes, prefixe: str) -> str:
         image = fond
     else:
         image = image.convert("RGB")
-    image.thumbnail((COTE_MAX_IMAGE_PUBLICATION, COTE_MAX_IMAGE_PUBLICATION))
+    image.thumbnail((cote_max, cote_max))
     tampon = io.BytesIO()
     image.save(tampon, "JPEG", quality=88, optimize=True)
-    return ovh_upload.envoyer_octets(tampon.getvalue(), f"{prefixe}-{uuid.uuid4().hex[:12]}.jpg")
+    return tampon.getvalue()
+
+
+def _televerser_image_publication(octets: bytes, prefixe: str) -> str:
+    """
+    Normalise une image choisie par l'utilisateur puis l'heberge sur OVH, sous
+    un nom neutre. Deux raisons : (1) Facebook/Instagram telechargent l'image
+    depuis son URL, et un nom d'origine avec espaces, parentheses ou accents
+    (photos de telephone, WhatsApp : "IMG 2026 (1).jpg") donne une URL qu'ils
+    rejettent (erreur 324 "Missing or invalid image file") ; (2) les photos de
+    telephone de plusieurs Mo depassent parfois leurs limites de taille.
+    Renvoie l'URL publique ; ValueError si le fichier n'est pas une image lisible.
+    """
+    return ovh_upload.envoyer_octets(_jpeg_normalise(octets), f"{prefixe}-{uuid.uuid4().hex[:12]}.jpg")
+
+
 FUSEAU_PARIS = ZoneInfo("Europe/Brussels")
 DUREE_CACHE_PUBLICATIONS_EXTERNES = 300  # secondes
 _cache_publications_externes: dict = {}
@@ -6238,11 +6245,20 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
         images_reference = []
         for photo in client.photos_reference:
             try:
-                images_reference.append(requests.get(photo.image_url, timeout=20).content)
+                # JPEG reduit : alleger l'envoi a Gemini et garantir un format lisible
+                # (les photos de reference sont stockees telles que televersees).
+                images_reference.append(_jpeg_normalise(requests.get(photo.image_url, timeout=20).content, 1536))
             except Exception:
                 continue
         if not images_reference:
             return JSONResponse({"erreur": "Impossible de recuperer les photos de reference."}, status_code=500)
+
+        # Les prompts de post decrivent des scenes sans personne : on les reecrit
+        # pour que l'auteur soit le sujet (sinon Gemini ignore les photos).
+        try:
+            prompt_image = claude_generation.prompt_image_avec_auteur(prompt_image, (donnees.get("texte_post") or "").strip())
+        except Exception:
+            pass  # repli : prompt d'origine, complete par la consigne de gemini_images
 
     try:
         # Carre plutot que paysage : reste correct sur Google/Facebook/LinkedIn
@@ -6254,7 +6270,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation de l'image : {e}"}, status_code=500)
 
-    return JSONResponse({"url": url_image})
+    return JSONResponse({"url": url_image, "prompt_utilise": prompt_image if images_reference else ""})
 
 
 @app.post("/publication-multi/{client_id}/publier", response_class=HTMLResponse)
