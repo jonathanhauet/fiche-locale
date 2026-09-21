@@ -189,6 +189,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_opt_in_confirme BOOLEAN DEFAULT FALSE"))
         if "hashtags_fixes" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN hashtags_fixes TEXT DEFAULT ''"))
+        if "profil_voix" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
         if "favori_publication_multi" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
 
@@ -2766,6 +2768,37 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
     return [f"{post.titre} — {post.texte[:150].strip()}" for post in posts if post.texte.strip()]
 
 
+NB_VOCAUX_ANALYSES_VOIX = 12
+NB_EXTRAITS_VOIX = 2
+LONGUEUR_EXTRAIT_VOIX = 1200
+
+
+def _reponses_interview_recentes(client: models.Client, limite: int) -> list:
+    return sorted(client.reponses_interview, key=lambda r: r.id, reverse=True)[:limite]
+
+
+def _bloc_voix_client(client: models.Client) -> str:
+    """
+    Voix du client (portrait deduit de ses vocaux + quelques extraits bruts),
+    a placer dans tout contexte de redaction : voir
+    claude_generation.formater_bloc_voix. Vide tant qu'aucun vocal n'a ete recu.
+    """
+    extraits = [
+        r.reponse_transcrite[:LONGUEUR_EXTRAIT_VOIX]
+        for r in _reponses_interview_recentes(client, NB_EXTRAITS_VOIX)
+    ]
+    return claude_generation.formater_bloc_voix(client.profil_voix, extraits)
+
+
+def _mettre_a_jour_profil_voix(db: Session, client: models.Client) -> None:
+    """Recalcule Client.profil_voix depuis les derniers vocaux (appel IA : ne pas l'appeler sur un chemin ou l'utilisateur attend)."""
+    transcriptions = [r.reponse_transcrite for r in _reponses_interview_recentes(client, NB_VOCAUX_ANALYSES_VOIX)]
+    profil = claude_generation.analyser_voix_client(transcriptions)
+    if profil:
+        client.profil_voix = profil
+        db.commit()
+
+
 def _contexte_ia_client(client: models.Client) -> str:
     """
     Contexte complet fourni a l'IA pour ce client : le champ libre
@@ -2773,6 +2806,11 @@ def _contexte_ia_client(client: models.Client) -> str:
     la base de connaissances (voir app/documents.py).
     """
     morceaux = []
+    # Voix en tete : certains prompts tronquent le contexte, et c'est ce qui
+    # doit survivre a la troncature.
+    bloc_voix = _bloc_voix_client(client)
+    if bloc_voix:
+        morceaux.append(bloc_voix)
     if client.contenu_site and client.contenu_site.strip():
         morceaux.append(client.contenu_site.strip())
     for document in client.documents_connaissance:
@@ -2867,6 +2905,7 @@ def _reponse_detail_client(
                 .all()
             ),
             "erreur_whatsapp_test": request.session.pop("erreur_whatsapp_test", None),
+            "erreur_voix": request.session.pop("erreur_voix", None),
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -5193,6 +5232,27 @@ def envoyer_questions_whatsapp_maintenant(client_id: int, request: Request, db: 
     return RedirectResponse(f"/clients/{client_id}?whatsapp_envoye=1", status_code=303)
 
 
+@app.post("/clients/{client_id}/voix/regenerer")
+def regenerer_profil_voix(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Recalcule a la demande le portrait de la voix du client depuis ses vocaux (voir _mettre_a_jour_profil_voix)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    if not client.reponses_interview:
+        request.session["erreur_voix"] = "Aucun vocal enregistré pour ce client."
+    else:
+        try:
+            _mettre_a_jour_profil_voix(db, client)
+        except Exception as erreur:
+            request.session["erreur_voix"] = f"Analyse impossible : {erreur}"
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
 @app.post("/clients/{client_id}/supprimer")
 def supprimer_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -5848,7 +5908,7 @@ async def publication_multi_adapter(client_id: int, request: Request, db: Sessio
         return JSONResponse({"erreur": "Selectionnez au moins un reseau."}, status_code=400)
 
     try:
-        variantes = claude_generation.adapter_post_multi_reseaux(texte_base, reseaux, client.contenu_site, client.hashtags_fixes)
+        variantes = claude_generation.adapter_post_multi_reseaux(texte_base, reseaux, _contexte_ia_client(client), client.hashtags_fixes)
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de l'adaptation IA : {e}"}, status_code=500)
 
@@ -6174,6 +6234,11 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
                 f"{client.nom} : un post genere depuis WhatsApp attend votre relecture.",
                 url=lien_composeur,
             )
+            # Apres avoir repondu au client : l'analyse de sa voix prend quelques secondes.
+            try:
+                _mettre_a_jour_profil_voix(db, client)
+            except Exception:
+                pass
         except Exception:
             try:
                 whatsapp_business.envoyer_message_texte(numero, "Un souci est survenu pendant la génération, réessayez dans un instant.")

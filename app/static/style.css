@@ -1631,6 +1631,24 @@ button:active { transform: translateY(1px); }
   display: none;
 }
 
+.carte-voix-client {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.8rem;
+  border: 1px solid var(--carte-bordure);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--rayon-petit);
+}
+
+.texte-voix-client {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
 .liste-reponses-interview {
   display: flex;
   flex-direction: column;

@@ -463,6 +463,80 @@ def generer_questions_interview(contexte_expert: str = "", sujets_deja_traites: 
     return [q.strip() for q in json.loads(bloc_texte)["questions"] if q.strip()]
 
 
+MARQUEUR_BLOC_VOIX = "=== VOIX DU CLIENT"
+
+
+def analyser_voix_client(reponses: list[str]) -> str:
+    """
+    Portrait de la facon de parler et de penser d'un client, deduit de ses
+    reponses vocales transcrites (Client.profil_voix). Ces vocaux sont la
+    meilleure source de personnalite dont on dispose : ce portrait est
+    reinjecte dans tous les prompts de redaction (voir
+    main._contexte_ia_client) pour que les textes generes sonnent comme lui,
+    pas comme une agence generique. Uniquement des observations tirees des
+    transcriptions, jamais d'invention.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    reponses = [r.strip() for r in reponses if r and r.strip()]
+    # Trop court pour en tirer une voix : l'IA broderait ou s'excuserait, et ce texte finirait dans les prompts.
+    if sum(len(r) for r in reponses) < 300:
+        return ""
+
+    transcriptions = "\n\n".join(f"Vocal {i}:\n« {r[:3000]} »" for i, r in enumerate(reponses, 1))
+    prompt = (
+        "Voici des transcriptions brutes de reponses vocales d'une meme personne (un chef "
+        "d'entreprise), a des questions sur son metier.\n\n"
+        f"{transcriptions}\n\n"
+        "Redige un portrait de sa VOIX, destine a un redacteur qui devra ecrire des posts et des "
+        "reponses en son nom de facon a ce qu'on croie l'entendre parler. Reste factuel : "
+        "n'invente rien, ne decris que ce qui ressort de ces transcriptions. Structure en puces "
+        "courtes sous ces rubriques :\n"
+        "- Registre et ton (familier/soutenu, direct, pedagogue, humour, assurance, "
+        "bienveillance...).\n"
+        "- Rythme et tournures (longueur des phrases, connecteurs favoris, facon d'enchainer les "
+        "idees, comment il commence et conclut).\n"
+        "- Expressions et mots recurrents : cite-les litteralement, entre guillemets (2 a 8).\n"
+        "- Convictions et positions defendues (ce qu'il croit, ce qu'il refuse, ses principes).\n"
+        "- Facon d'argumenter (exemples concrets, anecdotes clients, comparaisons, chiffres...).\n"
+        "- A eviter pour rester fidele (ce qui sonnerait faux dans sa bouche).\n"
+        "Maximum 1500 caracteres au total, en francais, sans tiret cadratin (—). Texte brut, avec les accents : "
+        "pas de titre, pas de gras, pas de markdown, juste les rubriques suivies de leurs puces (« - »)."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=1500,
+        thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), "")
+    return _nettoyer_texte_genere(texte)
+
+
+def formater_bloc_voix(profil: str, extraits: list[str]) -> str:
+    """Bloc de contexte "voix du client" a placer en tete du contexte IA (vide si rien de connu)."""
+    profil = (profil or "").strip()
+    extraits = [e.strip() for e in extraits if e and e.strip()]
+    if not profil and not extraits:
+        return ""
+    morceaux = [
+        f"{MARQUEUR_BLOC_VOIX} (a reproduire a l'ecrit) ===\n"
+        "Ce client s'exprime a l'oral dans les vocaux ci-dessous. Tout texte ecrit en son nom doit "
+        "sonner comme LUI : reprends son registre, son rythme, ses tournures et ses expressions, "
+        "defends ses convictions, appuie-toi sur son vocabulaire plutot que sur du jargon marketing "
+        "generique. Tu peux nettoyer les hesitations et structurer, mais ne le transforme jamais "
+        "en voix d'agence lisse."
+    ]
+    if profil:
+        morceaux.append(f"Portrait de sa facon de parler :\n{profil}")
+    if extraits:
+        liste = "\n".join(f"« {e} »" for e in extraits)
+        morceaux.append(f"Extraits de ses vocaux (transcription brute, pour sentir son rythme) :\n{liste}")
+    morceaux.append("=== FIN VOIX DU CLIENT ===")
+    return "\n\n".join(morceaux)
+
+
 def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expert: str = "") -> dict:
     """
     Transforme une reponse orale (dictee, donc transcription brute :
@@ -500,6 +574,13 @@ def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expe
         "corriger les hesitations, reformuler les phrases incompletes, couper les repetitions "
         "et reorganiser l'ordre pour que ca se lise bien - un oral brut n'est pas publiable "
         "tel quel, mais le fond doit rester exactement le sien.\n"
+        "- N'invente jamais une citation de client, une situation ou une frequence qu'il n'a pas "
+        "evoquee (pas de « on me pose cette question a chaque fois » ni de dialogue imagine) : "
+        "l'accroche doit venir de ce qu'il dit reellement, meme si elle est moins spectaculaire.\n"
+        "- Conserve SA VOIX : garde ses tournures, ses expressions et son vocabulaire a lui, "
+        "meme familiers (le bloc « VOIX DU CLIENT » du contexte, s'il existe, precise sa facon "
+        "de parler). Le post doit se lire comme quelqu'un qui parle et qu'on reconnait, pas comme "
+        "un communique d'entreprise.\n"
         "- Determine la personne grammaticale a partir du contenu du site ci-dessous : une "
         "personne seule qui parle en son nom (artisan, independant...) s'ecrit a la premiere "
         "personne du singulier (« je »), une equipe/entreprise avec plusieurs collaborateurs "
@@ -509,7 +590,7 @@ def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expe
         "« voir plus » sur la plupart des reseaux) - jamais une formule plate.\n"
         "- Phrases courtes, un paragraphe = une seule idee (1 a 3 phrases max).\n"
         "- Termine sur une phrase forte et memorable plutot qu'une formule generique.\n"
-        "- Ton professionnel mais humain, pas de jargon marketing creux, pas de tiret "
+        "- Ton humain et direct, pas de jargon marketing creux, pas de tiret "
         "cadratin (—) : remplace par une virgule, un deux-points ou un tiret simple (-).\n"
         "- Aucune reference geographique ni nom de ville.\n"
         "- Longueur : entre 800 et 1300 caracteres (espaces compris).\n"
@@ -1214,7 +1295,7 @@ def adapter_post_multi_reseaux(
         raise RuntimeError("Aucun reseau valide fourni.")
 
     bloc_tons = "\n".join(f"- {NOMS_RESEAUX[r]} : {TONS_RESEAUX[r]}" for r in reseaux)
-    bloc_contexte = f"\nContexte sur l'entreprise (site web) :\n{contenu_site.strip()[:3000]}\n" if contenu_site.strip() else ""
+    bloc_contexte = f"\nContexte sur l'entreprise (voix de l'auteur, site web) :\n{contenu_site.strip()[:7000]}\n" if contenu_site.strip() else ""
     bloc_hashtags_fixes = (
         f"\nHashtags de marque a toujours inclure en plus des hashtags contextuels, uniquement sur les "
         f"reseaux qui utilisent des hashtags (dans le respect du nombre indique pour chacun) : "
@@ -1236,6 +1317,9 @@ def adapter_post_multi_reseaux(
         "Conserve strictement la meme personne grammaticale que le texte d'origine (s'il est ecrit a la "
         "premiere personne du singulier \"je\", reste en \"je\" : ne bascule jamais vers un \"nous\" "
         "d'entreprise generique).\n"
+        "Si le contexte contient un bloc « VOIX DU CLIENT », l'auteur a une facon de parler bien a lui : "
+        "garde ses tournures et ses expressions sur chaque reseau (on adapte le format et le ton du "
+        "reseau, pas la personnalite de l'auteur).\n"
         "Phrases courtes, un paragraphe = une seule idee (1 a 3 phrases max), et passe des lignes entre "
         "chaque paragraphe (\\n\\n) plutot qu'un bloc compact : c'est ce qui rend un post lisible sur mobile."
     )

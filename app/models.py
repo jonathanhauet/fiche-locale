@@ -147,6 +147,11 @@ class Client(Base):
     # (voir claude_generation.adapter_post_multi_reseaux) - uniquement pour
     # les reseaux qui utilisent des hashtags (Instagram, LinkedIn).
     hashtags_fixes = Column(String, default="")
+    # Portrait de la facon de parler/penser du client, deduit de ses reponses
+    # vocales (voir claude_generation.analyser_voix_client) : injecte dans
+    # tous les prompts de redaction (voir main._contexte_ia_client) pour que
+    # les textes generes sonnent comme lui a l'ecrit.
+    profil_voix = Column(Text, default="")
     # Client mis en avant en haut de la liste de choix de /publication-multi
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
     # clients publiés le plus souvent.

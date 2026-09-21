@@ -292,7 +292,21 @@
 
 <details class="bloc-repliable">
   <summary>Historique interview WhatsApp ({{ reponses_interview|length }})</summary>
+  {% if erreur_voix %}
+  <p class="message-erreur">{{ erreur_voix }}</p>
+  {% endif %}
   {% if reponses_interview %}
+  <div class="carte-voix-client">
+    <p class="question-reponse-interview">Sa voix (utilisée pour tous les textes rédigés pour ce client)</p>
+    {% if client.profil_voix %}
+    <p class="texte-voix-client">{{ client.profil_voix }}</p>
+    {% else %}
+    <p class="texte-discret">Portrait pas encore établi : il sera fait au prochain vocal, ou tout de suite avec le bouton ci-dessous. En attendant, les derniers vocaux sont déjà fournis tels quels à l'IA.</p>
+    {% endif %}
+    <form method="post" action="/clients/{{ client.id }}/voix/regenerer">
+      <button type="submit" class="bouton-secondaire">{{ "Recalculer" if client.profil_voix else "Établir" }} le portrait de sa voix</button>
+    </form>
+  </div>
   <div class="liste-reponses-interview">
     {% for reponse in reponses_interview %}
     <div class="carte-reponse-interview">
@@ -302,7 +316,7 @@
     </div>
     {% endfor %}
   </div>
-  <p class="texte-discret">Ces réponses servent à enrichir les nouvelles questions envoyées par WhatsApp (pour ne pas reposer les mêmes sujets).</p>
+  <p class="texte-discret">Ces réponses servent à enrichir les nouvelles questions envoyées par WhatsApp (pour ne pas reposer les mêmes sujets) et à rédiger tous les textes dans la façon de parler du client.</p>
   {% else %}
   <p class="texte-vide">Aucune réponse reçue par WhatsApp pour l'instant.</p>
   {% endif %}
