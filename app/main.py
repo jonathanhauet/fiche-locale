@@ -1084,6 +1084,8 @@ def _publications_multi_reseaux(
             "image_url": post.image_url,
             "date": post.date_prevue or post.cree_le.date(),
             "heure": post.heure_prevue or "",
+            "id": post.id,
+            "a_venir": post.statut == "A_PUBLIER",
             "statut_brut": post.statut,
             "statut_libelle": STATUTS_POST_GOOGLE_RESUME[post.statut],
         })
@@ -1099,6 +1101,8 @@ def _publications_multi_reseaux(
                 "image_url": (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
                 "date": post.publier_le.date(),
                 "heure": post.publier_le.strftime("%H:%M"),
+                "id": post.id,
+                "a_venir": post.etat == "EN_ATTENTE",
                 "statut_brut": post.etat,
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
             })
@@ -1111,6 +1115,8 @@ def _publications_multi_reseaux(
                 "image_url": None,  # stockee en octets, pas d'URL directe (voir PostLinkedInProgramme)
                 "date": post.publier_le.date(),
                 "heure": post.publier_le.strftime("%H:%M"),
+                "id": post.id,
+                "a_venir": post.etat == "EN_ATTENTE",
                 "statut_brut": post.etat,
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
             })
@@ -6453,8 +6459,89 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     )
 
 
+def _retour_apres_annulation(retour: str, client_id: int) -> str:
+    """Depuis le resume de la fiche client (retour="client") on revient sur la fiche ; depuis le composeur, sur le composeur."""
+    return f"/clients/{client_id}" if retour == "client" else f"/publication-multi?client_id={client_id}"
+
+
+MODELES_POSTS_PROGRAMMES = {
+    "facebook": models.PostMetaProgramme,
+    "instagram": models.PostInstagramProgramme,
+    "linkedin": models.PostLinkedInProgramme,
+}
+NOMS_RESEAUX_PROGRAMMES = {"facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn"}
+
+
+def _post_programme_modifiable(db: Session, reseau: str, post_id: int):
+    """Renvoie (post, client) d'un post programme encore en attente, sinon (None, None)."""
+    modele = MODELES_POSTS_PROGRAMMES.get(reseau)
+    post = db.get(modele, post_id) if modele else None
+    if not post or post.etat != "EN_ATTENTE":
+        return None, None
+    if reseau == "linkedin":
+        client = db.query(models.Client).filter_by(compte_linkedin_id=post.compte_linkedin_id).first()
+    else:
+        client = db.get(models.Client, post.client_id)
+    return post, client
+
+
+def _reponse_modifier_post_programme(request: Request, reseau: str, post, client, erreur: str = None, code: int = 200):
+    images = meta_publish.urls_depuis_champ(getattr(post, "image_url", "")) if reseau != "linkedin" else []
+    return templates.TemplateResponse(
+        request, "publication_programmee_modifier.html",
+        {
+            "reseau": reseau, "nom_reseau": NOMS_RESEAUX_PROGRAMMES[reseau], "post": post, "client": client,
+            "date_iso": post.publier_le.strftime("%Y-%m-%d"), "heure": post.publier_le.strftime("%H:%M"),
+            "images": images, "a_une_image_linkedin": reseau == "linkedin" and bool(post.image_donnees),
+            "erreur": erreur,
+        },
+        status_code=code,
+    )
+
+
+@app.get("/publication-multi/{reseau}/{post_id}/modifier", response_class=HTMLResponse)
+def publication_multi_modifier_formulaire(reseau: str, post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post, client = _post_programme_modifiable(db, reseau, post_id)
+    if not post or not client:
+        return RedirectResponse("/publication-multi", status_code=303)
+    return _reponse_modifier_post_programme(request, reseau, post, client)
+
+
+@app.post("/publication-multi/{reseau}/{post_id}/modifier")
+async def publication_multi_modifier(reseau: str, post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Modifie le texte et la date/heure d'un post programme (pas ses images : il faut alors le supprimer et le reprogrammer)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    post, client = _post_programme_modifiable(db, reseau, post_id)
+    if not post or not client:
+        return RedirectResponse("/publication-multi", status_code=303)
+
+    formulaire = await request.form()
+    texte = (formulaire.get("texte") or "").strip()
+    if not texte:
+        return _reponse_modifier_post_programme(request, reseau, post, client, erreur="Le texte du post est obligatoire.", code=400)
+    try:
+        publier_le = datetime.strptime(
+            f"{(formulaire.get('publier_date') or '').strip()} {(formulaire.get('publier_heure') or '').strip() or '00:00'}",
+            "%Y-%m-%d %H:%M",
+        )
+    except ValueError:
+        return _reponse_modifier_post_programme(request, reseau, post, client, erreur="Date ou heure de publication invalide.", code=400)
+
+    post.texte = texte
+    post.publier_le = publier_le
+    db.commit()
+    return RedirectResponse(f"/clients/{client.id}", status_code=303)
+
+
 @app.post("/publication-multi/facebook/{post_id}/annuler")
-def publication_multi_annuler_facebook(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+def publication_multi_annuler_facebook(post_id: int, request: Request, retour: str = Form(""), db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -6464,13 +6551,13 @@ def publication_multi_annuler_facebook(post_id: int, request: Request, db: Sessi
         client_id = post.client_id
         db.delete(post)
         db.commit()
-        return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
+        return RedirectResponse(_retour_apres_annulation(retour, client_id), status_code=303)
 
     return RedirectResponse("/publication-multi", status_code=303)
 
 
 @app.post("/publication-multi/instagram/{post_id}/annuler")
-def publication_multi_annuler_instagram(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+def publication_multi_annuler_instagram(post_id: int, request: Request, retour: str = Form(""), db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -6480,13 +6567,13 @@ def publication_multi_annuler_instagram(post_id: int, request: Request, db: Sess
         client_id = post.client_id
         db.delete(post)
         db.commit()
-        return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
+        return RedirectResponse(_retour_apres_annulation(retour, client_id), status_code=303)
 
     return RedirectResponse("/publication-multi", status_code=303)
 
 
 @app.post("/publication-multi/linkedin/{post_id}/annuler")
-def publication_multi_annuler_linkedin(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+def publication_multi_annuler_linkedin(post_id: int, request: Request, retour: str = Form(""), db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -6497,7 +6584,7 @@ def publication_multi_annuler_linkedin(post_id: int, request: Request, db: Sessi
         db.delete(post)
         db.commit()
         if client:
-            return RedirectResponse(f"/publication-multi?client_id={client.id}", status_code=303)
+            return RedirectResponse(_retour_apres_annulation(retour, client.id), status_code=303)
 
     return RedirectResponse("/publication-multi", status_code=303)
 

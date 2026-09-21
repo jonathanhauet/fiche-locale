@@ -1796,6 +1796,11 @@ button:active { transform: translateY(1px); }
    d'elargir le tableau ; date/heure et statut restent sur une ligne. */
 .tableau-resume td:nth-child(2) { white-space: normal; min-width: 12rem; }
 
+/* Actions d'une publication a venir (Modifier / Supprimer) : compactes, cote a cote */
+.actions-resume { display: flex; align-items: center; gap: 0.4rem; }
+.actions-resume form { margin: 0; }
+.bouton-mini { width: auto; padding: 0.25rem 0.6rem; font-size: 0.78rem; white-space: nowrap; }
+
 .tableau-resume .apercu-texte a { color: inherit; text-decoration: none; }
 .tableau-resume .apercu-texte a:hover { text-decoration: underline; }
 

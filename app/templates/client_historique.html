@@ -16,6 +16,7 @@
         <th>Publication</th>
         <th>Date</th>
         <th>Statut</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -34,6 +35,18 @@
         </td>
         <td>{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
         <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
+        <td>
+          {% if ligne.a_venir %}
+          <div class="actions-resume">
+            <a class="bouton-secondaire bouton-mini" href="{{ '/posts/' ~ ligne.id if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/modifier' }}">Modifier</a>
+            <form method="post" action="{{ '/posts/' ~ ligne.id ~ '/statut_rapide' if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/annuler' }}"
+                  onsubmit="return confirm('Supprimer ce post programmé ? Il ne sera pas publié.');">
+              {% if ligne.reseau == 'google' %}<input type="hidden" name="statut" value="SUPPRIME">{% else %}<input type="hidden" name="retour" value="client">{% endif %}
+              <button type="submit" class="bouton-danger bouton-mini">Supprimer</button>
+            </form>
+          </div>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

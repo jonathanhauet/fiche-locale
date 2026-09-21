@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Modifier un post programmé — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+
+<div class="barre-titre">
+  <h1>Modifier le post {{ nom_reseau }} programmé</h1>
+</div>
+
+{% if erreur %}
+<p class="message-erreur">{{ erreur }}</p>
+{% endif %}
+
+<form class="formulaire" method="post" action="/publication-multi/{{ reseau }}/{{ post.id }}/modifier">
+  <label>
+    Texte du post
+    <textarea name="texte" rows="10" required>{{ post.texte }}</textarea>
+  </label>
+
+  <div class="ligne-champs">
+    <label>
+      Date de publication
+      <input type="date" name="publier_date" value="{{ date_iso }}" required>
+    </label>
+    <label>
+      Heure
+      <input type="time" name="publier_heure" value="{{ heure }}" required>
+    </label>
+  </div>
+
+  {% if images %}
+  <div class="grille-photos-reference">
+    {% for url in images %}
+    <div class="carte-photo-reference"><img src="{{ url }}" alt="Image du post"></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if images or a_une_image_linkedin %}
+  <p class="texte-discret">
+    Les images ne se modifient pas ici. Pour en changer, supprimez ce post et reprogrammez-le depuis la
+    publication multi-réseaux.
+  </p>
+  {% endif %}
+
+  <div class="actions-avis">
+    <button type="submit">Enregistrer</button>
+    <a class="bouton-secondaire" href="/clients/{{ client.id }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}
