@@ -1046,6 +1046,21 @@ def _publications_externes(client: "models.Client", posts_google_en_ligne: list,
     return lignes
 
 
+def _journaliser_publication_meta(db: Session, modele, client_id: int, texte: str, urls: list) -> None:
+    """
+    Trace d'une publication Facebook/Instagram faite immediatement via le
+    composeur (modele : PostMetaProgramme ou PostInstagramProgramme, etat
+    PUBLIE). Sans elle, seules les publications programmees etaient suivies :
+    une publication immediate n'apparaissait que via la lecture en direct du
+    reseau, donc etiquetee a tort "Hors plateforme" dans le resume.
+    """
+    db.add(modele(
+        client_id=client_id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls),
+        publier_le=_maintenant_paris(), etat="PUBLIE",
+    ))
+    db.commit()
+
+
 def _journaliser_publication_linkedin(db: Session, compte_linkedin_id: int, texte: str) -> None:
     """
     LinkedIn ne permet pas de relire les posts d'un profil : on garde donc une
@@ -6420,6 +6435,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     meta_publish.publier_post_page(
                         client.token_page_meta, client.page_id_meta, texte, urls_par_reseau.get("facebook"),
                     )
+                    _journaliser_publication_meta(db, models.PostMetaProgramme, client.id, texte, urls_par_reseau.get("facebook"))
 
             elif reseau == "instagram":
                 if publier_le:
@@ -6432,6 +6448,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     instagram_publish.publier_medias(
                         client.token_instagram, client.instagram_id_meta, urls_par_reseau["instagram"], texte,
                     )
+                    _journaliser_publication_meta(db, models.PostInstagramProgramme, client.id, texte, urls_par_reseau["instagram"])
 
             elif reseau == "linkedin":
                 compte_linkedin = db.get(models.CompteLinkedIn, client.compte_linkedin_id)
