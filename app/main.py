@@ -906,6 +906,11 @@ STATUTS_POST_GOOGLE_RESUME = {
 LIBELLES_ETAT_RESEAU_RESUME = {"PUBLIE": "Publié", "EN_ATTENTE": "Programmé", "ECHEC": "Échec"}
 
 
+def _extrait_court(texte: str, longueur: int = 60) -> str:
+    texte = (texte or "").strip()
+    return texte[:longueur] + ("…" if len(texte) > longueur else "")
+
+
 def _publications_multi_reseaux(db: Session, client: "models.Client", limite: int = 30) -> list:
     """
     Vue unifiee, tous reseaux confondus, des publications suivies par la
@@ -924,7 +929,7 @@ def _publications_multi_reseaux(db: Session, client: "models.Client", limite: in
     ):
         lignes.append({
             "reseau": "google",
-            "titre": post.titre or (post.texte[:60] + "…" if len(post.texte) > 60 else post.texte),
+            "titre": _extrait_court(post.titre or post.texte),
             "image_url": post.image_url,
             "date": post.date_prevue or post.cree_le.date(),
             "heure": post.heure_prevue or "",

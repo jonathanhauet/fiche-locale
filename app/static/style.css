@@ -1777,6 +1777,10 @@ button:active { transform: translateY(1px); }
 .etiquette-publie_rejected, .etiquette-rejected, .etiquette-echec_publication, .etiquette-echec { background: var(--danger-clair); color: var(--danger); border-color: transparent; }
 .etiquette-brouillon, .etiquette-ignore, .etiquette-supprime { opacity: 0.75; }
 
+/* Resume multi-reseaux : le titre (2e colonne) passe a la ligne au lieu
+   d'elargir le tableau ; date/heure et statut restent sur une ligne. */
+.tableau-resume td:nth-child(2) { white-space: normal; min-width: 12rem; }
+
 .ligne-publication-resume {
   display: flex;
   align-items: center;
