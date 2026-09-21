@@ -64,7 +64,7 @@
   </div>
 
   <label for="texte-base">Texte de base</label>
-  <textarea id="texte-base" name="texte_base" rows="4" required>{{ texte_base }}</textarea>
+  <textarea id="texte-base" name="texte_base" rows="4">{{ texte_base }}</textarea>
   <div class="ligne-champs">
     <button type="button" id="bouton-micro-texte" class="bouton-micro" title="Dicter à la voix" hidden>🎤</button>
     <span class="texte-discret">Dicter à la voix</span>
@@ -276,6 +276,25 @@
     }
     casesReseaux.forEach((c) => c.addEventListener("change", actualiserVisibilite));
     actualiserVisibilite();
+
+    // Le texte de base ne sert que de repli : il n'est obligatoire que si un
+    // reseau coche n'a pas son propre texte (le serveur prend deja le texte du
+    // reseau en priorite). Recalcule juste avant la validation du formulaire :
+    // le texte d'un reseau peut etre rempli par du code (adaptation IA), sans
+    // evenement de saisie.
+    const champTexteBase = document.getElementById("texte-base");
+    function actualiserExigenceTexteBase() {
+      const coches = casesReseaux.filter((c) => c.checked);
+      const reseauSansTexte = coches.some((c) => {
+        const champ = document.getElementById(`texte-${c.dataset.reseau}`);
+        return !(champ && champ.value.trim());
+      });
+      champTexteBase.required = reseauSansTexte || coches.length === 0;
+    }
+    actualiserExigenceTexteBase();
+    casesReseaux.forEach((c) => c.addEventListener("change", actualiserExigenceTexteBase));
+    document.querySelectorAll(".champ-texte-reseau").forEach((c) => c.addEventListener("input", actualiserExigenceTexteBase));
+    document.querySelector('button.bouton[type="submit"]').addEventListener("click", actualiserExigenceTexteBase);
 
     document.querySelectorAll(".case-activer-image-dediee").forEach((caseDediee) => {
       caseDediee.addEventListener("change", () => {
