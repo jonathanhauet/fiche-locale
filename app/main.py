@@ -6243,8 +6243,18 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     donnees = await request.json()
     prompt_image = (donnees.get("prompt_image") or "").strip()
     inclure_reference = bool(donnees.get("inclure_reference"))
+    texte_post = (donnees.get("texte_post") or "").strip()
+
+    # Texte saisi a la main : pas de prompt d'image fourni par un generateur,
+    # on le deduit du texte (et le navigateur l'affiche pour qu'on puisse l'ajuster).
+    prompt_genere = ""
     if not prompt_image:
-        return JSONResponse({"erreur": "Aucun prompt image fourni."}, status_code=400)
+        if not texte_post:
+            return JSONResponse({"erreur": "Ecrivez le texte de base ou decrivez l'image souhaitee."}, status_code=400)
+        try:
+            prompt_image = prompt_genere = claude_generation.prompt_image_depuis_texte(texte_post)
+        except Exception as e:
+            return JSONResponse({"erreur": f"Impossible de deduire la description de l'image du texte : {e}"}, status_code=500)
 
     images_reference = None
     if inclure_reference and client.photos_reference:
@@ -6262,7 +6272,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
         # Les prompts de post decrivent des scenes sans personne : on les reecrit
         # pour que l'auteur soit le sujet (sinon Gemini ignore les photos).
         try:
-            prompt_image = claude_generation.prompt_image_avec_auteur(prompt_image, (donnees.get("texte_post") or "").strip())
+            prompt_image = claude_generation.prompt_image_avec_auteur(prompt_image, texte_post)
         except Exception:
             pass  # repli : prompt d'origine, complete par la consigne de gemini_images
 
@@ -6276,7 +6286,9 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation de l'image : {e}"}, status_code=500)
 
-    return JSONResponse({"url": url_image, "prompt_utilise": prompt_image if images_reference else ""})
+    return JSONResponse({
+        "url": url_image, "prompt_utilise": prompt_image if images_reference else "", "prompt_genere": prompt_genere,
+    })
 
 
 @app.post("/publication-multi/{client_id}/publier", response_class=HTMLResponse)

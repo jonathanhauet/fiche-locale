@@ -88,7 +88,7 @@
   <input type="file" id="image-partagee" name="image" accept="image/*" multiple>
   <p class="texte-discret">Jusqu'à 10 images : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique.</p>
   <div class="ligne-champs">
-    <input type="text" id="prompt-image-ia" value="{{ prompt_image_initial }}" placeholder="Description de l'image à générer (remplie automatiquement après « Générer le texte »)" style="flex:1;">
+    <input type="text" id="prompt-image-ia" value="{{ prompt_image_initial }}" placeholder="Description de l'image (laissez vide : l'IA la déduit de votre texte de base)" style="flex:1;">
     <button type="button" id="bouton-generer-image" class="bouton-secondaire">
       <span class="spinner" id="spinner-generer-image" hidden></span>
       🎨 Générer une image (IA)
@@ -639,11 +639,16 @@
       const promptImage = document.getElementById("prompt-image-ia").value.trim();
 
       texteStatutImageIA.hidden = false;
-      if (!promptImage) { texteStatutImageIA.textContent = "Décrivez d'abord l'image souhaitée (ou générez le texte, qui la propose automatiquement)."; return; }
+      if (!promptImage && !document.getElementById("texte-base").value.trim()) {
+        texteStatutImageIA.textContent = "Écrivez d'abord le texte de base, ou décrivez l'image souhaitée.";
+        return;
+      }
 
       boutonGenererImage.disabled = true;
       spinnerGenererImage.hidden = false;
-      texteStatutImageIA.textContent = "Génération de l'image en cours (peut prendre quelques secondes)...";
+      texteStatutImageIA.textContent = promptImage
+        ? "Génération de l'image en cours (peut prendre quelques secondes)..."
+        : "Description déduite de votre texte, puis génération de l'image (peut prendre quelques secondes)...";
 
       try {
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_image", {
@@ -660,6 +665,7 @@
           texteStatutImageIA.textContent = donnees.erreur || "Échec de la génération de l'image.";
           return;
         }
+        if (donnees.prompt_genere) document.getElementById("prompt-image-ia").value = donnees.prompt_genere;
         champImagePartagee.value = "";
         champImageUrlIA.value = donnees.url;
         actualiserToutesLesApercusImage();

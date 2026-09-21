@@ -1111,6 +1111,41 @@ TONS_RESEAUX = {
 NOMS_RESEAUX = {"google": "Google Business Profile", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn"}
 
 
+def prompt_image_depuis_texte(texte_post: str) -> str:
+    """
+    Prompt d'image (en anglais) deduit du texte d'un post ecrit a la main :
+    les generateurs de post fournissent eux-memes un prompt_image, mais un
+    texte saisi ou colle directement dans le composeur n'en a pas.
+    Memes consignes de fond que ces generateurs (scene concrete et
+    specifique, pas de cliches d'illustration IA, ni texte ni logo).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not texte_post.strip():
+        raise RuntimeError("Aucun texte de post fourni.")
+
+    prompt = (
+        "Voici le texte d'un post pour les reseaux sociaux :\n\n"
+        f"{texte_post.strip()[:2500]}\n\n"
+        "Ecris un prompt, en anglais, pour un generateur d'images qui illustre ce post. "
+        "Vise une scene concrete et specifique, directement liee a son sujet precis (un lieu, un objet ou une "
+        "situation reconnaissable, pas une metaphore abstraite), rendue comme une photographie realiste avec une "
+        "lumiere naturelle. Evite les cliches d'illustration IA generique (cadenas/bouclier de securite, tableau de "
+        "bord abstrait, ampoule, poignee de main, reseau de points/globe connecte, engrenages) sauf si le sujet "
+        "les impose vraiment. Sans texte incruste, sans logo, sans reference geographique.\n"
+        "Reponds uniquement par le prompt, en 2 a 3 phrases, sans introduction ni guillemets."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=400, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), "").strip().strip('"')
+    if not texte:
+        raise RuntimeError("L'IA n'a renvoye aucun prompt exploitable.")
+    return _nettoyer_texte_genere(texte)
+
+
 def prompt_image_avec_auteur(prompt_image: str, texte_post: str = "") -> str:
     """
     Reecrit un prompt d'image pour que l'AUTEUR du post (la personne des
