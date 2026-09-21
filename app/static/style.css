@@ -1584,6 +1584,51 @@ button:active { transform: translateY(1px); }
   object-fit: cover;
   border-radius: var(--rayon-petit);
   border: 1px solid var(--carte-bordure);
+  display: block;
+  transition: opacity 0.15s, filter 0.15s;
+}
+
+.vignette-image-edition {
+  position: relative;
+  width: 110px;
+  height: 110px;
+}
+
+.voile-image-retiree {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.3rem;
+  border-radius: var(--rayon-petit);
+  background: rgba(200, 30, 30, 0.55);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.carte-image-edition.retiree img {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.carte-image-edition.retiree .voile-image-retiree {
+  display: flex;
+}
+
+.message-info-modif {
+  margin: 0 0 0.8rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--rayon-petit);
+  border: 1px solid #e0a800;
+  background: rgba(224, 168, 0, 0.14);
+  font-size: 0.9rem;
+}
+
+.message-info-modif[hidden] {
+  display: none;
 }
 
 .liste-reponses-interview {

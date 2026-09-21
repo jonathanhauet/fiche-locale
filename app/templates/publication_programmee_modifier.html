@@ -35,9 +35,12 @@
   <span class="choix-image-titre">Image</span>
   {% if image_linkedin_uri %}
   <div class="grille-images-edition">
-    <div class="carte-image-edition">
-      <img src="{{ image_linkedin_uri }}" alt="Image du post">
-      <label class="filtre-case"><input type="checkbox" name="supprimer_image" value="1"> Supprimer</label>
+    <div class="carte-image-edition" data-retiree-si="coche">
+      <div class="vignette-image-edition">
+        <img src="{{ image_linkedin_uri }}" alt="Image du post">
+        <span class="voile-image-retiree">Sera supprimée</span>
+      </div>
+      <label class="filtre-case"><input type="checkbox" name="supprimer_image" value="1"> Supprimer l'image</label>
     </div>
   </div>
   {% else %}
@@ -52,8 +55,11 @@
   {% if images %}
   <div class="grille-images-edition">
     {% for url in images %}
-    <div class="carte-image-edition">
-      <img src="{{ url }}" alt="Image {{ loop.index }} du post">
+    <div class="carte-image-edition" data-retiree-si="decoche">
+      <div class="vignette-image-edition">
+        <img src="{{ url }}" alt="Image {{ loop.index }} du post">
+        <span class="voile-image-retiree">Sera retirée</span>
+      </div>
       <label class="filtre-case"><input type="checkbox" name="garder_image" value="{{ url }}" checked> Garder</label>
     </div>
     {% endfor %}
@@ -72,9 +78,32 @@
   </p>
   {% endif %}
 
+  <p class="message-info-modif" id="note-modifs-images" hidden>Les images marquées "Sera retirée" ou "Sera supprimée" ne disparaissent qu'au clic sur Enregistrer.</p>
+
   <div class="actions-avis">
     <button type="submit">Enregistrer</button>
     <a class="bouton-secondaire" href="/clients/{{ client.id }}">Annuler</a>
   </div>
 </form>
+
+<script>
+(function () {
+  var cartes = document.querySelectorAll(".carte-image-edition");
+  var note = document.getElementById("note-modifs-images");
+  function actualiser() {
+    var nb = 0;
+    cartes.forEach(function (carte) {
+      var caseAcocher = carte.querySelector("input[type=checkbox]");
+      var retiree = carte.dataset.retireeSi === "coche" ? caseAcocher.checked : !caseAcocher.checked;
+      carte.classList.toggle("retiree", retiree);
+      if (retiree) nb += 1;
+    });
+    if (note) note.hidden = nb === 0;
+  }
+  cartes.forEach(function (carte) {
+    carte.querySelector("input[type=checkbox]").addEventListener("change", actualiser);
+  });
+  actualiser();
+})();
+</script>
 {% endblock %}
