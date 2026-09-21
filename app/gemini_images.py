@@ -19,7 +19,8 @@ INSTRUCTION_PERSONNE = (
     "The attached photos show one real person (the author) from several angles. Create a photorealistic "
     "image in which THIS SAME PERSON is clearly the main subject, with a recognizable face that stays "
     "faithful to the reference photos (facial features, hair, skin tone, age, build). The face must be "
-    "clearly visible: not turned away, not tiny, not hidden. Scene to depict: "
+    "clearly visible: not turned away, not tiny, not hidden. It must look like a candid smartphone snapshot, "
+    "not a studio or stock photo, with no legible text anywhere. Scene to depict: "
 )
 
 # Les prompts de post demandent souvent "no recognizable faces" / "no people" : contradictoire
