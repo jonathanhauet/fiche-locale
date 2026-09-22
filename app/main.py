@@ -472,12 +472,13 @@ planificateur.add_job(
     id="verification_protection_fiches",
 )
 # Changement de statut de validation Google (voir
-# planificateur.verifier_statut_validation_fiches) : meme creneau matinal.
+# planificateur.verifier_statut_validation_fiches) : deux fois par jour (3h
+# et 15h) plutot qu'une seule, pour reduire le delai avant detection d'un
+# changement sans pour autant appeler l'API a chaque heure.
 planificateur.add_job(
     verifier_statut_validation_fiches,
     "cron",
-    hour=6,
-    minute=30,
+    hour="3,15",
     timezone="Europe/Brussels",
     id="verification_statut_validation_fiches",
 )
