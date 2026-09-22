@@ -35,6 +35,20 @@
     <input type="text" name="texte" placeholder="Ex : meilleur serrurier à Ath" required>
     <button type="submit" class="bouton-secondaire">Ajouter</button>
   </form>
+
+  <div class="actions-avis">
+    <button type="button" id="bouton-suggerer-questions-ia" class="bouton-secondaire">
+      <span class="spinner" id="spinner-suggerer-questions" hidden></span>
+      💡 Suggérer des questions (IA)
+    </button>
+  </div>
+  <p id="texte-statut-suggestions-ia" class="texte-vide" hidden></p>
+  <form method="post" action="/clients/{{ client.id }}/visibilite-ia/requetes/ajouter_plusieurs" id="formulaire-suggestions-ia" hidden>
+    <div class="liste-etiquettes" id="liste-suggestions-ia"></div>
+    <div class="actions-avis">
+      <button type="submit" class="bouton-secondaire">Ajouter la sélection</button>
+    </div>
+  </form>
 </div>
 
 {% if requetes %}
@@ -163,6 +177,45 @@
   }
 
   afficherResultats();
+
+  const boutonSuggerer = document.getElementById("bouton-suggerer-questions-ia");
+  const spinnerSuggerer = document.getElementById("spinner-suggerer-questions");
+  const texteStatutSuggestions = document.getElementById("texte-statut-suggestions-ia");
+  const formulaireSuggestions = document.getElementById("formulaire-suggestions-ia");
+  const listeSuggestions = document.getElementById("liste-suggestions-ia");
+
+  if (boutonSuggerer) {
+    boutonSuggerer.addEventListener("click", async () => {
+      boutonSuggerer.disabled = true;
+      spinnerSuggerer.hidden = false;
+      texteStatutSuggestions.hidden = true;
+      formulaireSuggestions.hidden = true;
+      try {
+        const reponseHttp = await fetch("/clients/{{ client.id }}/visibilite-ia/suggerer_questions", { method: "POST" });
+        const donnees = await reponseHttp.json();
+        if (donnees.erreur) {
+          texteStatutSuggestions.textContent = donnees.erreur;
+          texteStatutSuggestions.hidden = false;
+        } else if (!donnees.suggestions || !donnees.suggestions.length) {
+          texteStatutSuggestions.textContent = "Aucune suggestion pour le moment.";
+          texteStatutSuggestions.hidden = false;
+        } else {
+          listeSuggestions.innerHTML = donnees.suggestions.map((s) => `
+            <label class="etiquette-chip-case">
+              <input type="checkbox" name="textes" value="${echapper(s)}" checked> ${echapper(s)}
+            </label>
+          `).join("");
+          formulaireSuggestions.hidden = false;
+        }
+      } catch (erreur) {
+        texteStatutSuggestions.textContent = "Erreur réseau lors de la génération.";
+        texteStatutSuggestions.hidden = false;
+      } finally {
+        boutonSuggerer.disabled = false;
+        spinnerSuggerer.hidden = true;
+      }
+    });
+  }
 })();
 </script>
 {% endblock %}

@@ -4351,6 +4351,54 @@ def ajouter_requete_visibilite_ia(
     return RedirectResponse(f"/clients/{client_id}/visibilite-ia", status_code=303)
 
 
+@app.post("/clients/{client_id}/visibilite-ia/requetes/ajouter_plusieurs")
+def ajouter_plusieurs_requetes_visibilite_ia(
+    client_id: int, request: Request, textes: list[str] = Form(default=[]), db: Session = Depends(obtenir_session)
+):
+    """Ajoute d'un coup plusieurs questions suivies (voir bouton "Suggérer des questions" sur la fiche visibilité IA)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    for texte in textes:
+        if texte.strip():
+            db.add(models.RequeteVisibiliteIA(client_id=client_id, texte=texte.strip()))
+    db.commit()
+
+    return RedirectResponse(f"/clients/{client_id}/visibilite-ia", status_code=303)
+
+
+@app.post("/clients/{client_id}/visibilite-ia/suggerer_questions")
+def suggerer_questions_visibilite_ia_route(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Propose des questions locales plausibles a suivre (voir claude_generation.suggerer_questions_visibilite_ia), a partir de la categorie/ville/site du client."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    categorie, ville = "", client.localisation_ville or ""
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.compte_google_id else None
+    if identifiants and client.location_id:
+        try:
+            infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+            categorie = google_location.valeurs_protegees(infos).get("categorie_nom", "")
+            if not ville:
+                ville = (infos.get("storefrontAddress") or {}).get("locality", "")
+        except Exception:
+            pass
+
+    deja_suivies = [r.texte for r in client.requetes_visibilite_ia]
+    try:
+        suggestions = claude_generation.suggerer_questions_visibilite_ia(client.contenu_site, categorie, ville, deja_suivies)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la génération : {e}"}, status_code=500)
+
+    return JSONResponse({"suggestions": suggestions})
+
+
 @app.post("/clients/{client_id}/visibilite-ia/requetes/{requete_id}/supprimer")
 def supprimer_requete_visibilite_ia(
     client_id: int, requete_id: int, request: Request, db: Session = Depends(obtenir_session)

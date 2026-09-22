@@ -1031,6 +1031,68 @@ def suggerer_semences_mots_cles(contenu_site: str, categorie: str, ville: str, l
     return [s.strip() for s in semences if s.strip()][:limite]
 
 
+SCHEMA_QUESTIONS_VISIBILITE_IA = {
+    "type": "object",
+    "properties": {
+        "questions": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["questions"],
+    "additionalProperties": False,
+}
+
+
+def suggerer_questions_visibilite_ia(
+    contenu_site: str, categorie: str, ville: str, questions_deja_suivies: list[str] = None, nombre: int = 5,
+) -> list[str]:
+    """
+    Propose des questions plausibles qu'un internaute poserait a ChatGPT ou
+    Gemini pour trouver ce type d'entreprise localement (voir ia_visibilite.py,
+    RequeteVisibiliteIA) - contrairement a suggerer_semences_mots_cles (mots-cles
+    courts pour Google Ads), ce sont de vraies questions conversationnelles,
+    telles qu'on les taperait dans un assistant IA plutot que dans un moteur
+    de recherche.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    bloc_deja_suivies = ""
+    if questions_deja_suivies:
+        liste = "\n".join(f"- {q}" for q in questions_deja_suivies)
+        bloc_deja_suivies = (
+            f"\nQuestions deja suivies pour ce client (ne propose ni doublon ni variante trop proche) :\n{liste}\n"
+        )
+
+    prompt = (
+        f"Voici les informations d'une entreprise geree en SEO local :\n\n"
+        f"Categorie Google : {categorie or 'non renseignee'}\n"
+        f"Ville : {ville or 'non renseignee'}\n\n"
+        f"Contenu de son site web :\n{(contenu_site or '(aucun contenu de site fourni)').strip()[:6000]}\n"
+        f"{bloc_deja_suivies}\n"
+        f"Propose {nombre} questions plausibles qu'une personne poserait a ChatGPT ou Gemini pour trouver ce "
+        "type d'entreprise localement - de vraies questions conversationnelles telles qu'on les taperait dans "
+        "un assistant IA (ex. « Quel est le meilleur serrurier a Ath ? », « Je cherche un plombier fiable pres "
+        "de chez moi a Ath, qui recommandez-vous ? »), jamais des mots-cles Google courts. Varie les "
+        "formulations (question directe, demande de recommandation, urgence...) et les angles (service "
+        "precis, avis, disponibilite...) plutot que plusieurs variantes de la meme idee. Reponds uniquement "
+        "avec la liste demandee."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=1024,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_QUESTIONS_VISIBILITE_IA}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    return [q.strip() for q in json.loads(bloc_texte)["questions"] if q.strip()][:nombre]
+
+
 SCHEMA_PLAN_ACTION = {
     "type": "object",
     "properties": {
