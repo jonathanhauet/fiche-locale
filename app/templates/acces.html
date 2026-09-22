@@ -23,7 +23,7 @@
 {% endif %}
 
 <details class="bloc-repliable" open>
-  <summary>1. Inviter des administrateurs en masse</summary>
+  <summary>1. Inviter ou remplacer des administrateurs en masse</summary>
   <div class="formulaire">
     {% if not etiquettes %}
     <div class="bandeau-avertissement">
@@ -33,12 +33,14 @@
     {% endif %}
 
     <p class="texte-discret">
-      Ajoute un ou plusieurs emails comme administrateurs sur toutes les fiches cochées, sans rien retirer.
-      Pour remplacer un accès existant, utilise plutôt l'import Excel ci-dessous.
+      Ajoute et/ou retire des emails administrateurs sur toutes les fiches cochées. Laisse "Emails à retirer" vide
+      pour une simple invitation ; renseigne les deux pour un remplacement (ex. deux anciens contacts remplacés
+      par une seule adresse partagée). Pour un remplacement ligne par ligne différent selon la fiche, utilise
+      plutôt l'import Excel ci-dessous.
     </p>
 
     <form method="post" action="/acces/inviter-masse"
-          onsubmit="return confirm('Envoyer ces invitations ?');">
+          onsubmit="return confirm('Exécuter ces changements d\'accès ?');">
       {% if etiquettes %}
       <div class="filtre-entreprises">
         <span class="filtre-titre">Étiquettes :</span>
@@ -55,8 +57,12 @@
       <p id="texte-compte-clients-invitation" class="texte-discret" hidden></p>
 
       <label>
+        Emails à retirer (optionnel — un par ligne, ou séparés par une virgule)
+        <textarea name="emails_a_retirer" rows="2" placeholder="laurent@cullinaninvest.com&#10;l.clementine@cullinaninvest.com"></textarea>
+      </label>
+      <label>
         Emails à inviter (un par ligne, ou séparés par une virgule)
-        <textarea name="emails" rows="3" placeholder="laurent@cullinaninvest.com&#10;l.clementine@cullinaninvest.com"></textarea>
+        <textarea name="emails" rows="2" placeholder="acces@cullinaninvest.com"></textarea>
       </label>
 
       <div class="actions-avis">
@@ -64,7 +70,7 @@
           <option value="MANAGER" selected>Gestionnaire (MANAGER)</option>
           <option value="OWNER">Propriétaire (OWNER)</option>
         </select>
-        <button type="submit" id="bouton-inviter-masse" disabled>Envoyer les invitations</button>
+        <button type="submit" id="bouton-inviter-masse" disabled>Exécuter</button>
       </div>
     </form>
   </div>

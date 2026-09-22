@@ -62,12 +62,17 @@ def parser_emails(texte: str) -> list[str]:
     return emails
 
 
-def executer_invitations_masse(db, client_ids: list[int], emails: list[str], role: str) -> list[dict]:
+def executer_remplacement_masse(
+    db, client_ids: list[int], emails_a_retirer: list[str], emails_a_inviter: list[str], role: str,
+) -> list[dict]:
     """
-    Invite chaque email de la liste comme administrateur sur chaque fiche
-    selectionnee (produit le meme cartouche de resultat que
-    executer_remplacements, pour reutiliser le meme tableau d'affichage) -
-    ne retire jamais d'acces existant, contrairement a /acces/remplacer.
+    Retire les emails de emails_a_retirer (s'ils sont trouves - meme logique
+    de correspondance que executer_remplacements) puis invite ceux de
+    emails_a_inviter, sur chaque fiche selectionnee. Generalisation de
+    l'invitation en masse pour couvrir aussi le remplacement en masse (ex.
+    deux anciens contacts remplaces par une seule adresse partagee), sans
+    devoir preparer un fichier Excel ligne par ligne. Chaque liste peut etre
+    vide (retrait seul, ou invitation seule).
     """
     role = (role or "MANAGER").strip().upper() or "MANAGER"
     resultats = []
@@ -75,33 +80,69 @@ def executer_invitations_masse(db, client_ids: list[int], emails: list[str], rol
 
     clients = db.query(models.Client).filter(models.Client.id.in_(client_ids)).all()
     for client in clients:
-        for email in emails:
-            resultat = {
-                "client_id": client.id, "client_nom": client.nom, "ancien_email": "", "statut_retrait": "",
-                "nouvel_email": email,
-            }
+        if not client.location_id:
+            for email in emails_a_retirer:
+                resultats.append({
+                    "client_id": client.id, "client_nom": client.nom, "ancien_email": email,
+                    "statut_retrait": "Fiche Google non associée", "nouvel_email": "", "statut_invitation": "",
+                })
+            for email in emails_a_inviter:
+                resultats.append({
+                    "client_id": client.id, "client_nom": client.nom, "ancien_email": "", "statut_retrait": "",
+                    "nouvel_email": email, "statut_invitation": "Fiche Google non associée",
+                })
+            continue
 
-            if not client.location_id:
-                resultat["statut_invitation"] = "Fiche Google non associée"
-                resultats.append(resultat)
-                continue
+        if client.compte_google_id not in identifiants_par_compte:
+            identifiants_par_compte[client.compte_google_id] = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+        identifiants = identifiants_par_compte[client.compte_google_id]
 
-            if client.compte_google_id not in identifiants_par_compte:
-                identifiants_par_compte[client.compte_google_id] = google_oauth.obtenir_identifiants(db, client.compte_google_id)
-            identifiants = identifiants_par_compte[client.compte_google_id]
+        if not identifiants:
+            for email in emails_a_retirer:
+                resultats.append({
+                    "client_id": client.id, "client_nom": client.nom, "ancien_email": email,
+                    "statut_retrait": "Compte Google non valide pour ce client", "nouvel_email": "", "statut_invitation": "",
+                })
+            for email in emails_a_inviter:
+                resultats.append({
+                    "client_id": client.id, "client_nom": client.nom, "ancien_email": "", "statut_retrait": "",
+                    "nouvel_email": email, "statut_invitation": "Compte Google non valide pour ce client",
+                })
+            continue
 
-            if not identifiants:
-                resultat["statut_invitation"] = "Compte Google non valide pour ce client"
-                resultats.append(resultat)
-                continue
+        admins_actuels = None
+        for email in emails_a_retirer:
+            try:
+                if admins_actuels is None:
+                    admins_actuels = google_admins.lister_administrateurs(identifiants, client.location_id)
+                # Meme limite que executer_remplacements : ne correspond que si
+                # c'est encore une invitation en attente (email tel quel) ou si
+                # l'invitation a ete acceptee sous ce meme email affiche.
+                cible = next(
+                    (a for a in admins_actuels if a["identifiant"].strip().lower() == email.strip().lower()), None,
+                )
+                if cible:
+                    google_admins.retirer_administrateur(identifiants, cible["nom_ressource"])
+                    statut_retrait = "Retiré"
+                else:
+                    statut_retrait = "Introuvable sur cette fiche (déjà retiré ?)"
+            except Exception as erreur:
+                statut_retrait = f"Erreur : {erreur}"
+            resultats.append({
+                "client_id": client.id, "client_nom": client.nom, "ancien_email": email,
+                "statut_retrait": statut_retrait, "nouvel_email": "", "statut_invitation": "",
+            })
 
+        for email in emails_a_inviter:
             try:
                 google_admins.inviter_administrateur(identifiants, client.location_id, email, role)
-                resultat["statut_invitation"] = "Invitation envoyée (en attente d'acceptation par cette adresse)"
+                statut_invitation = "Invitation envoyée (en attente d'acceptation par cette adresse)"
             except Exception as erreur:
-                resultat["statut_invitation"] = f"Erreur : {erreur}"
-
-            resultats.append(resultat)
+                statut_invitation = f"Erreur : {erreur}"
+            resultats.append({
+                "client_id": client.id, "client_nom": client.nom, "ancien_email": "", "statut_retrait": "",
+                "nouvel_email": email, "statut_invitation": statut_invitation,
+            })
 
     return resultats
 

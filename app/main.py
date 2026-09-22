@@ -4938,9 +4938,15 @@ def telecharger_acces_excel(request: Request, db: Session = Depends(obtenir_sess
 @app.post("/acces/inviter-masse", response_class=HTMLResponse)
 def inviter_acces_masse(
     request: Request, client_ids: list[int] = Form(default=[]), emails: str = Form(""),
-    role: str = Form("MANAGER"), db: Session = Depends(obtenir_session),
+    emails_a_retirer: str = Form(""), role: str = Form("MANAGER"), db: Session = Depends(obtenir_session),
 ):
-    """Invite directement une liste d'emails comme administrateurs sur toutes les fiches cochees (voir acces_masse.executer_invitations_masse) - sans passer par l'export/import Excel."""
+    """
+    Invite (et, si renseigne, retire au prealable) une liste d'emails comme
+    administrateurs sur toutes les fiches cochees (voir
+    acces_masse.executer_remplacement_masse) - sans passer par l'export/import
+    Excel. emails_a_retirer permet un remplacement en masse (ex. deux anciens
+    contacts remplaces par une seule adresse partagee).
+    """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -4952,12 +4958,13 @@ def inviter_acces_masse(
     }
 
     emails_valides = acces_masse.parser_emails(emails)
+    emails_a_retirer_valides = acces_masse.parser_emails(emails_a_retirer)
     if not client_ids:
         return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": "Sélectionnez au moins une fiche."}, status_code=400)
-    if not emails_valides:
-        return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": "Renseignez au moins un email à inviter."}, status_code=400)
+    if not emails_valides and not emails_a_retirer_valides:
+        return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": "Renseignez au moins un email à inviter ou à retirer."}, status_code=400)
 
-    resultats = acces_masse.executer_invitations_masse(db, client_ids, emails_valides, role)
+    resultats = acces_masse.executer_remplacement_masse(db, client_ids, emails_a_retirer_valides, emails_valides, role)
     return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": None, "resultats": resultats})
 
 
