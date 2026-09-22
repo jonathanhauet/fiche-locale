@@ -575,14 +575,18 @@ def verifier_protection_fiches():
         db.close()
 
 
+LIBELLES_STATUT_VALIDATION = {"valide": "validée", "non_valide": "non validée", "inaccessible": "inaccessible"}
+
+
 def verifier_statut_validation_fiches():
     """
     Compare, pour toutes les fiches liees a Google, le statut de validation
     actuel (voir google_location.fiche_validee) au dernier statut connu
     (Client.dernier_statut_validation). Un changement - dans un sens comme
     dans l'autre - cree une AlerteStatutFiche en attente, visible sur
-    /alertes. Tourne une fois par jour, meme creneau que les autres
-    verifications legeres.
+    /alertes, et declenche une notification push (voir notifications.py) :
+    sans elle, seul un passage volontaire sur /alertes le revelait. Tourne
+    une fois par jour, meme creneau que les autres verifications legeres.
 
     "inaccessible" (echec de lecture avec un code d'erreur explicite,
     typiquement 403/404) est traite comme un statut a part entiere : Google
@@ -643,6 +647,12 @@ def verifier_statut_validation_fiches():
             ))
             client.dernier_statut_validation = nouveau_statut
             db.commit()
+            notifications.notifier(
+                "Changement de statut de validation",
+                f"{client.nom} : passe de {LIBELLES_STATUT_VALIDATION.get(ancien_statut, ancien_statut)} "
+                f"à {LIBELLES_STATUT_VALIDATION.get(nouveau_statut, nouveau_statut)}.",
+                url="https://web-production-bf59a.up.railway.app/alertes",
+            )
     finally:
         db.close()
 
