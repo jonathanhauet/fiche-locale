@@ -57,9 +57,13 @@
       <p id="texte-compte-clients-invitation" class="texte-discret" hidden></p>
 
       <label>
-        Emails à retirer (optionnel — un par ligne, ou séparés par une virgule)
-        <textarea name="emails_a_retirer" rows="2" placeholder="laurent@cullinaninvest.com&#10;l.clementine@cullinaninvest.com"></textarea>
+        Administrateurs à retirer (optionnel — email ou nom affiché, un par ligne ou séparés par une virgule)
+        <textarea name="emails_a_retirer" rows="2" placeholder="laurent@cullinaninvest.com&#10;Clémentine Dupont"></textarea>
       </label>
+      <p class="texte-discret">
+        Email si l'invitation est encore en attente, nom affiché si elle a déjà été acceptée (Google n'expose plus
+        l'email une fois acceptée) — tu peux vérifier lequel utiliser via l'export de la section 2 ci-dessous.
+      </p>
       <label>
         Emails à inviter (un par ligne, ou séparés par une virgule)
         <textarea name="emails" rows="2" placeholder="acces@cullinaninvest.com"></textarea>
