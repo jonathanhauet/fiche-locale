@@ -622,10 +622,20 @@ def verifier_statut_validation_fiches():
             try:
                 infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
                 nouveau_statut = "valide" if google_location.fiche_validee(infos) else "non_valide"
-            except RuntimeError:
-                # Echec avec code HTTP explicite (voir google_location.obtenir_infos_fiche) -
-                # traite comme un signal d'inaccessibilite, pas ignore.
-                nouveau_statut = "inaccessible"
+            except google_location.ErreurLectureFiche as erreur:
+                if erreur.code_http in (403, 404):
+                    # Acces reellement refuse ou fiche introuvable : le signal le
+                    # plus proche d'une suspension qu'on puisse detecter (Google
+                    # n'expose aucun champ "suspendu" officiel).
+                    nouveau_statut = "inaccessible"
+                else:
+                    # 401 (jeton pas encore rafraichi), 429 (quota), 5xx (incident
+                    # cote Google)... : incident transitoire, pas un vrai
+                    # changement de statut - on ne change rien, on reessaiera au
+                    # prochain passage (constate en reel : un 401 isole avait ete
+                    # a tort enregistre comme "inaccessible" puis re-signale comme
+                    # "revenu a valide" des la verification suivante).
+                    continue
             except Exception:
                 # Erreur transitoire (reseau, timeout...) : on ne change rien,
                 # on reessaiera au prochain passage.

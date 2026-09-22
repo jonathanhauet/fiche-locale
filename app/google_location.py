@@ -7,6 +7,22 @@ deja presentes sur la fiche (voir google_business.lister_photos).
 
 import requests
 
+
+class ErreurLectureFiche(RuntimeError):
+    """
+    RuntimeError enrichie du code HTTP renvoye par Google (voir
+    obtenir_infos_fiche) - permet a l'appelant de distinguer un vrai signal
+    (403/404 : acces refuse ou fiche introuvable) d'un incident transitoire
+    (401 jeton pas encore rafraichi, 429 quota, 5xx cote Google) qui ne doit
+    jamais etre interprete comme un changement reel de la fiche (voir
+    planificateur.verifier_statut_validation_fiches).
+    """
+
+    def __init__(self, message: str, code_http: int = None):
+        super().__init__(message)
+        self.code_http = code_http
+
+
 CHAMPS_LECTURE = (
     "title,phoneNumbers,websiteUri,storefrontAddress,regularHours,specialHours,"
     "profile,latlng,categories,serviceItems,openInfo,"
@@ -49,7 +65,9 @@ def obtenir_infos_fiche(identifiants, location_id: str) -> dict:
         params={"readMask": CHAMPS_LECTURE},
     )
     if reponse.status_code != 200:
-        raise RuntimeError(f"Echec de la lecture de la fiche (code {reponse.status_code}) : {reponse.text}")
+        raise ErreurLectureFiche(
+            f"Echec de la lecture de la fiche (code {reponse.status_code}) : {reponse.text}", reponse.status_code,
+        )
     return reponse.json()
 
 
