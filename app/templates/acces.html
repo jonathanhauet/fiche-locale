@@ -23,7 +23,55 @@
 {% endif %}
 
 <details class="bloc-repliable" open>
-  <summary>1. Télécharger les accès actuels</summary>
+  <summary>1. Inviter des administrateurs en masse</summary>
+  <div class="formulaire">
+    {% if not etiquettes %}
+    <div class="bandeau-avertissement">
+      Aucune étiquette pour l'instant. Ajoutez-en depuis la fiche d'un client, ou depuis la page
+      <a href="/etiquettes">Étiquettes</a>, puis revenez ici.
+    </div>
+    {% endif %}
+
+    <p class="texte-discret">
+      Ajoute un ou plusieurs emails comme administrateurs sur toutes les fiches cochées, sans rien retirer.
+      Pour remplacer un accès existant, utilise plutôt l'import Excel ci-dessous.
+    </p>
+
+    <form method="post" action="/acces/inviter-masse"
+          onsubmit="return confirm('Envoyer ces invitations ?');">
+      {% if etiquettes %}
+      <div class="filtre-entreprises">
+        <span class="filtre-titre">Étiquettes :</span>
+        {% for etiquette in etiquettes %}
+        <label class="filtre-case">
+          <input type="checkbox" class="case-filtre-etiquette-invitation" value="{{ etiquette.id }}"> {{ etiquette.nom }}
+        </label>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div id="liste-clients-cibles-invitation" class="liste-clients-cibles"></div>
+      <p id="texte-aucun-client-invitation" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+      <p id="texte-compte-clients-invitation" class="texte-discret" hidden></p>
+
+      <label>
+        Emails à inviter (un par ligne, ou séparés par une virgule)
+        <textarea name="emails" rows="3" placeholder="laurent@cullinaninvest.com&#10;l.clementine@cullinaninvest.com"></textarea>
+      </label>
+
+      <div class="actions-avis">
+        <select name="role">
+          <option value="MANAGER" selected>Gestionnaire (MANAGER)</option>
+          <option value="OWNER">Propriétaire (OWNER)</option>
+        </select>
+        <button type="submit" id="bouton-inviter-masse" disabled>Envoyer les invitations</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+<details class="bloc-repliable">
+  <summary>2. Télécharger les accès actuels</summary>
   <div class="formulaire">
     {% if not etiquettes %}
     <div class="bandeau-avertissement">
@@ -54,7 +102,7 @@
 </details>
 
 <details class="bloc-repliable" {% if resultats %}open{% endif %}>
-  <summary>2. Importer un fichier de remplacement</summary>
+  <summary>3. Importer un fichier de remplacement</summary>
   <div class="formulaire">
     <p class="texte-discret">
       Fichier Excel avec les colonnes <strong>ID client</strong>, <strong>Administrateur à retirer (nom affiché
@@ -77,7 +125,7 @@
 </details>
 
 <details class="bloc-repliable">
-  <summary>3. Changer le compte Google utilisé pour gérer des fiches</summary>
+  <summary>4. Changer le compte Google utilisé pour gérer des fiches</summary>
   <div class="formulaire">
     <p class="texte-discret">
       Bascule les fiches sélectionnées sur un autre compte Google connecté (voir <a href="/google/comptes">Comptes Google</a>) —
@@ -225,6 +273,52 @@
   function actualiserEtatBouton() {
     const coche = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length;
     boutonChanger.disabled = coche === 0;
+  }
+
+  function actualiserListe() {
+    const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    if (!etiquettesActives.length) {
+      conteneurClients.innerHTML = "";
+      texteAucunClient.hidden = false;
+      texteCompteClients.hidden = true;
+      actualiserEtatBouton();
+      return;
+    }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
+    texteAucunClient.hidden = true;
+    texteCompteClients.hidden = false;
+    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    conteneurClients.innerHTML = correspondants.map((c) => `
+      <label class="etiquette-chip-case">
+        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      </label>
+    `).join("");
+    conteneurClients.querySelectorAll('input[name="client_ids"]').forEach((c) => c.addEventListener("change", actualiserEtatBouton));
+    actualiserEtatBouton();
+  }
+
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+})();
+</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients-acces").textContent);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette-invitation"));
+  const conteneurClients = document.getElementById("liste-clients-cibles-invitation");
+  const texteAucunClient = document.getElementById("texte-aucun-client-invitation");
+  const texteCompteClients = document.getElementById("texte-compte-clients-invitation");
+  const boutonInviter = document.getElementById("bouton-inviter-masse");
+  if (!boutonInviter) return;
+
+  function echapper(texte) {
+    const div = document.createElement("div");
+    div.textContent = texte == null ? "" : String(texte);
+    return div.innerHTML;
+  }
+
+  function actualiserEtatBouton() {
+    const coche = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length;
+    boutonInviter.disabled = coche === 0;
   }
 
   function actualiserListe() {

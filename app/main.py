@@ -4845,6 +4845,32 @@ def telecharger_acces_excel(request: Request, db: Session = Depends(obtenir_sess
     )
 
 
+@app.post("/acces/inviter-masse", response_class=HTMLResponse)
+def inviter_acces_masse(
+    request: Request, client_ids: list[int] = Form(default=[]), emails: str = Form(""),
+    role: str = Form("MANAGER"), db: Session = Depends(obtenir_session),
+):
+    """Invite directement une liste d'emails comme administrateurs sur toutes les fiches cochees (voir acces_masse.executer_invitations_masse) - sans passer par l'export/import Excel."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    contexte_base = {
+        "etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db),
+        "comptes": google_oauth.lister_comptes(db), "resultats": None, "message_compte": None,
+    }
+
+    emails_valides = acces_masse.parser_emails(emails)
+    if not client_ids:
+        return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": "Sélectionnez au moins une fiche."}, status_code=400)
+    if not emails_valides:
+        return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": "Renseignez au moins un email à inviter."}, status_code=400)
+
+    resultats = acces_masse.executer_invitations_masse(db, client_ids, emails_valides, role)
+    return templates.TemplateResponse(request, "acces.html", {**contexte_base, "erreur": None, "resultats": resultats})
+
+
 @app.post("/acces/remplacer", response_class=HTMLResponse)
 async def remplacer_acces(request: Request, fichier: UploadFile = File(...), db: Session = Depends(obtenir_session)):
     """

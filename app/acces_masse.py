@@ -47,6 +47,65 @@ def lire_fichier_remplacement(octets: bytes) -> list[dict]:
     return resultats
 
 
+def parser_emails(texte: str) -> list[str]:
+    """Emails separes par retour a la ligne, virgule ou point-virgule (voir formulaire d'invitation en masse)."""
+    import re
+
+    morceaux = re.split(r"[\n,;]+", texte or "")
+    vus = set()
+    emails = []
+    for morceau in morceaux:
+        email = morceau.strip()
+        if email and email.lower() not in vus:
+            vus.add(email.lower())
+            emails.append(email)
+    return emails
+
+
+def executer_invitations_masse(db, client_ids: list[int], emails: list[str], role: str) -> list[dict]:
+    """
+    Invite chaque email de la liste comme administrateur sur chaque fiche
+    selectionnee (produit le meme cartouche de resultat que
+    executer_remplacements, pour reutiliser le meme tableau d'affichage) -
+    ne retire jamais d'acces existant, contrairement a /acces/remplacer.
+    """
+    role = (role or "MANAGER").strip().upper() or "MANAGER"
+    resultats = []
+    identifiants_par_compte = {}
+
+    clients = db.query(models.Client).filter(models.Client.id.in_(client_ids)).all()
+    for client in clients:
+        for email in emails:
+            resultat = {
+                "client_id": client.id, "client_nom": client.nom, "ancien_email": "", "statut_retrait": "",
+                "nouvel_email": email,
+            }
+
+            if not client.location_id:
+                resultat["statut_invitation"] = "Fiche Google non associée"
+                resultats.append(resultat)
+                continue
+
+            if client.compte_google_id not in identifiants_par_compte:
+                identifiants_par_compte[client.compte_google_id] = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+            identifiants = identifiants_par_compte[client.compte_google_id]
+
+            if not identifiants:
+                resultat["statut_invitation"] = "Compte Google non valide pour ce client"
+                resultats.append(resultat)
+                continue
+
+            try:
+                google_admins.inviter_administrateur(identifiants, client.location_id, email, role)
+                resultat["statut_invitation"] = "Invitation envoyée (en attente d'acceptation par cette adresse)"
+            except Exception as erreur:
+                resultat["statut_invitation"] = f"Erreur : {erreur}"
+
+            resultats.append(resultat)
+
+    return resultats
+
+
 def executer_remplacements(db, lignes: list[dict]) -> list[dict]:
     """
     Execute chaque remplacement et renvoie la liste enrichie avec
