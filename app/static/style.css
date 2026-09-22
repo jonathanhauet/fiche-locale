@@ -1618,6 +1618,38 @@ button:active { transform: translateY(1px); }
   display: flex;
 }
 
+.carte-video-edition {
+  width: 260px;
+}
+
+.carte-video-edition .vignette-image-edition {
+  width: 260px;
+  height: auto;
+}
+
+.apercu-video-edition {
+  display: block;
+  width: 260px;
+  max-height: 220px;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--carte-bordure);
+  background: #000;
+}
+
+.apercu-video-indisponible {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 260px;
+  height: 80px;
+  padding: 0.5rem;
+  border-radius: var(--rayon-petit);
+  border: 1px solid var(--carte-bordure);
+  background: var(--fond);
+  font-size: 0.85rem;
+}
+
 .message-info-modif {
   margin: 0 0 0.8rem;
   padding: 0.6rem 0.8rem;
@@ -1916,6 +1948,15 @@ button:active { transform: translateY(1px); }
   object-fit: cover;
   border-radius: var(--rayon-petit);
   flex-shrink: 0;
+}
+
+.miniature-video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fond);
+  border: 1px solid var(--carte-bordure);
+  font-size: 1.1rem;
 }
 
 /* ---------- Image (post) ---------- */

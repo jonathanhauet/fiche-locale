@@ -13,16 +13,24 @@ from .instagram_oauth import URL_GRAPH
 
 ATTENTE_CONTENEUR_SECONDES = 2
 TENTATIVES_MAX_CONTENEUR = 15
+# Une video (Reel) est traitee bien plus lentement qu'une image par Instagram
+# (encodage) : jusqu'a plusieurs minutes contre 2-4 secondes pour une image.
+ATTENTE_CONTENEUR_VIDEO_SECONDES = 5
+TENTATIVES_MAX_CONTENEUR_VIDEO = 72  # jusqu'a 6 minutes
 
 
-def _attendre_conteneur_pret(instagram_id: str, conteneur_id: str, token_instagram: str) -> None:
+def _attendre_conteneur_pret(
+    instagram_id: str, conteneur_id: str, token_instagram: str,
+    tentatives: int = TENTATIVES_MAX_CONTENEUR, attente_secondes: float = ATTENTE_CONTENEUR_SECONDES,
+) -> None:
     """
-    Instagram traite l'image de facon asynchrone apres la creation du
-    conteneur - la publier trop tot echoue avec "The media is not ready for
+    Instagram traite le media de facon asynchrone apres la creation du
+    conteneur - le publier trop tot echoue avec "The media is not ready for
     publishing" (constate en reel). On interroge son status_code jusqu'a
-    FINISHED (ou une erreur/un delai trop long).
+    FINISHED (ou une erreur/un delai trop long). tentatives/attente_secondes
+    plus genereuses pour une video (voir publier_reel) que pour une image.
     """
-    for _ in range(TENTATIVES_MAX_CONTENEUR):
+    for _ in range(tentatives):
         reponse = requests.get(
             f"{URL_GRAPH}/{conteneur_id}", params={"fields": "status_code", "access_token": token_instagram}, timeout=15,
         )
@@ -32,7 +40,7 @@ def _attendre_conteneur_pret(instagram_id: str, conteneur_id: str, token_instagr
                 return
             if statut == "ERROR":
                 raise RuntimeError("Echec du traitement du conteneur media Instagram (statut ERROR).")
-        time.sleep(ATTENTE_CONTENEUR_SECONDES)
+        time.sleep(attente_secondes)
     raise RuntimeError("Le conteneur media Instagram n'est pas devenu pret a temps.")
 
 
@@ -87,6 +95,42 @@ def publier_medias(token_instagram: str, instagram_id: str, image_urls: list[str
     if len(image_urls) > 1:
         return publier_carrousel(token_instagram, instagram_id, image_urls, caption)
     return publier_photo(token_instagram, instagram_id, image_urls[0], caption)
+
+
+def publier_reel(token_instagram: str, instagram_id: str, video_url: str, caption: str = "") -> dict:
+    """
+    Publie une video en Reel (media_type=REELS - toute nouvelle video postee
+    via l'API rejoint desormais les Reels, il n'y a plus de "video de feed"
+    distincte cote Instagram). video_url doit etre accessible publiquement
+    (comme image_url pour une photo, voir publier_photo) : Instagram la
+    televerse lui-meme.
+    """
+    reponse_conteneur = requests.post(
+        f"{URL_GRAPH}/{instagram_id}/media",
+        data={"media_type": "REELS", "video_url": video_url, "caption": caption, "access_token": token_instagram},
+        timeout=30,
+    )
+    if reponse_conteneur.status_code != 200:
+        raise RuntimeError(
+            f"Echec de la creation du conteneur Reel Instagram (code {reponse_conteneur.status_code}) : {reponse_conteneur.text}"
+        )
+    conteneur_id = reponse_conteneur.json()["id"]
+
+    _attendre_conteneur_pret(
+        instagram_id, conteneur_id, token_instagram,
+        tentatives=TENTATIVES_MAX_CONTENEUR_VIDEO, attente_secondes=ATTENTE_CONTENEUR_VIDEO_SECONDES,
+    )
+    # Deja attendu ci-dessus (avec le delai video) : publie directement plutot
+    # que de passer par _publier_conteneur, qui rattendrait inutilement avec
+    # le delai court prevu pour une image.
+    reponse = requests.post(
+        f"{URL_GRAPH}/{instagram_id}/media_publish",
+        data={"creation_id": conteneur_id, "access_token": token_instagram},
+        timeout=30,
+    )
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la publication du Reel Instagram (code {reponse.status_code}) : {reponse.text}")
+    return reponse.json()
 
 
 def publier_photo(token_instagram: str, instagram_id: str, image_url: str, caption: str = "") -> dict:

@@ -631,6 +631,10 @@ class PostLinkedInProgramme(Base):
     compte_linkedin_id = Column(Integer, ForeignKey("comptes_linkedin.id"), nullable=False)
     texte = Column(Text, default="")
     image_donnees = Column(LargeBinary, nullable=True)
+    # Video au lieu d'une image (mutuellement exclusif) : memes octets
+    # directement en base, LinkedIn accepte aussi un televersement direct au
+    # moment de la publication (voir linkedin_publish.publier_post).
+    video_donnees = Column(LargeBinary, nullable=True)
     publier_le = Column(DateTime, nullable=False)
     etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
     erreur = Column(Text, nullable=True)
@@ -654,6 +658,9 @@ class PostMetaProgramme(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     texte = Column(Text, default="")
     image_url = Column(String, nullable=True)
+    # Video au lieu d'image(s) (mutuellement exclusif) : URL hebergee sur OVH,
+    # Facebook la televerse lui-meme depuis cette URL (voir meta_publish.publier_video_page).
+    video_url = Column(String, nullable=True)
     publier_le = Column(DateTime, nullable=False)
     etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
     erreur = Column(Text, nullable=True)
@@ -671,6 +678,8 @@ class PostInstagramProgramme(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     texte = Column(Text, default="")
     image_url = Column(String, nullable=True)
+    # Video au lieu d'image(s) (mutuellement exclusif) : publiee en Reel (voir instagram_publish.publier_reel).
+    video_url = Column(String, nullable=True)
     publier_le = Column(DateTime, nullable=False)
     etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
     erreur = Column(Text, nullable=True)

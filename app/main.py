@@ -191,6 +191,16 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN hashtags_fixes TEXT DEFAULT ''"))
         if "profil_voix" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
+        colonnes_posts_meta = {c["name"] for c in inspecteur.get_columns("posts_meta_programmes")}
+        if "video_url" not in colonnes_posts_meta:
+            connexion.execute(text("ALTER TABLE posts_meta_programmes ADD COLUMN video_url TEXT"))
+        colonnes_posts_instagram = {c["name"] for c in inspecteur.get_columns("posts_instagram_programmes")}
+        if "video_url" not in colonnes_posts_instagram:
+            connexion.execute(text("ALTER TABLE posts_instagram_programmes ADD COLUMN video_url TEXT"))
+        colonnes_posts_linkedin = {c["name"] for c in inspecteur.get_columns("posts_linkedin_programmes")}
+        if "video_donnees" not in colonnes_posts_linkedin:
+            type_binaire = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
+            connexion.execute(text(f"ALTER TABLE posts_linkedin_programmes ADD COLUMN video_donnees {type_binaire}"))
         if "favori_publication_multi" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
 
@@ -954,6 +964,35 @@ def _televerser_image_publication(octets: bytes, prefixe: str) -> str:
     return ovh_upload.envoyer_octets(_jpeg_normalise(octets), f"{prefixe}-{uuid.uuid4().hex[:12]}.jpg")
 
 
+EXTENSIONS_VIDEO_AUTORISEES = {"mp4", "mov", "m4v"}
+TAILLE_MAX_VIDEO_PUBLICATION = 200 * 1024 * 1024  # 200 Mo : marge large pour une courte video sociale, sans risquer le delai/la memoire du serveur
+
+
+def _extension_video(nom_fichier: str) -> str:
+    return nom_fichier.rsplit(".", 1)[-1].lower() if "." in nom_fichier else ""
+
+
+def _valider_video(octets: bytes, nom_fichier: str) -> None:
+    """
+    Pas de retraitement de la video (contrairement aux images) : ni Pillow ni
+    ffmpeg ne sont installes sur la plateforme. On se contente de rejeter tot
+    un fichier manifestement inexploitable (mauvais format, vide, trop lourd)
+    - le reste des erreurs eventuelles remontera de l'API du reseau concerne.
+    """
+    if _extension_video(nom_fichier) not in EXTENSIONS_VIDEO_AUTORISEES:
+        raise ValueError("format non pris en charge (utilisez un fichier MP4 ou MOV).")
+    if len(octets) < 1024:
+        raise ValueError("fichier vide ou illisible.")
+    if len(octets) > TAILLE_MAX_VIDEO_PUBLICATION:
+        raise ValueError(f"fichier trop volumineux ({len(octets) // (1024 * 1024)} Mo, {TAILLE_MAX_VIDEO_PUBLICATION // (1024 * 1024)} Mo maximum).")
+
+
+def _televerser_video_publication(octets: bytes, nom_fichier: str, prefixe: str) -> str:
+    """Valide puis heberge une video sur OVH sous un nom neutre (voir _televerser_image_publication). Renvoie l'URL publique ; ValueError si le fichier est refuse."""
+    _valider_video(octets, nom_fichier)
+    return ovh_upload.envoyer_octets(octets, f"{prefixe}-{uuid.uuid4().hex[:12]}.{_extension_video(nom_fichier)}")
+
+
 FUSEAU_PARIS = ZoneInfo("Europe/Brussels")
 DUREE_CACHE_PUBLICATIONS_EXTERNES = 300  # secondes
 _cache_publications_externes: dict = {}
@@ -1048,7 +1087,7 @@ def _publications_externes(client: "models.Client", posts_google_en_ligne: list,
     return lignes
 
 
-def _journaliser_publication_meta(db: Session, modele, client_id: int, texte: str, urls: list) -> None:
+def _journaliser_publication_meta(db: Session, modele, client_id: int, texte: str, urls: list, video_url: str = None) -> None:
     """
     Trace d'une publication Facebook/Instagram faite immediatement via le
     composeur (modele : PostMetaProgramme ou PostInstagramProgramme, etat
@@ -1057,7 +1096,7 @@ def _journaliser_publication_meta(db: Session, modele, client_id: int, texte: st
     reseau, donc etiquetee a tort "Hors plateforme" dans le resume.
     """
     db.add(modele(
-        client_id=client_id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls),
+        client_id=client_id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls), video_url=video_url,
         publier_le=_maintenant_paris(), etat="PUBLIE",
     ))
     db.commit()
@@ -1067,7 +1106,7 @@ def _journaliser_publication_linkedin(db: Session, compte_linkedin_id: int, text
     """
     LinkedIn ne permet pas de relire les posts d'un profil : on garde donc une
     trace de ceux publies immediatement via la plateforme, en reutilisant
-    PostLinkedInProgramme (etat PUBLIE, sans image : inutile, et lourde a
+    PostLinkedInProgramme (etat PUBLIE, sans image/video : inutile, et lourd a
     stocker) pour qu'ils apparaissent dans le resume multi-reseaux.
     """
     db.add(models.PostLinkedInProgramme(
@@ -1115,7 +1154,8 @@ def _publications_multi_reseaux(
             lignes.append({
                 "reseau": reseau,
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
-                "image_url": (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
+                "image_url": None if post.video_url else (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
+                "video": bool(post.video_url),
                 "date": post.publier_le.date(),
                 "heure": post.publier_le.strftime("%H:%M"),
                 "id": post.id,
@@ -1130,6 +1170,7 @@ def _publications_multi_reseaux(
                 "reseau": "linkedin",
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
                 "image_url": None,  # stockee en octets, pas d'URL directe (voir PostLinkedInProgramme)
+                "video": bool(post.video_donnees),
                 "date": post.publier_le.date(),
                 "heure": post.publier_le.strftime("%H:%M"),
                 "id": post.id,
@@ -6488,8 +6529,27 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     except ValueError as erreur_image:
         return _erreur(f"Image refusée : {erreur_image}")
 
-    if "instagram" in reseaux and not urls_par_reseau.get("instagram"):
-        return _erreur("Instagram necessite une image (partagee ou dediee).")
+    # Video partagee (optionnelle, mutuellement exclusive avec les images pour
+    # un reseau donne) : un seul fichier pour Facebook/Instagram/LinkedIn, pas
+    # de video dediee par reseau contrairement aux images - Google n'est pas
+    # concerne (Post ne gere que des images). Televersee sur OVH seulement si
+    # Facebook ou Instagram sont coches (LinkedIn televerse directement les
+    # octets a son API, voir plus bas).
+    fichier_video = formulaire.get("video")
+    octets_video_partagee = None
+    video_url_partagee = None
+    if fichier_video is not None and getattr(fichier_video, "filename", ""):
+        octets_video_partagee = await fichier_video.read()
+        try:
+            if "facebook" in reseaux or "instagram" in reseaux:
+                video_url_partagee = _televerser_video_publication(octets_video_partagee, fichier_video.filename, "multi-video")
+            else:
+                _valider_video(octets_video_partagee, fichier_video.filename)
+        except ValueError as erreur_video:
+            return _erreur(f"Vidéo refusée : {erreur_video}")
+
+    if "instagram" in reseaux and not video_url_partagee and not urls_par_reseau.get("instagram"):
+        return _erreur("Instagram necessite une image ou une vidéo (partagee ou dediee).")
 
     echecs = []
     for reseau in reseaux:
@@ -6518,10 +6578,15 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
             elif reseau == "facebook":
                 if publier_le:
                     db.add(models.PostMetaProgramme(
-                        client_id=client.id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls_par_reseau.get("facebook")),
+                        client_id=client.id, texte=texte,
+                        image_url=None if video_url_partagee else meta_publish.champ_depuis_urls(urls_par_reseau.get("facebook")),
+                        video_url=video_url_partagee,
                         publier_le=publier_le,
                     ))
                     db.commit()
+                elif video_url_partagee:
+                    meta_publish.publier_video_page(client.token_page_meta, client.page_id_meta, video_url_partagee, texte)
+                    _journaliser_publication_meta(db, models.PostMetaProgramme, client.id, texte, None, video_url=video_url_partagee)
                 else:
                     meta_publish.publier_post_page(
                         client.token_page_meta, client.page_id_meta, texte, urls_par_reseau.get("facebook"),
@@ -6531,10 +6596,15 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
             elif reseau == "instagram":
                 if publier_le:
                     db.add(models.PostInstagramProgramme(
-                        client_id=client.id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls_par_reseau.get("instagram")),
+                        client_id=client.id, texte=texte,
+                        image_url=None if video_url_partagee else meta_publish.champ_depuis_urls(urls_par_reseau.get("instagram")),
+                        video_url=video_url_partagee,
                         publier_le=publier_le,
                     ))
                     db.commit()
+                elif video_url_partagee:
+                    instagram_publish.publier_reel(client.token_instagram, client.instagram_id_meta, video_url_partagee, texte)
+                    _journaliser_publication_meta(db, models.PostInstagramProgramme, client.id, texte, None, video_url=video_url_partagee)
                 else:
                     instagram_publish.publier_medias(
                         client.token_instagram, client.instagram_id_meta, urls_par_reseau["instagram"], texte,
@@ -6545,20 +6615,26 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 compte_linkedin = db.get(models.CompteLinkedIn, client.compte_linkedin_id)
                 if not compte_linkedin:
                     raise RuntimeError("LinkedIn n'est pas connecte pour ce client.")
-                # linkedin_publish attend les octets de l'image (televersement direct
-                # a l'API LinkedIn), contrairement aux autres reseaux qui n'ont besoin
-                # que d'une URL publique - on retelecharge donc depuis l'hebergement
-                # OVH ou l'image vient d'etre envoyee.
-                urls_linkedin = urls_par_reseau.get("linkedin") or []
-                octets_image = requests.get(urls_linkedin[0], timeout=30).content if urls_linkedin else None
+                if octets_video_partagee:
+                    octets_image_linkedin, octets_video_linkedin = None, octets_video_partagee
+                else:
+                    # linkedin_publish attend les octets de l'image (televersement
+                    # direct a l'API LinkedIn), contrairement aux autres reseaux qui
+                    # n'ont besoin que d'une URL publique - on retelecharge donc
+                    # depuis l'hebergement OVH ou l'image vient d'etre envoyee.
+                    urls_linkedin = urls_par_reseau.get("linkedin") or []
+                    octets_image_linkedin = requests.get(urls_linkedin[0], timeout=30).content if urls_linkedin else None
+                    octets_video_linkedin = None
                 if publier_le:
                     db.add(models.PostLinkedInProgramme(
-                        compte_linkedin_id=compte_linkedin.id, texte=texte, image_donnees=octets_image, publier_le=publier_le,
+                        compte_linkedin_id=compte_linkedin.id, texte=texte,
+                        image_donnees=octets_image_linkedin, video_donnees=octets_video_linkedin, publier_le=publier_le,
                     ))
                     db.commit()
                 else:
                     linkedin_publish.publier_post(
-                        compte_linkedin.access_token, compte_linkedin.identifiant_membre, texte, octets_image,
+                        compte_linkedin.access_token, compte_linkedin.identifiant_membre, texte,
+                        octets_image=octets_image_linkedin, octets_video=octets_video_linkedin,
                     )
                     _journaliser_publication_linkedin(db, compte_linkedin.id, texte)
         except Exception as e:
@@ -6606,16 +6682,18 @@ def _post_programme_modifiable(db: Session, reseau: str, post_id: int):
 
 
 def _reponse_modifier_post_programme(request: Request, reseau: str, post, client, erreur: str = None, code: int = 200):
-    images = meta_publish.urls_depuis_champ(getattr(post, "image_url", "")) if reseau != "linkedin" else []
+    a_video = bool(getattr(post, "video_url", None) or getattr(post, "video_donnees", None))
+    images = meta_publish.urls_depuis_champ(getattr(post, "image_url", "")) if reseau != "linkedin" and not a_video else []
     return templates.TemplateResponse(
         request, "publication_programmee_modifier.html",
         {
             "reseau": reseau, "nom_reseau": NOMS_RESEAUX_PROGRAMMES[reseau], "post": post, "client": client,
             "date_iso": post.publier_le.strftime("%Y-%m-%d"), "heure": post.publier_le.strftime("%H:%M"),
             "images": images,
+            "a_video": a_video,
             "image_linkedin_uri": (
                 "data:image/jpeg;base64," + base64.b64encode(post.image_donnees).decode()
-                if reseau == "linkedin" and post.image_donnees else ""
+                if reseau == "linkedin" and not a_video and post.image_donnees else ""
             ),
             "nb_max_images": NB_MAX_IMAGES_PUBLICATION,
             "erreur": erreur,
@@ -6666,11 +6744,38 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
     except ValueError:
         return _reponse_modifier_post_programme(request, reseau, post, client, erreur="Date ou heure de publication invalide.", code=400)
 
+    a_video = bool(getattr(post, "video_url", None) or getattr(post, "video_donnees", None))
     nouveaux_fichiers = [f for f in formulaire.getlist("image") if getattr(f, "filename", "")]
     gerer_images = bool(formulaire.get("images_gerees"))
     images_finales = None        # Facebook / Instagram : liste d'URL
     nouvelle_image_linkedin = "inchangee"   # LinkedIn : octets, None (supprimer) ou "inchangee"
-    if gerer_images and reseau == "linkedin":
+    nouvelle_video_url = "inchangee"        # Facebook / Instagram : URL, None (supprimer) ou "inchangee"
+    nouvelle_video_linkedin = "inchangee"   # LinkedIn : octets, None (supprimer) ou "inchangee"
+
+    if gerer_images and a_video:
+        fichier_video = formulaire.get("video")
+        nouveau_fichier_video = fichier_video if fichier_video is not None and getattr(fichier_video, "filename", "") else None
+        try:
+            if nouveau_fichier_video:
+                octets_video = await nouveau_fichier_video.read()
+                if reseau == "linkedin":
+                    _valider_video(octets_video, nouveau_fichier_video.filename)
+                    nouvelle_video_linkedin = octets_video
+                else:
+                    nouvelle_video_url = _televerser_video_publication(octets_video, nouveau_fichier_video.filename, "multi-video")
+            elif formulaire.get("supprimer_video"):
+                if reseau == "instagram":
+                    return _reponse_modifier_post_programme(
+                        request, reseau, post, client,
+                        erreur="Instagram nécessite une image ou une vidéo : remplacez-la plutôt que de la supprimer.", code=400,
+                    )
+                if reseau == "linkedin":
+                    nouvelle_video_linkedin = None
+                else:
+                    nouvelle_video_url = None
+        except ValueError as erreur_video:
+            return _reponse_modifier_post_programme(request, reseau, post, client, erreur=f"Vidéo refusée : {erreur_video}", code=400)
+    elif gerer_images and reseau == "linkedin":
         try:
             if nouveaux_fichiers:
                 nouvelle_image_linkedin = _jpeg_normalise(await nouveaux_fichiers[0].read())
@@ -6699,6 +6804,10 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
         post.image_url = meta_publish.champ_depuis_urls(images_finales)
     if nouvelle_image_linkedin != "inchangee":
         post.image_donnees = nouvelle_image_linkedin
+    if nouvelle_video_url != "inchangee":
+        post.video_url = nouvelle_video_url
+    if nouvelle_video_linkedin != "inchangee":
+        post.video_donnees = nouvelle_video_linkedin
     db.commit()
     return RedirectResponse(f"/clients/{client.id}", status_code=303)
 

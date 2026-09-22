@@ -702,7 +702,8 @@ def publier_posts_linkedin_programmes():
         for post in posts_a_publier:
             try:
                 linkedin_publish.publier_post(
-                    post.compte.access_token, post.compte.identifiant_membre, post.texte, post.image_donnees,
+                    post.compte.access_token, post.compte.identifiant_membre, post.texte,
+                    octets_image=post.image_donnees, octets_video=post.video_donnees,
                 )
                 post.etat = "PUBLIE"
             except Exception as erreur:
@@ -728,10 +729,13 @@ def publier_posts_meta_programmes():
             try:
                 if not post.client.page_id_meta or not post.client.token_page_meta:
                     raise RuntimeError("Ce client n'a plus de Page Facebook associee.")
-                meta_publish.publier_post_page(
-                    post.client.token_page_meta, post.client.page_id_meta, post.texte,
-                    meta_publish.urls_depuis_champ(post.image_url),
-                )
+                if post.video_url:
+                    meta_publish.publier_video_page(post.client.token_page_meta, post.client.page_id_meta, post.video_url, post.texte)
+                else:
+                    meta_publish.publier_post_page(
+                        post.client.token_page_meta, post.client.page_id_meta, post.texte,
+                        meta_publish.urls_depuis_champ(post.image_url),
+                    )
                 post.etat = "PUBLIE"
             except Exception as erreur:
                 post.etat = "ECHEC"
@@ -756,12 +760,15 @@ def publier_posts_instagram_programmes():
             try:
                 if not post.client.instagram_id_meta or not post.client.token_instagram:
                     raise RuntimeError("Ce client n'a plus de compte Instagram associe.")
-                if not post.image_url:
-                    raise RuntimeError("Instagram necessite une image.")
-                instagram_publish.publier_medias(
-                    post.client.token_instagram, post.client.instagram_id_meta,
-                    meta_publish.urls_depuis_champ(post.image_url), post.texte,
-                )
+                if post.video_url:
+                    instagram_publish.publier_reel(post.client.token_instagram, post.client.instagram_id_meta, post.video_url, post.texte)
+                elif post.image_url:
+                    instagram_publish.publier_medias(
+                        post.client.token_instagram, post.client.instagram_id_meta,
+                        meta_publish.urls_depuis_champ(post.image_url), post.texte,
+                    )
+                else:
+                    raise RuntimeError("Instagram necessite une image ou une video.")
                 post.etat = "PUBLIE"
             except Exception as erreur:
                 post.etat = "ECHEC"

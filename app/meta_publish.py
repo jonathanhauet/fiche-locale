@@ -58,3 +58,22 @@ def publier_post_page(token_page: str, page_id: str, message: str, image_url=Non
     if reponse.status_code != 200:
         raise RuntimeError(f"Echec de la publication sur la Page (code {reponse.status_code}) : {reponse.text}")
     return reponse.json()
+
+
+def publier_video_page(token_page: str, page_id: str, video_url: str, message: str) -> dict:
+    """
+    Publie une video sur le fil de la Page (POST /videos) : Facebook la
+    televerse lui-meme depuis video_url, le traitement (encodage, generation
+    de la vignette) se termine de facon asynchrone cote Meta apres la reponse
+    - la video devient visible une fois pret, sans que la plateforme ait a
+    interroger un statut (contrairement au conteneur Instagram, voir
+    instagram_publish.publier_reel).
+    """
+    reponse = requests.post(
+        f"{URL_GRAPH}/{page_id}/videos",
+        data={"file_url": video_url, "description": message, "access_token": token_page},
+        timeout=60,
+    )
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la publication video sur la Page (code {reponse.status_code}) : {reponse.text}")
+    return reponse.json()

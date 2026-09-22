@@ -31,7 +31,33 @@
     </label>
   </div>
 
-  {% if reseau == "linkedin" %}
+  {% if a_video %}
+  <span class="choix-image-titre">Vidéo</span>
+  <div class="grille-images-edition">
+    <div class="carte-image-edition carte-video-edition" data-retiree-si="coche">
+      <div class="vignette-image-edition">
+        {% if reseau == "linkedin" %}
+        <div class="apercu-video-indisponible">🎬 Vidéo enregistrée{% if post.video_donnees %} ({{ (post.video_donnees|length / 1048576) | round(1) }} Mo){% endif %}, pas d'aperçu ici.</div>
+        {% else %}
+        <video controls class="apercu-video-edition" src="{{ post.video_url }}"></video>
+        {% endif %}
+        <span class="voile-image-retiree">Sera supprimée</span>
+      </div>
+      <label class="filtre-case">
+        <input type="checkbox" name="supprimer_video" value="1" {% if reseau == "instagram" %}disabled title="Instagram nécessite une image ou une vidéo : remplacez-la plutôt que de la supprimer"{% endif %}>
+        Supprimer la vidéo
+      </label>
+    </div>
+  </div>
+  <label>
+    Remplacer par une autre vidéo
+    <input type="file" name="video" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v">
+  </label>
+  <p class="texte-discret">
+    Fichier MP4 ou MOV, 200 Mo maximum.
+    {% if reseau == "instagram" %}Instagram nécessite une image ou une vidéo : la supprimer sans la remplacer n'est pas possible depuis cet écran.{% endif %}
+  </p>
+  {% elif reseau == "linkedin" %}
   <span class="choix-image-titre">Image</span>
   {% if image_linkedin_uri %}
   <div class="grille-images-edition">
@@ -78,7 +104,7 @@
   </p>
   {% endif %}
 
-  <p class="message-info-modif" id="note-modifs-images" hidden>Les images marquées "Sera retirée" ou "Sera supprimée" ne disparaissent qu'au clic sur Enregistrer.</p>
+  <p class="message-info-modif" id="note-modifs-images" hidden>{{ "La vidéo marquée" if a_video else "Les images marquées" }} "Sera retirée" ou "Sera supprimée" ne {{ "disparaît" if a_video else "disparaissent" }} qu'au clic sur Enregistrer.</p>
 
   <div class="actions-avis">
     <button type="submit">Enregistrer</button>

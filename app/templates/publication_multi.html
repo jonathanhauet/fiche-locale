@@ -103,6 +103,13 @@
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
 
+  <label for="video-partagee">Vidéo (optionnelle — remplace les images ci-dessus pour Facebook, Instagram et LinkedIn)</label>
+  <input type="file" id="video-partagee" name="video" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v">
+  <p class="texte-discret">
+    Fichier MP4 ou MOV, 200 Mo maximum. Publiée en Reel sur Instagram. Google n'est pas concerné (images uniquement).
+    Si une vidéo est choisie, les images ci-dessus ne sont pas utilisées sur ces trois réseaux.
+  </p>
+
   <button type="button" id="bouton-adapter" class="bouton-secondaire">
     <span class="spinner" id="spinner-adapter" hidden></span>
     🤖 Adapter le texte par réseau (IA)
