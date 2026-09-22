@@ -184,6 +184,32 @@
   <button type="submit" class="bouton">Publier / programmer sur les réseaux sélectionnés</button>
 </form>
 
+<div class="voile-chargement" id="voile-chargement-publication" hidden>
+  <div class="barre-chargement"><div class="barre-chargement-remplissage"></div></div>
+  <p class="voile-chargement-texte" id="texte-voile-chargement-publication">Publication en cours, merci de patienter sans fermer cette page…</p>
+</div>
+<script>
+(function () {
+  const formulaire = document.querySelector('form[action$="/publier"]');
+  const voile = document.getElementById("voile-chargement-publication");
+  const texte = document.getElementById("texte-voile-chargement-publication");
+  const champVideo = document.getElementById("video-partagee");
+  if (!formulaire || !voile) return;
+  // "submit" (et non "click" sur le bouton) : ne se declenche qu'une fois le
+  // formulaire valide, apres actualiserExigenceTexteBase - jamais affiche si
+  // la soumission est bloquee par un champ manquant.
+  formulaire.addEventListener("submit", () => {
+    const aVideo = champVideo && champVideo.files && champVideo.files.length > 0;
+    texte.textContent = aVideo
+      ? "Publication en cours… l'envoi et le traitement d'une vidéo peuvent prendre plusieurs minutes (surtout pour un Reel Instagram)."
+      : "Publication en cours, merci de patienter sans fermer cette page…";
+    voile.hidden = false;
+    const bouton = formulaire.querySelector('button[type="submit"]');
+    if (bouton) bouton.disabled = true;
+  });
+})();
+</script>
+
 {% if posts_programmes.google or posts_programmes.facebook or posts_programmes.instagram or posts_programmes.linkedin %}
 <h2>Publications programmées pour {{ client.nom }}</h2>
 

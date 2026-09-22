@@ -112,6 +112,11 @@
   </div>
 </form>
 
+<div class="voile-chargement" id="voile-chargement-modif" hidden>
+  <div class="barre-chargement"><div class="barre-chargement-remplissage"></div></div>
+  <p class="voile-chargement-texte" id="texte-voile-chargement-modif">Enregistrement en cours, merci de patienter sans fermer cette page…</p>
+</div>
+
 <script>
 (function () {
   var cartes = document.querySelectorAll(".carte-image-edition");
@@ -130,6 +135,22 @@
     carte.querySelector("input[type=checkbox]").addEventListener("change", actualiser);
   });
   actualiser();
+})();
+(function () {
+  var formulaire = document.querySelector('form[action$="/modifier"]');
+  var voile = document.getElementById("voile-chargement-modif");
+  var texte = document.getElementById("texte-voile-chargement-modif");
+  var champVideo = document.querySelector('input[name="video"]');
+  if (!formulaire || !voile) return;
+  formulaire.addEventListener("submit", function () {
+    var aVideo = champVideo && champVideo.files && champVideo.files.length > 0;
+    texte.textContent = aVideo
+      ? "Enregistrement en cours… l'envoi et le traitement d'une vidéo peuvent prendre plusieurs minutes."
+      : "Enregistrement en cours, merci de patienter sans fermer cette page…";
+    voile.hidden = false;
+    var bouton = formulaire.querySelector('button[type="submit"]');
+    if (bouton) bouton.disabled = true;
+  });
 })();
 </script>
 {% endblock %}

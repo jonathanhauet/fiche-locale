@@ -993,6 +993,54 @@ button:active { transform: translateY(1px); }
   100% { background-color: transparent; }
 }
 
+/* ---------- Voile de chargement (envoi image/video en cours) ---------- */
+.voile-chargement {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: rgba(10, 12, 18, 0.72);
+  color: #fff;
+  text-align: center;
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.voile-chargement[hidden] {
+  display: none;
+}
+
+.barre-chargement {
+  width: min(320px, 80vw);
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+
+.barre-chargement-remplissage {
+  width: 30%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: glissement-barre-chargement 1.2s ease-in-out infinite;
+}
+
+@keyframes glissement-barre-chargement {
+  0% { margin-left: -30%; }
+  100% { margin-left: 100%; }
+}
+
+.voile-chargement-texte {
+  font-size: 0.95rem;
+  max-width: 340px;
+}
+
 .spinner {
   display: inline-block;
   width: 0.9rem;
