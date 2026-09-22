@@ -66,9 +66,19 @@
 
   <ul class="liste-clients">
     {% for client in clients %}
-    <li class="ligne-client-filtrable{{ ' ligne-client-alerte' if client.id in ids_sans_post_mois_prochain else '' }}" data-recherche="{{ client.nom|lower }}"
+    <li class="ligne-client-filtrable ligne-client-avec-favori{{ ' ligne-client-alerte' if client.id in ids_sans_post_mois_prochain else '' }}" data-recherche="{{ client.nom|lower }}"
         {% if client.account_id and client.location_id %}data-client-id-validation="{{ client.id }}"{% endif %}>
       <input type="checkbox" name="client_ids" value="{{ client.id }}" class="case-client-suppression">
+      <!-- Bouton (pas un <form>) : cette ligne est deja a l'interieur du
+           formulaire de suppression en masse qui entoure toute la liste, et
+           un <form> imbrique dans un <form> est invalide HTML (le navigateur
+           l'ignore silencieusement et le clic finit par soumettre la
+           suppression en masse a la place). -->
+      <button type="button" class="bouton-favori-client bouton-favori-client-liste{{ ' favori-actif' if client.favori_publication_multi else '' }}"
+              data-client-id="{{ client.id }}" data-favori="{{ 'true' if client.favori_publication_multi else 'false' }}"
+              title="{{ 'Retirer des favoris' if client.favori_publication_multi else 'Mettre en favori' }}">
+        {{ '★' if client.favori_publication_multi else '☆' }}
+      </button>
       <a href="/clients/{{ client.id }}">
         <span class="avatar-client">{{ client.nom[:1]|upper }}</span>
         <span>{{ client.nom }}</span>
@@ -76,6 +86,12 @@
         <span class="icone-localisation-active" title="Localisation ciblée activée : {{ client.localisation_ville }} ({{ client.localisation_rayon_km }} km)">📍</span>
         {% endif %}
       </a>
+      <div class="reseaux-connectes-client">
+        {% for reseau, initiales in [("google", "G"), ("facebook", "f"), ("instagram", "IG"), ("linkedin", "in")] %}
+        <span class="badge-reseau badge-reseau-petit badge-reseau-{{ reseau }}{{ '' if reseaux_disponibles[client.id][reseau] else ' badge-reseau-inactif' }}"
+              title="{{ reseau|capitalize }} {{ 'connecté' if reseaux_disponibles[client.id][reseau] else 'non connecté' }}">{{ initiales }}</span>
+        {% endfor %}
+      </div>
       <div class="actions-avis">
         {% if not client.account_id or not client.location_id %}
           <span class="etiquette-avertissement">fiche Google non associée</span>
@@ -135,6 +151,29 @@
       if (!ligne.hidden) visibles++;
     });
     texteAucunResultat.hidden = visibles > 0;
+  });
+
+  // Bouton favori (voir commentaire HTML : pas un <form>, imbrique dans celui
+  // de suppression en masse). Rechargement complet apres le clic : le plus
+  // simple pour refleter aussi le nouveau tri (favoris en tete).
+  document.querySelectorAll(".bouton-favori-client-liste").forEach((bouton) => {
+    bouton.addEventListener("click", async () => {
+      bouton.disabled = true;
+      try {
+        const reponse = await fetch(`/publication-multi/${bouton.dataset.clientId}/favori/basculer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "retour=liste",
+        });
+        if (reponse.ok) {
+          window.location.reload();
+          return;
+        }
+      } catch (erreur) {
+        // Erreur reseau : on debloque le bouton ci-dessous plutot que de laisser une icone figee.
+      }
+      bouton.disabled = false;
+    });
   });
 })();
 </script>

@@ -2264,6 +2264,10 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
         return templates.TemplateResponse(request, "accueil.html", {})
 
     espace, clients = _resoudre_espace_et_clients(db, etiquette_id)
+    # Favoris en tete (voir Client.favori_publication_multi, meme etoile que
+    # /publication-multi) sans toucher au tri de _resoudre_espace_et_clients,
+    # partage avec d'autres pages (avis, alertes, export) qui n'en ont pas besoin.
+    clients = sorted(clients, key=lambda c: (not c.favori_publication_multi, c.nom))
 
     ids_avec_connaissance = {
         client_id
@@ -2300,6 +2304,7 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
             "ids_sans_post_mois_prochain": ids_sans_post_mois_prochain,
             "nb_sans_post_mois_prochain": len(ids_sans_post_mois_prochain),
             "espace": espace,
+            "reseaux_disponibles": {c.id: _reseaux_disponibles_client(c) for c in clients},
         },
     )
 
@@ -5953,8 +5958,14 @@ def _contexte_publication_multi(
 
 
 @app.post("/publication-multi/{client_id}/favori/basculer")
-def publication_multi_basculer_favori(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """Bascule le statut favori (etoile) d'un client sur la liste de choix de /publication-multi."""
+def publication_multi_basculer_favori(
+    client_id: int, request: Request, retour: str = Form("multi"), db: Session = Depends(obtenir_session)
+):
+    """
+    Bascule le statut favori (etoile) d'un client - meme champ (favori_publication_multi)
+    utilise sur la liste de choix de /publication-multi ET sur la liste principale des
+    clients (retour="liste") : un favori se veut le meme partout, pas specifique a un ecran.
+    """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
@@ -5964,7 +5975,7 @@ def publication_multi_basculer_favori(client_id: int, request: Request, db: Sess
         client.favori_publication_multi = not client.favori_publication_multi
         db.commit()
 
-    return RedirectResponse("/publication-multi", status_code=303)
+    return RedirectResponse("/" if retour == "liste" else "/publication-multi", status_code=303)
 
 
 @app.get("/publication-multi", response_class=HTMLResponse)

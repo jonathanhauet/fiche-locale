@@ -25,9 +25,9 @@
 
   {% if fiches %}
   <label>
-    Fiche Google associée
+    Fiche Google associée (optionnel — laissez sur "Aucune" pour un client géré uniquement sur les réseaux sociaux)
     <select name="fiche_google">
-      <option value="">— Aucune pour l'instant —</option>
+      <option value="">— Aucune (réseaux sociaux uniquement) —</option>
       {% for libelle_compte, fiches_du_compte in fiches|groupby("compte_libelle") %}
       <optgroup label="{{ libelle_compte }}">
         {% for fiche in fiches_du_compte %}

@@ -813,6 +813,20 @@ button:active { transform: translateY(1px); }
   font-size: 0.65rem;
 }
 
+.reseaux-connectes-client {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+/* Reseau non connecte pour ce client : meme badge, mais efface pour ne pas
+   se confondre visuellement avec un reseau reellement actif (voir
+   clients_liste.html, un coup d'oeil doit suffire). */
+.badge-reseau-inactif {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
 .ligne-compte-reseau {
   display: inline-flex;
   align-items: center;
