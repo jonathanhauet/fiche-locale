@@ -130,19 +130,35 @@ def _construire_prompt(
 
 
 _CARACTERES_INDESIRABLES = re.compile(r"[`　-〿＀-￯]+")
+# Constate en reel : une suite de "&#8203;" (le CODE HTML d'un espace de
+# largeur nulle) generee comme texte visible au lieu d'un vrai caractere
+# invisible - jamais legitime dans un post, retiree sans risque. Motif
+# numerique uniquement (jamais &amp; &nbsp; etc., qui pourraient
+# legitimement apparaitre tels quels dans un nom d'entreprise ou un texte).
+_ENTITES_HTML_INDESIRABLES = re.compile(r"&#x?[0-9a-fA-F]+;")
 
 
 def _nettoyer_texte_genere(texte: str) -> str:
     """
     Filet de securite contre de rares artefacts de generation (ex. suites de
-    backticks ou de ponctuation/caracteres CJK isoles, sans lien avec le
-    contenu demande, qui se glissent occasionnellement dans la sortie du
-    modele) - jamais legitimes dans un post en francais, retires sans risque.
-    Remplace aussi le tiret cadratin (—) par un tiret simple : meme avec la
-    consigne de style demandee au modele, il peut lui arriver d'en glisser
-    un malgre tout - ce filet garantit qu'aucun n'atteint jamais le client.
+    backticks, de ponctuation/caracteres CJK isoles ou de codes HTML
+    d'espaces invisibles, sans lien avec le contenu demande, qui se glissent
+    occasionnellement dans la sortie du modele) - jamais legitimes dans un
+    post en francais, retires sans risque. Remplace aussi le tiret cadratin
+    (—) par un tiret simple : meme avec la consigne de style demandee au
+    modele, il peut lui arriver d'en glisser un malgre tout - ce filet
+    garantit qu'aucun n'atteint jamais le client.
     """
     texte = _CARACTERES_INDESIRABLES.sub("", texte)
+    texte = _ENTITES_HTML_INDESIRABLES.sub("", texte)
+    # Les espaces/tabulations laisses par l'artefact ci-dessus (souvent une
+    # longue suite entrecoupee d'espaces) sont regroupes pour ne pas laisser
+    # de grands vides visibles a la place.
+    texte = re.sub(r"[ \t]{2,}", " ", texte)
+    texte = re.sub(r"[ \t]+\n", "\n", texte)
+    # Idem si l'artefact occupait une ou plusieurs lignes entieres : ne pas
+    # laisser plusieurs lignes vides d'affilee a la place.
+    texte = re.sub(r"\n{3,}", "\n\n", texte)
     texte = texte.replace("—", "-")
     return texte.strip()
 
