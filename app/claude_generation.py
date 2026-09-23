@@ -1480,6 +1480,8 @@ def generer_article_blog(sujet: str, contexte: str = "") -> str:
         "conclusion avec un appel a l'action (contacter l'entreprise), sans numero de telephone invente.\n"
         "- Longueur : 800 a 1200 mots. Paragraphes courts (2 a 4 phrases), listes a puces quand elles aident. "
         "Gras (**mot**) avec moderation.\n"
+        "- Ajoute UN SEUL encadre « A retenir » (2 a 3 phrases qui resument l'essentiel), place apres "
+        "la section la plus importante, sous la forme de lignes commencant par « > » (ex. « > **A retenir :** ... »).\n"
         "- Utile et concret pour un lecteur qui cherche ce service : conseils pratiques, erreurs frequentes, "
         "questions que se posent les clients. Optimise pour le referencement local de facon naturelle : "
         "mentionne les services et la zone d'intervention quand le contexte les donne, sans bourrage de mots-cles.\n"

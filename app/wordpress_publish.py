@@ -11,10 +11,13 @@ messages d'erreur de tester_connexion.
 
 import html
 import re
+import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import requests
+
+from . import wordpress_style
 
 DELAI_SECONDES = 60
 FUSEAU_LOCAL = ZoneInfo("Europe/Brussels")
@@ -93,13 +96,47 @@ def decouper_titre(texte: str) -> tuple[str, str]:
     return "", ""
 
 
-def markdown_vers_html(texte: str) -> str:
+COULEUR_NEUTRE = "#555555"
+
+
+def _slug(texte: str, deja: set) -> str:
+    base = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode().lower()
+    base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:60] or "section"
+    slug, numero = base, 2
+    while slug in deja:
+        slug, numero = f"{base}-{numero}", numero + 1
+    deja.add(slug)
+    return slug
+
+
+def _teinte(couleur: str, part: float = 0.92) -> str:
+    """Couleur melangee a du blanc (fond d'encadre : meme teinte que l'accent, tres claire)."""
+    canaux = [int(couleur[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(c + (255 - c) * part):02x}" for c in canaux)
+
+
+def _texte_sur(couleur: str) -> str:
+    """Blanc ou noir, selon le meilleur contraste sur cette couleur de fond (bouton)."""
+    lum = wordpress_style.luminance(couleur)
+    return "#ffffff" if (1.05 / (lum + 0.05)) >= ((lum + 0.05) / 0.05) else "#111111"
+
+
+def markdown_vers_html(texte: str, couleur: str = "") -> str:
     """
-    Conversion volontairement minimale (titres ##/###, listes, gras, italique,
-    liens, paragraphes) : le texte reste editable comme du texte simple dans le
-    composeur, sans dependance supplementaire. Tout le reste est echappe.
+    Conversion volontairement minimale, sans dependance : titres ##/###, listes,
+    gras, italique, liens, paragraphes, plus trois blocs mis en forme -
+    encadre ("> texte"), bouton ("[[Texte|https://...]]" seul sur sa ligne) et
+    sommaire automatique (a partir de 4 sous-titres "##"). Les blocs utilisent la
+    couleur d'accent du site (voir wordpress_style) et ne fixent JAMAIS de
+    police : ils heritent de celle du theme. Styles en ligne (pas de plugin
+    ni de feuille de style a installer) ; un site qui les filtre garde le texte
+    intact, sans la mise en forme. Tout le reste est echappe.
     """
-    blocs, paragraphe, liste, type_liste = [], [], [], None
+    couleur = wordpress_style.normaliser_couleur(couleur) or COULEUR_NEUTRE
+    fond, texte_bouton = _teinte(couleur), _texte_sur(couleur)
+    blocs, paragraphe, liste, citation = [], [], [], []
+    type_liste = None
+    titres_h2, slugs, premier_h2 = [], set(), None
 
     def vider_paragraphe():
         if paragraphe:
@@ -114,11 +151,35 @@ def markdown_vers_html(texte: str) -> str:
             liste.clear()
         type_liste = None
 
+    def vider_citation():
+        if citation:
+            paragraphes, courant = [], []
+            for ligne in citation + [""]:
+                if ligne:
+                    courant.append(ligne)
+                elif courant:
+                    paragraphes.append(" ".join(courant))
+                    courant = []
+            contenu = "".join(f'<p style="margin:0 0 .5em;">{_inline(html.escape(p))}</p>' for p in paragraphes)
+            blocs.append(
+                f'<div class="fl-encadre" style="border-left:4px solid {couleur};background:{fond};'
+                f'padding:1em 1.25em;margin:1.5em 0;border-radius:4px;">{contenu}</div>'
+            )
+            citation.clear()
+
     for ligne in (texte or "").split("\n"):
         brute = ligne.strip()
         titre = re.match(r"^(#{2,4})\s+(.+)$", brute)
         puce = re.match(r"^[-*]\s+(.+)$", brute)
         numero = re.match(r"^\d+[.)]\s+(.+)$", brute)
+        bouton = re.match(r"^\[\[(.+?)\|(https?://[^\]\s]+)\]\]$", brute)
+        cite = re.match(r"^>\s?(.*)$", brute)
+        if cite:
+            vider_paragraphe()
+            vider_liste()
+            citation.append(cite.group(1).strip())
+            continue
+        vider_citation()
         if not brute:
             vider_paragraphe()
             vider_liste()
@@ -126,7 +187,22 @@ def markdown_vers_html(texte: str) -> str:
             vider_paragraphe()
             vider_liste()
             niveau = len(titre.group(1))
-            blocs.append(f"<h{niveau}>{_inline(html.escape(titre.group(2)))}</h{niveau}>")
+            attribut = ""
+            if niveau == 2:
+                slug = _slug(titre.group(2), slugs)
+                titres_h2.append((slug, titre.group(2)))
+                attribut = f' id="{slug}"'
+                if premier_h2 is None:
+                    premier_h2 = len(blocs)
+            blocs.append(f"<h{niveau}{attribut}>{_inline(html.escape(titre.group(2)))}</h{niveau}>")
+        elif bouton:
+            vider_paragraphe()
+            vider_liste()
+            blocs.append(
+                f'<p class="fl-cta" style="margin:1.75em 0;"><a href="{html.escape(bouton.group(2), quote=True)}" '
+                f'style="display:inline-block;background:{couleur};color:{texte_bouton};padding:.8em 1.6em;'
+                f'border-radius:6px;text-decoration:none;font-weight:600;">{html.escape(bouton.group(1).strip())}</a></p>'
+            )
         elif puce or numero:
             vider_paragraphe()
             genre = "ul" if puce else "ol"
@@ -139,7 +215,34 @@ def markdown_vers_html(texte: str) -> str:
             paragraphe.append(brute)
     vider_paragraphe()
     vider_liste()
-    return "\n".join(blocs)
+    vider_citation()
+
+    if len(titres_h2) >= 4 and premier_h2 is not None:
+        entrees = "".join(f'<li><a href="#{slug}">{html.escape(nom)}</a></li>' for slug, nom in titres_h2)
+        blocs.insert(
+            premier_h2,
+            f'<nav class="fl-sommaire" style="border:1px solid #e5e7eb;border-left:4px solid {couleur};'
+            f'padding:1em 1.25em;margin:1.5em 0;border-radius:4px;"><strong>Sommaire</strong>'
+            f'<ol style="margin:.5em 0 0 1.2em;">{entrees}</ol></nav>',
+        )
+    return '<div class="fl-article">\n' + "\n".join(blocs) + "\n</div>"
+
+
+def extrait_depuis_corps(texte: str, longueur: int = 155) -> str:
+    """Resume automatique (champ "extrait" de WordPress) : debut du premier vrai paragraphe, coupe proprement."""
+    for bloc in re.split(r"\n\s*\n", (texte or "").strip()):
+        bloc = bloc.strip()
+        if not bloc or re.match(r"^(#{1,4}\s|[-*>]\s?|\d+[.)]\s|\[\[)", bloc):
+            continue
+        clair = re.sub(r"\*\*?|\[([^\]]+)\]\([^)]*\)", r"\1", " ".join(bloc.split()))
+        if len(clair) <= longueur:
+            return clair
+        coupe = clair[:longueur]
+        fin_phrase = max(coupe.rfind(". "), coupe.rfind("? "), coupe.rfind("! "))
+        if fin_phrase >= longueur // 2:
+            return coupe[:fin_phrase + 1]
+        return coupe.rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return ""
 
 
 def envoyer_image(url_site: str, utilisateur: str, mot_de_passe: str, octets: bytes, nom_fichier: str = "article.jpg") -> int:
@@ -155,7 +258,7 @@ def envoyer_image(url_site: str, utilisateur: str, mot_de_passe: str, octets: by
 
 def creer_article(
     url_site: str, utilisateur: str, mot_de_passe: str, titre: str, contenu_html: str,
-    publier_le: datetime = None, image_id: int = None,
+    publier_le: datetime = None, image_id: int = None, extrait: str = "",
 ) -> dict:
     """
     Cree l'article : publie tout de suite, ou programme (statut "future", gere par
@@ -170,6 +273,8 @@ def creer_article(
         )
     if image_id:
         corps["featured_media"] = image_id
+    if extrait:
+        corps["excerpt"] = extrait
     reponse = _appeler("POST", url_site, "posts", utilisateur, mot_de_passe, json=corps)
     if reponse.status_code not in (200, 201):
         raise RuntimeError(f"Échec de la création de l'article (code {reponse.status_code}) : {reponse.text[:300]}")

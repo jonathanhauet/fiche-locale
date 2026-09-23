@@ -158,6 +158,10 @@ class Client(Base):
     wordpress_url = Column(String, default="")
     wordpress_utilisateur = Column(String, default="")
     wordpress_mot_de_passe = Column(String, default="")
+    # Couleur d'accent du site (#rrggbb, voir wordpress_style) pour teinter les
+    # blocs des articles, et lien du bouton d'appel a l'action ajoute en fin d'article.
+    wordpress_couleur = Column(String, default="")
+    wordpress_lien_cta = Column(String, default="")
     # Client mis en avant en haut de la liste de choix de /publication-multi
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
     # clients publiés le plus souvent.

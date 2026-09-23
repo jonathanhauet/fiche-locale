@@ -290,20 +290,26 @@
   </form>
 </details>
 
-<details class="bloc-repliable" {% if not client.wordpress_url %}{% else %}open{% endif %}>
+<details class="bloc-repliable" id="blog-wordpress" {% if client.wordpress_url or message_wordpress %}open{% endif %}>
   <summary>Blog WordPress {% if client.wordpress_url %}(connecté : {{ client.wordpress_url }}){% else %}(non connecté){% endif %}</summary>
+  {% if message_wordpress %}<p class="message-info-modif">{{ message_wordpress }}</p>{% endif %}
   <form class="formulaire" id="formulaire-wordpress">
     <p class="texte-discret">
-      Permet de publier des articles de blog depuis la publication multi-réseaux. Sur le WordPress du client :
-      Utilisateurs &gt; Profil &gt; « Mots de passe d'application », créer un mot de passe nommé par exemple
-      « Fiche Locale » et le coller ci-dessous (ce n'est pas le vrai mot de passe du compte, et il peut être
-      révoqué à tout moment). Nécessite WordPress 5.6 ou plus, un site auto-hébergé, et un utilisateur pouvant
-      publier des articles.
+      Permet de publier des articles de blog depuis la publication multi-réseaux. Nécessite WordPress 5.6 ou plus,
+      un site auto-hébergé en HTTPS, et un utilisateur pouvant publier des articles.
     </p>
     <label>
       Adresse du site
       <input type="text" name="url" value="{{ client.wordpress_url }}" placeholder="https://www.monsite.fr" autocomplete="off">
     </label>
+    <div class="actions-avis">
+      <button type="button" id="bouton-autoriser-wordpress" class="bouton-secondaire">🔗 Connexion en un clic (connecté à son admin WordPress)</button>
+    </div>
+    <p class="texte-discret">
+      Le bouton ouvre l'écran d'autorisation du site : il faut y être connecté en administrateur, puis cliquer sur
+      « Oui, j'approuve ce lien ». Sinon, renseigne à la main un mot de passe d'application (Utilisateurs &gt; Profil
+      &gt; « Mots de passe d'application ») :
+    </p>
     <label>
       Identifiant WordPress
       <input type="text" name="utilisateur" value="{{ client.wordpress_utilisateur }}" autocomplete="off">
@@ -312,6 +318,23 @@
       Mot de passe d'application
       <input type="password" name="mot_de_passe" autocomplete="new-password"
              placeholder="{{ '•••• enregistré (laisser vide pour le garder)' if client.wordpress_mot_de_passe else 'xxxx xxxx xxxx xxxx xxxx xxxx' }}">
+    </label>
+    <label>
+      Couleur d'accent du site (encadrés, boutons et sommaire des articles)
+      <span class="ligne-champs">
+        <input type="color" id="selecteur-couleur-wordpress" value="{{ client.wordpress_couleur or '#555555' }}" style="width:3.2rem;padding:0.1rem;">
+        <input type="text" name="couleur" id="champ-couleur-wordpress" value="{{ client.wordpress_couleur }}" placeholder="#0a66c2 (vide = gris neutre)" autocomplete="off">
+        <button type="button" id="bouton-detecter-couleur" class="bouton-secondaire">Détecter depuis le site</button>
+      </span>
+    </label>
+    <div id="couleurs-detectees" class="liste-etiquettes" hidden></div>
+    <p class="texte-discret">
+      La police n'a pas besoin d'être réglée : l'article s'affiche dans le thème du site, qui applique déjà sa propre typographie.
+      La couleur est détectée automatiquement (approximatif) : vérifie qu'elle correspond bien au site.
+    </p>
+    <label>
+      Lien du bouton d'appel à l'action en fin d'article (page contact ou devis, optionnel)
+      <input type="text" name="lien_cta" value="{{ client.wordpress_lien_cta }}" placeholder="https://www.monsite.fr/contact" autocomplete="off">
     </label>
     <p id="message-wordpress" class="texte-vide" hidden></p>
     <div class="actions-avis">
@@ -325,14 +348,23 @@
   (function () {
     const formulaire = document.getElementById("formulaire-wordpress");
     const message = document.getElementById("message-wordpress");
+    const champCouleur = document.getElementById("champ-couleur-wordpress");
+    const selecteurCouleur = document.getElementById("selecteur-couleur-wordpress");
+    const zoneCouleurs = document.getElementById("couleurs-detectees");
+
+    async function appeler(chemin, action, seulementUrl) {
+      // Autorisation et detection n'ont besoin que de l'adresse du site : le mot de passe n'est envoye qu'a l'enregistrement.
+      let donnees = new FormData(formulaire);
+      if (seulementUrl) { donnees = new FormData(); donnees.append("url", formulaire.elements["url"].value); }
+      if (action) donnees.append("action", action);
+      const reponse = await fetch(`/clients/{{ client.id }}/wordpress${chemin}`, { method: "POST", body: donnees });
+      return reponse.json();
+    }
     async function envoyer(action) {
-      const donnees = new FormData(formulaire);
-      donnees.append("action", action);
       message.hidden = false;
       message.textContent = action === "retirer" ? "Déconnexion..." : "Test de la connexion...";
       try {
-        const reponse = await fetch("/clients/{{ client.id }}/wordpress", { method: "POST", body: donnees });
-        const resultat = await reponse.json();
+        const resultat = await appeler("", action);
         message.textContent = resultat.message || "Erreur inattendue.";
         if (resultat.ok) setTimeout(() => window.location.reload(), 900);
       } catch (erreur) {
@@ -343,6 +375,55 @@
     const boutonRetirer = document.getElementById("bouton-retirer-wordpress");
     if (boutonRetirer) boutonRetirer.addEventListener("click", () => {
       if (confirm("Déconnecter le blog WordPress de ce client ?")) envoyer("retirer");
+    });
+
+    document.getElementById("bouton-autoriser-wordpress").addEventListener("click", async () => {
+      message.hidden = false;
+      message.textContent = "Ouverture de l'écran d'autorisation WordPress...";
+      try {
+        const resultat = await appeler("/autoriser", null, true);
+        if (resultat.ok) { window.location.href = resultat.url; return; }
+        message.textContent = resultat.message || "Erreur inattendue.";
+      } catch (erreur) {
+        message.textContent = "Erreur réseau.";
+      }
+    });
+
+    function choisirCouleur(couleur) {
+      champCouleur.value = couleur;
+      selecteurCouleur.value = couleur;
+    }
+    selecteurCouleur.addEventListener("input", () => { champCouleur.value = selecteurCouleur.value; });
+    champCouleur.addEventListener("input", () => {
+      if (/^#[0-9a-fA-F]{6}$/.test(champCouleur.value)) selecteurCouleur.value = champCouleur.value;
+    });
+    document.getElementById("bouton-detecter-couleur").addEventListener("click", async () => {
+      message.hidden = false;
+      message.textContent = "Analyse des couleurs du site...";
+      zoneCouleurs.hidden = true;
+      try {
+        const resultat = await appeler("/detecter-style", null, true);
+        if (!resultat.ok) { message.textContent = resultat.message || "Détection impossible."; return; }
+        if (!resultat.candidats.length) {
+          message.textContent = "Aucune couleur d'accent trouvée automatiquement : choisis-la à la main.";
+          return;
+        }
+        message.textContent = "Couleurs trouvées (clique sur la bonne) :";
+        zoneCouleurs.innerHTML = "";
+        resultat.candidats.forEach((c) => {
+          const bouton = document.createElement("button");
+          bouton.type = "button";
+          bouton.className = "bouton-secondaire";
+          bouton.title = c.source;
+          bouton.innerHTML = `<span style="display:inline-block;width:0.9rem;height:0.9rem;border-radius:3px;vertical-align:-0.1rem;margin-right:0.4rem;border:1px solid #0003;background:${c.couleur}"></span>${c.couleur}`;
+          bouton.addEventListener("click", () => choisirCouleur(c.couleur));
+          zoneCouleurs.appendChild(bouton);
+        });
+        zoneCouleurs.hidden = false;
+        choisirCouleur(resultat.couleur);
+      } catch (erreur) {
+        message.textContent = "Erreur réseau.";
+      }
     });
   })();
   </script>

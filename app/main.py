@@ -11,12 +11,13 @@ import calendar
 import io
 import json
 import os
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from time import monotonic
 from types import SimpleNamespace
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -79,6 +80,7 @@ from . import (
     veille_actualite,
     whatsapp_business,
     wordpress_publish,
+    wordpress_style,
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
@@ -192,7 +194,9 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN hashtags_fixes TEXT DEFAULT ''"))
         if "profil_voix" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
-        for colonne_wordpress in ("wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe"):
+        for colonne_wordpress in (
+            "wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe", "wordpress_couleur", "wordpress_lien_cta",
+        ):
             if colonne_wordpress not in colonnes_clients:
                 connexion.execute(text(f"ALTER TABLE clients ADD COLUMN {colonne_wordpress} TEXT DEFAULT ''"))
         colonnes_posts_meta = {c["name"] for c in inspecteur.get_columns("posts_meta_programmes")}
@@ -934,6 +938,7 @@ def _extrait_court(texte: str, longueur: int = 60) -> str:
 
 
 NB_MAX_IMAGES_PUBLICATION = 10  # limite d'un carrousel Instagram
+WORDPRESS_APP_ID = "b4c6f1a2-7d3e-4f5a-9b8c-2e1d0a3c5f60"  # identifiant fixe de l'application aupres de WordPress (ecran d'autorisation)
 NB_POSTS_RECENTS_PHOTO = 15  # fenetre pour avertir d'une photo de la fiche deja reutilisee (voir _reponse_detail_client)
 COTE_MAX_IMAGE_PUBLICATION = 2048
 
@@ -2965,6 +2970,7 @@ def _reponse_detail_client(
             ),
             "erreur_whatsapp_test": request.session.pop("erreur_whatsapp_test", None),
             "erreur_voix": request.session.pop("erreur_voix", None),
+            "message_wordpress": request.session.pop("message_wordpress", None),
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -6081,13 +6087,18 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
         article = claude_generation.generer_article_blog(sujet, _contexte_ia_client(client))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la génération de l'article : {erreur}"}, status_code=500)
+    if client.wordpress_lien_cta:
+        # Bouton d'appel a l'action final (page contact / devis du client) : ajoute au
+        # texte pour rester visible et modifiable a la relecture, jamais invente par l'IA.
+        article += f"\n\n[[Nous contacter|{client.wordpress_lien_cta}]]"
     return JSONResponse({"article": article})
 
 
 @app.post("/clients/{client_id}/wordpress")
 def reglages_wordpress(
     client_id: int, request: Request, action: str = Form("enregistrer"), url: str = Form(""),
-    utilisateur: str = Form(""), mot_de_passe: str = Form(""), db: Session = Depends(obtenir_session),
+    utilisateur: str = Form(""), mot_de_passe: str = Form(""), couleur: str = Form(""), lien_cta: str = Form(""),
+    db: Session = Depends(obtenir_session),
 ):
     """
     Connecte (apres un test reel de la connexion) ou deconnecte le blog WordPress
@@ -6118,8 +6129,99 @@ def reglages_wordpress(
     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe = (
         url_finale, utilisateur_final, mot_de_passe_final,
     )
+    client.wordpress_couleur = wordpress_style.normaliser_couleur(couleur) or ""
+    lien_cta = lien_cta.strip()
+    client.wordpress_lien_cta = lien_cta if re.match(r"^https?://\S+$", lien_cta) else ""
     db.commit()
     return JSONResponse({"ok": True, "message": f"Connecté en tant que {nom}. Réglages enregistrés."})
+
+
+@app.post("/clients/{client_id}/wordpress/detecter-style")
+def detecter_style_wordpress(client_id: int, request: Request, url: str = Form(""), db: Session = Depends(obtenir_session)):
+    """Propose la couleur d'accent du site (voir wordpress_style) : a valider par une personne, jamais enregistree ici."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Non connecté."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+    url_finale = wordpress_publish.normaliser_url(url) or client.wordpress_url
+    if not url_finale:
+        return JSONResponse({"ok": False, "message": "Renseignez d'abord l'adresse du site."}, status_code=400)
+    try:
+        resultat = wordpress_style.detecter_style_site(url_finale)
+    except Exception as erreur:
+        return JSONResponse({"ok": False, "message": str(erreur)}, status_code=400)
+    return JSONResponse({"ok": True, **resultat})
+
+
+def _url_publique(request: Request) -> str:
+    """Adresse publique de la plateforme (derriere le proxy Railway, le schema vu par l'application est http)."""
+    hote = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    if hote.startswith("localhost") or hote.startswith("127.0.0.1"):
+        return f"http://{hote}"
+    return f"https://{hote}"
+
+
+@app.post("/clients/{client_id}/wordpress/autoriser")
+def autoriser_wordpress(client_id: int, request: Request, url: str = Form(""), db: Session = Depends(obtenir_session)):
+    """
+    Connexion en un clic : renvoie l'adresse de l'ecran officiel WordPress
+    "autoriser cette application" (wp-admin/authorize-application.php). WordPress
+    y renvoie ensuite le mot de passe d'application a wordpress/retour, sans
+    copier-coller. Un jeton a usage unique (stocke en session) lie le retour a
+    cette demande : sans lui, un lien piege pourrait faire enregistrer sur un
+    client les identifiants d'un autre site.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Non connecté."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+    url_finale = wordpress_publish.normaliser_url(url) or client.wordpress_url
+    if not url_finale:
+        return JSONResponse({"ok": False, "message": "Renseignez d'abord l'adresse du site."}, status_code=400)
+
+    jeton = uuid.uuid4().hex
+    request.session["wordpress_autorisation"] = {"client_id": client_id, "jeton": jeton, "url": url_finale}
+    retour = f"{_url_publique(request)}/clients/{client_id}/wordpress/retour"
+    parametres = urlencode({
+        "app_name": "Fiche Locale", "app_id": WORDPRESS_APP_ID,
+        "success_url": f"{retour}?etat={jeton}", "reject_url": f"{retour}?etat={jeton}&refuse=1",
+    })
+    return JSONResponse({"ok": True, "url": f"{url_finale}/wp-admin/authorize-application.php?{parametres}"})
+
+
+@app.get("/clients/{client_id}/wordpress/retour")
+def retour_autorisation_wordpress(
+    client_id: int, request: Request, etat: str = "", refuse: str = "", user_login: str = "", password: str = "",
+    db: Session = Depends(obtenir_session),
+):
+    """Retour de l'ecran d'autorisation WordPress (voir autoriser_wordpress) : verifie, teste puis enregistre les identifiants."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if not client:
+        return RedirectResponse("/", status_code=303)
+
+    attendu = request.session.pop("wordpress_autorisation", None)
+    if not attendu or attendu.get("client_id") != client_id or not etat or attendu.get("jeton") != etat:
+        request.session["message_wordpress"] = "Autorisation WordPress non reconnue (lien périmé ou déjà utilisé) : recommencez."
+    elif refuse:
+        request.session["message_wordpress"] = "Autorisation refusée sur le site WordPress."
+    elif not user_login or not password:
+        request.session["message_wordpress"] = "WordPress n'a renvoyé aucun mot de passe d'application : recommencez."
+    else:
+        try:
+            nom = wordpress_publish.tester_connexion(attendu["url"], user_login, password)
+            client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe = (
+                attendu["url"], user_login, password,
+            )
+            db.commit()
+            request.session["message_wordpress"] = f"Connecté en tant que {nom} en un clic. Réglages enregistrés."
+        except Exception as erreur:
+            request.session["message_wordpress"] = str(erreur)
+    return RedirectResponse(f"/clients/{client_id}#blog-wordpress", status_code=303)
 
 
 @app.post("/publication-multi/{client_id}/generer_texte")
@@ -6796,7 +6898,8 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     )
                 wordpress_publish.creer_article(
                     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
-                    titre_article, wordpress_publish.markdown_vers_html(corps_article), publier_le, image_id,
+                    titre_article, wordpress_publish.markdown_vers_html(corps_article, client.wordpress_couleur),
+                    publier_le, image_id, wordpress_publish.extrait_depuis_corps(corps_article),
                 )
         except Exception as e:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
