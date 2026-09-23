@@ -795,9 +795,12 @@
         <form method="post" action="/posts/{{ post.id }}/choisir_image_fiche">
           <input type="hidden" name="retour" value="client">
           <input type="hidden" name="image_url" value="{{ photo.url }}">
-          <button type="submit" class="carte-photo-choix">
+          <button type="submit" class="carte-photo-choix" {% if photo.url in image_urls_deja_utilisees %}title="Déjà utilisée dans un des 15 derniers posts Google : évitez de répéter la même photo."{% endif %}>
             <img src="{{ photo.miniature or photo.url }}" data-secours="{{ photo.url }}" class="image-fiche-photo" alt="{{ photo.categorie or 'Photo' }}">
             <span class="etiquette-categorie-photo">{{ photo.categorie or "Photo" }}</span>
+            {% if photo.url in image_urls_deja_utilisees %}
+            <span class="etiquette-avertissement etiquette-danger">⚠ déjà utilisée récemment</span>
+            {% endif %}
           </button>
         </form>
         {% endfor %}

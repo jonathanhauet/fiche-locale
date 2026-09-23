@@ -930,6 +930,7 @@ def _extrait_court(texte: str, longueur: int = 60) -> str:
 
 
 NB_MAX_IMAGES_PUBLICATION = 10  # limite d'un carrousel Instagram
+NB_POSTS_RECENTS_PHOTO = 15  # fenetre pour avertir d'une photo de la fiche deja reutilisee (voir _reponse_detail_client)
 COTE_MAX_IMAGE_PUBLICATION = 2048
 
 
@@ -2927,6 +2928,13 @@ def _reponse_detail_client(
             "publications_multi_reseaux": _publications_multi_reseaux(db, client, posts_google_en_ligne=tous_posts_en_ligne),
             "erreur_generation": erreur_generation,
             "photos": _photos_pour_client(db, client),
+            # Avertit si une photo de la fiche qu'on s'apprete a reutiliser a
+            # deja servi sur un des NB_POSTS_RECENTS_PHOTO derniers posts
+            # Google (voir choix d'image dans client_detail.html) - evite une
+            # repetition visuelle sur le profil. Comparaison par URL exacte :
+            # rate une repetition si Google a change l'URL de la photo entre
+            # temps (arrive), ne se trompe jamais dans l'autre sens.
+            "image_urls_deja_utilisees": {p.image_url for p in posts[:NB_POSTS_RECENTS_PHOTO] if p.image_url},
             "photos_en_preparation": photos_en_preparation,
             "categories_photo": [
                 (valeur, google_business.LIBELLES_CATEGORIE_PHOTO.get(valeur, valeur))
