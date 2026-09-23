@@ -175,13 +175,25 @@ def generer_posts_pour_client(
     prompt_complet = _construire_prompt(contenu_site, nombre_posts, sujets_deja_traites, localisation)
 
     client = Anthropic(api_key=CLE_API)
-    reponse = client.messages.create(
+    # Un budget fixe (8192 auparavant) se faisait tronquer en plein milieu
+    # d'une chaine JSON des 7 posts (l'input par defaut du formulaire) - meme
+    # cause que le budget fixe de adapter_post_multi_reseaux, deja corrige
+    # ailleurs. Chaque post fait 1200-1400 caracteres (voir
+    # prompts/prompt_generation_posts.txt) + titre + prompt d'image : large
+    # marge par post plutot que de calculer un budget precis. En streaming
+    # (obligatoire au-dela de 21333 tokens - voir le SDK Anthropic, sans quoi
+    # jusqu'a 20 posts, le max du formulaire, ferait echouer l'appel avant
+    # meme de contacter l'API) : cf.
+    # https://github.com/anthropics/anthropic-sdk-python#long-requests
+    max_tokens = min(64000, 2200 * max(nombre_posts, 1) + 2000)
+    with client.messages.stream(
         model=MODELE_CLAUDE,
-        max_tokens=8192,
+        max_tokens=max_tokens,
         thinking={"type": "disabled"},
         output_config={"format": {"type": "json_schema", "schema": SCHEMA_REPONSE}},
         messages=[{"role": "user", "content": prompt_complet}],
-    )
+    ) as flux:
+        reponse = flux.get_final_message()
 
     bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
     if not bloc_texte:
@@ -846,13 +858,18 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
     )
 
     client = Anthropic(api_key=CLE_API)
-    reponse = client.messages.create(
+    # Meme correction que generer_posts_pour_client (streaming + budget
+    # proportionnel) : un budget fixe se fait tronquer en plein milieu d'une
+    # chaine JSON passe quelques posts (1200-1500 caracteres chacun).
+    max_tokens = min(64000, 2200 * max(nombre_posts, 1) + 2000)
+    with client.messages.stream(
         model=MODELE_CLAUDE,
-        max_tokens=8192,
+        max_tokens=max_tokens,
         thinking={"type": "disabled"},
         output_config={"format": {"type": "json_schema", "schema": SCHEMA_REPONSE}},
         messages=[{"role": "user", "content": prompt}],
-    )
+    ) as flux:
+        reponse = flux.get_final_message()
 
     bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
     if not bloc_texte:
