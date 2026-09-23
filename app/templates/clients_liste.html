@@ -87,7 +87,7 @@
         {% endif %}
       </a>
       <div class="reseaux-connectes-client">
-        {% for reseau, initiales in [("google", "G"), ("facebook", "f"), ("instagram", "IG"), ("linkedin", "in")] %}
+        {% for reseau, initiales in [("google", "G"), ("facebook", "f"), ("instagram", "IG"), ("linkedin", "in"), ("wordpress", "W")] %}
         <span class="badge-reseau badge-reseau-petit badge-reseau-{{ reseau }}{{ '' if reseaux_disponibles[client.id][reseau] else ' badge-reseau-inactif' }}"
               title="{{ reseau|capitalize }} {{ 'connecté' if reseaux_disponibles[client.id][reseau] else 'non connecté' }}">{{ initiales }}</span>
         {% endfor %}

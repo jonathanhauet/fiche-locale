@@ -290,6 +290,64 @@
   </form>
 </details>
 
+<details class="bloc-repliable" {% if not client.wordpress_url %}{% else %}open{% endif %}>
+  <summary>Blog WordPress {% if client.wordpress_url %}(connecté : {{ client.wordpress_url }}){% else %}(non connecté){% endif %}</summary>
+  <form class="formulaire" id="formulaire-wordpress">
+    <p class="texte-discret">
+      Permet de publier des articles de blog depuis la publication multi-réseaux. Sur le WordPress du client :
+      Utilisateurs &gt; Profil &gt; « Mots de passe d'application », créer un mot de passe nommé par exemple
+      « Fiche Locale » et le coller ci-dessous (ce n'est pas le vrai mot de passe du compte, et il peut être
+      révoqué à tout moment). Nécessite WordPress 5.6 ou plus, un site auto-hébergé, et un utilisateur pouvant
+      publier des articles.
+    </p>
+    <label>
+      Adresse du site
+      <input type="text" name="url" value="{{ client.wordpress_url }}" placeholder="https://www.monsite.fr" autocomplete="off">
+    </label>
+    <label>
+      Identifiant WordPress
+      <input type="text" name="utilisateur" value="{{ client.wordpress_utilisateur }}" autocomplete="off">
+    </label>
+    <label>
+      Mot de passe d'application
+      <input type="password" name="mot_de_passe" autocomplete="new-password"
+             placeholder="{{ '•••• enregistré (laisser vide pour le garder)' if client.wordpress_mot_de_passe else 'xxxx xxxx xxxx xxxx xxxx xxxx' }}">
+    </label>
+    <p id="message-wordpress" class="texte-vide" hidden></p>
+    <div class="actions-avis">
+      <button type="submit" class="bouton-secondaire">Tester et enregistrer</button>
+      {% if client.wordpress_url %}
+      <button type="button" id="bouton-retirer-wordpress" class="bouton-danger">Déconnecter</button>
+      {% endif %}
+    </div>
+  </form>
+  <script>
+  (function () {
+    const formulaire = document.getElementById("formulaire-wordpress");
+    const message = document.getElementById("message-wordpress");
+    async function envoyer(action) {
+      const donnees = new FormData(formulaire);
+      donnees.append("action", action);
+      message.hidden = false;
+      message.textContent = action === "retirer" ? "Déconnexion..." : "Test de la connexion...";
+      try {
+        const reponse = await fetch("/clients/{{ client.id }}/wordpress", { method: "POST", body: donnees });
+        const resultat = await reponse.json();
+        message.textContent = resultat.message || "Erreur inattendue.";
+        if (resultat.ok) setTimeout(() => window.location.reload(), 900);
+      } catch (erreur) {
+        message.textContent = "Erreur réseau.";
+      }
+    }
+    formulaire.addEventListener("submit", (evenement) => { evenement.preventDefault(); envoyer("enregistrer"); });
+    const boutonRetirer = document.getElementById("bouton-retirer-wordpress");
+    if (boutonRetirer) boutonRetirer.addEventListener("click", () => {
+      if (confirm("Déconnecter le blog WordPress de ce client ?")) envoyer("retirer");
+    });
+  })();
+  </script>
+</details>
+
 <details class="bloc-repliable">
   <summary>Historique interview WhatsApp ({{ reponses_interview|length }})</summary>
   {% if erreur_voix %}

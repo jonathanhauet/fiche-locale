@@ -806,6 +806,7 @@ button:active { transform: translateY(1px); }
 .badge-reseau-facebook { background: #1877f2; }
 .badge-reseau-instagram { background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); }
 .badge-reseau-linkedin { background: #0a66c2; }
+.badge-reseau-wordpress { background: #21759b; }
 
 .badge-reseau-petit {
   width: 1.6rem;

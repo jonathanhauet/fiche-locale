@@ -152,6 +152,12 @@ class Client(Base):
     # tous les prompts de redaction (voir main._contexte_ia_client) pour que
     # les textes generes sonnent comme lui a l'ecrit.
     profil_voix = Column(Text, default="")
+    # Blog WordPress du client (voir wordpress_publish.py) : adresse du site,
+    # identifiant et "mot de passe d'application" WordPress (Utilisateurs >
+    # Profil, distinct du vrai mot de passe et revocable a tout moment).
+    wordpress_url = Column(String, default="")
+    wordpress_utilisateur = Column(String, default="")
+    wordpress_mot_de_passe = Column(String, default="")
     # Client mis en avant en haut de la liste de choix de /publication-multi
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
     # clients publiés le plus souvent.

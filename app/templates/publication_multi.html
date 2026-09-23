@@ -72,7 +72,7 @@
 
   <label>Réseaux</label>
   <div class="grille-cartes-reseaux">
-    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn (profil personnel)", "in")] %}
+    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn (profil personnel)", "in"), ("wordpress", "WordPress (blog)", "W")] %}
     <label class="carte-reseau carte-reseau-{{ reseau }}{{ ' indisponible' if not reseaux_disponibles[reseau] else '' }}">
       <input type="checkbox" name="reseaux" value="{{ reseau }}" class="case-reseau-input" data-reseau="{{ reseau }}"
              {% if not reseaux_disponibles[reseau] %}disabled{% endif %}
@@ -117,17 +117,25 @@
   <p id="texte-statut-adaptation" class="texte-vide" hidden></p>
 
   <div id="zone-variantes">
-    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn", "in")] %}
+    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn", "in"), ("wordpress", "WordPress", "W")] %}
     <div class="bloc-variante-reseau" data-reseau="{{ reseau }}" {% if reseau not in reseaux_coches %}hidden{% endif %}>
       <div class="colonne-edition-reseau">
         <div class="ligne-label-avec-bouton">
           <label for="texte-{{ reseau }}">Texte pour {{ nom }}</label>
-          <button type="button" class="bouton-regenerer-reseau" data-reseau="{{ reseau }}" title="Régénérer uniquement ce réseau">
+          <button type="button" class="bouton-regenerer-reseau" data-reseau="{{ reseau }}" title="{{ "Rédiger l'article avec l'IA (à partir du texte de base)" if reseau == "wordpress" else "Régénérer uniquement ce réseau" }}">
             <span class="spinner spinner-regenerer" data-reseau="{{ reseau }}" hidden></span>
             🔄
           </button>
         </div>
-        <textarea id="texte-{{ reseau }}" name="texte_{{ reseau }}" rows="4" class="champ-texte-reseau" data-reseau="{{ reseau }}">{{ variantes.get(reseau, "") }}</textarea>
+        <textarea id="texte-{{ reseau }}" name="texte_{{ reseau }}" rows="{{ 14 if reseau == 'wordpress' else 4 }}" class="champ-texte-reseau" data-reseau="{{ reseau }}">{{ variantes.get(reseau, "") }}</textarea>
+        {% if reseau == "wordpress" %}
+        <p class="texte-discret">
+          Article de blog : clique sur 🔄 pour que l'IA le rédige à partir du texte de base (sujet ou idées),
+          puis relis et modifie. La première ligne « # Titre » est le titre de l'article, « ## » les sous-titres,
+          « - » les listes. La première image devient l'image mise en avant. Publié tout de suite, ou programmé
+          par WordPress à la date choisie.
+        </p>
+        {% endif %}
         <label>
           <input type="checkbox" class="case-activer-image-dediee" data-reseau="{{ reseau }}">
           Utiliser une image différente pour ce réseau
@@ -739,6 +747,15 @@
     // et le bouton 🔄 par carte (un seul reseau) : meme endpoint, meme
     // application du resultat aux champs/apercus concernes.
     async function adapterReseaux(listeReseaux, { onStatut, onFinally } = {}) {
+      // WordPress a son propre bouton (article complet, plus long et plus
+      // couteux qu'une adaptation de post) : jamais inclus dans l'adaptation groupee.
+      const avaitWordpress = listeReseaux.includes("wordpress");
+      listeReseaux = listeReseaux.filter((r) => r !== "wordpress");
+      if (!listeReseaux.length && avaitWordpress) {
+        onStatut && onStatut("Pour WordPress, utilisez le bouton 🔄 du bloc WordPress (rédaction de l'article).");
+        onFinally && onFinally();
+        return;
+      }
       const texteBase = document.getElementById("texte-base").value.trim();
       if (!texteBase) { onStatut && onStatut("Écrivez d'abord le texte de base."); return; }
       if (!listeReseaux.length) { onStatut && onStatut("Sélectionnez au moins un réseau."); return; }
@@ -786,6 +803,29 @@
       });
     });
 
+    async function genererArticle({ onStatut, onFinally }) {
+      const texteBase = document.getElementById("texte-base").value.trim();
+      if (!texteBase) { onStatut("Écrivez d'abord le sujet ou le texte de base."); onFinally(); return; }
+      onStatut("Rédaction de l'article en cours (20 à 60 secondes)...");
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/generer_article", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texte_base: texteBase }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { onStatut(donnees.erreur || "Échec de la génération de l'article."); return; }
+        const zone = document.getElementById("texte-wordpress");
+        zone.value = donnees.article;
+        rendreApercuTexte("wordpress", donnees.article);
+        onStatut("Article rédigé : relisez-le avant de publier.");
+      } catch (erreur) {
+        onStatut("Erreur réseau lors de la rédaction de l'article.");
+      } finally {
+        onFinally();
+      }
+    }
+
     document.querySelectorAll(".bouton-regenerer-reseau").forEach((bouton) => {
       bouton.addEventListener("click", () => {
         const reseau = bouton.dataset.reseau;
@@ -793,6 +833,13 @@
         texteStatut.hidden = false;
         bouton.disabled = true;
         if (spinner) spinner.hidden = false;
+        if (reseau === "wordpress") {
+          genererArticle({
+            onStatut: (msg) => { texteStatut.textContent = msg; },
+            onFinally: () => { bouton.disabled = false; if (spinner) spinner.hidden = true; },
+          });
+          return;
+        }
         adapterReseaux([reseau], {
           onStatut: (msg) => { texteStatut.textContent = msg; },
           onFinally: () => { bouton.disabled = false; if (spinner) spinner.hidden = true; },

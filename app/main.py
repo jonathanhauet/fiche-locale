@@ -78,6 +78,7 @@ from . import (
     soldes_api,
     veille_actualite,
     whatsapp_business,
+    wordpress_publish,
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
@@ -191,6 +192,9 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN hashtags_fixes TEXT DEFAULT ''"))
         if "profil_voix" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
+        for colonne_wordpress in ("wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe"):
+            if colonne_wordpress not in colonnes_clients:
+                connexion.execute(text(f"ALTER TABLE clients ADD COLUMN {colonne_wordpress} TEXT DEFAULT ''"))
         colonnes_posts_meta = {c["name"] for c in inspecteur.get_columns("posts_meta_programmes")}
         if "video_url" not in colonnes_posts_meta:
             connexion.execute(text("ALTER TABLE posts_meta_programmes ADD COLUMN video_url TEXT"))
@@ -5907,6 +5911,7 @@ def _reseaux_disponibles_client(client: "models.Client") -> dict:
         "facebook": bool(client.page_id_meta and client.token_page_meta),
         "instagram": bool(client.instagram_id_meta and client.token_instagram),
         "linkedin": bool(client.compte_linkedin_id),
+        "wordpress": bool(client.wordpress_url and client.wordpress_utilisateur and client.wordpress_mot_de_passe),
     }
 
 
@@ -6055,6 +6060,66 @@ async def publication_multi_adapter(client_id: int, request: Request, db: Sessio
         return JSONResponse({"erreur": f"Echec de l'adaptation IA : {e}"}, status_code=500)
 
     return JSONResponse({"variantes": variantes})
+
+
+@app.post("/publication-multi/{client_id}/generer_article")
+async def publication_multi_generer_article(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Redige un article de blog (markdown) a partir du texte de base, pour le bloc WordPress du composeur (voir claude_generation.generer_article_blog)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    sujet = (donnees.get("texte_base") or "").strip()
+    if not sujet:
+        return JSONResponse({"erreur": "Écrivez d'abord le sujet ou le texte de base."}, status_code=400)
+
+    try:
+        article = claude_generation.generer_article_blog(sujet, _contexte_ia_client(client))
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de la génération de l'article : {erreur}"}, status_code=500)
+    return JSONResponse({"article": article})
+
+
+@app.post("/clients/{client_id}/wordpress")
+def reglages_wordpress(
+    client_id: int, request: Request, action: str = Form("enregistrer"), url: str = Form(""),
+    utilisateur: str = Form(""), mot_de_passe: str = Form(""), db: Session = Depends(obtenir_session),
+):
+    """
+    Connecte (apres un test reel de la connexion) ou deconnecte le blog WordPress
+    d'un client. Un champ vide garde la valeur deja enregistree (le mot de passe
+    n'est jamais renvoye a la page).
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Non connecté."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+
+    if action == "retirer":
+        client.wordpress_url = client.wordpress_utilisateur = client.wordpress_mot_de_passe = ""
+        db.commit()
+        return JSONResponse({"ok": True, "message": "Blog WordPress déconnecté."})
+
+    url_finale = wordpress_publish.normaliser_url(url) or client.wordpress_url
+    utilisateur_final = utilisateur.strip() or client.wordpress_utilisateur
+    mot_de_passe_final = mot_de_passe.strip() or client.wordpress_mot_de_passe
+    if not (url_finale and utilisateur_final and mot_de_passe_final):
+        return JSONResponse({"ok": False, "message": "Renseignez l'adresse du site, l'identifiant et le mot de passe d'application."}, status_code=400)
+    try:
+        nom = wordpress_publish.tester_connexion(url_finale, utilisateur_final, mot_de_passe_final)
+    except Exception as erreur:
+        return JSONResponse({"ok": False, "message": str(erreur)}, status_code=400)
+
+    client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe = (
+        url_finale, utilisateur_final, mot_de_passe_final,
+    )
+    db.commit()
+    return JSONResponse({"ok": True, "message": f"Connecté en tant que {nom}. Réglages enregistrés."})
 
 
 @app.post("/publication-multi/{client_id}/generer_texte")
@@ -6532,7 +6597,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     formulaire = await request.form()
     reseaux = formulaire.getlist("reseaux")
     texte_base = (formulaire.get("texte_base") or "").strip()
-    variantes_soumises = {r: (formulaire.get(f"texte_{r}") or "").strip() for r in ("google", "facebook", "instagram", "linkedin")}
+    variantes_soumises = {r: (formulaire.get(f"texte_{r}") or "").strip() for r in ("google", "facebook", "instagram", "linkedin", "wordpress")}
 
     def _erreur(message, code=400):
         return templates.TemplateResponse(
@@ -6712,6 +6777,27 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                         octets_image=octets_image_linkedin, octets_video=octets_video_linkedin,
                     )
                     _journaliser_publication_linkedin(db, compte_linkedin.id, texte)
+
+            elif reseau == "wordpress":
+                # Article de blog : le texte du reseau est du markdown dont la
+                # premiere ligne "# Titre" devient le titre. Publie tout de suite,
+                # ou programme par WordPress lui-meme (statut "future") - pas de
+                # table locale de suivi ici. L'image (la premiere) devient l'image
+                # mise en avant ; une video n'est pas utilisee sur ce reseau.
+                titre_article, corps_article = wordpress_publish.decouper_titre(texte)
+                if not titre_article or not corps_article:
+                    raise RuntimeError("L'article doit avoir un titre (première ligne « # Titre ») et un contenu.")
+                urls_wordpress = urls_par_reseau.get("wordpress") or []
+                image_id = None
+                if urls_wordpress:
+                    image_id = wordpress_publish.envoyer_image(
+                        client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
+                        requests.get(urls_wordpress[0], timeout=30).content,
+                    )
+                wordpress_publish.creer_article(
+                    client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
+                    titre_article, wordpress_publish.markdown_vers_html(corps_article), publier_le, image_id,
+                )
         except Exception as e:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
 

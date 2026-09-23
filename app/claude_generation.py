@@ -1284,7 +1284,10 @@ TONS_RESEAUX = {
     ),
 }
 
-NOMS_RESEAUX = {"google": "Google Business Profile", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn"}
+NOMS_RESEAUX = {
+    "google": "Google Business Profile", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn",
+    "wordpress": "WordPress",
+}
 
 
 def prompt_image_depuis_texte(texte_post: str) -> str:
@@ -1447,3 +1450,54 @@ def adapter_post_multi_reseaux(
 
     variantes = json.loads(bloc_texte)
     return {r: _nettoyer_texte_genere(variantes[r]) for r in reseaux}
+
+
+def generer_article_blog(sujet: str, contexte: str = "") -> str:
+    """
+    Article de blog complet (markdown : "# Titre", puis "## " pour les
+    sous-titres) a partir d'un sujet ou d'un texte de base, pour publication
+    sur le WordPress du client (voir wordpress_publish.py). contexte : contenu
+    du site du client, avec sa "voix" en tete s'il y en a une (voir
+    main._contexte_ia_client).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not (sujet or "").strip():
+        raise RuntimeError("Aucun sujet fourni.")
+
+    bloc_contexte = f"\nContexte sur l'entreprise (site web, voix de l'auteur) :\n{contexte.strip()[:7000]}\n" if contexte.strip() else ""
+    prompt = (
+        f"Nous sommes le {date.today().strftime('%d/%m/%Y')} (repere temporel reel, n'ecris jamais une annee "
+        "anterieure par reflexe).\n"
+        "Redige un article de blog complet, en francais, pour le site de l'entreprise decrite ci-dessous, a "
+        "partir de ce sujet ou de ce texte de base :\n\n"
+        f"\"{sujet.strip()}\"\n"
+        f"{bloc_contexte}\n"
+        "Consignes :\n"
+        "- Format markdown : la toute premiere ligne est le titre, sous la forme « # Titre » (accrocheur, "
+        "60 caracteres environ, avec le sujet principal et si pertinent la zone d'intervention). Ensuite une "
+        "introduction (sans titre), puis 3 a 5 sections avec des sous-titres « ## ». Termine par une courte "
+        "conclusion avec un appel a l'action (contacter l'entreprise), sans numero de telephone invente.\n"
+        "- Longueur : 800 a 1200 mots. Paragraphes courts (2 a 4 phrases), listes a puces quand elles aident. "
+        "Gras (**mot**) avec moderation.\n"
+        "- Utile et concret pour un lecteur qui cherche ce service : conseils pratiques, erreurs frequentes, "
+        "questions que se posent les clients. Optimise pour le referencement local de facon naturelle : "
+        "mentionne les services et la zone d'intervention quand le contexte les donne, sans bourrage de mots-cles.\n"
+        "- N'invente aucun fait precis que le contexte ne contient pas (prix, chiffres, certifications, delais, "
+        "nom de collaborateur, avis client). Reste general plutot que de risquer une affirmation fausse.\n"
+        "- Si le contexte contient un bloc « VOIX DU CLIENT », ecris comme lui : son registre, ses tournures, "
+        "sa personne grammaticale. A defaut, « nous » pour une entreprise, « je » pour un independant seul.\n"
+        "- Pas de tiret cadratin (—), pas d'emoji, aucun commentaire autour : uniquement l'article."
+    )
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=8000,
+        thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    return _nettoyer_texte_genere(bloc_texte)
