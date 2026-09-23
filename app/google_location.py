@@ -273,6 +273,26 @@ def score_completude(infos: dict) -> dict:
     }
 
 
+# Photos que Google recommande d'ajouter dans son propre "Complétez la fiche"
+# (categorie de la photo, voir google_business.CATEGORIES_PHOTO) : estimation
+# a partir des photos deja presentes sur la fiche, pas le verdict de Google
+# lui-meme (son score "Efficacite de la fiche" et sa liste d'actions ne sont
+# exposes par aucune API). Non applicable a toutes les activites (une
+# entreprise sans local n'a pas de "vitrine"), d'ou l'usage en information
+# dans l'export, pas dans score_completude.
+CRITERES_PHOTOS = [
+    ("EXTERIOR", "Photo de vitrine"),
+    ("INTERIOR", "Photos de l'intérieur"),
+    ("LOGO", "Logo"),
+    ("COVER", "Photo de couverture"),
+]
+
+
+def photos_manquantes(photos: list[dict]) -> list[str]:
+    categories = {photo.get("categorie") for photo in photos or []}
+    return [libelle for cle, libelle in CRITERES_PHOTOS if cle not in categories]
+
+
 def types_service_categories(
     identifiants, categorie_ids: list[str], langue: str = "fr", region: str = "FR"
 ) -> dict[str, list[dict]]:

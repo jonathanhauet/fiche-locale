@@ -15,7 +15,7 @@ from . import google_business, google_location, google_oauth, google_reviews
 ENTETES = [
     "Nom", "Prénom", "Email", "Compte Google", "Étiquettes",
     "Téléphone", "Site web", "Adresse", "Catégorie principale",
-    "Statut d'ouverture", "Complétude fiche", "Note moyenne", "Nombre d'avis",
+    "Statut d'ouverture", "Complétude fiche", "Éléments manquants (estimation)", "Note moyenne", "Nombre d'avis",
     "Photos sur la fiche", "Posts publiés (plateforme)",
     "Lien fiche Google", "Erreur",
 ]
@@ -46,7 +46,7 @@ def generer_export(db, clients: list) -> bytes:
             client.email,
             client.compte_google.libelle if client.compte_google else "",
             ", ".join(e.nom for e in client.etiquettes),
-            "", "", "", "", "", "", "", "", "",
+            "", "", "", "", "", "", "", "", "", "",
             nb_posts,
             "", "",
         ]
@@ -62,9 +62,14 @@ def generer_export(db, clients: list) -> bytes:
                 ligne[-1] = "Compte Google non valide"
             else:
                 erreurs = []
+                # None = pas pu etre verifie (erreur de lecture) : on n'affirme
+                # alors jamais qu'un element manque.
+                manquants_champs = None
+                manquants_photos = None
                 try:
                     infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
                     completude = google_location.score_completude(infos)
+                    manquants_champs = completude["manquants"]
                     categorie_principale = ((infos.get("categories") or {}).get("primaryCategory") or {}).get(
                         "displayName", ""
                     )
@@ -75,22 +80,27 @@ def generer_export(db, clients: list) -> bytes:
                     ligne[8] = categorie_principale
                     ligne[9] = google_location.LIBELLES_STATUT_OUVERTURE.get(statut_ouverture, statut_ouverture)
                     ligne[10] = f"{completude['score']}/{completude['total']}"
-                    ligne[15] = (infos.get("metadata") or {}).get("mapsUri", "")
+                    ligne[16] = (infos.get("metadata") or {}).get("mapsUri", "")
                 except Exception as erreur:
                     erreurs.append(f"Fiche : {erreur}")
 
                 try:
                     resume_avis = google_reviews.resume_rapide(identifiants, client.account_id, client.location_id)
-                    ligne[11] = resume_avis["note_moyenne"] if resume_avis["note_moyenne"] is not None else ""
-                    ligne[12] = resume_avis["total_avis"]
+                    ligne[12] = resume_avis["note_moyenne"] if resume_avis["note_moyenne"] is not None else ""
+                    ligne[13] = resume_avis["total_avis"]
                 except Exception as erreur:
                     erreurs.append(f"Avis : {erreur}")
 
                 try:
                     photos = google_business.lister_photos(identifiants, client.account_id, client.location_id)
-                    ligne[13] = len(photos)
+                    ligne[14] = len(photos)
+                    manquants_photos = google_location.photos_manquantes(photos)
                 except Exception as erreur:
                     erreurs.append(f"Photos : {erreur}")
+
+                if manquants_champs is not None or manquants_photos is not None:
+                    manquants = (manquants_champs or []) + (manquants_photos or [])
+                    ligne[11] = ", ".join(manquants) if manquants else "Aucun"
 
                 ligne[-1] = " ; ".join(erreurs)
 
