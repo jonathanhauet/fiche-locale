@@ -310,6 +310,17 @@
       « Oui, j'approuve ce lien ». Sinon, renseigne à la main un mot de passe d'application (Utilisateurs &gt; Profil
       &gt; « Mots de passe d'application ») :
     </p>
+    <details class="bloc-repliable">
+      <summary>WordPress répond « Les mots de passe d'application ne sont pas activés » ?</summary>
+      <p class="texte-discret">
+        Cette fonction est désactivée sur le site (les deux méthodes de connexion en dépendent). À vérifier, dans l'ordre :
+        1) Réglages &gt; Général : « Adresse web de WordPress » et « Adresse web du site » doivent commencer par
+        <strong>https://</strong> ; 2) si le site est derrière Cloudflare ou un proxy, WordPress peut se croire en http :
+        régler le SSL sur « Complet » plutôt que « Flexible » ; 3) désactiver l'option correspondante dans le plugin de
+        sécurité (Wordfence, Solid Security, All In One WP Security...) ou chez l'hébergeur ; 4) sur la page
+        Utilisateurs &gt; Profil, la section « Mots de passe d'application » doit apparaître.
+      </p>
+    </details>
     <label>
       Identifiant WordPress
       <input type="text" name="utilisateur" value="{{ client.wordpress_utilisateur }}" autocomplete="off">

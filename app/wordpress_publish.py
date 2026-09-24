@@ -19,6 +19,12 @@ import requests
 
 from . import wordpress_style
 
+MESSAGE_MOTS_DE_PASSE_DESACTIVES = (
+    "Les mots de passe d'application sont désactivés sur ce site WordPress. Causes fréquentes : le site est configuré "
+    "en http:// (Réglages > Général : les deux adresses doivent commencer par https://), il est derrière un proxy ou "
+    "Cloudflare qui fait croire à WordPress qu'il n'est pas en HTTPS, ou un plugin de sécurité (ou l'hébergeur) "
+    "désactive cette fonction."
+)
 DELAI_SECONDES = 60
 FUSEAU_LOCAL = ZoneInfo("Europe/Brussels")
 
@@ -42,6 +48,12 @@ def _appeler(methode: str, url_site: str, chemin: str, utilisateur: str, mot_de_
             f"Impossible de joindre le site ({base}) : adresse incorrecte, site hors ligne ou certificat HTTPS invalide."
         ) from erreur
     if reponse.status_code == 401:
+        try:
+            code = (reponse.json() or {}).get("code", "")
+        except ValueError:
+            code = ""
+        if code.startswith("application_passwords_disabled"):
+            raise RuntimeError(MESSAGE_MOTS_DE_PASSE_DESACTIVES)
         raise RuntimeError("Identifiants refusés : vérifiez l'identifiant et le mot de passe d'application.")
     if reponse.status_code == 403:
         raise RuntimeError(
