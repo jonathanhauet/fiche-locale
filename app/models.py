@@ -736,6 +736,20 @@ class ParametreSearchConsole(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class PromptImageGenere(Base):
+    """
+    Historique des prompts d'images IA generes avec l'option "Varier automatiquement" :
+    les derniers d'un client sont passes a l'IA pour qu'elle ne refasse pas la meme scene.
+    """
+
+    __tablename__ = "prompt_image_genere"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, index=True, nullable=False)
+    prompt = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class SuggestionSujetJour(Base):
     """
     Sujets tendance generes automatiquement chaque matin (voir

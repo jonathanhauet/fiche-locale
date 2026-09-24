@@ -347,6 +347,8 @@ templates.env.globals["version_calendrier_multi_js"] = int(
 # Fonctions appelables directement depuis les templates (barre laterale,
 # affichee sur toutes les pages) : voir soldes_api.py pour le detail du cache.
 templates.env.globals["solde_dataforseo"] = soldes_api.solde_dataforseo
+templates.env.globals["options_visuel"] = claude_generation.OPTIONS_VISUEL
+templates.env.globals["libelles_groupes_visuel"] = claude_generation.LIBELLES_GROUPES_VISUEL
 templates.env.globals["liens_plateformes_paiement"] = soldes_api.LIENS_PLATEFORMES_PAIEMENT
 
 
@@ -6642,11 +6644,46 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     prompt_image = (donnees.get("prompt_image") or "").strip()
     inclure_reference = bool(donnees.get("inclure_reference"))
     texte_post = (donnees.get("texte_post") or "").strip()
+    options_recues = donnees.get("options") if isinstance(donnees.get("options"), dict) else {}
+    varier = bool(options_recues.get("varier"))
+    couleur_marque = bool(options_recues.get("couleur_marque")) and bool(client.wordpress_couleur)
+    choix = claude_generation.choisir_options_visuel(options_recues, varier=varier)
+    avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier)
+    avertissement = ""
+    if avec_options:
+        # Un type sans visage (detail, illustration, lieu) ou "qui apparait" sans moi : pas de photos de reference.
+        if choix["type"] in claude_generation.TYPES_SANS_VISAGE or choix["personnes"] in claude_generation.PERSONNES_SANS_REFERENCE:
+            if inclure_reference:
+                avertissement = "Ce choix de visuel n'affiche pas de visage : vos photos de reference n'ont pas ete utilisees."
+            inclure_reference = False
+        elif choix["personnes"] in claude_generation.PERSONNES_AVEC_REFERENCE:
+            inclure_reference = bool(client.photos_reference)
 
     # Texte saisi a la main : pas de prompt d'image fourni par un generateur,
     # on le deduit du texte (et le navigateur l'affiche pour qu'on puisse l'ajuster).
     prompt_genere = ""
-    if not prompt_image:
+    options_appliquees = False
+    if avec_options:
+        # Options cochees : l'IA ecrit le prompt en appliquant ces consignes (a partir de l'idee saisie,
+        # sinon du texte du post). Sans aucune option, on garde le chemin d'origine ci-dessous.
+        if not prompt_image and not texte_post:
+            return JSONResponse({"erreur": "Ecrivez le texte de base ou decrivez l'image souhaitee."}, status_code=400)
+        recents = []
+        if varier:
+            recents = [
+                r.prompt for r in db.query(models.PromptImageGenere)
+                .filter(models.PromptImageGenere.client_id == client_id)
+                .order_by(models.PromptImageGenere.id.desc()).limit(6).all()
+            ]
+        try:
+            prompt_image = prompt_genere = claude_generation.prompt_image_avec_options(
+                prompt_image, texte_post, choix, bool(inclure_reference and client.photos_reference), recents,
+                client.wordpress_couleur if couleur_marque else "",
+            )
+            options_appliquees = True
+        except Exception as e:
+            return JSONResponse({"erreur": f"Impossible de preparer la description de l'image : {e}"}, status_code=500)
+    elif not prompt_image:
         if not texte_post:
             return JSONResponse({"erreur": "Ecrivez le texte de base ou decrivez l'image souhaitee."}, status_code=400)
         try:
@@ -6669,10 +6706,11 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
 
         # Les prompts de post decrivent des scenes sans personne : on les reecrit
         # pour que l'auteur soit le sujet (sinon Gemini ignore les photos).
-        try:
-            prompt_image = claude_generation.prompt_image_avec_auteur(prompt_image, texte_post)
-        except Exception:
-            pass  # repli : prompt d'origine, complete par la consigne de gemini_images
+        if not options_appliquees:  # avec options, le prompt met deja l'auteur en scene
+            try:
+                prompt_image = claude_generation.prompt_image_avec_auteur(prompt_image, texte_post)
+            except Exception:
+                pass  # repli : prompt d'origine, complete par la consigne de gemini_images
 
     try:
         # Carre plutot que paysage : reste correct sur Google/Facebook/LinkedIn
@@ -6684,8 +6722,17 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation de l'image : {e}"}, status_code=500)
 
+    if varier:
+        try:
+            db.add(models.PromptImageGenere(client_id=client_id, prompt=prompt_image[:1500]))
+            db.commit()
+        except Exception:
+            db.rollback()
+
     return JSONResponse({
-        "url": url_image, "prompt_utilise": prompt_image if images_reference else "", "prompt_genere": prompt_genere,
+        "url": url_image, "prompt_utilise": prompt_image if (images_reference or options_appliquees) else "",
+        "prompt_genere": prompt_genere, "avertissement": avertissement,
+        "choix_aleatoires": claude_generation.libelles_choix_aleatoires(choix) if varier else [],
     })
 
 

@@ -94,12 +94,34 @@
       🎨 Générer une image (IA)
     </button>
   </div>
-  {% if client.photos_reference %}
-  <label class="filtre-case">
-    <input type="checkbox" id="case-inclure-reference">
-    M'inclure dans l'image (à partir des photos de référence de la fiche)
-  </label>
-  {% endif %}
+  <details class="options-visuel" id="options-visuel">
+    <summary>Options du visuel IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
+    {% for groupe, choix_multiples in (("type", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
+    {% if groupe != "personnes" or client.photos_reference %}
+    <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}">
+      <legend>{{ libelles_groupes_visuel[groupe] }}{% if choix_multiples %} <span class="texte-discret">(plusieurs possibles)</span>{% endif %}</legend>
+      {% for identifiant, libelle, _consigne in options_visuel[groupe] %}
+      <label class="etiquette-chip-case">
+        <input type="{{ 'checkbox' if choix_multiples else 'radio' }}" name="visuel-{{ groupe }}" value="{{ identifiant }}">
+        {{ libelle }}
+      </label>
+      {% endfor %}
+    </fieldset>
+    {% endif %}
+    {% endfor %}
+    <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case">
+        <input type="checkbox" id="visuel-varier">
+        Varier automatiquement (l'IA évite de refaire les derniers visuels de ce client)
+      </label>
+      <label class="etiquette-chip-case">
+        <input type="checkbox" id="visuel-couleur-marque" {% if not client.wordpress_couleur %}disabled{% endif %}>
+        Intégrer les couleurs de la marque
+      </label>
+      {% if not client.wordpress_couleur %}<p class="texte-discret">Couleur de marque non renseignée : à définir dans le bloc WordPress de la fiche client.</p>{% endif %}
+      <button type="button" id="visuel-effacer" class="bouton-secondaire">Tout décocher</button>
+    </div>
+  </details>
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
 
@@ -694,9 +716,28 @@
     const boutonGenererImage = document.getElementById("bouton-generer-image");
     const spinnerGenererImage = document.getElementById("spinner-generer-image");
     const texteStatutImageIA = document.getElementById("texte-statut-image-ia");
-    const caseInclureReference = document.getElementById("case-inclure-reference");
+    const champPromptImage = document.getElementById("prompt-image-ia");
+    let promptImageAuto = false;  // vrai tant que la description affichee vient de l'IA (non retouchee)
+    champPromptImage.addEventListener("input", () => { promptImageAuto = false; });
+    document.getElementById("visuel-effacer").addEventListener("click", () => {
+      document.querySelectorAll("#options-visuel input").forEach((c) => { c.checked = false; });
+    });
+    function lireOptionsVisuel() {
+      const options = {};
+      ["type", "cadrage", "decor", "lumiere", "personnes"].forEach((groupe) => {
+        const cochees = Array.from(document.querySelectorAll('input[name="visuel-' + groupe + '"]:checked')).map((c) => c.value);
+        if (cochees.length) options[groupe] = (groupe === "cadrage" || groupe === "decor" || groupe === "lumiere") ? cochees : cochees[0];
+      });
+      if (document.getElementById("visuel-varier").checked) options.varier = true;
+      const couleur = document.getElementById("visuel-couleur-marque");
+      if (couleur.checked && !couleur.disabled) options.couleur_marque = true;
+      return options;
+    }
     boutonGenererImage.addEventListener("click", async () => {
-      const promptImage = document.getElementById("prompt-image-ia").value.trim();
+      const options = lireOptionsVisuel();
+      const avecOptions = Object.keys(options).length > 0;
+      // Avec des options, une description produite par l'IA au clic precedent est refaite (sinon "varier" ne varierait rien).
+      const promptImage = (avecOptions && promptImageAuto) ? "" : champPromptImage.value.trim();
 
       texteStatutImageIA.hidden = false;
       if (!promptImage && !document.getElementById("texte-base").value.trim()) {
@@ -716,7 +757,8 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt_image: promptImage,
-            inclure_reference: caseInclureReference ? caseInclureReference.checked : false,
+            inclure_reference: !!document.querySelector('input[name="visuel-personnes"][value^="moi"]:checked'),
+            options: options,
             texte_post: document.getElementById("texte-base").value,
           }),
         });
@@ -725,12 +767,14 @@
           texteStatutImageIA.textContent = donnees.erreur || "Échec de la génération de l'image.";
           return;
         }
-        if (donnees.prompt_genere) document.getElementById("prompt-image-ia").value = donnees.prompt_genere;
+        if (donnees.prompt_genere) { champPromptImage.value = donnees.prompt_genere; promptImageAuto = true; }
         champImagePartagee.value = "";
         champImageUrlIA.value = donnees.url;
         actualiserToutesLesApercusImage();
         texteStatutImageIA.textContent = "Image générée — visible dans les aperçus ci-dessous."
-          + (donnees.prompt_utilise ? " Scène demandée à l'IA (avec vous comme sujet) : « " + donnees.prompt_utilise + " »" : "");
+          + (donnees.choix_aleatoires && donnees.choix_aleatoires.length ? " Choix automatiques : " + donnees.choix_aleatoires.join(", ") + "." : "")
+          + (donnees.avertissement ? " " + donnees.avertissement : "")
+          + (donnees.prompt_utilise ? " Scène demandée à l'IA : « " + donnees.prompt_utilise + " »" : "");
       } catch (erreur) {
         texteStatutImageIA.textContent = "Erreur réseau lors de la génération de l'image.";
       } finally {

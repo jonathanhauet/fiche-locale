@@ -3137,3 +3137,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   .zone-contenu { padding: 1.5rem 1.2rem 3rem; max-width: 100%; }
   .ligne-champs { grid-template-columns: 1fr; }
 }
+
+.options-visuel { margin: 8px 0 12px; border: 1px solid var(--carte-bordure); border-radius: 8px; padding: 8px 12px; background: var(--fond); }
+.options-visuel summary { cursor: pointer; font-weight: 600; }
+.groupe-options-visuel { border: 0; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.groupe-options-visuel legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
+.groupe-options-visuel .etiquette-chip-case { margin: 0; }

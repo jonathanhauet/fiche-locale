@@ -1520,3 +1520,215 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
     return _nettoyer_texte_genere(bloc_texte)
+
+
+# ---------------------------------------------------------------------------
+# Options du visuel (cases a cocher du composeur multi-reseaux) : chaque choix
+# ajoute une consigne d'image ; tout est facultatif, et sans aucun choix la
+# generation reste exactement celle d'avant. (id, libelle affiche, consigne en anglais)
+# ---------------------------------------------------------------------------
+OPTIONS_VISUEL = {
+    "type": [
+        ("instantane", "Photo sur le vif", "a candid snapshot taken on a smartphone in the middle of a real moment (natural, slightly imperfect framing, uneven natural light, a bit of grain)"),
+        ("portrait", "Portrait posé, professionnel", "a posed professional portrait: the subject looks toward the camera, relaxed and confident, clean natural look, well lit"),
+        ("action", "Scène de travail en action", "a work-in-action scene: the subject is actively doing the job, absorbed in the task and not looking at the camera"),
+        ("detail", "Gros plan sur un détail", "a close-up detail shot (hands, a tool, a material or a screen) with no face visible"),
+        ("realisation", "Réalisation ou produit", "a showcase of a finished piece of work or a product, well lit, the result is the hero of the image"),
+        ("lieu", "Lieu ou ambiance", "an atmosphere shot of the place itself (storefront, workshop or office), with no people or only tiny figures far in the background"),
+        ("illustration", "Illustration simple", "a simple flat vector-style illustration, clean shapes and a limited palette, no photorealism"),
+    ],
+    "cadrage": [
+        ("large", "Plan large", "wide shot showing the whole space"),
+        ("moyen", "Plan moyen", "medium shot, subject framed from the waist up"),
+        ("gros_plan", "Gros plan", "tight close-up"),
+        ("dessus", "Vue du dessus", "top-down view of objects laid on a table"),
+        ("selfie", "Selfie", "selfie-style framing at arm's length, slightly wide-angle"),
+    ],
+    "decor": [
+        ("atelier", "Atelier ou bureau", "in a workshop or an office"),
+        ("client", "Chez le client", "at a client's place (a home or a business)"),
+        ("exterieur", "Extérieur ou chantier", "outdoors, on site or on a job site"),
+        ("cafe", "Café ou coworking", "in a cafe or a coworking space"),
+        ("neutre", "Fond neutre", "against a plain, neutral background"),
+    ],
+    "lumiere": [
+        ("douce", "Lumière naturelle douce", "soft natural daylight"),
+        ("doree", "Heure dorée", "warm golden-hour light"),
+        ("epuree", "Lumineux et épuré", "a bright, airy, clean look"),
+        ("chaleureux", "Chaleureux", "warm, cozy tones"),
+        ("saison", "Ambiance de saison", "a seasonal atmosphere matching the current period ({saison})"),
+    ],
+    "personnes": [
+        ("moi", "Moi", "the person from the reference photos is the main subject"),
+        ("moi_client", "Moi avec un client ou un collègue", "the person from the reference photos interacting naturally with a second, different person (a client or a colleague, who is NOT the reference person)"),
+        ("mains", "Mes mains seulement", "only hands are visible, no face"),
+        ("personne", "Personne", "no people at all"),
+        ("equipe", "Une équipe", "a small team of two to four people working together, faces not the focus"),
+    ],
+}
+LIBELLES_GROUPES_VISUEL = {
+    "type": "Type de visuel", "cadrage": "Cadrage", "decor": "Décor", "lumiere": "Lumière et ambiance",
+    "personnes": "Qui apparaît",
+}
+# Le type impose des limites : ces types ne montrent pas de visage, donc jamais les photos de reference.
+TYPES_SANS_VISAGE = {"detail", "illustration", "lieu"}
+PERSONNES_AVEC_REFERENCE = {"moi", "moi_client"}
+PERSONNES_SANS_REFERENCE = {"mains", "personne", "equipe"}
+
+
+def _index_options(groupe: str) -> dict:
+    return {i: (libelle, consigne) for i, libelle, consigne in OPTIONS_VISUEL[groupe]}
+
+
+def saison_courante(aujourdhui: date = None) -> str:
+    mois = (aujourdhui or date.today()).month
+    return "winter" if mois in (12, 1, 2) else "spring" if mois in (3, 4, 5) else "summer" if mois in (6, 7, 8) else "autumn"
+
+
+def nom_couleur(couleur: str) -> str:
+    """Nom anglais approximatif d'une couleur #rrggbb (pour la decrire a un generateur d'images)."""
+    import colorsys
+    try:
+        r, g, b = (int(couleur[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    except (ValueError, IndexError, TypeError):
+        return ""
+    teinte, saturation, valeur = colorsys.rgb_to_hsv(r, g, b)
+    if valeur < 0.2:
+        return "near-black"
+    if saturation < 0.15:
+        return "grey" if valeur < 0.85 else "white"
+    degres = teinte * 360
+    for limite, nom in ((15, "red"), (40, "orange"), (65, "yellow"), (165, "green"), (200, "teal"), (255, "blue"), (290, "purple"), (345, "pink")):
+        if degres < limite:
+            return nom
+    return "red"
+
+
+def choisir_options_visuel(options: dict, varier: bool = False, hasard=None) -> dict:
+    """
+    Valide les options recues du navigateur (ids inconnus ignores) et, si `varier`,
+    tire au hasard un choix pour chaque groupe laisse vide (type, cadrage, decor,
+    lumiere - jamais "qui apparait"), en evitant les combinaisons absurdes.
+    Renvoie {"type", "cadrages", "decors", "lumieres", "personnes", "aleatoires": [(groupe, id)]}.
+    """
+    import random
+    hasard = hasard or random
+    options = options or {}
+    connus = {g: set(_index_options(g)) for g in OPTIONS_VISUEL}
+
+    def un(groupe):
+        valeur = options.get(groupe)
+        return valeur if valeur in connus[groupe] else None
+
+    def plusieurs(groupe):
+        valeurs = options.get(groupe)
+        valeurs = valeurs if isinstance(valeurs, list) else ([valeurs] if valeurs else [])
+        return [v for v in dict.fromkeys(valeurs) if v in connus[groupe]]
+
+    choix = {
+        "type": un("type"), "cadrages": plusieurs("cadrage"), "decors": plusieurs("decor"),
+        "lumieres": plusieurs("lumiere"), "personnes": un("personnes"), "aleatoires": [],
+    }
+    if varier:
+        if not choix["type"]:
+            choix["type"] = hasard.choice([i for i in connus["type"] if i != "illustration"])
+            choix["aleatoires"].append(("type", choix["type"]))
+        type_choisi = choix["type"]
+        if not choix["cadrages"] and type_choisi != "illustration":
+            candidats = {"detail": ["gros_plan", "dessus"], "lieu": ["large", "moyen"]}.get(type_choisi, sorted(connus["cadrage"]))
+            choix["cadrages"] = [hasard.choice(candidats)]
+            choix["aleatoires"].append(("cadrage", choix["cadrages"][0]))
+        if not choix["decors"] and type_choisi != "illustration":
+            choix["decors"] = [hasard.choice(sorted(connus["decor"]))]
+            choix["aleatoires"].append(("decor", choix["decors"][0]))
+        if not choix["lumieres"] and type_choisi != "illustration":
+            choix["lumieres"] = [hasard.choice(sorted(connus["lumiere"]))]
+            choix["aleatoires"].append(("lumiere", choix["lumieres"][0]))
+    return choix
+
+
+def options_visuel_actives(choix: dict, couleur_marque: bool = False, varier: bool = False) -> bool:
+    return bool(
+        choix["type"] or choix["cadrages"] or choix["decors"] or choix["lumieres"] or choix["personnes"]
+        or couleur_marque or varier
+    )
+
+
+def libelles_choix_aleatoires(choix: dict) -> list[str]:
+    return [f"{LIBELLES_GROUPES_VISUEL[groupe]} : {_index_options(groupe)[i][0]}" for groupe, i in choix["aleatoires"]]
+
+
+def prompt_image_avec_options(
+    idee: str, texte_post: str, choix: dict, avec_reference: bool, recents: list[str] = None, couleur: str = "",
+) -> str:
+    """
+    Prompt d'image (anglais) qui applique les options cochees a l'idee de la scene (ou, sans idee,
+    au texte du post). Sans "type" impose, on garde le style de base des generateurs (photo sur le
+    vif au smartphone). `recents` : descriptions des dernieres images de ce client, a ne pas refaire.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not (idee or "").strip() and not (texte_post or "").strip():
+        raise RuntimeError("Aucun texte ni description fourni.")
+
+    saison = saison_courante()
+    lignes = []
+    if choix["type"]:
+        lignes.append(f"- Visual type: {_index_options('type')[choix['type']][1]}.")
+    for groupe, cle in (("cadrage", "cadrages"), ("decor", "decors"), ("lumiere", "lumieres")):
+        consignes = [_index_options(groupe)[i][1].replace("{saison}", saison) for i in choix[cle]]
+        if consignes:
+            libelle = {"cadrage": "Framing", "decor": "Setting", "lumiere": "Light and mood"}[groupe]
+            lignes.append(f"- {libelle}: " + "; ".join(consignes) + ".")
+    personnes = choix["personnes"]
+    if avec_reference and personnes not in PERSONNES_SANS_REFERENCE:
+        consigne = _index_options("personnes")[personnes][1] if personnes in PERSONNES_AVEC_REFERENCE else _index_options("personnes")["moi"][1]
+        lignes.append(
+            f"- People: {consigne}. Write \"the person from the reference photos\" and NEVER describe their physique "
+            "(face, hair, age, clothes): the face comes from the photos. Keep the face clearly visible."
+        )
+    elif personnes:
+        lignes.append(f"- People: {_index_options('personnes')[personnes][1]}.")
+    nom = nom_couleur(couleur)
+    if couleur and nom:
+        lignes.append(
+            f"- Brand color: work the color {nom} ({couleur}) in naturally (an object, a garment, a decor accent), "
+            "never as an overall tint or filter."
+        )
+    directives = "\n".join(lignes) or "- (no specific direction: use your judgment)"
+
+    style_de_base = "" if choix["type"] else (
+        "Unless a visual type is imposed above, render it as a candid smartphone snapshot (natural, slightly "
+        "imperfect framing, uneven natural light, a bit of grain, lived-in place), not a stock photo, with no "
+        "artificial background blur.\n"
+    )
+    bloc_recents = ""
+    if recents:
+        liste = "\n".join(f"- {r.strip()[:300]}" for r in recents)
+        bloc_recents = (
+            "Images already produced recently for this client. Do NOT repeat their setting, framing, subject "
+            f"placement or props: propose something clearly different.\n{liste}\n\n"
+        )
+
+    prompt = (
+        f"Post text:\n{(texte_post or '(not provided)').strip()[:2000]}\n\n"
+        f"Initial idea for the visual (may be empty):\n{(idee or '').strip() or '(none)'}\n\n"
+        f"{bloc_recents}"
+        "Write an image-generation prompt, in English, illustrating this post and applying EXACTLY these art "
+        f"directions:\n{directives}\n\n"
+        f"{style_de_base}"
+        "Aim for a concrete, specific scene directly tied to the post's subject (not an abstract metaphor). "
+        "No legible text anywhere (papers, screens, signs, clothes), no logo, no geographic reference. Avoid generic "
+        "AI-illustration cliches (padlock/shield, abstract dashboard, light bulb, handshake, connected globe, gears) "
+        "unless the subject truly requires them.\n"
+        "Reply with the prompt only, in 3 to 5 sentences, without introduction or quotation marks."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=600, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), "").strip().strip('"')
+    if not texte:
+        raise RuntimeError("L'IA n'a renvoye aucun prompt exploitable.")
+    return _nettoyer_texte_genere(texte)
