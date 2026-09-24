@@ -347,6 +347,10 @@
       Lien du bouton d'appel à l'action en fin d'article (page contact ou devis, optionnel)
       <input type="text" name="lien_cta" value="{{ client.wordpress_lien_cta }}" placeholder="https://www.monsite.fr/contact" autocomplete="off">
     </label>
+    <label>
+      Texte du bouton (optionnel)
+      <input type="text" name="texte_cta" value="{{ client.wordpress_texte_cta }}" maxlength="40" placeholder="Vide = l'IA l'adapte à l'entreprise (« Me contacter », « Nous contacter », « Demander un devis »...)" autocomplete="off">
+    </label>
     <p id="message-wordpress" class="texte-vide" hidden></p>
     <div class="actions-avis">
       <button type="submit" class="bouton-secondaire">Tester et enregistrer</button>

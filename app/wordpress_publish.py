@@ -240,6 +240,36 @@ def markdown_vers_html(texte: str, couleur: str = "") -> str:
     return '<div class="fl-article">\n' + "\n".join(blocs) + "\n</div>"
 
 
+TEXTE_BOUTON_NEUTRE = "Prendre contact"  # repli : convient aussi bien a un "je" qu'a un "nous"
+MOTIF_LIGNE_BOUTON = re.compile(r"^\[\[(.+?)\|(\S+?)\]\]$")
+
+
+def nettoyer_texte_bouton(texte: str) -> str:
+    """Texte de bouton sur une seule ligne, sans les caracteres de la syntaxe [[texte|lien]]."""
+    return " ".join(re.sub(r"[\[\]|]", "", texte or "").split())[:40].strip()
+
+
+def assurer_bouton(article: str, lien: str, texte_impose: str = "") -> str:
+    """
+    Garantit UN bouton d'appel a l'action final vers `lien`. Un texte impose (reglage
+    du client) remplace celui de l'IA ; sinon on garde le texte choisi par l'IA
+    s'il pointe bien vers ce lien, avec un repli neutre. Toute autre ligne
+    [[...|...]] (lien invente par l'IA) est supprimee : jamais de lien non voulu.
+    """
+    if not lien:
+        return article
+    texte_ia = ""
+    lignes = []
+    for ligne in (article or "").rstrip().split("\n"):
+        m = MOTIF_LIGNE_BOUTON.match(ligne.strip())
+        if not m:
+            lignes.append(ligne)
+        elif m.group(2) == lien and not texte_ia:
+            texte_ia = nettoyer_texte_bouton(m.group(1))
+    texte = nettoyer_texte_bouton(texte_impose) or texte_ia or TEXTE_BOUTON_NEUTRE
+    return "\n".join(lignes).rstrip() + f"\n\n[[{texte}|{lien}]]"
+
+
 def extrait_depuis_corps(texte: str, longueur: int = 155) -> str:
     """Resume automatique (champ "extrait" de WordPress) : debut du premier vrai paragraphe, coupe proprement."""
     for bloc in re.split(r"\n\s*\n", (texte or "").strip()):

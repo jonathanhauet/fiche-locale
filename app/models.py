@@ -162,6 +162,8 @@ class Client(Base):
     # blocs des articles, et lien du bouton d'appel a l'action ajoute en fin d'article.
     wordpress_couleur = Column(String, default="")
     wordpress_lien_cta = Column(String, default="")
+    # Texte impose du bouton ; vide = l'IA choisit un texte adapte a l'entreprise ("Me contacter", "Nous contacter"...).
+    wordpress_texte_cta = Column(String, default="")
     # Propriete Google Search Console du site web du client ("sc-domain:exemple.fr" ou
     # "https://www.exemple.fr/"), voir search_console.py.
     search_console_site = Column(String, default="")

@@ -198,7 +198,7 @@ def _migrer_vers_multi_comptes():
         if "search_console_site" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
         for colonne_wordpress in (
-            "wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe", "wordpress_couleur", "wordpress_lien_cta",
+            "wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe", "wordpress_couleur", "wordpress_lien_cta", "wordpress_texte_cta",
         ):
             if colonne_wordpress not in colonnes_clients:
                 connexion.execute(text(f"ALTER TABLE clients ADD COLUMN {colonne_wordpress} TEXT DEFAULT ''"))
@@ -6091,13 +6091,14 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
         return JSONResponse({"erreur": "Écrivez d'abord le sujet ou le texte de base."}, status_code=400)
 
     try:
-        article = claude_generation.generer_article_blog(sujet, _contexte_ia_client(client))
+        article = claude_generation.generer_article_blog(
+            sujet, _contexte_ia_client(client), client.wordpress_lien_cta, bool(client.wordpress_texte_cta),
+        )
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la génération de l'article : {erreur}"}, status_code=500)
-    if client.wordpress_lien_cta:
-        # Bouton d'appel a l'action final (page contact / devis du client) : ajoute au
-        # texte pour rester visible et modifiable a la relecture, jamais invente par l'IA.
-        article += f"\n\n[[Nous contacter|{client.wordpress_lien_cta}]]"
+    # Bouton d'appel a l'action final vers la page contact / devis du client : texte choisi par
+    # l'IA selon l'entreprise (ou impose par le reglage), lien toujours celui du client.
+    article = wordpress_publish.assurer_bouton(article, client.wordpress_lien_cta, client.wordpress_texte_cta)
     return JSONResponse({"article": article})
 
 
@@ -6105,7 +6106,7 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
 def reglages_wordpress(
     client_id: int, request: Request, action: str = Form("enregistrer"), url: str = Form(""),
     utilisateur: str = Form(""), mot_de_passe: str = Form(""), couleur: str = Form(""), lien_cta: str = Form(""),
-    db: Session = Depends(obtenir_session),
+    texte_cta: str = Form(""), db: Session = Depends(obtenir_session),
 ):
     """
     Connecte (apres un test reel de la connexion) ou deconnecte le blog WordPress
@@ -6139,6 +6140,7 @@ def reglages_wordpress(
     client.wordpress_couleur = wordpress_style.normaliser_couleur(couleur) or ""
     lien_cta = lien_cta.strip()
     client.wordpress_lien_cta = lien_cta if re.match(r"^https?://\S+$", lien_cta) else ""
+    client.wordpress_texte_cta = wordpress_publish.nettoyer_texte_bouton(texte_cta)
     db.commit()
     return JSONResponse({"ok": True, "message": f"Connecté en tant que {nom}. Réglages enregistrés."})
 

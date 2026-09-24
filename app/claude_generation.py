@@ -1452,7 +1452,7 @@ def adapter_post_multi_reseaux(
     return {r: _nettoyer_texte_genere(variantes[r]) for r in reseaux}
 
 
-def generer_article_blog(sujet: str, contexte: str = "") -> str:
+def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", texte_cta_impose: bool = False) -> str:
     """
     Article de blog complet (markdown : "# Titre", puis "## " pour les
     sous-titres) a partir d'un sujet ou d'un texte de base, pour publication
@@ -1490,6 +1490,18 @@ def generer_article_blog(sujet: str, contexte: str = "") -> str:
         "- Si le contexte contient un bloc « VOIX DU CLIENT », ecris comme lui : son registre, ses tournures, "
         "sa personne grammaticale. A defaut, « nous » pour une entreprise, « je » pour un independant seul.\n"
         "- Pas de tiret cadratin (—), pas d'emoji, aucun commentaire autour : uniquement l'article."
+        + (
+            "\n- Le bouton d'appel a l'action est ajoute automatiquement apres ton texte : n'en ecris pas."
+            if texte_cta_impose else
+            (
+                f"\n- Termine l'article par UNE ligne seule, exactement de la forme [[Texte du bouton|{lien_cta}]] : "
+                "le texte (2 a 4 mots) invite a contacter l'entreprise, a la personne grammaticale de l'auteur "
+                "(« Me contacter » si l'auteur est un independant qui dit « je », « Nous contacter » pour une equipe), "
+                "ou plus precis si le sujet s'y prete (« Demander un devis », « Prendre rendez-vous »). "
+                "N'utilise aucun autre lien."
+                if lien_cta else ""
+            )
+        )
     )
 
     client = Anthropic(api_key=CLE_API)
