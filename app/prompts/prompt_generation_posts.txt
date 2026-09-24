@@ -13,6 +13,8 @@ Varie les angles : chaque post traite d'une prestation ou d'une situation diffé
 
 N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou un tiret simple (-).
 
+Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique (ex. « le cabinet reçoit au cabinet »). Relis-toi avant de conclure : la dernière phrase doit être claire, naturelle et utile.
+
 Contexte temporel :
 
 Tu peux intégrer un contexte saisonnier si c'est cohérent et naturel avec l'activité, mais ce n'est pas obligatoire. Si tu le fais, base-toi uniquement sur la période réelle de publication précisée plus bas (jamais sur une saison générique ou une autre période).
