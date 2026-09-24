@@ -130,8 +130,8 @@
         <textarea id="texte-{{ reseau }}" name="texte_{{ reseau }}" rows="{{ 14 if reseau == 'wordpress' else 4 }}" class="champ-texte-reseau" data-reseau="{{ reseau }}">{{ variantes.get(reseau, "") }}</textarea>
         {% if reseau == "wordpress" %}
         <p class="texte-discret">
-          Article de blog : clique sur 🔄 pour que l'IA le rédige à partir du texte de base (sujet ou idées),
-          puis relis et modifie. La première ligne « # Titre » est le titre de l'article, « ## » les sous-titres,
+          Article de blog : « Adapter le texte par réseau » (ou le 🔄 de ce bloc, pour ce réseau seul) le rédige à
+          partir du texte de base (sujet ou idées) ; relis et modifie ensuite. La première ligne « # Titre » est le titre de l'article, « ## » les sous-titres,
           « - » les listes. La première image devient l'image mise en avant. Publié tout de suite, ou programmé
           par WordPress à la date choisie.
         </p>
@@ -747,18 +747,12 @@
     // et le bouton 🔄 par carte (un seul reseau) : meme endpoint, meme
     // application du resultat aux champs/apercus concernes.
     async function adapterReseaux(listeReseaux, { onStatut, onFinally } = {}) {
-      // WordPress a son propre bouton (article complet, plus long et plus
-      // couteux qu'une adaptation de post) : jamais inclus dans l'adaptation groupee.
-      const avaitWordpress = listeReseaux.includes("wordpress");
+      // WordPress n'est pas une adaptation de post mais un article complet, redige
+      // par genererArticle (voir plus bas) : jamais envoye a /adapter.
       listeReseaux = listeReseaux.filter((r) => r !== "wordpress");
-      if (!listeReseaux.length && avaitWordpress) {
-        onStatut && onStatut("Pour WordPress, utilisez le bouton 🔄 du bloc WordPress (rédaction de l'article).");
-        onFinally && onFinally();
-        return;
-      }
       const texteBase = document.getElementById("texte-base").value.trim();
-      if (!texteBase) { onStatut && onStatut("Écrivez d'abord le texte de base."); return; }
-      if (!listeReseaux.length) { onStatut && onStatut("Sélectionnez au moins un réseau."); return; }
+      if (!texteBase) { onStatut && onStatut("Écrivez d'abord le texte de base."); onFinally && onFinally(); return; }
+      if (!listeReseaux.length) { onStatut && onStatut("Sélectionnez au moins un réseau."); onFinally && onFinally(); return; }
 
       onStatut && onStatut("Adaptation en cours...");
       try {
@@ -792,15 +786,29 @@
       }
     }
 
-    boutonAdapter.addEventListener("click", () => {
+    // Les deux traitements (adaptation des posts, redaction de l'article WordPress)
+    // tournent en parallele ; leurs messages s'affichent cote a cote.
+    boutonAdapter.addEventListener("click", async () => {
       texteStatut.hidden = false;
       const reseauxCoches = casesReseaux.filter((c) => c.checked).map((c) => c.dataset.reseau);
+      const reseauxPosts = reseauxCoches.filter((r) => r !== "wordpress");
+      const avecArticle = reseauxCoches.includes("wordpress");
+      if (!reseauxCoches.length) { texteStatut.textContent = "Sélectionnez au moins un réseau."; return; }
+
       boutonAdapter.disabled = true;
       spinnerAdapter.hidden = false;
-      adapterReseaux(reseauxCoches, {
-        onStatut: (msg) => { texteStatut.textContent = msg; },
-        onFinally: () => { boutonAdapter.disabled = false; spinnerAdapter.hidden = true; },
-      });
+      const messages = {};
+      const afficher = (cle) => (msg) => { messages[cle] = msg; texteStatut.textContent = Object.values(messages).join(" · "); };
+      const taches = [];
+      if (reseauxPosts.length) {
+        taches.push(new Promise((fini) => adapterReseaux(reseauxPosts, { onStatut: afficher("posts"), onFinally: fini })));
+      }
+      if (avecArticle) {
+        taches.push(new Promise((fini) => genererArticle({ onStatut: afficher("article"), onFinally: fini })));
+      }
+      await Promise.all(taches);
+      boutonAdapter.disabled = false;
+      spinnerAdapter.hidden = true;
     });
 
     async function genererArticle({ onStatut, onFinally }) {
