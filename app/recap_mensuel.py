@@ -11,6 +11,7 @@ clients mail ignorent tres largement le CSS externe, ce template n'utilise
 donc pas static/style.css.
 """
 
+import html
 import os
 
 from dotenv import load_dotenv
@@ -64,9 +65,9 @@ def total_et_evolution(statistiques: dict, comparatif_visibilite, cles: list[str
     return total, round((total - total_n1) / total_n1 * 100, 1)
 
 
-def _ligne_stat(libelle: str, valeur, evolution=None) -> str:
+def _ligne_stat(libelle: str, valeur, evolution=None, comparaison: str = "l'an dernier") -> str:
     badge = (
-        f'<span style="color:#16a34a;font-weight:600;font-size:13px;margin-left:8px;">▲ {evolution}% vs l\'an dernier</span>'
+        f'<span style="color:#16a34a;font-weight:600;font-size:13px;margin-left:8px;">▲ {evolution}% vs {comparaison}</span>'
         if evolution is not None and evolution > 0
         else ""
     )
@@ -173,6 +174,34 @@ def construire_email(
         sections.append(f"""
         <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">📈 Ta visibilité sur Google</h2>
         <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_visi)}</table>""")
+
+    # --- Site web (Google Search Console) : uniquement des bonnes nouvelles - le
+    # nombre de visites et d'apparitions, les recherches qui ont amene des
+    # visites, et une evolution SEULEMENT si elle est positive (meme regle que
+    # les vues de la fiche). Section absente s'il n'y a eu aucune visite.
+    sc = donnees.get("search_console") or {}
+    if sc.get("clics"):
+        precedents = sc.get("clics_precedents") or 0
+        evolution_sc = round((sc["clics"] - precedents) / precedents * 100, 1) if precedents else None
+        lignes_sc = [_ligne_stat(
+            "Visites sur ton site depuis Google", sc["clics"],
+            evolution_sc if evolution_sc is not None and evolution_sc > 0 else None, comparaison="le mois dernier",
+        )]
+        if sc.get("impressions"):
+            lignes_sc.append(_ligne_stat("Apparitions de ton site dans les résultats Google", sc["impressions"]))
+        requetes_sc = "".join(
+            f'<li style="margin-bottom:4px;color:{COULEUR_TEXTE};font-size:14px;">'
+            f'« {html.escape(r["requete"])} » : <strong>{r["clics"]} visite{"s" if r["clics"] > 1 else ""}</strong></li>'
+            for r in (sc.get("top_requetes") or [])[:3]
+        )
+        bloc_requetes = (
+            f'<p style="margin:10px 0 2px;color:{COULEUR_DISCRET};font-size:13px;">Les recherches qui t\'ont amené le plus de visites :</p>'
+            f'<ul style="margin:4px 0;padding-left:20px;">{requetes_sc}</ul>'
+            if requetes_sc else ""
+        )
+        sections.append(f"""
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">🌐 Ton site sur Google</h2>
+        <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_sc)}</table>{bloc_requetes}""")
 
     # --- Posts publies : avec leur date, pour montrer tout le travail fait
     # dans le mois (pas de plafond - un mois normal en compte peu). ---

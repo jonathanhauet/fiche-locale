@@ -72,4 +72,25 @@
   {% endif %}
   <a href="/google-ads/connecter">{{ "Reconnecter" if parametre_ads.refresh_token else "Connecter Google Ads" }}</a>
 </div>
+
+<h2>Google Search Console</h2>
+<p class="texte-discret">
+  Visites et recherches du <strong>site web</strong> de chaque client, pour le récap mensuel (bonnes nouvelles
+  uniquement) et la fiche client. Un seul compte Google pour toute l'agence : ajoute son adresse comme
+  utilisateur (accès « Restreint » suffisant) dans la Search Console de chaque site client, puis rattache le
+  site depuis la fiche du client.
+</p>
+{% set sc = parametre_sc if parametre_sc is defined else none %}
+<div class="bandeau-info" style="margin-top:1rem;">
+  {% if sc and sc.refresh_token %}
+    ✅ Connecté avec {{ sc.libelle }}.
+    <a href="/search-console/connecter">Reconnecter</a>
+    <form method="post" action="/search-console/deconnecter" style="display:inline;margin-left:0.6rem;"
+          onsubmit="return confirm('Déconnecter la Search Console ? Les sites rattachés aux clients seront conservés.');">
+      <button type="submit" class="bouton-danger bouton-mini">Déconnecter</button>
+    </form>
+  {% else %}
+    Pas encore connecté. <a href="/search-console/connecter">Connecter la Search Console</a>
+  {% endif %}
+</div>
 {% endblock %}

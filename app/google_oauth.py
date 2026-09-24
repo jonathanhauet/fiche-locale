@@ -27,6 +27,14 @@ SCOPES = [
 # (voir models.ParametreGoogleAds).
 SCOPES_ADS = ["https://www.googleapis.com/auth/adwords"]
 
+# Google Search Console (lecture seule) : autorisation separee, un seul compte pour
+# toute l'agence (voir models.ParametreSearchConsole).
+SCOPES_SEARCH_CONSOLE = [
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
+
 # Libelle place sur le compte cree automatiquement lors de la migration depuis
 # l'ancien modele mono-compte (voir main.py, _migrer_vers_multi_comptes). Son
 # refresh token a ete emis avant l'ajout des scopes openid/userinfo.email et ne
@@ -79,6 +87,15 @@ def construire_flow_ads(redirect_uri: str, code_verifier: str = None) -> Flow:
 
     return Flow.from_client_config(
         _configuration_client(), scopes=SCOPES_ADS, redirect_uri=redirect_uri, code_verifier=code_verifier
+    )
+
+
+def construire_flow_search_console(redirect_uri: str, code_verifier: str = None) -> Flow:
+    if redirect_uri.startswith("http://localhost") or redirect_uri.startswith("http://127.0.0.1"):
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+    return Flow.from_client_config(
+        _configuration_client(), scopes=SCOPES_SEARCH_CONSOLE, redirect_uri=redirect_uri, code_verifier=code_verifier
     )
 
 
@@ -188,6 +205,49 @@ def enregistrer_refresh_token_ads(db: Session, refresh_token: str) -> "models.Pa
     db.commit()
     db.refresh(parametre)
     return parametre
+
+
+def obtenir_parametre_search_console(db: Session):
+    """La ligne unique de connexion Search Console, ou None si jamais connectee."""
+    return db.query(models.ParametreSearchConsole).first()
+
+
+def search_console_connecte(db: Session) -> bool:
+    parametre = obtenir_parametre_search_console(db)
+    return bool(parametre and parametre.refresh_token)
+
+
+def enregistrer_refresh_token_search_console(db: Session, refresh_token: str) -> "models.ParametreSearchConsole":
+    identifiants = Credentials(
+        token=None, refresh_token=refresh_token, token_uri="https://oauth2.googleapis.com/token",
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, scopes=SCOPES_SEARCH_CONSOLE,
+    )
+    identifiants.refresh(Request())
+    parametre = obtenir_parametre_search_console(db)
+    if not parametre:
+        parametre = models.ParametreSearchConsole()
+        db.add(parametre)
+    parametre.refresh_token = refresh_token
+    parametre.libelle = _recuperer_email(identifiants.token) or "(compte sans adresse e-mail)"
+    db.commit()
+    db.refresh(parametre)
+    return parametre
+
+
+def obtenir_identifiants_search_console(db: Session):
+    """Identifiants Search Console valides, ou None (jamais connecte, ou jeton revoque)."""
+    parametre = obtenir_parametre_search_console(db)
+    if not parametre or not parametre.refresh_token:
+        return None
+    identifiants = Credentials(
+        token=None, refresh_token=parametre.refresh_token, token_uri="https://oauth2.googleapis.com/token",
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, scopes=SCOPES_SEARCH_CONSOLE,
+    )
+    try:
+        identifiants.refresh(Request())
+    except RefreshError:
+        return None
+    return identifiants
 
 
 def ads_configure(db: Session) -> bool:

@@ -76,6 +76,7 @@ from . import (
     rapport_donnees,
     rapport_pdf,
     recap_mensuel,
+    search_console,
     soldes_api,
     veille_actualite,
     whatsapp_business,
@@ -194,6 +195,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN hashtags_fixes TEXT DEFAULT ''"))
         if "profil_voix" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
+        if "search_console_site" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
         for colonne_wordpress in (
             "wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe", "wordpress_couleur", "wordpress_lien_cta",
         ):
@@ -2971,6 +2974,7 @@ def _reponse_detail_client(
             "erreur_whatsapp_test": request.session.pop("erreur_whatsapp_test", None),
             "erreur_voix": request.session.pop("erreur_voix", None),
             "message_wordpress": request.session.pop("message_wordpress", None),
+            "search_console_connecte": google_oauth.search_console_connecte(db),
             **_donnees_calendrier(request, db, client, posts_en_ligne=tous_posts_en_ligne),
         },
         status_code=code,
@@ -5474,7 +5478,10 @@ def google_comptes(request: Request, db: Session = Depends(obtenir_session)):
     comptes = google_oauth.lister_comptes(db)
     return templates.TemplateResponse(
         request, "google_comptes.html",
-        {"comptes": comptes, "parametre_ads": google_oauth.obtenir_parametre_ads(db)},
+        {
+            "comptes": comptes, "parametre_ads": google_oauth.obtenir_parametre_ads(db),
+            "parametre_sc": google_oauth.obtenir_parametre_search_console(db),
+        },
     )
 
 
@@ -7451,6 +7458,134 @@ def google_ads_callback(request: Request, db: Session = Depends(obtenir_session)
 
     google_oauth.enregistrer_refresh_token_ads(db, flow.credentials.refresh_token)
     return RedirectResponse("/google/comptes", status_code=303)
+
+
+@app.get("/search-console/connecter")
+def search_console_connecter(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    redirect_uri = str(request.url_for("search_console_callback"))
+    flow = google_oauth.construire_flow_search_console(redirect_uri)
+    url_autorisation, state = flow.authorization_url(access_type="offline", prompt="consent")
+    request.session["oauth_sc_state"] = state
+    request.session["oauth_sc_code_verifier"] = flow.code_verifier
+    return RedirectResponse(url_autorisation)
+
+
+@app.get("/search-console/callback", name="search_console_callback")
+def search_console_callback(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    state_attendu = request.session.get("oauth_sc_state")
+    if state_attendu and request.query_params.get("state") != state_attendu:
+        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /search-console/connecter.", status_code=400)
+    if request.query_params.get("error"):
+        return HTMLResponse(f"Connexion refusee : {request.query_params.get('error')}. Retour a /google/comptes.", status_code=400)
+
+    redirect_uri = str(request.url_for("search_console_callback"))
+    flow = google_oauth.construire_flow_search_console(
+        redirect_uri, code_verifier=request.session.get("oauth_sc_code_verifier"),
+    )
+    flow.fetch_token(authorization_response=str(request.url))
+    if not flow.credentials.refresh_token:
+        return HTMLResponse("Google n'a pas renvoye de jeton durable : recommencez depuis /search-console/connecter.", status_code=400)
+
+    google_oauth.enregistrer_refresh_token_search_console(db, flow.credentials.refresh_token)
+    return RedirectResponse("/google/comptes", status_code=303)
+
+
+@app.post("/search-console/deconnecter")
+def search_console_deconnecter(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    db.query(models.ParametreSearchConsole).delete()
+    db.commit()
+    return RedirectResponse("/google/comptes", status_code=303)
+
+
+def _identifiants_sc_ou_erreur(db: Session):
+    identifiants = google_oauth.obtenir_identifiants_search_console(db)
+    if identifiants:
+        return identifiants, None
+    return None, JSONResponse(
+        {"ok": False, "message": "Search Console non connectée (ou accès révoqué) : reconnecte-la depuis Comptes Google."},
+        status_code=400,
+    )
+
+
+@app.get("/clients/{client_id}/search-console/sites")
+def search_console_sites_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Proprietes Search Console accessibles + celle qui correspond au site du client (suggestion)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Non connecté."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+    identifiants, erreur = _identifiants_sc_ou_erreur(db)
+    if erreur:
+        return erreur
+    try:
+        sites = search_console.lister_sites(identifiants)
+    except Exception as e:
+        return JSONResponse({"ok": False, "message": str(e)}, status_code=400)
+
+    adresses = [client.wordpress_url]
+    identifiants_fiche = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.compte_google_id else None
+    if identifiants_fiche and client.location_id:
+        try:
+            adresses.append(google_location.obtenir_infos_fiche(identifiants_fiche, client.location_id).get("websiteUri", ""))
+        except Exception:
+            pass
+    suggestion = next((s for s in (search_console.suggerer_site(sites, a) for a in adresses) if s), "")
+    return JSONResponse({"ok": True, "sites": sites, "suggestion": suggestion, "actuel": client.search_console_site})
+
+
+@app.post("/clients/{client_id}/search-console")
+def enregistrer_site_search_console(
+    client_id: int, request: Request, site: str = Form(""), db: Session = Depends(obtenir_session),
+):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Non connecté."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+    site = site.strip()
+    if site:
+        identifiants, erreur = _identifiants_sc_ou_erreur(db)
+        if erreur:
+            return erreur
+        try:
+            autorises = {s["site"] for s in search_console.lister_sites(identifiants)}
+        except Exception as e:
+            return JSONResponse({"ok": False, "message": str(e)}, status_code=400)
+        if site not in autorises:
+            return JSONResponse({"ok": False, "message": "Ce site n'est pas accessible avec le compte Search Console connecté."}, status_code=400)
+    client.search_console_site = site
+    db.commit()
+    return JSONResponse({"ok": True, "message": "Site enregistré." if site else "Site retiré."})
+
+
+@app.get("/clients/{client_id}/search-console/donnees")
+def donnees_search_console_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Vue interne (complete, y compris les baisses) des 28 derniers jours ; le recap client, lui, n'affiche que le positif."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Non connecté."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client or not client.search_console_site:
+        return JSONResponse({"ok": False, "message": "Aucun site Search Console enregistré pour ce client."}, status_code=400)
+    identifiants, erreur = _identifiants_sc_ou_erreur(db)
+    if erreur:
+        return erreur
+    try:
+        return JSONResponse({"ok": True, **search_console.derniers_jours(identifiants, client.search_console_site)})
+    except Exception as e:
+        return JSONResponse({"ok": False, "message": str(e)}, status_code=400)
 
 
 @app.post("/google/comptes/{compte_id}/deconnecter")

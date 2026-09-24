@@ -162,6 +162,9 @@ class Client(Base):
     # blocs des articles, et lien du bouton d'appel a l'action ajoute en fin d'article.
     wordpress_couleur = Column(String, default="")
     wordpress_lien_cta = Column(String, default="")
+    # Propriete Google Search Console du site web du client ("sc-domain:exemple.fr" ou
+    # "https://www.exemple.fr/"), voir search_console.py.
+    search_console_site = Column(String, default="")
     # Client mis en avant en haut de la liste de choix de /publication-multi
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
     # clients publiés le plus souvent.
@@ -712,6 +715,22 @@ class ParametreGoogleAds(Base):
     developer_token = Column(String, default="")
     customer_id = Column(String, default="")  # 10 chiffres, sans tirets
     refresh_token = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class ParametreSearchConsole(Base):
+    """
+    Connexion Google Search Console (scope webmasters.readonly, distinct de celui
+    des fiches Business Profile) - un seul compte pour toute l'agence, comme
+    ParametreGoogleAds, a ajouter comme utilisateur dans la Search Console de
+    chaque site client. Une seule ligne attendue.
+    """
+
+    __tablename__ = "parametre_search_console"
+
+    id = Column(Integer, primary_key=True)
+    refresh_token = Column(Text, default="")
+    libelle = Column(String, default="")  # adresse e-mail du compte connecte
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 

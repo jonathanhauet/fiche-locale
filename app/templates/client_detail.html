@@ -440,6 +440,110 @@
   </script>
 </details>
 
+<details class="bloc-repliable" id="search-console-client" {% if client.search_console_site %}open{% endif %}>
+  <summary>Search Console (site web) {% if client.search_console_site %}(rattaché : {{ client.search_console_site }}){% else %}(non rattaché){% endif %}</summary>
+  {% if not search_console_connecte %}
+  <p class="texte-vide">La Search Console n'est pas connectée pour l'agence : <a href="/google/comptes">Comptes Google</a>.</p>
+  {% else %}
+  <div class="formulaire">
+    <p class="texte-discret">
+      Rattache le site web du client pour suivre ses visites depuis Google (et les montrer, en positif, dans son récap
+      mensuel). Le compte Google de l'agence doit être utilisateur de ce site dans sa Search Console.
+    </p>
+    <label>
+      Site
+      <select id="select-site-sc"><option value="">— Aucun —</option></select>
+    </label>
+    <p id="message-sc" class="texte-vide" hidden></p>
+    <div class="actions-avis">
+      <button type="button" id="bouton-enregistrer-sc" class="bouton-secondaire">Enregistrer</button>
+      {% if client.search_console_site %}
+      <button type="button" id="bouton-donnees-sc" class="bouton-secondaire">Voir les 28 derniers jours</button>
+      {% endif %}
+    </div>
+    <div id="resultat-sc" hidden></div>
+  </div>
+  <script>
+  (function () {
+    const select = document.getElementById("select-site-sc");
+    const message = document.getElementById("message-sc");
+    const resultat = document.getElementById("resultat-sc");
+    const details = document.getElementById("search-console-client");
+    let sitesCharges = false;
+
+    function dire(texte) { message.hidden = false; message.textContent = texte; }
+    function element(balise, texte, classe) {
+      const el = document.createElement(balise);
+      el.textContent = texte;
+      if (classe) el.className = classe;
+      return el;
+    }
+
+    async function chargerSites() {
+      if (sitesCharges) return;
+      sitesCharges = true;
+      dire("Chargement des sites...");
+      try {
+        const donnees = await (await fetch("/clients/{{ client.id }}/search-console/sites")).json();
+        if (!donnees.ok) { dire(donnees.message || "Impossible de lister les sites."); sitesCharges = false; return; }
+        donnees.sites.forEach((s) => {
+          const option = document.createElement("option");
+          option.value = s.site;
+          option.textContent = s.site + (s.site === donnees.suggestion && s.site !== donnees.actuel ? "  (suggéré)" : "");
+          select.appendChild(option);
+        });
+        select.value = donnees.actuel || donnees.suggestion || "";
+        message.hidden = true;
+        if (!donnees.sites.length) dire("Aucun site accessible : ajoute d'abord l'adresse Google de l'agence comme utilisateur dans la Search Console du client.");
+      } catch (erreur) {
+        sitesCharges = false;
+        dire("Erreur réseau.");
+      }
+    }
+    details.addEventListener("toggle", () => { if (details.open) chargerSites(); });
+    if (details.open) chargerSites();
+
+    document.getElementById("bouton-enregistrer-sc").addEventListener("click", async () => {
+      await chargerSites();
+      const donnees = new FormData();
+      donnees.append("site", select.value);
+      dire("Enregistrement...");
+      try {
+        const reponse = await (await fetch("/clients/{{ client.id }}/search-console", { method: "POST", body: donnees })).json();
+        dire(reponse.message || "Erreur inattendue.");
+        if (reponse.ok) setTimeout(() => window.location.reload(), 700);
+      } catch (erreur) { dire("Erreur réseau."); }
+    });
+
+    const boutonDonnees = document.getElementById("bouton-donnees-sc");
+    if (boutonDonnees) boutonDonnees.addEventListener("click", async () => {
+      dire("Lecture des données Google...");
+      resultat.hidden = true;
+      try {
+        const d = await (await fetch("/clients/{{ client.id }}/search-console/donnees")).json();
+        if (!d.ok) { dire(d.message || "Lecture impossible."); return; }
+        message.hidden = true;
+        resultat.replaceChildren();
+        const evolution = d.clics_precedents
+          ? ` (${d.clics >= d.clics_precedents ? "+" : ""}${Math.round((d.clics - d.clics_precedents) / d.clics_precedents * 100)} % vs les 28 jours précédents)`
+          : "";
+        resultat.appendChild(element("p", `Du ${d.periode.debut} au ${d.periode.fin} : ${d.clics} visites depuis Google${evolution}, ${d.impressions} apparitions dans les résultats.`));
+        [["Recherches qui amènent le plus de visites", d.top_requetes, "requete"], ["Pages les plus visitées", d.top_pages, "page"]].forEach(([titre, lignes, cle]) => {
+          if (!lignes.length) return;
+          resultat.appendChild(element("strong", titre));
+          const liste = document.createElement("ul");
+          lignes.forEach((l) => liste.appendChild(element("li", `${l[cle]} : ${l.clics} visite${l.clics > 1 ? "s" : ""}`)));
+          resultat.appendChild(liste);
+        });
+        resultat.appendChild(element("p", "Vue interne complète : le récap envoyé au client n'affiche que les hausses.", "texte-discret"));
+        resultat.hidden = false;
+      } catch (erreur) { dire("Erreur réseau."); }
+    });
+  })();
+  </script>
+  {% endif %}
+</details>
+
 <details class="bloc-repliable">
   <summary>Historique interview WhatsApp ({{ reponses_interview|length }})</summary>
   {% if erreur_voix %}

@@ -21,6 +21,7 @@ from . import (
     models,
     qr_code,
     recap_mensuel,
+    search_console,
 )
 
 
@@ -57,6 +58,7 @@ def donnees_rapport_vides() -> dict:
         "comparatif_visibilite": None, "evolution_avis": None,
         "photos_publiees": 0, "fiche_validee": None,
         "protection_active": False, "nb_changements_protection": 0, "nb_avis_supprimes": 0,
+        "search_console": None,
     }
 
 
@@ -187,7 +189,18 @@ def rassembler_donnees_rapport(db: Session, client: models.Client, debut: date, 
             .count()
         )
 
+    # Search Console (site web du client) : facultatif, jamais bloquant pour le recap.
+    donnees_search_console = None
+    if client.search_console_site:
+        try:
+            identifiants_sc = google_oauth.obtenir_identifiants_search_console(db)
+            if identifiants_sc:
+                donnees_search_console = search_console.resume_mensuel(identifiants_sc, client.search_console_site, debut, fin)
+        except Exception:
+            donnees_search_console = None
+
     return {
+        "search_console": donnees_search_console,
         "statistiques": statistiques,
         "resume_avis": resume_avis,
         "posts_publies": posts_publies,
