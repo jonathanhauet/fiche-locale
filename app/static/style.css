@@ -3147,3 +3147,5 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .carrousel-apercu { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
 .carrousel-apercu img { height: 220px; width: auto; border-radius: 6px; border: 1px solid var(--carte-bordure); flex-shrink: 0; }
 .carrousel-slide-edition { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; padding: 8px; border: 1px solid var(--carte-bordure); border-radius: 8px; }
+
+.carrousel-logo-apercu { max-height: 56px; max-width: 160px; padding: 6px 10px; background: #fff; border: 1px solid var(--carte-bordure); border-radius: 10px; object-fit: contain; }

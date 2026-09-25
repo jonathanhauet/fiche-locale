@@ -151,6 +151,7 @@
       <label class="etiquette-chip-case">Logo
         <input type="file" id="carrousel-logo" accept="image/*" style="width:auto;">
       </label>
+      <img id="carrousel-logo-apercu" class="carrousel-logo-apercu" alt="Logo du client" {% if client.logo_url %}src="{{ client.logo_url }}"{% else %}hidden{% endif %}>
       <span id="carrousel-logo-etat" class="texte-discret">{% if client.logo_url %}Logo enregistré pour ce client.{% else %}Pas de logo (facultatif, enregistré pour les prochains carrousels).{% endif %}</span>
       <button type="button" id="carrousel-logo-retirer" class="bouton-secondaire" {% if not client.logo_url %}hidden{% endif %}>Retirer le logo</button>
     </div>
@@ -845,6 +846,7 @@
       const statut = document.getElementById("carrousel-statut");
       const boutonLogoRetirer = document.getElementById("carrousel-logo-retirer");
       const boutonPhotoRetirer = document.getElementById("carrousel-photo-retirer");
+      const apercuLogo = document.getElementById("carrousel-logo-apercu");
       let logoPresent = {{ 'true' if client.logo_url else 'false' }};
       let photoUrl = "";
       let occupe = false;
@@ -942,8 +944,9 @@
         if (!fichier) return;
         message("Envoi du logo...");
         try {
-          await envoyerMedia("logo", fichier);
+          const reponseLogo = await envoyerMedia("logo", fichier);
           logoPresent = true; boutonLogoRetirer.hidden = false;
+          apercuLogo.src = reponseLogo.url; apercuLogo.hidden = false;
           document.getElementById("carrousel-logo-etat").textContent = "Logo enregistré pour ce client.";
           message("Logo enregistré."); await actualiser();
         } catch (e) { message(e.message); }
@@ -952,7 +955,7 @@
       boutonLogoRetirer.addEventListener("click", async () => {
         try {
           await envoyerMedia("retirer_logo");
-          logoPresent = false; boutonLogoRetirer.hidden = true;
+          logoPresent = false; boutonLogoRetirer.hidden = true; apercuLogo.hidden = true;
           document.getElementById("carrousel-logo-etat").textContent = "Pas de logo (facultatif, enregistré pour les prochains carrousels).";
           await actualiser();
         } catch (e) { message(e.message); }
