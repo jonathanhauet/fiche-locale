@@ -237,6 +237,7 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> str | None:
     try:
         questions = claude_generation.generer_questions_interview(
             contexte, sujets_deja_traites=[q.question for q in questions_recentes], nombre=5, nom_client=client.nom,
+            avec_sujet_libre=True,
         )
     except Exception as erreur:
         return f"Echec de la generation des questions : {erreur}"
@@ -252,7 +253,8 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> str | None:
     etat.image_url = None
     etat.maj_le = datetime.utcnow()
     for question in questions:
-        db.add(models.QuestionWhatsAppPosee(client_id=client.id, question=question))
+        if question != claude_generation.QUESTION_SUJET_LIBRE:  # sujet libre : rien a memoriser pour eviter les repetitions
+            db.add(models.QuestionWhatsAppPosee(client_id=client.id, question=question))
     db.commit()
 
     # Une variable de modele WhatsApp ne peut pas contenir de saut de ligne

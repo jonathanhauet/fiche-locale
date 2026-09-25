@@ -481,8 +481,15 @@ SCHEMA_QUESTIONS_INTERVIEW = {
 }
 
 
+QUESTION_SUJET_LIBRE = (
+    "Envie de parler d'autre chose ? Vous avez la parole : un sujet qui vous tient à cœur, une actualité, "
+    "un cas marquant, c'est vous qui choisissez."
+)
+
+
 def generer_questions_interview(
     contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5, nom_client: str = "",
+    avec_sujet_libre: bool = False,
 ) -> list[str]:
     """
     Questions courtes, pensees pour etre repondues a l'oral en 30-90 secondes
@@ -506,7 +513,7 @@ def generer_questions_interview(
         bloc_deja_traites = f"\nSujets/questions deja traites recemment (evite de reposer une question trop proche) :\n{liste}\n"
 
     prompt = (
-        f"Propose {nombre} questions courtes a poser a un expert, dans le domaine suivant : le "
+        f"Propose {nombre - 1 if avec_sujet_libre else nombre} questions courtes a poser a un expert, dans le domaine suivant : le "
         f"{_specialite_auteur(nom_client)}, pour l'aider a produire du contenu regulierement sans avoir a partir "
         "d'une page blanche.\n"
         f"{bloc_contexte}"
@@ -537,7 +544,11 @@ def generer_questions_interview(
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
-    return [q.strip() for q in json.loads(bloc_texte)["questions"] if q.strip()]
+    questions = [q.strip() for q in json.loads(bloc_texte)["questions"] if q.strip()]
+    if avec_sujet_libre:
+        # La derniere proposition n'est pas une question de l'IA : elle laisse le client choisir son sujet.
+        questions = questions[:max(1, nombre - 1)] + [QUESTION_SUJET_LIBRE]
+    return questions
 
 
 MARQUEUR_BLOC_VOIX = "=== VOIX DU CLIENT"
@@ -642,7 +653,11 @@ def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expe
         "Tu transformes une reponse orale dictee (transcription automatique, donc parfois "
         "hesitante ou mal structuree) de l'auteur de la fiche en un post structure pour les "
         "reseaux sociaux.\n"
-        f"\nQuestion posee :\n« {question.strip()} »\n"
+        + (
+            "\nIl n'y avait pas de question imposee : l'auteur a choisi librement le sujet dont il avait envie de parler. "
+            "Deduis le sujet de sa reponse.\n"
+            if question.strip() == QUESTION_SUJET_LIBRE else f"\nQuestion posee :\n« {question.strip()} »\n"
+        ) +
         f"\nSa reponse orale (transcription brute) :\n« {reponse_orale.strip()} »\n"
         f"{bloc_contexte}\n"
         "Consignes :\n"

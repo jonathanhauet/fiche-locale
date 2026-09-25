@@ -6863,7 +6863,7 @@ def publication_multi_questions_interview(client_id: int, request: Request, db: 
     try:
         sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
         questions = claude_generation.generer_questions_interview(
-            _contexte_ia_client(client), sujets_deja_traites, nombre=5, nom_client=client.nom,
+            _contexte_ia_client(client), sujets_deja_traites, nombre=5, nom_client=client.nom, avec_sujet_libre=True,
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
