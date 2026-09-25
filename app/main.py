@@ -1075,6 +1075,7 @@ def _publications_externes(client: "models.Client", posts_google_en_ligne: list,
         rejete = post["etat"] == "REJECTED"
         lignes.append({
             "reseau": "google", "titre": _extrait_court(post.get("texte", "")), "image_url": post.get("url_image", ""),
+            "texte": post.get("texte", ""), "images": [post["url_image"]] if post.get("url_image") else [],
             "date": moment.date(), "heure": moment.strftime("%H:%M"), "url": post.get("url_recherche", ""),
             "statut_brut": "PUBLIE_REJECTED" if rejete else "PUBLIE_LIVE", "statut_libelle": "Rejeté" if rejete else "Publié",
             "externe": True,
@@ -1114,6 +1115,7 @@ def _publications_externes(client: "models.Client", posts_google_en_ligne: list,
                 continue
             lignes.append({
                 "reseau": reseau, "titre": _extrait_court(post.get("texte", "")), "image_url": post.get("image_url", ""),
+                "texte": post.get("texte", ""), "images": [post["image_url"]] if post.get("image_url") else [],
                 "date": moment.date(), "heure": moment.strftime("%H:%M"), "url": post.get("url", ""),
                 "statut_brut": "PUBLIE", "statut_libelle": "Publié", "externe": True,
             })
@@ -1170,6 +1172,8 @@ def _publications_multi_reseaux(
         lignes.append({
             "reseau": "google",
             "titre": _extrait_court(post.titre or post.texte),
+            "texte": post.texte or "",
+            "images": [post.image_url] if post.image_url else [],
             "image_url": post.image_url,
             "date": post.date_prevue or post.cree_le.date(),
             "heure": post.heure_prevue or "",
@@ -1187,6 +1191,8 @@ def _publications_multi_reseaux(
             lignes.append({
                 "reseau": reseau,
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
+                "texte": post.texte or "",
+                "images": [] if post.video_url else meta_publish.urls_depuis_champ(post.image_url),
                 "image_url": None if post.video_url else (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
                 "video": bool(post.video_url),
                 "date": post.publier_le.date(),
@@ -1202,6 +1208,8 @@ def _publications_multi_reseaux(
             lignes.append({
                 "reseau": "linkedin",
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
+                "texte": post.texte or "",
+                "images": [],
                 "image_url": None,  # stockee en octets, pas d'URL directe (voir PostLinkedInProgramme)
                 "video": bool(post.video_donnees),
                 "date": post.publier_le.date(),
