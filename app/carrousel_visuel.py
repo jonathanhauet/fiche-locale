@@ -248,11 +248,3 @@ def en_png(image: Image.Image) -> bytes:
     tampon = io.BytesIO()
     image.save(tampon, format="PNG", optimize=True)
     return tampon.getvalue()
-
-
-def en_pdf(images: list[Image.Image]) -> bytes:
-    """Assemble les slides en un PDF (une page par slide) : format "document" des carrousels LinkedIn."""
-    pages = [i.convert("RGB") for i in images]
-    tampon = io.BytesIO()
-    pages[0].save(tampon, format="PDF", save_all=True, append_images=pages[1:], resolution=150.0)
-    return tampon.getvalue()

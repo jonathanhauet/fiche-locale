@@ -13,7 +13,6 @@ import requests
 URL_POSTS = "https://api.linkedin.com/rest/posts"
 URL_IMAGES = "https://api.linkedin.com/rest/images"
 URL_VIDEOS = "https://api.linkedin.com/rest/videos"
-URL_DOCUMENTS = "https://api.linkedin.com/rest/documents"
 VERSION_API = "202606"  # LinkedIn ne garde une version active qu'environ 1 an ; a avancer periodiquement (voir "LinkedIn-Version" dans la doc developer LinkedIn)
 ATTENTE_VIDEO_SECONDES = 3
 TENTATIVES_MAX_VIDEO = 60  # jusqu'a 3 minutes : traitement LinkedIn plus lent qu'une image
@@ -101,41 +100,10 @@ def _attendre_video_prete(access_token: str, urn_video: str) -> None:
     raise RuntimeError("La video LinkedIn n'est pas devenue disponible a temps.")
 
 
-def _televerser_document(access_token: str, identifiant_membre: str, octets_pdf: bytes) -> str:
-    """Envoie un PDF (carrousel : chaque page devient une slide) et renvoie son URN, une fois traite par LinkedIn."""
-    reponse = requests.post(
-        f"{URL_DOCUMENTS}?action=initializeUpload",
-        json={"initializeUploadRequest": {"owner": f"urn:li:person:{identifiant_membre}"}},
-        headers=_entetes(access_token), timeout=30,
-    )
-    if reponse.status_code not in (200, 201):
-        raise RuntimeError(f"Echec de l'initialisation de l'upload de document LinkedIn (code {reponse.status_code}) : {reponse.text}")
-    valeur = reponse.json()["value"]
-    envoi = requests.put(valeur["uploadUrl"], data=octets_pdf, timeout=120)
-    if envoi.status_code not in (200, 201):
-        raise RuntimeError(f"Echec du televersement du document LinkedIn (code {envoi.status_code})")
-    urn = valeur["document"]
-    # LinkedIn traite le PDF quelques instants : on attend qu'il soit disponible (au mieux, sans bloquer).
-    for _ in range(20):
-        statut = requests.get(f"{URL_DOCUMENTS}/{urn}", headers=_entetes(access_token), timeout=30)
-        if statut.status_code == 200 and statut.json().get("status") == "AVAILABLE":
-            break
-        time.sleep(2)
-    return urn
-
-
 def publier_post(
     access_token: str, identifiant_membre: str, texte: str, octets_image: bytes = None, octets_video: bytes = None,
-    octets_document: bytes = None, titre_document: str = "", octets_images: list = None,
 ) -> str:
-    """
-    Publie un post (texte, avec image, video, carrousel PDF ou plusieurs images - exclusifs) sur le profil du
-    membre. Renvoie l'URN du post cree. octets_document : PDF publie comme carrousel a faire glisser (si
-    LinkedIn le refuse, repli sur octets_images puis sur la premiere image, pour ne jamais bloquer la publication).
-    octets_images : plusieurs images (grille de photos, 2 a 20).
-    """
-    if octets_document and not octets_image and octets_images:
-        octets_image = octets_images[0]
+    """Publie un post (texte, avec image ou video optionnelle - mutuellement exclusives) sur le profil du membre. Renvoie l'URN du post cree."""
     corps = {
         "author": f"urn:li:person:{identifiant_membre}",
         "commentary": texte,
@@ -155,27 +123,10 @@ def publier_post(
         _finaliser_upload_video(access_token, urn_video, jeton_televersement, etags)
         _attendre_video_prete(access_token, urn_video)
         corps["content"] = {"media": {"id": urn_video}}
-    else:
-        contenu = None
-        if octets_document:
-            try:
-                urn_document = _televerser_document(access_token, identifiant_membre, octets_document)
-                contenu = {"media": {"title": (titre_document or "Carrousel")[:200], "id": urn_document}}
-            except Exception:
-                contenu = None  # repli ci-dessous : images plutot que rien
-        if contenu is None and octets_images and len(octets_images) >= 2:
-            urns = []
-            for octets in octets_images[:20]:
-                url_televersement, urn_image = _initialiser_upload_image(access_token, identifiant_membre)
-                _televerser_image(url_televersement, octets)
-                urns.append({"id": urn_image, "altText": (titre_document or "")[:120]})
-            contenu = {"multiImage": {"images": urns}}
-        if contenu is None and octets_image:
-            url_televersement, urn_image = _initialiser_upload_image(access_token, identifiant_membre)
-            _televerser_image(url_televersement, octets_image)
-            contenu = {"media": {"id": urn_image}}
-        if contenu is not None:
-            corps["content"] = contenu
+    elif octets_image:
+        url_televersement, urn_image = _initialiser_upload_image(access_token, identifiant_membre)
+        _televerser_image(url_televersement, octets_image)
+        corps["content"] = {"media": {"id": urn_image}}
 
     reponse = requests.post(URL_POSTS, json=corps, headers=_entetes(access_token), timeout=30)
     if reponse.status_code not in (200, 201):

@@ -651,9 +651,6 @@ class PostLinkedInProgramme(Base):
     # directement en base, LinkedIn accepte aussi un televersement direct au
     # moment de la publication (voir linkedin_publish.publier_post).
     video_donnees = Column(LargeBinary, nullable=True)
-    # Carrousel : PDF publie comme "document" LinkedIn (image_donnees garde la 1re slide, en repli).
-    document_donnees = Column(LargeBinary, nullable=True)
-    document_titre = Column(String, default="")
     publier_le = Column(DateTime, nullable=False)
     etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
     erreur = Column(Text, nullable=True)

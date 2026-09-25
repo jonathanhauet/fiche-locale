@@ -126,7 +126,7 @@
     <summary>🖼️ Créer un carrousel (IA)</summary>
     <p class="texte-discret">
       L'IA rédige les slides à partir du texte de base, la plateforme les dessine aux couleurs du client (1080×1350).
-      Le carrousel est ensuite publié en diaporama sur Instagram et Facebook, et en document PDF à faire glisser sur LinkedIn (Google n'affiche que la première slide).
+      Le carrousel est ensuite publié en diaporama sur Instagram et Facebook (LinkedIn et Google n'affichent que la première slide).
     </p>
     <div class="ligne-champs">
       <label for="carrousel-nb-points" class="texte-discret">Slides de contenu</label>
@@ -169,8 +169,6 @@
     <p id="carrousel-statut" class="texte-vide" hidden></p>
   </details>
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
-  <input type="hidden" name="est_carrousel" id="champ-est-carrousel" value="0">
-  <input type="hidden" name="titre_carrousel" id="champ-titre-carrousel" value="">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
 
   <label for="video-partagee">Vidéo (optionnelle — remplace les images ci-dessus pour Facebook, Instagram et LinkedIn)</label>
@@ -525,7 +523,7 @@
         alert("10 images maximum par publication.");
         champImagePartagee.value = "";
       }
-      if (champImagePartagee.files[0]) { champImageUrlIA.value = ""; document.getElementById("champ-est-carrousel").value = "0"; }
+      if (champImagePartagee.files[0]) champImageUrlIA.value = "";
       actualiserToutesLesApercusImage();
     });
 
@@ -819,7 +817,6 @@
         if (donnees.prompt_genere) { champPromptImage.value = donnees.prompt_genere; promptImageAuto = true; }
         champImagePartagee.value = "";
         champImageUrlIA.value = donnees.url;
-        document.getElementById("champ-est-carrousel").value = "0";
         actualiserToutesLesApercusImage();
         texteStatutImageIA.textContent = "Image générée — visible dans les aperçus ci-dessous."
           + (donnees.choix_aleatoires && donnees.choix_aleatoires.length ? " Choix automatiques : " + donnees.choix_aleatoires.join(", ") + "." : "")
@@ -924,8 +921,6 @@
           const donnees = await appeler(base + "/rendu", { method: "POST", headers: { "Content-Type": "application/json" }, body: corpsRendu("final") });
           champImagePartagee.value = "";
           champImageUrlIA.value = donnees.images.join("|");
-          document.getElementById("champ-est-carrousel").value = "1";
-          document.getElementById("champ-titre-carrousel").value = lireSlides().couverture.titre;
           actualiserToutesLesApercusImage();
           message("Carrousel de " + donnees.images.length + " images prêt : il sera publié avec votre post (aperçus plus bas).");
         } catch (e) { message(e.message); } finally { occupe = false; }
