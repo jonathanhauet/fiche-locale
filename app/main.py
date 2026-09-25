@@ -6420,7 +6420,7 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
     contenu_article = (donnees.get("contenu_article") or "").strip()
 
     try:
-        post_genere = claude_generation.generer_post_expert(theme, _contexte_ia_client(client), contenu_article)
+        post_genere = claude_generation.generer_post_expert(theme, _contexte_ia_client(client), contenu_article, client.nom)
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
 
@@ -6497,7 +6497,7 @@ def publication_multi_sujets_evergreen(client_id: int, request: Request, db: Ses
     try:
         sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
         suggestions = claude_generation.suggerer_sujets_evergreen(
-            _contexte_ia_client(client), sujets_deja_traites, nombre=5,
+            _contexte_ia_client(client), sujets_deja_traites, nombre=5, nom_client=client.nom,
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
@@ -6540,7 +6540,7 @@ def publication_multi_questions_interview(client_id: int, request: Request, db: 
     try:
         sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
         questions = claude_generation.generer_questions_interview(
-            _contexte_ia_client(client), sujets_deja_traites, nombre=5,
+            _contexte_ia_client(client), sujets_deja_traites, nombre=5, nom_client=client.nom,
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)

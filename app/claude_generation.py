@@ -310,7 +310,29 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
-def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_article: str = "") -> dict:
+SPECIALITE_SEO_LOCAL = (
+    "referencement local (SEO local), specialise sur Google Business Profile, Google AI Overviews et "
+    "Google Local Services Ads"
+)
+
+
+def _specialite_auteur(nom_client: str = "") -> str:
+    """
+    Domaine d'expertise de l'auteur des posts "expert". Sans nom d'entreprise : le SEO local historique.
+    Avec un nom : le metier de CETTE entreprise (deduit de son nom et du contenu de son site), et le SEO
+    local seulement si c'est une agence de marketing / SEO - jamais impose a un serrurier ou un avocat.
+    """
+    if not (nom_client or "").strip():
+        return SPECIALITE_SEO_LOCAL
+    return (
+        f"metier de l'entreprise « {nom_client.strip()} » (deduis-le de son nom et du contenu de son site quand il est "
+        "fourni). Parle UNIQUEMENT de ce metier : ses prestations, les conseils pratiques utiles a ses clients, les "
+        "erreurs frequentes, les coulisses. Ne parle de referencement local, de Google Business Profile ou de "
+        "marketing digital que si cette entreprise est elle-meme une agence de marketing ou de SEO"
+    )
+
+
+def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_article: str = "", nom_client: str = "") -> dict:
     """
     Variante de generer_post_generique() pensee pour une seule fiche bien
     precise, dont le proprietaire EST l'expert (typiquement Jonathan
@@ -330,7 +352,7 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_arti
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
-    if not theme.strip() and not contexte_expert.strip():
+    if not theme.strip() and not contexte_expert.strip() and not (nom_client or "").strip():
         raise RuntimeError("Fournissez un sujet ou une fiche de reference.")
 
     bloc_theme = f"\nSujet demande :\n« {theme.strip()} »\n" if theme.strip() else ""
@@ -367,9 +389,8 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_arti
         f"Nous sommes le {date.today().strftime('%d/%m/%Y')} - utilise cette date comme repere "
         "temporel reel (n'ecris jamais une annee anterieure par reflexe).\n"
         "Tu rediges, a la premiere personne, un post pour les reseaux sociaux et "
-        "Google Business Profile d'un expert reconnu en referencement local (SEO local), "
-        "specialise sur Google Business Profile, Google AI Overviews et Google Local "
-        "Services Ads. L'objectif n'est PAS d'informer platement, mais de construire une "
+        "Google Business Profile d'un expert reconnu dans son domaine, a savoir le "
+        f"{_specialite_auteur(nom_client)}. L'objectif n'est PAS d'informer platement, mais de construire une "
         "image d'expert que les lecteurs ont envie de suivre : une vraie prise de position, "
         "une analyse, un conseil concret tire de l'experience terrain - pas un simple resume "
         "d'actualite.\n"
@@ -388,7 +409,10 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_arti
         "marketing creux (« game changer », « disruptif », « levier de croissance »...).\n"
         "- Phrases courtes, un paragraphe = une seule idee (1 a 3 phrases max) : c'est ce qui "
         "rend un post facile a lire sur mobile et donne du rythme, plutot que des paragraphes "
-        "denses. Un chiffre ou un fait concret marque plus qu'une affirmation vague.\n"
+        "denses. Un exemple concret marque plus qu'une affirmation vague.\n"
+        "- N'ecris AUCUN pourcentage (« 9 fois sur 10 », « 90 % »...) et n'invente AUCUN chiffre, statistique, nombre d'avis ou d'interventions, annee d'experience, "
+        "client, resultat ou realisation : uniquement ce qui figure dans le contexte fourni. A defaut, "
+        "reste qualitatif.\n"
         "- Termine sur une phrase forte et memorable (une conviction, une question ouverte au "
         "lecteur, ou un conseil resume en une ligne) plutot que de s'eteindre sur une "
         "formule generique.\n"
@@ -435,7 +459,9 @@ SCHEMA_QUESTIONS_INTERVIEW = {
 }
 
 
-def generer_questions_interview(contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5) -> list[str]:
+def generer_questions_interview(
+    contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5, nom_client: str = "",
+) -> list[str]:
     """
     Questions courtes, pensees pour etre repondues a l'oral en 30-90 secondes
     (voir capture vocale mobile) plutot que pour etre publiees telles
@@ -458,9 +484,8 @@ def generer_questions_interview(contexte_expert: str = "", sujets_deja_traites: 
         bloc_deja_traites = f"\nSujets/questions deja traites recemment (evite de reposer une question trop proche) :\n{liste}\n"
 
     prompt = (
-        f"Propose {nombre} questions courtes a poser a un expert en referencement local (SEO "
-        "local), specialise Google Business Profile, Google AI Overviews et Google Local "
-        "Services Ads, pour l'aider a produire du contenu regulierement sans avoir a partir "
+        f"Propose {nombre} questions courtes a poser a un expert, dans le domaine suivant : le "
+        f"{_specialite_auteur(nom_client)}, pour l'aider a produire du contenu regulierement sans avoir a partir "
         "d'une page blanche.\n"
         f"{bloc_contexte}"
         f"{bloc_deja_traites}\n"
@@ -778,7 +803,9 @@ SCHEMA_SUGGESTIONS_EVERGREEN = {
 }
 
 
-def suggerer_sujets_evergreen(contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5) -> list[dict]:
+def suggerer_sujets_evergreen(
+    contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5, nom_client: str = "",
+) -> list[dict]:
     """
     Sujets de post independants de l'actualite du jour (contrairement a
     suggerer_sujets_actualite) : la veille peut manquer de matiere fraiche
@@ -802,18 +829,17 @@ def suggerer_sujets_evergreen(contexte_expert: str = "", sujets_deja_traites: li
         bloc_deja_traites = f"\nSujets deja traites recemment (evite de reformuler un angle trop proche) :\n{liste}\n"
 
     prompt = (
-        f"Propose {nombre} sujets de post pour un expert en referencement local (SEO local), "
-        "specialise Google Business Profile, Google AI Overviews et Google Local Services Ads, "
-        "qui veut publier regulierement pour construire sa visibilite - meme les jours ou il n'y "
-        "a pas d'actualite fraiche sur ces sujets precis.\n"
+        f"Propose {nombre} sujets de post pour un expert, dans le domaine suivant : le "
+        f"{_specialite_auteur(nom_client)}, qui veut publier regulierement pour construire sa visibilite - "
+        "meme les jours ou il n'y a pas d'actualite fraiche sur ces sujets precis.\n"
         f"{bloc_contexte}"
         f"{bloc_deja_traites}\n"
         "Varie les types d'angles, par exemple (sans s'y limiter) : demonter un mythe ou une idee "
-        "recue repandue sur le SEO local, repondre a une question que les clients posent "
+        "recue repandue dans ce domaine, repondre a une question que les clients posent "
         "frequemment, proposer un test ou une verification que le lecteur peut faire lui-meme en "
         "quelques minutes, un avant/apres ou un cas concret type, une prediction ou une tendance a "
         "surveiller. Chaque sujet doit etre concret et actionnable, pas une generalite deja vue "
-        "partout (« l'importance du SEO local » par exemple).\n"
+        "partout (« l'importance de la qualite » par exemple).\n"
         f"Pour chacun, indique aussi sa categorie (2-3 mots, ex : \"Mythe demonte\", \"Question "
         "frequente\", \"Test pratique\")."
     )

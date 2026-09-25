@@ -236,7 +236,7 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> str | None:
 
     try:
         questions = claude_generation.generer_questions_interview(
-            contexte, sujets_deja_traites=[q.question for q in questions_recentes], nombre=5,
+            contexte, sujets_deja_traites=[q.question for q in questions_recentes], nombre=5, nom_client=client.nom,
         )
     except Exception as erreur:
         return f"Echec de la generation des questions : {erreur}"
