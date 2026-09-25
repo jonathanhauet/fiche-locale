@@ -332,7 +332,10 @@ def _specialite_auteur(nom_client: str = "") -> str:
     )
 
 
-def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_article: str = "", nom_client: str = "") -> dict:
+def generer_post_expert(
+    theme: str = "", contexte_expert: str = "", contenu_article: str = "", nom_client: str = "",
+    deja_traites: list = None, texte_actuel: str = "",
+) -> dict:
     """
     Variante de generer_post_generique() pensee pour une seule fiche bien
     precise, dont le proprietaire EST l'expert (typiquement Jonathan
@@ -370,6 +373,20 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_arti
         if contenu_article.strip() else ""
     )
 
+    bloc_deja = ""
+    if deja_traites:
+        liste = "\n".join(f"- {t}" for t in deja_traites[:14])
+        bloc_deja = (
+            "\nPosts DEJA publies ou programmes pour cette entreprise (le nouveau post doit s'en distinguer nettement : "
+            "autre sujet ou autre angle, autre premiere ligne, autres exemples, autre structure ; ne reprends aucune de leurs "
+            f"formulations) :\n{liste}\n"
+        )
+    if (texte_actuel or "").strip():
+        bloc_deja += (
+            "\nTexte actuellement affiche dans le composeur, que l'utilisateur ne veut PAS revoir (propose un post "
+            f"clairement different, pas une variante) :\n« {texte_actuel.strip()[:1200]} »\n"
+        )
+
     consigne_sourcage = (
         "- Base-toi strictement sur les faits presents dans l'extrait source fourni : "
         "n'invente aucun detail factuel (date, chiffre, fonctionnalite, citation) qui n'y "
@@ -396,7 +413,8 @@ def generer_post_expert(theme: str = "", contexte_expert: str = "", contenu_arti
         "d'actualite.\n"
         f"{bloc_theme}"
         f"{bloc_contexte}"
-        f"{bloc_article}\n"
+        f"{bloc_article}"
+        f"{bloc_deja}\n"
         "Consignes :\n"
         "- Personne grammaticale : si le contexte contient un bloc « VOIX DU CLIENT », suis la sienne. Sinon "
         "deduis-la du contenu du site (« nous » = entreprise ou equipe, « je » = independant seul ; un nom de "

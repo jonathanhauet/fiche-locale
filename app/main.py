@@ -2844,7 +2844,34 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
         .limit(limite)
         .all()
     )
-    return [f"{post.titre} — {post.texte[:150].strip()}" for post in posts if post.texte.strip()]
+    elements = [(post.cree_le, f"{post.titre} — {post.texte[:150].strip()}") for post in posts if post.texte.strip()]
+
+    # Posts Facebook / Instagram / LinkedIn deja publies ou programmes depuis le composeur multi-reseaux
+    # (sans eux, l'IA ne voit que les posts Google et refait le meme sujet sur les autres reseaux).
+    for modele in (models.PostMetaProgramme, models.PostInstagramProgramme):
+        lignes = (
+            db.query(modele).filter(modele.client_id == client_id, modele.etat != "ECHEC")
+            .order_by(modele.cree_le.desc()).limit(limite).all()
+        )
+        elements += [(p.cree_le, p.texte[:190].strip()) for p in lignes if (p.texte or "").strip()]
+    client = db.get(models.Client, client_id)
+    if client and client.compte_linkedin_id:
+        lignes = (
+            db.query(models.PostLinkedInProgramme)
+            .filter(models.PostLinkedInProgramme.compte_linkedin_id == client.compte_linkedin_id, models.PostLinkedInProgramme.etat != "ECHEC")
+            .order_by(models.PostLinkedInProgramme.cree_le.desc()).limit(limite).all()
+        )
+        elements += [(p.cree_le, p.texte[:190].strip()) for p in lignes if (p.texte or "").strip()]
+
+    elements.sort(key=lambda e: e[0] or datetime.min, reverse=True)
+    resultat, vus = [], set()
+    for _, texte in elements:
+        cle = texte[:60].lower()
+        if cle in vus:  # le meme texte publie sur plusieurs reseaux ne compte qu'une fois
+            continue
+        vus.add(cle)
+        resultat.append(texte)
+    return resultat[:limite]
 
 
 NB_VOCAUX_ANALYSES_VOIX = 12
@@ -6698,9 +6725,13 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
     donnees = await request.json()
     theme = (donnees.get("theme") or "").strip()
     contenu_article = (donnees.get("contenu_article") or "").strip()
+    texte_actuel = (donnees.get("texte_actuel") or "").strip()
 
     try:
-        post_genere = claude_generation.generer_post_expert(theme, _contexte_ia_client(client), contenu_article, client.nom)
+        post_genere = claude_generation.generer_post_expert(
+            theme, _contexte_ia_client(client), contenu_article, client.nom,
+            _sujets_deja_traites_client(db, client.id, limite=14), texte_actuel,
+        )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
 

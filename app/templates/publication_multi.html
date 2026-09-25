@@ -826,7 +826,7 @@
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_texte", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ theme: theme, contenu_article: contenuArticle }),
+          body: JSON.stringify({ theme: theme, contenu_article: contenuArticle, texte_actuel: document.getElementById("texte-base").value }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {
