@@ -5971,6 +5971,19 @@ def _posts_multi_programmes(db: Session, client: "models.Client") -> dict:
     }
 
 
+def _fiches_source_avis(db: Session, client: "models.Client") -> list:
+    """
+    Fiches Google dont on peut tirer un avis pour ce client : sa propre fiche, ou (client cree pour gerer des
+    reseaux sociaux, sans fiche, ou dont l'entreprise a plusieurs fiches) celle d'un autre client. Celles dont le nom
+    commence comme le sien viennent en premier (« Nico Serrurerie - Ath » pour « Nico Serrurerie - Reseaux »).
+    """
+    fiches = db.query(models.Client).filter(models.Client.account_id != "", models.Client.location_id != "").all()
+    fiches = [f for f in fiches if f.account_id and f.location_id]
+    debut = ((client.nom or "").replace("-", " ").split() or [""])[0].lower()
+    fiches.sort(key=lambda f: (f.id != client.id, not (debut and (f.nom or "").lower().startswith(debut)), (f.nom or "").lower()))
+    return [{"id": f.id, "nom": f.nom} for f in fiches]
+
+
 def _contexte_publication_multi(
     db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
     variantes: dict = None, erreur: str = None, resultat: str = None,
@@ -5990,6 +6003,7 @@ def _contexte_publication_multi(
         "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
         "origine_vocale": origine_vocale,
         "image_url_initial": image_url_initial,
+        "fiches_source_avis": _fiches_source_avis(db, client),
         "brouillons_whatsapp_en_attente": (
             db.query(models.BrouillonWhatsApp).filter_by(client_id=client.id).order_by(models.BrouillonWhatsApp.id).all()
         ),
@@ -6302,13 +6316,19 @@ def _nom_court_avis(auteur: str) -> str:
 
 
 @app.get("/publication-multi/{client_id}/avis")
-def publication_multi_avis(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """Avis 4 et 5 etoiles avec commentaire de la fiche (jamais les autres : contenu montre au client, positif uniquement)."""
+def publication_multi_avis(client_id: int, request: Request, source: int = None, db: Session = Depends(obtenir_session)):
+    """
+    Avis 4 et 5 etoiles avec commentaire d'une fiche (jamais les autres : contenu montre au client, positif
+    uniquement). source : client dont on lit la fiche (par defaut le client lui-meme) - permet a un client cree
+    pour ses seuls reseaux sociaux, ou a une entreprise a plusieurs fiches, d'utiliser les avis d'une autre fiche.
+    """
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Non connecte."}, status_code=401)
-    client = db.get(models.Client, client_id)
+    if not db.get(models.Client, client_id):
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    client = db.get(models.Client, source or client_id)
     if not client or not client.account_id or not client.location_id:
-        return JSONResponse({"erreur": "Ce client n'a pas de fiche Google."}, status_code=400)
+        return JSONResponse({"erreur": "Choisissez une fiche Google."}, status_code=400)
     identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
     if not identifiants:
         return JSONResponse({"erreur": "Compte Google non valide (a reconnecter depuis Comptes Google)."}, status_code=400)
@@ -7277,9 +7297,11 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     id_avis = (formulaire.get("avis_mis_en_avant") or "").strip()
     if id_avis and len(echecs) < len(reseaux):
         try:
-            if not db.query(models.AvisMisEnAvant).filter_by(client_id=client.id, review_id=id_avis).first():
+            source_avis = str(formulaire.get("avis_source") or "")
+            id_source = int(source_avis) if source_avis.isdigit() and db.get(models.Client, int(source_avis)) else client.id
+            if not db.query(models.AvisMisEnAvant).filter_by(client_id=id_source, review_id=id_avis).first():
                 db.add(models.AvisMisEnAvant(
-                    client_id=client.id, review_id=id_avis,
+                    client_id=id_source, review_id=id_avis,
                     auteur=(formulaire.get("avis_auteur") or "")[:80], extrait=(formulaire.get("avis_extrait") or "")[:200],
                 ))
                 db.commit()

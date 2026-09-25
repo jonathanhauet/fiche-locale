@@ -177,14 +177,18 @@
     </div>
     <p id="carrousel-statut" class="texte-vide" hidden></p>
   </details>
-  {% if client.account_id and client.location_id %}
+  {% if fiches_source_avis %}
   <details class="options-visuel" id="panneau-avis">
     <summary>⭐ Mettre en avant un avis Google</summary>
     <p class="texte-discret">
-      Choisissez un avis 4 ou 5 étoiles de la fiche : la plateforme dessine un visuel aux couleurs du client (couleur, logo et nom réglés dans
+      Choisissez la fiche Google (celle du client, ou une autre s'il n'en a pas ou en a plusieurs), puis un avis 4 ou 5 étoiles : la plateforme dessine un visuel aux couleurs du client (couleur, logo et nom réglés dans
       « Créer un carrousel ») et propose un texte de post. Un avis déjà mis en avant est signalé, pour ne pas le republier.
     </p>
     <div class="ligne-champs">
+      <label for="avis-source" class="texte-discret">Fiche Google</label>
+      <select id="avis-source" style="width:auto;max-width:100%;">
+        {% for fiche in fiches_source_avis %}<option value="{{ fiche.id }}">{{ fiche.nom }}</option>{% endfor %}
+      </select>
       <button type="button" id="avis-charger" class="bouton-secondaire">
         <span class="spinner" id="avis-spinner" hidden></span>
         📥 Charger les avis
@@ -212,6 +216,7 @@
   {% endif %}
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <input type="hidden" name="avis_mis_en_avant" id="champ-avis-id" value="">
+  <input type="hidden" name="avis_source" id="champ-avis-source" value="">
   <input type="hidden" name="avis_auteur" id="champ-avis-auteur" value="">
   <input type="hidden" name="avis_extrait" id="champ-avis-extrait" value="">
   <input type="hidden" name="est_carrousel" id="champ-est-carrousel" value="0">
@@ -1052,6 +1057,11 @@
       const zoneZoom = document.getElementById("carrousel-zoom");
       let avisChoisi = null;
       let occupe = false;
+      try {
+        const memorisee = localStorage.getItem("avis-source-{{ client.id }}");
+        const selecteur = document.getElementById("avis-source");
+        if (memorisee && Array.from(selecteur.options).some((o) => o.value === memorisee)) selecteur.value = memorisee;
+      } catch (e) { /* stockage indisponible */ }
 
       function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
       async function appeler(url, options) {
@@ -1119,13 +1129,18 @@
       document.getElementById("avis-charger").addEventListener("click", async () => {
         const spinner = document.getElementById("avis-spinner");
         spinner.hidden = false; message("Lecture des avis de la fiche...");
-        try { afficherListe((await appeler(base)).avis); } catch (e) { message(e.message); } finally { spinner.hidden = true; }
+        try {
+          const source = document.getElementById("avis-source").value;
+          try { localStorage.setItem("avis-source-{{ client.id }}", source); } catch (e) { /* stockage indisponible */ }
+          afficherListe((await appeler(base + "?source=" + encodeURIComponent(source))).avis);
+        } catch (e) { message(e.message); } finally { spinner.hidden = true; }
       });
       document.getElementById("avis-actualiser").addEventListener("click", actualiser);
       document.querySelectorAll('input[name="avis-layout"]').forEach((r) => r.addEventListener("change", actualiser));
 
       function memoriserAvis() {
         document.getElementById("champ-avis-id").value = avisChoisi.review_id;
+        document.getElementById("champ-avis-source").value = document.getElementById("avis-source").value;
         document.getElementById("champ-avis-auteur").value = document.getElementById("avis-auteur").value;
         document.getElementById("champ-avis-extrait").value = document.getElementById("avis-texte").value.slice(0, 200);
       }
