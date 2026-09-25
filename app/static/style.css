@@ -3143,3 +3143,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .groupe-options-visuel { border: 0; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .groupe-options-visuel legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
 .groupe-options-visuel .etiquette-chip-case { margin: 0; }
+
+.carrousel-apercu { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+.carrousel-apercu img { height: 220px; width: auto; border-radius: 6px; border: 1px solid var(--carte-bordure); flex-shrink: 0; }
+.carrousel-slide-edition { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; padding: 8px; border: 1px solid var(--carte-bordure); border-radius: 8px; }

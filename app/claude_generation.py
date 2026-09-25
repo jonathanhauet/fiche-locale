@@ -1732,3 +1732,84 @@ def prompt_image_avec_options(
     if not texte:
         raise RuntimeError("L'IA n'a renvoye aucun prompt exploitable.")
     return _nettoyer_texte_genere(texte)
+
+
+SCHEMA_CARROUSEL = {
+    "type": "object",
+    "properties": {
+        "couverture": {
+            "type": "object",
+            "properties": {"titre": {"type": "string"}, "sous_titre": {"type": "string"}},
+            "required": ["titre", "sous_titre"], "additionalProperties": False,
+        },
+        "points": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"titre": {"type": "string"}, "texte": {"type": "string"}},
+                "required": ["titre", "texte"], "additionalProperties": False,
+            },
+        },
+        "cta": {
+            "type": "object",
+            "properties": {"titre": {"type": "string"}, "texte": {"type": "string"}, "bouton": {"type": "string"}},
+            "required": ["titre", "texte", "bouton"], "additionalProperties": False,
+        },
+    },
+    "required": ["couverture", "points", "cta"], "additionalProperties": False,
+}
+
+
+def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4) -> dict:
+    """
+    Textes d'un carrousel (couverture, N slides "point", slide finale avec bouton) a partir d'un sujet
+    ou d'un texte de base ; le dessin est fait par carrousel_visuel.py. Textes courts : ils doivent
+    tenir sur une image.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not (sujet or "").strip():
+        raise RuntimeError("Aucun sujet fourni.")
+    nb_points = max(3, min(6, int(nb_points or 4)))
+
+    bloc_contexte = f"\nContexte sur l'entreprise (site web, voix de l'auteur) :\n{contexte.strip()[:5000]}\n" if contexte.strip() else ""
+    prompt = (
+        f"Nous sommes le {date.today().strftime('%d/%m/%Y')}.\n"
+        "Redige le texte d'un carrousel pour les reseaux sociaux (Instagram, LinkedIn), en francais, pour "
+        "l'entreprise decrite ci-dessous, a partir de ce sujet ou de ce texte de base :\n\n"
+        f"\"{sujet.strip()}\"\n"
+        f"{bloc_contexte}\n"
+        f"Structure : une couverture, exactement {nb_points} slides de contenu, puis une slide finale.\n"
+        "Consignes :\n"
+        "- Couverture : titre accrocheur de 8 mots maximum (une promesse ou une question qui donne envie de "
+        "faire glisser), sous-titre de 10 mots maximum.\n"
+        "- Slides de contenu : un titre de 6 mots maximum et un texte de 25 mots maximum (1 ou 2 phrases). "
+        "Une seule idee par slide, concrete et utile, dans un ordre logique.\n"
+        "- Slide finale : un titre de 8 mots maximum qui invite a agir, un texte de 15 mots maximum, et un "
+        "texte de bouton de 2 a 3 mots adapte a l'entreprise (ex. « Me contacter » pour un independant, "
+        "« Nous contacter » pour une equipe, « Demander un devis »). Aucun numero de telephone, adresse ou lien.\n"
+        "- N'invente aucun fait precis que le contexte ne contient pas (prix, chiffres, certifications, delais, "
+        "avis). Reste general plutot que de risquer une affirmation fausse. Ton positif.\n"
+        "- Si le contexte contient un bloc « VOIX DU CLIENT », ecris comme lui (registre, personne grammaticale).\n"
+        "- Pas de tiret cadratin (—), pas d'emoji, pas de hashtag.\n"
+        "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=2000, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_CARROUSEL}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    donnees = json.loads(bloc)
+
+    def propre(texte):
+        return _nettoyer_texte_genere(str(texte or "")).replace("—", "-").strip()
+
+    return {
+        "couverture": {k: propre(v) for k, v in donnees["couverture"].items()},
+        "points": [{k: propre(v) for k, v in pt.items()} for pt in donnees["points"]][:nb_points],
+        "cta": {k: propre(v) for k, v in donnees["cta"].items()},
+    }

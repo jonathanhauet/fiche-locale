@@ -86,7 +86,7 @@
 
   <label for="image-partagee">Image(s) (optionnelles — partagées par défaut sur tous les réseaux, Instagram en a besoin)</label>
   <input type="file" id="image-partagee" name="image" accept="image/*" multiple>
-  <p class="texte-discret">Jusqu'à 10 images : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique.</p>
+  <p class="texte-discret">Jusqu'à 10 images : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique ; un carrousel IA (ci-dessous) compte comme plusieurs images.</p>
   <div class="ligne-champs">
     <input type="text" id="prompt-image-ia" value="{{ prompt_image_initial }}" placeholder="Description de l'image (laissez vide : l'IA la déduit de votre texte de base)" style="flex:1;">
     <button type="button" id="bouton-generer-image" class="bouton-secondaire">
@@ -121,6 +121,52 @@
       {% if not client.wordpress_couleur %}<p class="texte-discret">Couleur de marque non renseignée : à définir dans le bloc WordPress de la fiche client.</p>{% endif %}
       <button type="button" id="visuel-effacer" class="bouton-secondaire">Tout décocher</button>
     </div>
+  </details>
+  <details class="options-visuel" id="panneau-carrousel">
+    <summary>🖼️ Créer un carrousel (IA)</summary>
+    <p class="texte-discret">
+      L'IA rédige les slides à partir du texte de base, la plateforme les dessine aux couleurs du client (1080×1350).
+      Le carrousel est ensuite publié en diaporama sur Instagram et Facebook (LinkedIn et Google n'affichent que la première slide).
+    </p>
+    <div class="ligne-champs">
+      <label for="carrousel-nb-points" class="texte-discret">Slides de contenu</label>
+      <select id="carrousel-nb-points" style="width:auto;">
+        <option value="3">3</option><option value="4" selected>4</option><option value="5">5</option><option value="6">6</option>
+      </select>
+      <button type="button" id="carrousel-rediger" class="bouton-secondaire">
+        <span class="spinner" id="carrousel-spinner" hidden></span>
+        ✍️ Rédiger les slides
+      </button>
+    </div>
+    <fieldset class="groupe-options-visuel">
+      <legend>Mise en page</legend>
+      <label class="etiquette-chip-case"><input type="radio" name="carrousel-layout" value="plein" checked> Plein (fond couleur de marque)</label>
+      <label class="etiquette-chip-case"><input type="radio" name="carrousel-layout" value="clair"> Clair</label>
+      <label class="etiquette-chip-case"><input type="radio" name="carrousel-layout" value="sombre"> Sombre</label>
+    </fieldset>
+    <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case">Couleur
+        <input type="color" id="carrousel-couleur" value="{{ client.wordpress_couleur or '#1f4e8c' }}" style="width:3.2rem;padding:0.1rem;">
+      </label>
+      <label class="etiquette-chip-case">Logo
+        <input type="file" id="carrousel-logo" accept="image/*" style="width:auto;">
+      </label>
+      <span id="carrousel-logo-etat" class="texte-discret">{% if client.logo_url %}Logo enregistré pour ce client.{% else %}Pas de logo (facultatif, enregistré pour les prochains carrousels).{% endif %}</span>
+      <button type="button" id="carrousel-logo-retirer" class="bouton-secondaire" {% if not client.logo_url %}hidden{% endif %}>Retirer le logo</button>
+    </div>
+    <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case">Photo de fond de la couverture (facultatif)
+        <input type="file" id="carrousel-photo" accept="image/*" style="width:auto;">
+      </label>
+      <button type="button" id="carrousel-photo-retirer" class="bouton-secondaire" hidden>Retirer la photo</button>
+    </div>
+    <div id="carrousel-edition" hidden></div>
+    <div id="carrousel-apercu" class="carrousel-apercu"></div>
+    <div class="ligne-champs" id="carrousel-actions" hidden>
+      <button type="button" id="carrousel-actualiser" class="bouton-secondaire">🔄 Actualiser l'aperçu</button>
+      <button type="button" id="carrousel-utiliser" class="bouton-secondaire">✅ Utiliser ce carrousel</button>
+    </div>
+    <p id="carrousel-statut" class="texte-vide" hidden></p>
   </details>
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
@@ -434,7 +480,8 @@
       const badgeNb = cadre.querySelector(".badge-nb-images");
       const fichier = (champDedie && champDedie.files[0]) || champImagePartagee.files[0] || null;
       // Plusieurs images partagees : seuls Facebook et Instagram les publient toutes.
-      const nbImages = (champDedie && champDedie.files[0]) ? 1 : champImagePartagee.files.length;
+      const urlsIA = champImageUrlIA.value ? champImageUrlIA.value.split("|").filter(Boolean) : [];
+      const nbImages = (champDedie && champDedie.files[0]) ? 1 : (champImagePartagee.files.length || urlsIA.length);
       if (badgeNb) {
         badgeNb.hidden = !(nbImages > 1 && (reseau === "facebook" || reseau === "instagram"));
         badgeNb.textContent = `1/${nbImages}`;
@@ -446,7 +493,7 @@
         });
         return;
       }
-      if (champImageUrlIA.value) { apercuImg.src = champImageUrlIA.value; cadre.hidden = false; return; }
+      if (urlsIA.length) { apercuImg.src = urlsIA[0]; cadre.hidden = false; return; }
       apercuImg.removeAttribute("src");
       cadre.hidden = true;
     }
@@ -782,6 +829,141 @@
         spinnerGenererImage.hidden = true;
       }
     });
+
+
+    // ---- Carrousel IA : textes rediges par l'IA, dessines par le serveur (aperçu en base64, puis images hebergees) ----
+    (function () {
+      const base = "/publication-multi/{{ client.id }}/carrousel";
+      const boutonRediger = document.getElementById("carrousel-rediger");
+      const spinner = document.getElementById("carrousel-spinner");
+      const zoneEdition = document.getElementById("carrousel-edition");
+      const zoneApercu = document.getElementById("carrousel-apercu");
+      const zoneActions = document.getElementById("carrousel-actions");
+      const statut = document.getElementById("carrousel-statut");
+      const boutonLogoRetirer = document.getElementById("carrousel-logo-retirer");
+      const boutonPhotoRetirer = document.getElementById("carrousel-photo-retirer");
+      let logoPresent = {{ 'true' if client.logo_url else 'false' }};
+      let photoUrl = "";
+      let occupe = false;
+
+      function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
+      function champ(classe, valeur, placeholder, multiligne) {
+        const el = document.createElement(multiligne ? "textarea" : "input");
+        if (multiligne) el.rows = 2; else el.type = "text";
+        el.className = classe; el.value = valeur || ""; el.placeholder = placeholder;
+        return el;
+      }
+      function construireEdition(slides) {
+        zoneEdition.innerHTML = "";
+        const bloc = (titre, ...champs) => {
+          const div = document.createElement("div"); div.className = "carrousel-slide-edition";
+          const t = document.createElement("strong"); t.textContent = titre; div.appendChild(t);
+          champs.forEach((c) => div.appendChild(c)); zoneEdition.appendChild(div);
+        };
+        bloc("Couverture", champ("c-titre", slides.couverture.titre, "Titre"), champ("c-sous", slides.couverture.sous_titre, "Sous-titre"));
+        slides.points.forEach((pt, i) => bloc("Slide " + (i + 2), champ("p-titre", pt.titre, "Titre"), champ("p-texte", pt.texte, "Texte", true)));
+        bloc("Slide finale", champ("f-titre", slides.cta.titre, "Titre"), champ("f-texte", slides.cta.texte, "Texte"), champ("f-bouton", slides.cta.bouton, "Texte du bouton"));
+        zoneEdition.hidden = false; zoneActions.hidden = false;
+      }
+      function lireSlides() {
+        const v = (sel, racine) => (racine || zoneEdition).querySelector(sel).value.trim();
+        const blocs = Array.from(zoneEdition.querySelectorAll(".carrousel-slide-edition"));
+        return {
+          couverture: { titre: v(".c-titre", blocs[0]), sous_titre: v(".c-sous", blocs[0]) },
+          points: blocs.slice(1, -1).map((b) => ({ titre: v(".p-titre", b), texte: v(".p-texte", b) })),
+          cta: { titre: v(".f-titre", blocs[blocs.length - 1]), texte: v(".f-texte", blocs[blocs.length - 1]), bouton: v(".f-bouton", blocs[blocs.length - 1]) },
+        };
+      }
+      function corpsRendu(mode) {
+        const layout = document.querySelector('input[name="carrousel-layout"]:checked').value;
+        return JSON.stringify({ slides: lireSlides(), layout, couleur: document.getElementById("carrousel-couleur").value, photo_url: photoUrl, mode });
+      }
+      async function appeler(url, options) {
+        const reponse = await fetch(url, options);
+        let donnees = {};
+        try { donnees = await reponse.json(); } catch (e) { /* reponse non JSON */ }
+        if (!reponse.ok) throw new Error(donnees.erreur || "Échec (code " + reponse.status + ").");
+        return donnees;
+      }
+      async function actualiser() {
+        if (zoneEdition.hidden || occupe) return;
+        occupe = true; message("Dessin de l'aperçu...");
+        try {
+          const donnees = await appeler(base + "/rendu", { method: "POST", headers: { "Content-Type": "application/json" }, body: corpsRendu("apercu") });
+          zoneApercu.innerHTML = "";
+          donnees.images.forEach((src) => { const img = document.createElement("img"); img.src = src; img.alt = "Slide"; zoneApercu.appendChild(img); });
+          message("Aperçu à jour. Modifiez un texte si besoin, puis « Utiliser ce carrousel ».");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      }
+
+      boutonRediger.addEventListener("click", async () => {
+        const texteBase = document.getElementById("texte-base").value.trim();
+        if (!texteBase) { message("Écrivez d'abord le texte de base (le sujet du carrousel)."); return; }
+        boutonRediger.disabled = true; spinner.hidden = false; message("Rédaction des slides en cours...");
+        try {
+          const donnees = await appeler(base + "/textes", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texte_base: texteBase, nb_points: parseInt(document.getElementById("carrousel-nb-points").value, 10) }),
+          });
+          construireEdition(donnees.slides);
+        } catch (e) { message(e.message); boutonRediger.disabled = false; spinner.hidden = true; return; }
+        boutonRediger.disabled = false; spinner.hidden = true;
+        await actualiser();
+      });
+      document.getElementById("carrousel-actualiser").addEventListener("click", actualiser);
+      document.querySelectorAll('input[name="carrousel-layout"]').forEach((r) => r.addEventListener("change", actualiser));
+      document.getElementById("carrousel-couleur").addEventListener("change", actualiser);
+
+      document.getElementById("carrousel-utiliser").addEventListener("click", async () => {
+        if (occupe) return;
+        occupe = true; message("Création des images du carrousel (quelques secondes)...");
+        try {
+          const donnees = await appeler(base + "/rendu", { method: "POST", headers: { "Content-Type": "application/json" }, body: corpsRendu("final") });
+          champImagePartagee.value = "";
+          champImageUrlIA.value = donnees.images.join("|");
+          actualiserToutesLesApercusImage();
+          message("Carrousel de " + donnees.images.length + " images prêt : il sera publié avec votre post (aperçus plus bas).");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      });
+
+      async function envoyerMedia(type, fichier) {
+        const formulaire = new FormData();
+        formulaire.append("type_media", type);
+        if (fichier) formulaire.append("fichier", fichier);
+        return appeler(base + "/media", { method: "POST", body: formulaire });
+      }
+      document.getElementById("carrousel-logo").addEventListener("change", async (evenement) => {
+        const fichier = evenement.target.files[0];
+        if (!fichier) return;
+        message("Envoi du logo...");
+        try {
+          await envoyerMedia("logo", fichier);
+          logoPresent = true; boutonLogoRetirer.hidden = false;
+          document.getElementById("carrousel-logo-etat").textContent = "Logo enregistré pour ce client.";
+          message("Logo enregistré."); await actualiser();
+        } catch (e) { message(e.message); }
+        evenement.target.value = "";
+      });
+      boutonLogoRetirer.addEventListener("click", async () => {
+        try {
+          await envoyerMedia("retirer_logo");
+          logoPresent = false; boutonLogoRetirer.hidden = true;
+          document.getElementById("carrousel-logo-etat").textContent = "Pas de logo (facultatif, enregistré pour les prochains carrousels).";
+          await actualiser();
+        } catch (e) { message(e.message); }
+      });
+      document.getElementById("carrousel-photo").addEventListener("change", async (evenement) => {
+        const fichier = evenement.target.files[0];
+        if (!fichier) return;
+        message("Envoi de la photo...");
+        try {
+          const donnees = await envoyerMedia("photo", fichier);
+          photoUrl = donnees.url; boutonPhotoRetirer.hidden = false; await actualiser();
+        } catch (e) { message(e.message); }
+        evenement.target.value = "";
+      });
+      boutonPhotoRetirer.addEventListener("click", () => { photoUrl = ""; boutonPhotoRetirer.hidden = true; actualiser(); });
+    })();
 
     const boutonAdapter = document.getElementById("bouton-adapter");
     const spinnerAdapter = document.getElementById("spinner-adapter");

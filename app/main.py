@@ -30,6 +30,7 @@ import requests
 from PIL import Image, ImageOps
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -41,6 +42,7 @@ from . import (
     audit_site_technique,
     bilan_pdf,
     brevo_email,
+    carrousel_visuel,
     citations,
     claude_generation,
     comparatif_avis_pdf,
@@ -197,6 +199,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
         if "search_console_site" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
+        if "logo_url" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_url TEXT DEFAULT ''"))
         for colonne_wordpress in (
             "wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe", "wordpress_couleur", "wordpress_lien_cta", "wordpress_texte_cta",
         ):
@@ -6104,6 +6108,155 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
     return JSONResponse({"article": article})
 
 
+# ---------------------------------------------------------------------------
+# Carrousels : l'IA redige les slides, carrousel_visuel.py les dessine (1080x1350) aux couleurs du client.
+# ---------------------------------------------------------------------------
+COULEUR_CARROUSEL_DEFAUT = "#1f4e8c"
+
+
+def _slides_valides(brut) -> dict:
+    """Nettoie les textes de slides recus du navigateur (ValueError si la structure est inutilisable)."""
+    def texte(valeur, maxi):
+        return " ".join(str(valeur or "").split())[:maxi]
+
+    if not isinstance(brut, dict) or not isinstance(brut.get("points"), list) or not brut["points"]:
+        raise ValueError("Aucune slide a dessiner.")
+    couverture, cta = brut.get("couverture") or {}, brut.get("cta") or {}
+    points = [
+        {"titre": texte(pt.get("titre"), 90), "texte": texte(pt.get("texte"), 260)}
+        for pt in brut["points"][:8] if isinstance(pt, dict)
+    ]
+    if not points:
+        raise ValueError("Aucune slide a dessiner.")
+    return {
+        "couverture": {"titre": texte(couverture.get("titre"), 110) or "Carrousel", "sous_titre": texte(couverture.get("sous_titre"), 140)},
+        "points": points,
+        "cta": {"titre": texte(cta.get("titre"), 110), "texte": texte(cta.get("texte"), 180), "bouton": texte(cta.get("bouton"), 30) or wordpress_publish.TEXTE_BOUTON_NEUTRE},
+    }
+
+
+def _image_depuis_url_publique(url: str):
+    """Image hebergee sur notre OVH (jamais une URL arbitraire) ; None si indisponible."""
+    base = ovh_upload.URL_PUBLIQUE_BASE
+    if not url or not base or not url.startswith(base + "/"):
+        return None
+    try:
+        return Image.open(io.BytesIO(requests.get(url, timeout=20).content))
+    except Exception:
+        return None
+
+
+@app.post("/publication-multi/{client_id}/carrousel/textes")
+async def publication_multi_carrousel_textes(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Redige les textes d'un carrousel a partir du texte de base (voir claude_generation.generer_carrousel)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    sujet = (donnees.get("texte_base") or "").strip()
+    if not sujet:
+        return JSONResponse({"erreur": "Écrivez d'abord le sujet ou le texte de base."}, status_code=400)
+    try:
+        slides = await run_in_threadpool(
+            claude_generation.generer_carrousel, sujet, _contexte_ia_client(client), donnees.get("nb_points") or 4,
+        )
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de la rédaction du carrousel : {erreur}"}, status_code=500)
+    return JSONResponse({"slides": slides})
+
+
+@app.post("/publication-multi/{client_id}/carrousel/media")
+async def publication_multi_carrousel_media(
+    client_id: int, request: Request, type_media: str = Form(...), fichier: UploadFile = File(None),
+    db: Session = Depends(obtenir_session),
+):
+    """
+    Logo du client (enregistre une fois pour toutes, reutilise sur chaque carrousel) ou photo de fond de
+    couverture (valable pour ce carrousel seulement). type_media : "logo", "retirer_logo" ou "photo".
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    if type_media == "retirer_logo":
+        client.logo_url = ""
+        db.commit()
+        return JSONResponse({"ok": True, "url": ""})
+    if type_media not in ("logo", "photo") or fichier is None or not fichier.filename:
+        return JSONResponse({"erreur": "Choisissez un fichier image."}, status_code=400)
+    octets = await fichier.read()
+    if len(octets) > 12 * 1024 * 1024:
+        return JSONResponse({"erreur": "Image trop lourde (12 Mo maximum)."}, status_code=400)
+    try:
+        if type_media == "photo":
+            url = _televerser_image_publication(octets, "carrousel-fond")
+        else:
+            logo = Image.open(io.BytesIO(octets))
+            logo.load()
+            logo.thumbnail((700, 400))
+            tampon = io.BytesIO()
+            logo.convert("RGBA").save(tampon, format="PNG")  # PNG : garde la transparence
+            url = ovh_upload.envoyer_octets(tampon.getvalue(), f"logo-{client_id}-{uuid.uuid4().hex[:8]}.png")
+            client.logo_url = url
+            db.commit()
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Image refusée : {erreur}"}, status_code=400)
+    return JSONResponse({"ok": True, "url": url})
+
+
+@app.post("/publication-multi/{client_id}/carrousel/rendu")
+async def publication_multi_carrousel_rendu(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Dessine le carrousel. mode "apercu" : petites images renvoyees en base64 (rien n'est heberge) ;
+    mode "final" : images JPEG hebergees sur OVH (Instagram n'accepte pas le PNG), URLs renvoyees.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    try:
+        slides = _slides_valides(donnees.get("slides"))
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    couleur = (donnees.get("couleur") or "").strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", couleur):
+        couleur = client.wordpress_couleur or COULEUR_CARROUSEL_DEFAUT
+    layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
+    final = donnees.get("mode") == "final"
+    logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
+    photo_url, nom_client = (donnees.get("photo_url") or "").strip(), client.nom
+
+    def fabriquer():
+        logo = None if sans_logo else _image_depuis_url_publique(logo_url)
+        photo = _image_depuis_url_publique(photo_url)
+        images = carrousel_visuel.construire_carrousel(slides, layout, couleur, nom_client, logo, photo)
+        sorties = []
+        for image in images:
+            if not final:
+                image = image.resize((540, 675), Image.LANCZOS)
+            tampon = io.BytesIO()
+            image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
+            sorties.append(tampon.getvalue())
+        if not final:
+            return ["data:image/jpeg;base64," + base64.b64encode(o).decode() for o in sorties]
+        lot = uuid.uuid4().hex[:8]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            return list(pool.map(
+                lambda ot: ovh_upload.envoyer_octets(ot[1], f"carrousel-{lot}-{ot[0] + 1}.jpg"), enumerate(sorties),
+            ))
+
+    try:
+        resultat = await run_in_threadpool(fabriquer)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec du dessin du carrousel : {erreur}"}, status_code=500)
+    return JSONResponse({"images": resultat})
+
+
 @app.post("/clients/{client_id}/wordpress")
 def reglages_wordpress(
     client_id: int, request: Request, action: str = Form("enregistrer"), url: str = Form(""),
@@ -6815,8 +6968,8 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
             for fichier in fichiers_partages:
                 urls_partagees.append(_televerser_image_publication(await fichier.read(), "multi"))
         else:
-            url_ia = (formulaire.get("image_url_ia") or "").strip()
-            urls_partagees = [url_ia] if url_ia else []
+            # Une image IA, ou les slides d'un carrousel (URLs separees par "|").
+            urls_partagees = [u.strip() for u in (formulaire.get("image_url_ia") or "").split("|") if u.strip()][:NB_MAX_IMAGES_PUBLICATION]
 
         for reseau in reseaux:
             fichier_reseau = formulaire.get(f"image_{reseau}")
