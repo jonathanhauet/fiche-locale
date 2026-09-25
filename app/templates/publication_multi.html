@@ -114,9 +114,9 @@
   </div>
   <details class="options-visuel" id="options-visuel">
     <summary>Options du visuel IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
-    {% for groupe, choix_multiples in (("type", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
+    {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
     {% if groupe != "personnes" or client.photos_reference %}
-    <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}">
+    <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}" {% if groupe == "illustration" %}id="groupe-styles-illustration" hidden{% endif %}>
       <legend>{{ libelles_groupes_visuel[groupe] }}{% if choix_multiples %} <span class="texte-discret">(plusieurs possibles)</span>{% endif %}</legend>
       {% for identifiant, libelle, _consigne in options_visuel[groupe] %}
       <label class="etiquette-chip-case">
@@ -800,6 +800,18 @@
     const boutonGenererImage = document.getElementById("bouton-generer-image");
     const spinnerGenererImage = document.getElementById("spinner-generer-image");
     const texteStatutImageIA = document.getElementById("texte-statut-image-ia");
+
+    // Styles d'illustration : visibles seulement pour le type "Illustration simple" ; en choisir un coche ce type.
+    (function () {
+      const groupe = document.getElementById("groupe-styles-illustration");
+      if (!groupe) return;
+      const typeIllustration = document.querySelector('input[name="visuel-type"][value="illustration"]');
+      function actualiser() { groupe.hidden = !typeIllustration.checked; if (groupe.hidden) groupe.querySelectorAll("input").forEach((c) => { c.checked = false; }); }
+      document.querySelectorAll('input[name="visuel-type"]').forEach((r) => r.addEventListener("change", actualiser));
+      document.getElementById("visuel-effacer")?.addEventListener("click", () => setTimeout(actualiser, 0));
+      actualiser();
+    })();
+
     const champPromptImage = document.getElementById("prompt-image-ia");
     let promptImageAuto = false;  // vrai tant que la description affichee vient de l'IA (non retouchee)
     champPromptImage.addEventListener("input", () => { promptImageAuto = false; });
@@ -808,7 +820,7 @@
     });
     function lireOptionsVisuel() {
       const options = {};
-      ["type", "cadrage", "decor", "lumiere", "personnes"].forEach((groupe) => {
+      ["type", "illustration", "cadrage", "decor", "lumiere", "personnes"].forEach((groupe) => {
         const cochees = Array.from(document.querySelectorAll('input[name="visuel-' + groupe + '"]:checked')).map((c) => c.value);
         if (cochees.length) options[groupe] = (groupe === "cadrage" || groupe === "decor" || groupe === "lumiere") ? cochees : cochees[0];
       });

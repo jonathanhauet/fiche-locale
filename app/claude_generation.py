@@ -1669,6 +1669,18 @@ OPTIONS_VISUEL = {
         ("lieu", "Lieu ou ambiance", "an atmosphere shot of the place itself (storefront, workshop or office), with no people or only tiny figures far in the background"),
         ("illustration", "Illustration simple", "a simple flat vector-style illustration, clean shapes and a limited palette, no photorealism"),
     ],
+    "illustration": [
+        ("plat", "Plat (vectoriel)", "a clean flat vector illustration: simple geometric shapes, limited color palette, subtle shadows"),
+        ("isometrique", "Isométrique", "an isometric illustration of a small cutaway scene: clean lines, soft flat colors, tidy details"),
+        ("bd", "BD (ligne claire)", "a comic-book (bande dessinee) illustration in the franco-belgian clear-line style: confident ink outlines, flat colors, expressive characters with natural proportions"),
+        ("humour", "Humour (dessin d'humour)", "a humorous cartoon drawing in the spirit of a witty web comic: simplified characters with big expressive faces, thick hand-drawn outlines, bright flat colors, a light comedic situation; no speech bubbles containing text"),
+        ("schema", "Schéma dessiné à la main", "a hand-drawn explanatory diagram, like a sketch on a whiteboard or paper: simple line drawings linked by arrows and brackets, marker strokes; no legible words, use only unlabeled shapes, arrows and numbered dots"),
+        ("croquis", "Croquis au crayon", "a loose pencil sketch with visible construction lines and hatching on off-white paper, unfinished sketchbook look, a single accent color"),
+        ("aquarelle", "Aquarelle", "a soft watercolor illustration with gentle washes and visible paper texture"),
+        ("craie", "Craie sur tableau noir", "a chalk drawing on a dark blackboard: white and pastel chalk lines, hand-drawn look, no legible words"),
+        ("vintage", "Affiche vintage", "a retro vintage poster illustration: limited palette, screen-print texture, bold simple shapes"),
+        ("decoupe", "Papier découpé", "a layered paper-cut illustration with soft shadows between the layers"),
+    ],
     "cadrage": [
         ("large", "Plan large", "wide shot showing the whole space"),
         ("moyen", "Plan moyen", "medium shot, subject framed from the waist up"),
@@ -1699,7 +1711,7 @@ OPTIONS_VISUEL = {
     ],
 }
 LIBELLES_GROUPES_VISUEL = {
-    "type": "Type de visuel", "cadrage": "Cadrage", "decor": "Décor", "lumiere": "Lumière et ambiance",
+    "type": "Type de visuel", "illustration": "Style d'illustration", "cadrage": "Cadrage", "decor": "Décor", "lumiere": "Lumière et ambiance",
     "personnes": "Qui apparaît",
 }
 # Le type impose des limites : ces types ne montrent pas de visage, donc jamais les photos de reference.
@@ -1759,13 +1771,20 @@ def choisir_options_visuel(options: dict, varier: bool = False, hasard=None) -> 
 
     choix = {
         "type": un("type"), "cadrages": plusieurs("cadrage"), "decors": plusieurs("decor"),
-        "lumieres": plusieurs("lumiere"), "personnes": un("personnes"), "aleatoires": [],
+        "lumieres": plusieurs("lumiere"), "personnes": un("personnes"), "illustration": un("illustration"), "aleatoires": [],
     }
+    if choix["illustration"] and not choix["type"]:
+        choix["type"] = "illustration"  # choisir un style d'illustration revient a choisir le type "illustration"
+    if choix["type"] != "illustration":
+        choix["illustration"] = None
     if varier:
         if not choix["type"]:
             choix["type"] = hasard.choice([i for i in connus["type"] if i != "illustration"])
             choix["aleatoires"].append(("type", choix["type"]))
         type_choisi = choix["type"]
+        if type_choisi == "illustration" and not choix["illustration"]:
+            choix["illustration"] = hasard.choice(sorted(connus["illustration"]))
+            choix["aleatoires"].append(("illustration", choix["illustration"]))
         if not choix["cadrages"] and type_choisi != "illustration":
             candidats = {"detail": ["gros_plan", "dessus"], "lieu": ["large", "moyen"]}.get(type_choisi, sorted(connus["cadrage"]))
             choix["cadrages"] = [hasard.choice(candidats)]
@@ -1806,7 +1825,9 @@ def prompt_image_avec_options(
 
     saison = saison_courante()
     lignes = []
-    if choix["type"]:
+    if choix["type"] == "illustration" and choix.get("illustration"):
+        lignes.append(f"- Visual type: {_index_options('illustration')[choix['illustration']][1]}. It must look like a drawing, never a photograph.")
+    elif choix["type"]:
         lignes.append(f"- Visual type: {_index_options('type')[choix['type']][1]}.")
     for groupe, cle in (("cadrage", "cadrages"), ("decor", "decors"), ("lumiere", "lumieres")):
         consignes = [_index_options(groupe)[i][1].replace("{saison}", saison) for i in choix[cle]]
