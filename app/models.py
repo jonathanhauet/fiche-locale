@@ -778,6 +778,28 @@ class AvisMisEnAvant(Base):
     utilise_le = Column(DateTime, default=datetime.utcnow)
 
 
+class PostWordPress(Base):
+    """
+    Article publie ou programme sur le WordPress d'un client depuis le composeur multi-reseaux : sert uniquement a
+    l'afficher dans le resume / l'historique des publications. Un article programme est publie par WordPress
+    lui-meme (statut "future") : passee sa date, il est presente comme publie.
+    """
+
+    __tablename__ = "posts_wordpress"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    titre = Column(String, default="")
+    texte = Column(Text, default="")  # corps de l'article (markdown)
+    image_url = Column(String, nullable=True)
+    publier_le = Column(DateTime, nullable=False)  # heure locale de Bruxelles
+    wp_id = Column(Integer, nullable=True)
+    lien = Column(String, default="")
+    lien_edition = Column(String, default="")
+    programme = Column(Boolean, default=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class SuggestionSujetJour(Base):
     """
     Sujets tendance generes automatiquement chaque matin (voir

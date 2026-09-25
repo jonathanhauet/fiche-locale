@@ -15,13 +15,13 @@
       <tr data-reseau="{{ ligne.reseau }}" data-id="{{ ligne.id }}" data-a-venir="{{ 1 if ligne.a_venir else 0 }}" data-date="{{ ligne.date.isoformat() }}" data-heure="{{ ligne.heure or '' }}">
         <td>
           <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}" title="{{ ligne.reseau|capitalize }}">
-            {{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}
+            {{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in", "wordpress": "W"}[ligne.reseau] }}
           </span>
         </td>
         <td>
           <template class="modele-apercu-publication">
             <div class="apercu-publication-entete">
-              <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}">{{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}</span>
+              <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}">{{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in", "wordpress": "W"}[ligne.reseau] }}</span>
               <span>{{ ligne.reseau|capitalize }} · {{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %} · {{ ligne.statut_libelle }}</span>
             </div>
             {% if ligne.images %}
@@ -40,7 +40,11 @@
         <td class="cellule-date-publication">{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
         <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
         <td>
-          {% if ligne.a_venir %}
+          {% if ligne.reseau == 'wordpress' %}
+          {% if ligne.lien_edition %}
+          <div class="actions-resume"><a class="bouton-secondaire bouton-mini" href="{{ ligne.lien_edition }}" target="_blank" rel="noopener" title="Modifier, reprogrammer ou supprimer l'article depuis WordPress">Ouvrir dans WordPress</a></div>
+          {% endif %}
+          {% elif ligne.a_venir %}
           <div class="actions-resume">
             <button type="button" class="bouton-secondaire bouton-mini bouton-reprogrammer" title="Changer la date et l'heure">📅 Reprogrammer</button>
             <a class="bouton-secondaire bouton-mini" href="{{ '/posts/' ~ ligne.id if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/modifier' }}">Modifier</a>
@@ -132,7 +136,7 @@
     let ligneCourante = null;
 
     function jumellesDe(ligne) {
-      return lignes.filter((l) => l !== ligne && l.dataset.aVenir === "1" && l.dataset.date === ligne.dataset.date && l.dataset.heure === ligne.dataset.heure);
+      return lignes.filter((l) => l !== ligne && l.dataset.aVenir === "1" && l.dataset.reseau !== "wordpress" && l.dataset.date === ligne.dataset.date && l.dataset.heure === ligne.dataset.heure);
     }
     function ajouterJours(iso, jours) {
       const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + jours);

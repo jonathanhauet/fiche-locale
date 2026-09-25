@@ -1233,6 +1233,19 @@ def _publications_multi_reseaux(
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
             })
 
+    # Articles WordPress : programmes par WordPress lui-meme, donc presentes comme publies une fois la date passee.
+    maintenant_local = datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None)
+    for article in db.query(models.PostWordPress).filter_by(client_id=client.id).all():
+        a_venir = bool(article.programme and article.publier_le > maintenant_local)
+        texte_brut = re.sub(r"^\s*(#{1,6}\s*|>\s*)", "", article.texte or "", flags=re.M).replace("**", "")
+        lignes.append({
+            "reseau": "wordpress", "titre": article.titre[:60] + ("…" if len(article.titre) > 60 else ""),
+            "texte": f"{article.titre}\n\n{texte_brut}"[:1500], "images": [article.image_url] if article.image_url else [],
+            "image_url": article.image_url, "date": article.publier_le.date(), "heure": article.publier_le.strftime("%H:%M"),
+            "id": article.id, "a_venir": a_venir, "statut_brut": "EN_ATTENTE" if a_venir else "PUBLIE",
+            "statut_libelle": "Programmé" if a_venir else "Publié", "url": article.lien, "lien_edition": article.lien_edition,
+        })
+
     ids_google_connus = {
         id_post for (id_post,) in db.query(models.Post.id_post_google).filter(
             models.Post.client_id == client.id, models.Post.id_post_google != "",
@@ -7681,11 +7694,26 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                         client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
                         requests.get(urls_wordpress[0], timeout=30).content,
                     )
-                wordpress_publish.creer_article(
+                article_cree = wordpress_publish.creer_article(
                     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
                     titre_article, wordpress_publish.markdown_vers_html(corps_article, couleur_marque_client(client)),
                     publier_le, image_id, wordpress_publish.extrait_depuis_corps(corps_article),
                 )
+                # Trace locale, pour que l'article apparaisse dans le resume et l'historique des publications.
+                try:
+                    db.add(models.PostWordPress(
+                        client_id=client.id, titre=titre_article[:200], texte=corps_article,
+                        image_url=urls_wordpress[0] if urls_wordpress else None,
+                        publier_le=publier_le or datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None, second=0, microsecond=0),
+                        wp_id=article_cree.get("id"), lien=article_cree.get("lien") or "", programme=bool(publier_le),
+                        lien_edition=(
+                            f"{wordpress_publish.normaliser_url(client.wordpress_url)}/wp-admin/post.php?post={article_cree['id']}&action=edit"
+                            if article_cree.get("id") else ""
+                        ),
+                    ))
+                    db.commit()
+                except Exception:
+                    db.rollback()
         except Exception as e:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
 

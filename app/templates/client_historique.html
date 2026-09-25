@@ -8,50 +8,7 @@
 <h2>Résumé multi-réseaux</h2>
 <p class="texte-discret">Publications suivies par la plateforme, tous réseaux confondus (Google, Facebook, Instagram, LinkedIn).</p>
 {% if publications_multi_reseaux %}
-<div class="conteneur-tableau">
-  <table class="tableau-historique tableau-resume">
-    <thead>
-      <tr>
-        <th></th>
-        <th>Publication</th>
-        <th>Date</th>
-        <th>Statut</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for ligne in publications_multi_reseaux %}
-      <tr>
-        <td>
-          <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}" title="{{ ligne.reseau|capitalize }}">
-            {{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}
-          </span>
-        </td>
-        <td>
-          <div class="ligne-publication-resume">
-            {% if ligne.image_url %}<img src="{{ ligne.image_url }}" alt="" class="miniature-publication-resume">{% elif ligne.video %}<span class="miniature-publication-resume miniature-video" title="Vidéo">🎬</span>{% endif %}
-            <span class="apercu-texte">{% if ligne.url %}<a href="{{ ligne.url }}" target="_blank" rel="noopener">{{ ligne.titre }}</a>{% else %}{{ ligne.titre }}{% endif %}{% if ligne.externe %}<span class="mention-hors-plateforme">Hors plateforme</span>{% endif %}</span>
-          </div>
-        </td>
-        <td>{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
-        <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
-        <td>
-          {% if ligne.a_venir %}
-          <div class="actions-resume">
-            <a class="bouton-secondaire bouton-mini" href="{{ '/posts/' ~ ligne.id if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/modifier' }}">Modifier</a>
-            <form method="post" action="{{ '/posts/' ~ ligne.id ~ '/statut_rapide' if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/annuler' }}"
-                  onsubmit="return confirm('Supprimer ce post programmé ? Il ne sera pas publié.');">
-              {% if ligne.reseau == 'google' %}<input type="hidden" name="statut" value="SUPPRIME">{% else %}<input type="hidden" name="retour" value="client">{% endif %}
-              <button type="submit" class="bouton-danger bouton-mini">Supprimer</button>
-            </form>
-          </div>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% with lignes=publications_multi_reseaux, retour="client" %}{% include "_resume_publications.html" %}{% endwith %}
 {% else %}
 <p class="texte-vide">Aucune publication pour l'instant.</p>
 {% endif %}
