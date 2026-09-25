@@ -84,6 +84,7 @@ from . import (
     whatsapp_business,
     wordpress_publish,
     wordpress_style,
+    titre_photo,
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
@@ -199,6 +200,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
         if "search_console_site" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
+        if "modele_titre" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN modele_titre TEXT DEFAULT ''"))
         if "veille_type" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN veille_type TEXT DEFAULT ''"))
         if "themes_actualite" not in colonnes_clients:
@@ -6054,6 +6057,7 @@ def _contexte_publication_multi(
             key=lambda l: (l["date"], l.get("heure") or "00:00"),
         ),
         "suggestions_du_jour_json": _suggestions_du_jour_json(db, client.id),
+        "modele_titre": _reglages_titre_client(client),
         "veille_type": client.veille_type or ("seo" if client.nom == "Jonathan Hauet Marketing" else ""),
         "themes_actualite_texte": client.themes_actualite or "",
         "prompt_image_initial": prompt_image_initial,
@@ -6261,6 +6265,10 @@ def nom_affiche_carrousel(client) -> str:
 templates.env.globals["nom_affiche_carrousel"] = nom_affiche_carrousel
 templates.env.globals["couleur_marque_client"] = couleur_marque_client
 templates.env.globals["style_decor_client"] = style_decor_client
+templates.env.globals["titre_styles"] = titre_photo.STYLES
+templates.env.globals["titre_polices"] = titre_photo.POLICES
+templates.env.globals["titre_pictos"] = titre_photo.PICTOS
+templates.env.globals["titre_cadres"] = titre_photo.CADRES
 templates.env.globals["libelles_decor"] = carrousel_visuel.LIBELLES_DECOR
 templates.env.globals["couleurs_secondaires_client"] = couleurs_secondaires_client
 
@@ -6518,43 +6526,98 @@ async def publication_multi_titre_photo_suggestion(client_id: int, request: Requ
     return JSONResponse(proposition)
 
 
-@app.post("/publication-multi/{client_id}/titre-photo")
-async def publication_multi_titre_photo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """Dessine un titre sur une photo aux couleurs du client. mode "apercu" : base64 ; "final" : JPEG heberge (URL renvoyee)."""
+def _reglages_titre_client(client) -> dict:
+    """Reglages memorises du titre sur photo (JSON en base) ; {} si rien n'est enregistre."""
+    try:
+        return json.loads(client.modele_titre) if (client.modele_titre or "").strip() else {}
+    except ValueError:
+        return {}
+
+
+@app.post("/clients/{client_id}/modele-titre")
+async def enregistrer_modele_titre(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Memorise (ou efface) le style de titre sur photo d'un client : style, position, police, ajouts... (pas le texte)."""
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Non connecte."}, status_code=401)
     client = db.get(models.Client, client_id)
     if not client:
         return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
     donnees = await request.json()
+    if donnees.get("effacer"):
+        client.modele_titre = ""
+    else:
+        reglages = titre_photo.normaliser_reglages(donnees.get("reglages"))
+        reglages["mots"] = []          # les mots en couleur dependent du titre du moment : jamais memorises
+        reglages["pastille"] = ""      # idem pour la pastille (« 1/5 », « Nouveau »...)
+        client.modele_titre = json.dumps(reglages)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+def _preparer_titre_photo(client, donnees: dict) -> dict:
+    """Champs communs des routes de rendu du titre sur photo (ValueError si le titre est vide)."""
     titre = " ".join(str(donnees.get("titre") or "").split())[:120]
     if not titre:
-        return JSONResponse({"erreur": "Écrivez le titre à imprimer sur la photo."}, status_code=400)
-    sous_titre = " ".join(str(donnees.get("sous_titre") or "").split())[:40]
+        raise ValueError("Écrivez le titre à imprimer sur la photo.")
     couleur, secondaires = _couleurs_demandees(donnees, client)
-    position = donnees.get("position") if donnees.get("position") in ("bas", "haut", "centre") else "bas"
-    format_image = "carre" if donnees.get("format") == "carre" else "portrait"
+    return {
+        "titre": titre, "sous_titre": " ".join(str(donnees.get("sous_titre") or "").split())[:40],
+        "couleur": couleur, "secondaires": secondaires, "reglages": titre_photo.normaliser_reglages(donnees.get("reglages")),
+        "logo_url": client.logo_url, "sans_logo": bool(donnees.get("sans_logo")), "nom": nom_affiche_carrousel(client),
+    }
+
+
+@app.post("/publication-multi/{client_id}/titre-photo")
+async def publication_multi_titre_photo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Dessine le titre sur une ou plusieurs photos (jusqu'a 10). mode "apercu" : la photo d'index `index`, en base64 ;
+    mode "final" : toutes les photos, JPEG heberges (liste d'URL renvoyee). Chaque photo peut avoir son propre titre.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    photos = donnees.get("photos")
+    if not isinstance(photos, list):  # ancien format : une seule photo_url
+        photos = [{"url": donnees.get("photo_url")}]
+    photos = [p for p in photos if isinstance(p, dict) and str(p.get("url") or "").strip()][:NB_MAX_IMAGES_PUBLICATION]
+    if not photos:
+        return JSONResponse({"erreur": "Choisissez d'abord une photo."}, status_code=400)
     try:
-        voile = max(20, min(90, int(donnees.get("voile") or 55)))
-    except (TypeError, ValueError):
-        voile = 55
+        commun = _preparer_titre_photo(client, donnees)
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
     final = donnees.get("mode") == "final"
-    logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
-    photo_url = str(donnees.get("photo_url") or "").strip()
+    try:
+        index = max(0, min(len(photos) - 1, int(donnees.get("index") or 0)))
+    except (TypeError, ValueError):
+        index = 0
+    a_dessiner = list(enumerate(photos)) if final else [(index, photos[index])]
 
     def fabriquer():
-        photo = _image_depuis_url_autorisee(photo_url)
-        if photo is None:
-            raise ValueError("Choisissez d'abord une photo.")
-        logo = None if sans_logo else _image_depuis_url_publique(logo_url)
-        image = carrousel_visuel.dessiner_titre_photo(photo, titre, sous_titre, couleur, logo, secondaires, position, format_image, voile)
+        logo = None if commun["sans_logo"] else _image_depuis_url_publique(commun["logo_url"])
+        sorties = []
+        for i, photo_infos in a_dessiner:
+            photo = _image_depuis_url_autorisee(str(photo_infos["url"]).strip())
+            if photo is None:
+                raise ValueError(f"La photo {i + 1} n'a pas pu être lue.")
+            titre_photo_i = " ".join(str(photo_infos.get("titre") or "").split())[:120] or commun["titre"]
+            image = titre_photo.dessiner(
+                photo, titre_photo_i, commun["sous_titre"], commun["couleur"], logo, commun["secondaires"], commun["reglages"],
+                commun["nom"], i + 1, len(photos),
+            )
+            if not final:
+                image = image.resize((720, round(720 * image.height / image.width)), Image.LANCZOS)
+            tampon = io.BytesIO()
+            image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
+            sorties.append(tampon.getvalue())
         if not final:
-            image = image.resize((720, 900 if format_image == "portrait" else 720), Image.LANCZOS)
-        tampon = io.BytesIO()
-        image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
-        if not final:
-            return "data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode()
-        return ovh_upload.envoyer_octets(tampon.getvalue(), f"titre-{uuid.uuid4().hex[:10]}.jpg")
+            return "data:image/jpeg;base64," + base64.b64encode(sorties[0]).decode()
+        lot = uuid.uuid4().hex[:8]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            return list(pool.map(lambda ot: ovh_upload.envoyer_octets(ot[1], f"titre-{lot}-{ot[0] + 1}.jpg"), enumerate(sorties)))
 
     try:
         resultat = await run_in_threadpool(fabriquer)
@@ -6562,7 +6625,45 @@ async def publication_multi_titre_photo(client_id: int, request: Request, db: Se
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin de l'image : {erreur}"}, status_code=500)
-    return JSONResponse({"image": resultat})
+    return JSONResponse({"images": resultat} if final else {"image": resultat})
+
+
+@app.post("/publication-multi/{client_id}/titre-photo/styles")
+async def publication_multi_titre_photo_styles(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Un petit apercu par style (avec les autres reglages en cours) sur la photo choisie, pour comparer d'un coup d'oeil."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    try:
+        commun = _preparer_titre_photo(client, donnees)
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    photo_url = str(donnees.get("photo_url") or "").strip()
+
+    def fabriquer():
+        photo = _image_depuis_url_autorisee(photo_url)
+        if photo is None:
+            raise ValueError("Choisissez d'abord une photo.")
+        logo = None if commun["sans_logo"] else _image_depuis_url_publique(commun["logo_url"])
+        resultats = []
+        for cle, libelle, image in titre_photo.apercus_styles(
+            photo, commun["titre"], commun["sous_titre"], commun["couleur"], logo, commun["secondaires"], commun["reglages"], commun["nom"],
+        ):
+            tampon = io.BytesIO()
+            image.save(tampon, format="JPEG", quality=72)
+            resultats.append({"style": cle, "libelle": libelle, "image": "data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode()})
+        return resultats
+
+    try:
+        resultat = await run_in_threadpool(fabriquer)
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec des aperçus : {erreur}"}, status_code=500)
+    return JSONResponse({"styles": resultat})
 
 
 @app.get("/publication-multi/{client_id}/avis/photos")

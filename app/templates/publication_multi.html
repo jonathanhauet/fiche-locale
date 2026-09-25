@@ -270,40 +270,116 @@
   </details>
   {% endif %}
   <details class="options-visuel" id="panneau-titre-photo">
-    <summary>🏷️ Ajouter un titre sur une photo</summary>
+    <summary>🏷️ Titre sur photo(s)</summary>
     <p class="texte-discret">
-      Un titre accrocheur imprimé sur la photo, avec les couleurs, le logo et le nom du bloc « Identité visuelle ». Le texte est dessiné par la plateforme :
-      toujours net et sans faute de frappe.
+      Un titre imprimé sur une ou plusieurs photos, avec les couleurs, le logo et le nom du bloc « Identité visuelle ». Le texte est dessiné par la plateforme :
+      toujours net et sans faute. Suivez les étapes de haut en bas, tout est facultatif sauf la photo et le titre.
     </p>
-    <div class="groupe-options-visuel">
-      <span class="texte-discret">Photo</span>
-      <input type="file" id="tp-fichier" accept="image/*" style="width:auto;">
-      <button type="button" id="tp-image-actuelle" class="bouton-secondaire">🖼️ Image actuelle du post</button>
-      {% if fiches_source_avis %}
-      <select id="tp-source" style="width:auto;max-width:100%;">{% for fiche in fiches_source_avis %}<option value="{{ fiche.id }}">{{ fiche.nom }}</option>{% endfor %}</select>
-      <button type="button" id="tp-photos-fiche" class="bouton-secondaire">📷 Photos de la fiche</button>
-      {% endif %}
+    <div class="tp-editeur">
+      <div class="tp-colonne-reglages">
+
+        <details class="tp-etape" open id="tp-etape-photos">
+          <summary><span class="tp-num">1</span> Photos <span class="tp-resume" id="tp-resume-photos">aucune</span></summary>
+          <div class="groupe-options-visuel">
+            <label class="bouton-secondaire tp-bouton-fichier">📤 Téléverser<input type="file" id="tp-fichier" accept="image/*" multiple hidden></label>
+            <button type="button" id="tp-image-actuelle" class="bouton-secondaire" title="Reprend la ou les images actuellement ajoutées au post">🖼️ Image du post</button>
+            {% if fiches_source_avis %}
+            <select id="tp-source" title="Fiche Google dont on prend les photos" style="width:auto;max-width:100%;">{% for fiche in fiches_source_avis %}<option value="{{ fiche.id }}">{{ fiche.nom }}</option>{% endfor %}</select>
+            <button type="button" id="tp-photos-fiche" class="bouton-secondaire">📷 Photos de la fiche</button>
+            {% endif %}
+          </div>
+          <div id="tp-photos-fiche-grille" class="avis-photos-fiche" hidden></div>
+          <div id="tp-photos-choisies" class="tp-photos-choisies"></div>
+          <label id="tp-titre-photo-label" class="tp-titre-photo-label" hidden>Titre propre à la photo sélectionnée (facultatif, sinon le titre commun)
+            <input type="text" id="tp-titre-photo" maxlength="120">
+          </label>
+        </details>
+
+        <details class="tp-etape" open id="tp-etape-texte">
+          <summary><span class="tp-num">2</span> Texte <span class="tp-resume" id="tp-resume-texte">vide</span></summary>
+          <div class="ligne-champs">
+            <input type="text" id="tp-titre" maxlength="120" placeholder="Titre (ex : Bien reprendre après l'été :)" style="flex:2;">
+            <input type="text" id="tp-sous-titre" maxlength="40" placeholder="Étiquette (ex : Nos astuces)" style="flex:1;">
+            <button type="button" id="tp-proposer" class="bouton-secondaire" title="Propose un titre et une étiquette à partir du texte de base">✨ Proposer</button>
+          </div>
+          <div id="tp-mots-bloc" hidden>
+            <p class="texte-discret">Cliquez sur les mots à mettre en couleur :</p>
+            <div id="tp-mots" class="tp-mots"></div>
+            <div class="groupe-options-visuel">
+              <label class="etiquette-chip-case"><input type="radio" name="tp-surlignage" value="couleur" checked> Texte en couleur</label>
+              <label class="etiquette-chip-case"><input type="radio" name="tp-surlignage" value="marqueur"> Surligné (marqueur)</label>
+            </div>
+          </div>
+        </details>
+
+        <details class="tp-etape" open id="tp-etape-style">
+          <summary><span class="tp-num">3</span> Style <span class="tp-resume" id="tp-resume-style"></span></summary>
+          <div id="tp-styles-grille" class="tp-styles-grille">
+            {% for cle, libelle in titre_styles.items() %}
+            <button type="button" class="tp-style" data-style="{{ cle }}" aria-pressed="false"><span class="tp-style-image"></span><span class="tp-style-nom">{{ libelle }}</span></button>
+            {% endfor %}
+          </div>
+          <div class="groupe-options-visuel">
+            <span class="texte-discret">Texte</span>
+            <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="bas" checked> en bas</label>
+            <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="centre"> au centre</label>
+            <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="haut"> en haut</label>
+            <span class="texte-discret">Format</span>
+            <label class="etiquette-chip-case"><input type="radio" name="tp-format" value="portrait" checked> portrait 4:5</label>
+            <label class="etiquette-chip-case"><input type="radio" name="tp-format" value="carre"> carré</label>
+          </div>
+        </details>
+
+        <details class="tp-etape" id="tp-etape-reglages">
+          <summary><span class="tp-num">4</span> Réglages du texte <span class="tp-resume" id="tp-resume-reglages"></span></summary>
+          <div class="tp-grille-reglages">
+            <label>Police
+              <select id="tp-police"><option value="auto">Automatique (selon le style)</option>{% for cle, libelle in titre_polices.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}</select>
+            </label>
+            <label>Majuscules
+              <select id="tp-majuscules"><option value="auto">Automatique</option><option value="oui">Oui</option><option value="non">Non</option></select>
+            </label>
+            <label>Taille du titre <input type="range" id="tp-taille" min="70" max="130" value="100"></label>
+            <label>Assombrissement de la photo <input type="range" id="tp-voile" min="20" max="90" value="55"></label>
+            <label>Cadre
+              <select id="tp-cadre">{% for cle, libelle in titre_cadres.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}</select>
+            </label>
+          </div>
+        </details>
+
+        <details class="tp-etape" id="tp-etape-ajouts">
+          <summary><span class="tp-num">5</span> Ajouts <span class="texte-discret">(facultatif)</span> <span class="tp-resume" id="tp-resume-ajouts">aucun</span></summary>
+          <div class="tp-grille-reglages">
+            <label>Pastille <input type="text" id="tp-pastille" maxlength="14" placeholder="ex : Nouveau, -20 %, N°1"></label>
+            <label class="tp-case"><input type="checkbox" id="tp-numeroter"> Numéroter les photos (1/5, 2/5…)</label>
+            <label>Bouton <input type="text" id="tp-bouton" maxlength="28" placeholder="ex : Prendre rendez-vous"></label>
+            <label>Pictogramme
+              <select id="tp-picto">{% for cle, libelle in titre_pictos.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}</select>
+            </label>
+            <label class="tp-case"><input type="checkbox" id="tp-fleche"> Flèche « Glissez »</label>
+            <label class="tp-case"><input type="checkbox" id="tp-signature"> Nom du client en bas</label>
+          </div>
+        </details>
+
+        <div class="tp-barre-modele">
+          <button type="button" id="tp-modele-enregistrer" class="bouton-secondaire" title="Style, position, police et ajouts sont retrouvés à chaque nouvelle image de ce client">💾 Enregistrer comme modèle de ce client</button>
+          <button type="button" id="tp-reinitialiser" class="bouton-secondaire">↺ Réglages d'origine</button>
+          <button type="button" id="tp-modele-effacer" class="bouton-secondaire" hidden>Effacer le modèle</button>
+          <span id="tp-modele-etat" class="texte-discret"></span>
+        </div>
+      </div>
+
+      <div class="tp-colonne-apercu">
+        <div id="tp-apercu" class="tp-apercu"><p class="texte-discret">L'aperçu apparaît ici dès qu'une photo et un titre sont choisis.</p></div>
+        <div class="tp-navigation" id="tp-navigation" hidden>
+          <button type="button" id="tp-precedente" class="bouton-secondaire" aria-label="Photo précédente">◀</button>
+          <span id="tp-position-photo"></span>
+          <button type="button" id="tp-suivante" class="bouton-secondaire" aria-label="Photo suivante">▶</button>
+        </div>
+        <button type="button" id="tp-utiliser" class="bouton tp-utiliser">✅ Utiliser cette image</button>
+        <p id="tp-statut" class="texte-vide" hidden></p>
+      </div>
     </div>
-    <div id="tp-photos" class="avis-photos-fiche" hidden></div>
-    <div class="ligne-champs">
-      <input type="text" id="tp-titre" maxlength="120" placeholder="Titre (ex : Bien reprendre après l'été :)" style="flex:2;">
-      <input type="text" id="tp-sous-titre" maxlength="40" placeholder="Étiquette (ex : Nos astuces)" style="flex:1;">
-      <button type="button" id="tp-proposer" class="bouton-secondaire">✨ Proposer</button>
-    </div>
-    <div class="groupe-options-visuel">
-      <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="bas" checked> Texte en bas</label>
-      <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="centre"> Au centre</label>
-      <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="haut"> En haut</label>
-      <label class="etiquette-chip-case"><input type="radio" name="tp-format" value="portrait" checked> Portrait 4:5</label>
-      <label class="etiquette-chip-case"><input type="radio" name="tp-format" value="carre"> Carré</label>
-      <label class="etiquette-chip-case">Assombrissement <input type="range" id="tp-voile" min="20" max="90" value="55" style="width:8rem;"></label>
-    </div>
-    <div id="tp-apercu" class="carrousel-apercu"></div>
-    <div class="ligne-champs">
-      <button type="button" id="tp-actualiser" class="bouton-secondaire">🔄 Actualiser</button>
-      <button type="button" id="tp-utiliser" class="bouton-secondaire">✅ Utiliser cette image</button>
-    </div>
-    <p id="tp-statut" class="texte-vide" hidden></p>
   </details>
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <input type="hidden" name="avis_mis_en_avant" id="champ-avis-id" value="">
@@ -1315,18 +1391,26 @@
     })();
 
 
-    // ---- Titre sur une photo : photo (televersee, de la fiche ou image du post), titre, apercu net, puis image finale ----
+    // ---- Titre sur photo(s) : editeur en etapes, apercu en direct, styles compares, modele memorise par client ----
     (function () {
+      const panneau = document.getElementById("panneau-titre-photo");
+      if (!panneau) return;
       const base = "/publication-multi/{{ client.id }}/titre-photo";
-      const statut = document.getElementById("tp-statut");
-      const zoneApercu = document.getElementById("tp-apercu");
-      const zoneZoom = document.getElementById("carrousel-zoom");
-      const grille = document.getElementById("tp-photos");
-      let photoUrl = "";
-      let occupe = false;
-      let minuteur = null;
+      const $ = (id) => document.getElementById(id);
+      const DEFAUTS = {
+        style: "italique", position: "bas", format: "portrait", voile: 55, police: "auto", taille: 100, majuscules: "auto",
+        mots: [], surlignage: "couleur", cadre: "aucun", pastille: "", bouton: "", picto: "aucun", fleche: false, signature: false, numeroter: false,
+      };
+      const LIBELLES_STYLES = { italique: "Italique + étiquette", bandeau: "Bandeau plein", verre: "Verre dépoli", sobre: "Sobre", encadre: "Encadré" };
+      const MODELE_CLIENT = {{ modele_titre|tojson }};
+      const zoneZoom = $("carrousel-zoom");
+      let photos = [];          // [{url, miniature, titre}]
+      let index = 0;            // photo affichee dans l'apercu
+      let style = DEFAUTS.style;
+      let mots = new Set();
+      let version = 0, minuteur = null, minuteurStyles = null, modeleEnregistre = false;
 
-      function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
+      function message(texte) { const s = $("tp-statut"); s.hidden = !texte; s.textContent = texte || ""; }
       async function appeler(url, options) {
         const reponse = await fetch(url, options);
         let donnees = {};
@@ -1334,96 +1418,232 @@
         if (!reponse.ok) throw new Error(donnees.erreur || "Échec (code " + reponse.status + ").");
         return donnees;
       }
-      function corps(mode) {
-        return JSON.stringify({
-          photo_url: photoUrl, titre: document.getElementById("tp-titre").value, sous_titre: document.getElementById("tp-sous-titre").value,
-          position: document.querySelector('input[name="tp-position"]:checked').value, format: document.querySelector('input[name="tp-format"]:checked').value,
-          voile: parseInt(document.getElementById("tp-voile").value, 10),
-          couleur: document.getElementById("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(), mode,
+      function decouperMots(texte) {
+        const liste = [];
+        texte.split(/\s+/).filter(Boolean).forEach((m) => {
+          if (liste.length && [":", "?", "!", ";", "»"].includes(m)) liste[liste.length - 1] += " " + m; else liste.push(m);
+        });
+        return liste;
+      }
+
+      // ----- reglages <-> formulaire -----
+      function lireReglages() {
+        return {
+          style, position: document.querySelector('input[name="tp-position"]:checked').value, format: document.querySelector('input[name="tp-format"]:checked').value,
+          voile: parseInt($("tp-voile").value, 10), police: $("tp-police").value, taille: parseInt($("tp-taille").value, 10), majuscules: $("tp-majuscules").value,
+          mots: Array.from(mots).sort((a, b) => a - b), surlignage: document.querySelector('input[name="tp-surlignage"]:checked').value, cadre: $("tp-cadre").value,
+          pastille: $("tp-pastille").value, bouton: $("tp-bouton").value, picto: $("tp-picto").value,
+          fleche: $("tp-fleche").checked, signature: $("tp-signature").checked, numeroter: $("tp-numeroter").checked,
+        };
+      }
+      function appliquerReglages(r) {
+        const v = Object.assign({}, DEFAUTS, r || {});
+        style = LIBELLES_STYLES[v.style] ? v.style : DEFAUTS.style;
+        document.querySelector('input[name="tp-position"][value="' + v.position + '"]').checked = true;
+        document.querySelector('input[name="tp-format"][value="' + v.format + '"]').checked = true;
+        document.querySelector('input[name="tp-surlignage"][value="' + v.surlignage + '"]').checked = true;
+        $("tp-voile").value = v.voile; $("tp-taille").value = v.taille; $("tp-police").value = v.police; $("tp-majuscules").value = v.majuscules;
+        $("tp-cadre").value = v.cadre; $("tp-picto").value = v.picto; $("tp-bouton").value = v.bouton; $("tp-pastille").value = v.pastille;
+        $("tp-fleche").checked = !!v.fleche; $("tp-signature").checked = !!v.signature; $("tp-numeroter").checked = !!v.numeroter;
+        mots = new Set(v.mots || []);
+        marquerStyle(); resumes(); afficherMots();
+      }
+
+      // ----- resumes des etapes (on s'y retrouve sans tout ouvrir) -----
+      function resumes() {
+        const r = lireReglages();
+        $("tp-resume-photos").textContent = photos.length ? photos.length + " photo" + (photos.length > 1 ? "s" : "") : "aucune";
+        const titre = $("tp-titre").value.trim();
+        $("tp-resume-texte").textContent = titre ? "« " + (titre.length > 28 ? titre.slice(0, 28) + "…" : titre) + " »" : "vide";
+        $("tp-resume-style").textContent = LIBELLES_STYLES[r.style] + " · " + { bas: "en bas", centre: "au centre", haut: "en haut" }[r.position] + " · " + (r.format === "carre" ? "carré" : "portrait");
+        $("tp-resume-reglages").textContent = (r.police === "auto" ? "police auto" : $("tp-police").selectedOptions[0].textContent.toLowerCase()) + " · taille " + r.taille + " %" + (r.cadre !== "aucun" ? " · cadre" : "");
+        const ajouts = [];
+        if (r.pastille || (r.numeroter && photos.length > 1)) ajouts.push("pastille");
+        if (r.bouton) ajouts.push("bouton");
+        if (r.picto !== "aucun") ajouts.push("picto");
+        if (r.fleche) ajouts.push("flèche");
+        if (r.signature) ajouts.push("signature");
+        $("tp-resume-ajouts").textContent = ajouts.length ? ajouts.join(", ") : "aucun";
+        $("tp-utiliser").textContent = photos.length > 1 ? "✅ Utiliser ces " + photos.length + " images (carrousel)" : "✅ Utiliser cette image";
+      }
+      function marquerStyle() {
+        panneau.querySelectorAll(".tp-style").forEach((b) => b.setAttribute("aria-pressed", b.dataset.style === style ? "true" : "false"));
+      }
+      function afficherMots() {
+        const liste = decouperMots($("tp-titre").value);
+        mots = new Set(Array.from(mots).filter((i) => i < liste.length));
+        $("tp-mots-bloc").hidden = !liste.length;
+        const zone = $("tp-mots"); zone.innerHTML = "";
+        liste.forEach((mot, i) => {
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "tp-mot" + (mots.has(i) ? " tp-mot-actif" : ""); b.textContent = mot;
+          b.addEventListener("click", () => { if (mots.has(i)) mots.delete(i); else mots.add(i); b.classList.toggle("tp-mot-actif"); modifie(); });
+          zone.appendChild(b);
         });
       }
-      async function actualiser() {
-        if (occupe || !photoUrl || !document.getElementById("tp-titre").value.trim()) return;
-        occupe = true; message("Dessin de l'image...");
+
+      // ----- photos -----
+      function afficherPhotos() {
+        const zone = $("tp-photos-choisies"); zone.innerHTML = "";
+        photos.forEach((p, i) => {
+          const cellule = document.createElement("div"); cellule.className = "tp-photo" + (i === index ? " tp-photo-active" : "");
+          const img = document.createElement("img"); img.src = p.miniature || p.url; img.alt = "Photo " + (i + 1);
+          img.addEventListener("click", () => { index = i; afficherPhotos(); demanderApercu(); });
+          const retirer = document.createElement("button"); retirer.type = "button"; retirer.textContent = "✕"; retirer.title = "Retirer cette photo";
+          retirer.addEventListener("click", () => { photos.splice(i, 1); index = Math.max(0, Math.min(index, photos.length - 1)); afficherPhotos(); modifie(); });
+          cellule.append(img, retirer); zone.appendChild(cellule);
+        });
+        $("tp-titre-photo-label").hidden = photos.length < 2;
+        if (photos.length > 1) $("tp-titre-photo").value = photos[index].titre || "";
+        $("tp-navigation").hidden = photos.length < 2;
+        $("tp-position-photo").textContent = photos.length ? "Photo " + (index + 1) + " / " + photos.length : "";
+        resumes();
+      }
+      function ajouterPhoto(url, miniature) {
+        if (photos.some((p) => p.url === url)) return;
+        if (photos.length >= 10) { message("10 photos maximum."); return; }
+        photos.push({ url, miniature: miniature || url, titre: "" });
+        index = photos.length - 1; afficherPhotos(); modifie();
+      }
+
+      // ----- rendu -----
+      function corps(mode) {
+        return JSON.stringify({
+          photos: photos.map((p) => ({ url: p.url, titre: p.titre })), index, mode, titre: $("tp-titre").value, sous_titre: $("tp-sous-titre").value,
+          reglages: lireReglages(), couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
+        });
+      }
+      function pret() { return photos.length && $("tp-titre").value.trim(); }
+      async function demanderApercu() {
+        if (!pret()) return;
+        const cette = ++version;
+        $("tp-apercu").classList.add("tp-charge");
         try {
           const donnees = await appeler(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("apercu") });
-          zoneApercu.innerHTML = "";
-          const img = document.createElement("img"); img.src = donnees.image; img.alt = "Photo avec titre";
+          if (cette !== version) return;
+          const zone = $("tp-apercu"); zone.innerHTML = "";
+          const img = document.createElement("img"); img.src = donnees.image; img.alt = "Aperçu du titre sur la photo";
           const zoomImg = zoneZoom.querySelector("img");
           img.addEventListener("mouseenter", () => { zoomImg.src = donnees.image; zoneZoom.hidden = false; });
           img.addEventListener("mouseleave", () => { zoneZoom.hidden = true; });
           img.addEventListener("click", () => { zoomImg.src = donnees.image; zoneZoom.hidden = !zoneZoom.hidden; });
-          zoneApercu.appendChild(img);
-          message("Aperçu à jour. « Utiliser cette image » l'ajoute au post.");
-        } catch (e) { message(e.message); } finally { occupe = false; }
+          zone.appendChild(img); message("");
+        } catch (e) { if (cette === version) message(e.message); }
+        finally { if (cette === version) $("tp-apercu").classList.remove("tp-charge"); }
       }
-      function actualiserPlusTard() { clearTimeout(minuteur); minuteur = setTimeout(actualiser, 500); }
-      function definirPhoto(url) {
-        photoUrl = url;
-        grille.querySelectorAll("img").forEach((img) => img.classList.toggle("avis-photo-choisie", img.dataset.url === url));
-        actualiser();
+      async function demanderStyles() {
+        if (!pret() || !$("tp-etape-style").open) return;
+        try {
+          const donnees = await appeler(base + "/styles", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ photo_url: photos[index].url, titre: photos[index].titre || $("tp-titre").value, sous_titre: $("tp-sous-titre").value,
+              reglages: lireReglages(), couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite() }),
+          });
+          donnees.styles.forEach((s) => {
+            const bouton = panneau.querySelector('.tp-style[data-style="' + s.style + '"] .tp-style-image');
+            if (bouton) bouton.innerHTML = '<img alt="" src="' + s.image + '">';
+          });
+        } catch (e) { /* les apercus de styles sont un plus : silence */ }
+      }
+      function modifie(rapide) {
+        resumes();
+        clearTimeout(minuteur); minuteur = setTimeout(demanderApercu, rapide ? 120 : 450);
+        clearTimeout(minuteurStyles); minuteurStyles = setTimeout(demanderStyles, 1400);
       }
 
-      document.getElementById("tp-fichier").addEventListener("change", async (evenement) => {
-        const fichier = evenement.target.files[0];
-        if (!fichier) return;
-        message("Envoi de la photo...");
-        try {
-          const formulaire = new FormData();
-          formulaire.append("type_media", "photo"); formulaire.append("fichier", fichier);
-          definirPhoto((await appeler("/publication-multi/{{ client.id }}/carrousel/media", { method: "POST", body: formulaire })).url);
-        } catch (e) { message(e.message); }
+      // ----- evenements -----
+      $("tp-fichier").addEventListener("change", async (evenement) => {
+        const fichiers = Array.from(evenement.target.files);
         evenement.target.value = "";
+        for (const fichier of fichiers) {
+          message("Envoi de la photo " + fichier.name + "...");
+          try {
+            const formulaire = new FormData();
+            formulaire.append("type_media", "photo"); formulaire.append("fichier", fichier);
+            const donnees = await appeler("/publication-multi/{{ client.id }}/carrousel/media", { method: "POST", body: formulaire });
+            ajouterPhoto(donnees.url, donnees.url);
+          } catch (e) { message(e.message); return; }
+        }
+        message("");
       });
-      document.getElementById("tp-image-actuelle").addEventListener("click", () => {
-        const premiere = (champImageUrlIA.value || "").split("|").filter(Boolean)[0];
-        if (premiere) definirPhoto(premiere);
-        else message("Pas d'image générée pour l'instant : téléversez une photo, choisissez-en une de la fiche, ou générez une image IA plus haut.");
+      $("tp-image-actuelle").addEventListener("click", () => {
+        const urls = ($("champ-image-url-ia").value || "").split("|").filter(Boolean);
+        if (!urls.length) { message("Pas d'image sur le post pour l'instant : téléversez une photo, prenez-en une de la fiche, ou générez une image IA plus haut."); return; }
+        urls.forEach((u) => ajouterPhoto(u, u)); message("");
       });
-      const boutonFiche = document.getElementById("tp-photos-fiche");
+      const boutonFiche = $("tp-photos-fiche");
       if (boutonFiche) boutonFiche.addEventListener("click", async () => {
         message("Lecture des photos de la fiche...");
         try {
-          const donnees = await appeler("/publication-multi/{{ client.id }}/avis/photos?source=" + encodeURIComponent(document.getElementById("tp-source").value));
-          grille.innerHTML = ""; grille.hidden = false;
+          const donnees = await appeler("/publication-multi/{{ client.id }}/avis/photos?source=" + encodeURIComponent($("tp-source").value));
+          const grille = $("tp-photos-fiche-grille"); grille.innerHTML = ""; grille.hidden = false;
           if (!donnees.photos.length) { message("Aucune photo sur cette fiche."); return; }
           donnees.photos.forEach((p) => {
             const img = document.createElement("img");
-            img.src = p.miniature; img.dataset.url = p.url; img.alt = "Photo de la fiche"; img.title = "Utiliser cette photo";
-            img.addEventListener("click", () => definirPhoto(p.url));
+            img.src = p.miniature; img.alt = "Photo de la fiche"; img.title = "Ajouter cette photo";
+            img.addEventListener("click", () => ajouterPhoto(p.url, p.miniature));
             grille.appendChild(img);
           });
-          message("Cliquez sur une photo.");
+          message("Cliquez sur une ou plusieurs photos pour les ajouter.");
         } catch (e) { message(e.message); }
       });
-      document.getElementById("tp-proposer").addEventListener("click", async () => {
-        const texte = document.getElementById("texte-base").value.trim();
+      $("tp-titre-photo").addEventListener("input", () => { if (photos[index]) { photos[index].titre = $("tp-titre-photo").value; modifie(); } });
+      $("tp-precedente").addEventListener("click", () => { index = (index - 1 + photos.length) % photos.length; afficherPhotos(); demanderApercu(); });
+      $("tp-suivante").addEventListener("click", () => { index = (index + 1) % photos.length; afficherPhotos(); demanderApercu(); });
+      $("tp-titre").addEventListener("input", () => { afficherMots(); modifie(); });
+      $("tp-sous-titre").addEventListener("input", () => modifie());
+      panneau.querySelectorAll(".tp-style").forEach((b) => b.addEventListener("click", () => { style = b.dataset.style; marquerStyle(); modifie(true); }));
+      panneau.querySelectorAll('input[name="tp-position"], input[name="tp-format"], input[name="tp-surlignage"], #tp-police, #tp-majuscules, #tp-cadre, #tp-picto, #tp-fleche, #tp-signature, #tp-numeroter')
+        .forEach((e) => e.addEventListener("change", () => modifie(true)));
+      panneau.querySelectorAll("#tp-taille, #tp-voile, #tp-pastille, #tp-bouton").forEach((e) => e.addEventListener("input", () => modifie()));
+      $("tp-etape-style").addEventListener("toggle", () => { if ($("tp-etape-style").open) demanderStyles(); });
+      document.addEventListener("identite-modifiee", () => modifie());
+
+      $("tp-proposer").addEventListener("click", async () => {
+        const texte = $("texte-base").value.trim();
         if (!texte) { message("Écrivez d'abord le texte de base : le titre en découle."); return; }
         message("Proposition en cours...");
         try {
           const donnees = await appeler(base + "/suggestion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte }) });
-          document.getElementById("tp-titre").value = donnees.titre; document.getElementById("tp-sous-titre").value = donnees.sous_titre;
-          actualiser();
+          $("tp-titre").value = donnees.titre; $("tp-sous-titre").value = donnees.sous_titre;
+          mots = new Set(); afficherMots(); modifie(true); message("");
         } catch (e) { message(e.message); }
       });
-      ["tp-titre", "tp-sous-titre"].forEach((id) => document.getElementById(id).addEventListener("input", actualiserPlusTard));
-      document.querySelectorAll('input[name="tp-position"], input[name="tp-format"]').forEach((r) => r.addEventListener("change", actualiser));
-      document.getElementById("tp-voile").addEventListener("input", actualiserPlusTard);
-      document.getElementById("tp-actualiser").addEventListener("click", actualiser);
-      document.addEventListener("identite-modifiee", actualiser);
-      document.getElementById("tp-utiliser").addEventListener("click", async () => {
-        if (occupe) return;
-        if (!photoUrl || !document.getElementById("tp-titre").value.trim()) { message("Choisissez une photo et écrivez un titre."); return; }
-        occupe = true; message("Création de l'image...");
+
+      // ----- modele memorise par client -----
+      function etatModele(texte) { $("tp-modele-etat").textContent = texte || ""; $("tp-modele-effacer").hidden = !modeleEnregistre; }
+      $("tp-modele-enregistrer").addEventListener("click", async () => {
+        try {
+          await appeler("/clients/{{ client.id }}/modele-titre", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reglages: lireReglages() }) });
+          modeleEnregistre = true; etatModele("Modèle enregistré : il sera appliqué à chaque nouvelle image de ce client.");
+        } catch (e) { etatModele(e.message); }
+      });
+      $("tp-modele-effacer").addEventListener("click", async () => {
+        try {
+          await appeler("/clients/{{ client.id }}/modele-titre", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ effacer: true }) });
+          modeleEnregistre = false; etatModele("Modèle effacé.");
+        } catch (e) { etatModele(e.message); }
+      });
+      $("tp-reinitialiser").addEventListener("click", () => { appliquerReglages(DEFAUTS); etatModele("Réglages d'origine rétablis (le modèle enregistré n'est pas touché)."); modifie(true); });
+
+      $("tp-utiliser").addEventListener("click", async () => {
+        if (!pret()) { message("Choisissez au moins une photo et écrivez un titre."); return; }
+        message("Création de " + (photos.length > 1 ? "des images" : "l'image") + " (quelques secondes)...");
         try {
           const donnees = await appeler(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("final") });
           champImagePartagee.value = "";
-          champImageUrlIA.value = donnees.image;
-          document.getElementById("champ-est-carrousel").value = "0";
+          champImageUrlIA.value = donnees.images.join("|");
+          $("champ-est-carrousel").value = donnees.images.length > 1 ? "1" : "0";
+          $("champ-titre-carrousel").value = $("tp-titre").value;
           actualiserToutesLesApercusImage();
-          message("Image ajoutée au post (aperçus plus bas).");
-        } catch (e) { message(e.message); } finally { occupe = false; }
+          message(donnees.images.length > 1 ? donnees.images.length + " images ajoutées au post en carrousel (aperçus plus bas)." : "Image ajoutée au post (aperçus plus bas).");
+        } catch (e) { message(e.message); }
       });
+
+      // ----- demarrage : modele du client s'il existe -----
+      if (MODELE_CLIENT && Object.keys(MODELE_CLIENT).length) { modeleEnregistre = true; appliquerReglages(MODELE_CLIENT); etatModele("Modèle de ce client appliqué."); }
+      else { appliquerReglages(DEFAUTS); etatModele(""); }
+      afficherPhotos();
     })();
 
     const boutonAdapter = document.getElementById("bouton-adapter");
