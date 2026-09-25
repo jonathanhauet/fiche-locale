@@ -147,6 +147,14 @@
       {% endfor %}
     </div>
     <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case">Décor des visuels
+        <select id="identite-decor" style="width:auto;">
+          {% for cle, libelle in libelles_decor.items() %}<option value="{{ cle }}" {% if style_decor_client(client) == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+        </select>
+      </label>
+      <span class="texte-discret">« Automatique » donne un décor différent à chaque client (stable pour un même client).</span>
+    </div>
+    <div class="groupe-options-visuel">
       <label class="etiquette-chip-case">Logo
         <input type="file" id="carrousel-logo" accept="image/*" style="width:auto;">
       </label>
@@ -219,6 +227,16 @@
         <label class="etiquette-chip-case"><input type="radio" name="avis-layout" value="clair"> Clair</label>
         <label class="etiquette-chip-case"><input type="radio" name="avis-layout" value="sombre"> Sombre</label>
       </div>
+      <div class="groupe-options-visuel">
+        <span class="texte-discret">Photo de fond (facultatif)</span>
+        <input type="file" id="avis-photo-fichier" accept="image/*" style="width:auto;">
+        <button type="button" id="avis-photo-fiche" class="bouton-secondaire">📷 Choisir une photo de la fiche</button>
+        <button type="button" id="avis-photo-retirer" class="bouton-secondaire" hidden>Retirer la photo</button>
+        <label class="etiquette-chip-case">Assombrissement
+          <input type="range" id="avis-voile" min="40" max="90" value="68" style="width:8rem;">
+        </label>
+      </div>
+      <div id="avis-photos-fiche" class="avis-photos-fiche" hidden></div>
       <div id="avis-apercu" class="carrousel-apercu"></div>
       <div class="ligne-champs">
         <button type="button" id="avis-actualiser" class="bouton-secondaire">🔄 Actualiser le visuel</button>
@@ -919,7 +937,7 @@
       function enregistrer() {
         fetch(url, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ principale: principale.value, secondaires: secondaires(), nom_affiche: nom.value }),
+          body: JSON.stringify({ principale: principale.value, secondaires: secondaires(), nom_affiche: nom.value, style_decor: document.getElementById("identite-decor").value === "auto" ? "" : document.getElementById("identite-decor").value }),
         }).then((r) => {
           statut.hidden = false;
           statut.textContent = r.ok ? "Identité visuelle enregistrée pour ce client." : "Échec de l'enregistrement.";
@@ -941,6 +959,7 @@
       principale.addEventListener("change", modifiee);
       principaleHex.addEventListener("input", () => { const valeur = normaliser(principaleHex.value); if (valeur) { principale.value = valeur; principaleHex.value = valeur; modifiee(); } });
       nom.addEventListener("change", modifiee);
+      document.getElementById("identite-decor").addEventListener("change", modifiee);
       [1, 2].forEach((n) => {
         const selecteur = document.getElementById("identite-sec-" + n);
         const hex = document.getElementById("identite-sec-hex-" + n);
@@ -1007,7 +1026,7 @@
       }
       function corpsRendu(mode) {
         const layout = document.querySelector('input[name="carrousel-layout"]:checked').value;
-        return JSON.stringify({ slides: lireSlides(), layout, couleur: document.getElementById("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(), photo_url: photoUrl, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode });
+        return JSON.stringify({ slides: lireSlides(), layout, couleur: document.getElementById("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(), decor: document.getElementById("identite-decor").value, photo_url: photoUrl, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode });
       }
       async function appeler(url, options) {
         const reponse = await fetch(url, options);
@@ -1131,6 +1150,7 @@
       const zoneZoom = document.getElementById("carrousel-zoom");
       let avisChoisi = null;
       let occupe = false;
+      let avisPhotoUrl = "";
       try {
         const memorisee = localStorage.getItem("avis-source-{{ client.id }}");
         const selecteur = document.getElementById("avis-source");
@@ -1150,6 +1170,7 @@
           texte: document.getElementById("avis-texte").value, auteur: document.getElementById("avis-auteur").value,
           note: avisChoisi ? avisChoisi.note : 5, layout: document.querySelector('input[name="avis-layout"]:checked').value,
           couleur: document.getElementById("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
+          decor: document.getElementById("identite-decor").value, photo_url: avisPhotoUrl, voile: parseInt(document.getElementById("avis-voile").value, 10),
           nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode,
         });
       }
@@ -1213,6 +1234,47 @@
       document.getElementById("avis-actualiser").addEventListener("click", actualiser);
       document.querySelectorAll('input[name="avis-layout"]').forEach((r) => r.addEventListener("change", actualiser));
       document.addEventListener("identite-modifiee", actualiser);
+
+
+      // Photo de fond : televersee, ou choisie parmi celles de la fiche Google (fiche source du menu ci-dessus).
+      const boutonPhotoRetirer = document.getElementById("avis-photo-retirer");
+      const grillePhotos = document.getElementById("avis-photos-fiche");
+      function definirPhoto(url) {
+        avisPhotoUrl = url; boutonPhotoRetirer.hidden = !url;
+        grillePhotos.querySelectorAll("img").forEach((img) => img.classList.toggle("avis-photo-choisie", img.dataset.url === url));
+        actualiser();
+      }
+      document.getElementById("avis-photo-fichier").addEventListener("change", async (evenement) => {
+        const fichier = evenement.target.files[0];
+        if (!fichier) return;
+        message("Envoi de la photo...");
+        try {
+          const formulaire = new FormData();
+          formulaire.append("type_media", "photo"); formulaire.append("fichier", fichier);
+          const donnees = await appeler("/publication-multi/{{ client.id }}/carrousel/media", { method: "POST", body: formulaire });
+          definirPhoto(donnees.url);
+        } catch (e) { message(e.message); }
+        evenement.target.value = "";
+      });
+      document.getElementById("avis-photo-fiche").addEventListener("click", async () => {
+        message("Lecture des photos de la fiche...");
+        try {
+          const source = document.getElementById("avis-source").value;
+          const donnees = await appeler(base + "/photos?source=" + encodeURIComponent(source));
+          grillePhotos.innerHTML = ""; grillePhotos.hidden = false;
+          if (!donnees.photos.length) { message("Aucune photo sur cette fiche."); return; }
+          donnees.photos.forEach((p) => {
+            const img = document.createElement("img");
+            img.src = p.miniature; img.dataset.url = p.url; img.alt = "Photo de la fiche"; img.title = "Utiliser cette photo";
+            img.addEventListener("click", () => definirPhoto(p.url));
+            grillePhotos.appendChild(img);
+          });
+          message("Cliquez sur une photo pour l'utiliser en fond.");
+        } catch (e) { message(e.message); }
+      });
+      boutonPhotoRetirer.addEventListener("click", () => definirPhoto(""));
+      let minuteurVoile = null;
+      document.getElementById("avis-voile").addEventListener("input", () => { clearTimeout(minuteurVoile); minuteurVoile = setTimeout(actualiser, 400); });
 
       function memoriserAvis() {
         document.getElementById("champ-avis-id").value = avisChoisi.review_id;

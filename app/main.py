@@ -199,6 +199,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
         if "search_console_site" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
+        if "style_decor" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN style_decor TEXT DEFAULT ''"))
         if "couleur_marque" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN couleur_marque TEXT DEFAULT ''"))
         if "couleurs_secondaires" not in colonnes_clients:
@@ -6156,6 +6158,31 @@ def couleurs_secondaires_client(client) -> list:
     return [c.strip().lower() for c in brut.split(",") if REGEX_COULEUR.fullmatch(c.strip())][:2]
 
 
+def style_decor_client(client) -> str:
+    """Style de decor enregistre pour ce client ("auto" si aucun)."""
+    valeur = (getattr(client, "style_decor", "") or "").strip()
+    return valeur if valeur in carrousel_visuel.STYLES_DECOR else "auto"
+
+
+def _decor_demande(donnees: dict, client) -> str:
+    valeur = donnees.get("decor")
+    return valeur if valeur in carrousel_visuel.STYLES_DECOR or valeur == "auto" else style_decor_client(client)
+
+
+REGEX_URL_PHOTO_GOOGLE = re.compile(r"https://lh\d*\.googleusercontent\.com/")
+
+
+def _image_depuis_url_autorisee(url: str):
+    """Image hebergee chez nous (OVH) ou photo d'une fiche Google (googleusercontent) ; jamais une URL arbitraire."""
+    if url and REGEX_URL_PHOTO_GOOGLE.match(url):
+        try:
+            reponse = requests.get(url, timeout=20)
+            return Image.open(io.BytesIO(reponse.content)) if reponse.status_code == 200 else None
+        except Exception:
+            return None
+    return _image_depuis_url_publique(url)
+
+
 def _couleurs_demandees(donnees: dict, client) -> tuple:
     """Couleur principale et secondaires d'une requete de rendu : celles envoyees si valides, sinon celles du client."""
     principale = (donnees.get("couleur") or "").strip()
@@ -6182,6 +6209,8 @@ def nom_affiche_carrousel(client) -> str:
 
 templates.env.globals["nom_affiche_carrousel"] = nom_affiche_carrousel
 templates.env.globals["couleur_marque_client"] = couleur_marque_client
+templates.env.globals["style_decor_client"] = style_decor_client
+templates.env.globals["libelles_decor"] = carrousel_visuel.LIBELLES_DECOR
 templates.env.globals["couleurs_secondaires_client"] = couleurs_secondaires_client
 
 
@@ -6241,6 +6270,9 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
         if nouveau_nom == nom_affiche_carrousel(SimpleNamespace(nom=client.nom, nom_affiche_carrousel="")):
             nouveau_nom = ""
         client.nom_affiche_carrousel = nouveau_nom
+    if "style_decor" in donnees:
+        style = str(donnees.get("style_decor") or "")
+        client.style_decor = style if style in carrousel_visuel.STYLES_DECOR else ""
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -6323,6 +6355,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
     except ValueError as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
     couleur, secondaires = _couleurs_demandees(donnees, client)
+    decor, graine_decor = _decor_demande(donnees, client), client.id
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
@@ -6338,8 +6371,8 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
 
     def fabriquer():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
-        photo = _image_depuis_url_publique(photo_url)
-        images = carrousel_visuel.construire_carrousel(slides, layout, couleur, nom_client, logo, photo, secondaires)
+        photo = _image_depuis_url_autorisee(photo_url)
+        images = carrousel_visuel.construire_carrousel(slides, layout, couleur, nom_client, logo, photo, secondaires, decor, graine_decor)
         sorties = []
         for image in images:
             if not final:
@@ -6416,6 +6449,24 @@ def publication_multi_avis(client_id: int, request: Request, source: int = None,
     return JSONResponse({"avis": sortie})
 
 
+@app.get("/publication-multi/{client_id}/avis/photos")
+def publication_multi_avis_photos(client_id: int, request: Request, source: int = None, db: Session = Depends(obtenir_session)):
+    """Photos deja presentes sur la fiche Google (du client ou de la fiche source choisie), pour servir de fond a un visuel."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    if not db.get(models.Client, client_id):
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    client = db.get(models.Client, source or client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"erreur": "Choisissez une fiche Google."}, status_code=400)
+    try:
+        photos = _photos_pour_client(db, client)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Impossible de lire les photos : {erreur}"}, status_code=500)
+    utiles = [p for p in photos if p.get("categorie") != "LOGO"][:40]
+    return JSONResponse({"photos": [{"url": p["url"], "miniature": p.get("miniature") or p["url"], "categorie": p.get("categorie", "")} for p in utiles]})
+
+
 @app.post("/publication-multi/{client_id}/avis/visuel")
 async def publication_multi_avis_visuel(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Dessine le visuel de l'avis. mode "apercu" : image en base64 ; mode "final" : JPEG heberge sur OVH (URL renvoyee)."""
@@ -6434,14 +6485,23 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
     except (TypeError, ValueError):
         note = 5
     couleur, secondaires = _couleurs_demandees(donnees, client)
+    decor, graine_decor = _decor_demande(donnees, client), client.id
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
+    photo_url = str(donnees.get("photo_url") or "").strip()
+    try:
+        voile = max(40, min(90, int(donnees.get("voile") or 68)))
+    except (TypeError, ValueError):
+        voile = 68
     nom_client = " ".join(str(donnees.get("nom_affiche") or "").split())[:60] or nom_affiche_carrousel(client)
 
     def fabriquer():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
-        image = carrousel_visuel.dessiner_avis(texte, auteur, note, layout, couleur, nom_client, logo, secondaires)
+        photo = _image_depuis_url_autorisee(photo_url)
+        image = carrousel_visuel.dessiner_avis(
+            texte, auteur, note, layout, couleur, nom_client, logo, secondaires, photo, voile, decor, graine_decor,
+        )
         if not final:
             image = image.resize((720, 900), Image.LANCZOS)
         tampon = io.BytesIO()

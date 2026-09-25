@@ -3161,3 +3161,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .avis-entete { font-weight: 600; }
 .avis-badge-utilise { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--carte-bordure); font-weight: 400; font-size: 0.85em; }
 .avis-texte { white-space: pre-wrap; }
+
+.avis-photos-fiche { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; }
+.avis-photos-fiche img { height: 84px; width: auto; border-radius: 6px; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; }
+.avis-photos-fiche img.avis-photo-choisie { border-color: var(--accent); }

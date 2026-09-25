@@ -167,6 +167,7 @@ class Client(Base):
     # Propriete Google Search Console du site web du client ("sc-domain:exemple.fr" ou
     # "https://www.exemple.fr/"), voir search_console.py.
     search_console_site = Column(String, default="")
+    style_decor = Column(String, default="")  # decor des visuels : "" = automatique (varie selon le client)
     couleur_marque = Column(String, default="")  # couleur principale de la charte (visuels, carrousels, avis)
     couleurs_secondaires = Column(String, default="")  # jusqu'a 2 couleurs secondaires, separees par des virgules
     nom_affiche_carrousel = Column(String, default="")  # nom imprime sur les slides (sinon le nom de la fiche, sans "- Reseaux")

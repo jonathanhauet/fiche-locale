@@ -5,7 +5,9 @@ Trois mises en page : "plein" (fond couleur de marque), "clair" (fond clair, acc
 "sombre" (fond sombre, accent de marque).
 """
 import io
+import math
 import os
+import random
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -122,16 +124,83 @@ def _avec_secondaire(p: dict, secondaires: list = None) -> dict:
     return p
 
 
-def _decor(dessin, layout, p, marque):
+STYLES_DECOR = ("cercles", "points", "diagonales", "vagues", "blocs", "cadre", "aucun")
+# "auto" : un style different selon le client (stable pour un client donne), jamais "aucun".
+STYLES_DECOR_AUTO = ("points", "diagonales", "vagues", "blocs", "cadre", "cercles")
+LIBELLES_DECOR = {
+    "auto": "Automatique (varie selon le client)", "cercles": "Cercles", "points": "Grille de points",
+    "diagonales": "Bandes diagonales", "vagues": "Vagues", "blocs": "Blocs géométriques", "cadre": "Cadre fin",
+    "aucun": "Aucun (épuré)",
+}
+
+
+def style_decor_effectif(decor: str, graine: int = 0) -> str:
+    if decor in STYLES_DECOR:
+        return decor
+    return STYLES_DECOR_AUTO[int(graine or 0) % len(STYLES_DECOR_AUTO)]
+
+
+def _teinte_decor(layout: str, p: dict, marque: tuple) -> tuple:
+    """Couleur douce des formes decoratives, adaptee au fond de la mise en page."""
     if layout == "plein":
-        dessin.ellipse((LARGEUR - 380, -260, LARGEUR + 260, 380), fill=p["pastille"])
-        dessin.ellipse((-200, HAUTEUR - 260, 260, HAUTEUR + 200), fill=p["pastille"])
-    elif layout == "clair":
-        dessin.rectangle((0, 0, LARGEUR, 26), fill=p["accent"])
-        dessin.rectangle((0, HAUTEUR - 26, LARGEUR, HAUTEUR), fill=p.get("accent2", p["accent"]))
-    else:
-        dessin.rectangle((0, 0, 16, HAUTEUR), fill=p["accent"])
-        dessin.ellipse((LARGEUR - 300, HAUTEUR - 300, LARGEUR + 200, HAUTEUR + 200), outline=p.get("accent2", p["accent"]), width=6)
+        return p["pastille"]
+    if layout == "clair":
+        return _melange(p["fond"], marque, 0.10)
+    return _melange(p["fond"], p["accent"], 0.20)
+
+
+def _decor(dessin, layout, p, marque, decor="auto", graine=0):
+    style = style_decor_effectif(decor, graine)
+    rng = random.Random((int(graine or 0) + 1) * 7919)
+    tint = _teinte_decor(layout, p, marque)
+    trait = p.get("accent2", p["accent"])
+    miroir_x, miroir_y = rng.random() < 0.5, rng.random() < 0.5
+
+    def pt(x, y):
+        return (LARGEUR - x if miroir_x else x, HAUTEUR - y if miroir_y else y)
+
+    # Reperes propres a la mise en page (discrets), sauf avec le cadre qui les remplace.
+    if style != "cadre":
+        if layout == "clair":
+            dessin.rectangle((0, 0, LARGEUR, 26), fill=p["accent"])
+            dessin.rectangle((0, HAUTEUR - 26, LARGEUR, HAUTEUR), fill=trait)
+        elif layout == "sombre":
+            dessin.rectangle((0, 0, 16, HAUTEUR), fill=p["accent"])
+
+    if style == "cercles":
+        if layout == "sombre":
+            x, y = pt(LARGEUR - 50, HAUTEUR - 50)
+            dessin.ellipse((x - 250, y - 250, x + 250, y + 250), outline=trait, width=6)
+        else:
+            x1, y1 = pt(LARGEUR - 60, 60)
+            dessin.ellipse((x1 - 320, y1 - 320, x1 + 320, y1 + 320), fill=tint)
+            x2, y2 = pt(30, HAUTEUR - 30)
+            dessin.ellipse((x2 - 230, y2 - 230, x2 + 230, y2 + 230), fill=tint)
+    elif style == "points":
+        x0, y0 = pt(LARGEUR - 330, 40) if not miroir_x else pt(LARGEUR - 330, 40)
+        for i in range(8):
+            for j in range(8):
+                x, y = pt(LARGEUR - 340 + i * 42, 50 + j * 42)
+                dessin.ellipse((x - 6, y - 6, x + 6, y + 6), fill=tint if layout != "plein" else _melange(p["fond"], p["texte"], 0.28))
+    elif style == "diagonales":
+        for k in range(4):
+            a, w = 110 + k * 95, 36
+            dessin.polygon([pt(LARGEUR - a - w, 0), pt(LARGEUR - a, 0), pt(LARGEUR, a), pt(LARGEUR, a + w)], fill=tint)
+    elif style == "vagues":
+        for j in range(3):
+            base = HAUTEUR - 70 - j * 52
+            longueur = 520 + j * 140
+            dephasage = rng.random() * math.pi * 2
+            points = [pt(x, base + 26 * math.sin(x / longueur * 2 * math.pi + dephasage)) for x in range(0, LARGEUR + 20, 20)]
+            points += [pt(LARGEUR, HAUTEUR), pt(0, HAUTEUR)]
+            dessin.polygon(points, fill=_melange(p["fond"], tint, 1.0 - 0.28 * j))
+    elif style == "blocs":
+        for cx, cy, taille, poids in ((LARGEUR - 40, 70, 250, 1.0), (LARGEUR - 250, -10, 140, 0.6), (60, HAUTEUR - 60, 190, 0.7)):
+            x, y = pt(cx, cy)
+            dessin.polygon([(x, y - taille), (x + taille, y), (x, y + taille), (x - taille, y)], fill=_melange(p["fond"], tint, poids))
+    elif style == "cadre":
+        dessin.rounded_rectangle((34, 34, LARGEUR - 34, HAUTEUR - 34), radius=28, outline=_melange(p["fond"], trait, 0.55), width=4)
+    # "aucun" : rien
 
 
 def _pied(dessin, p, nom_client, numero, total):
@@ -151,12 +220,19 @@ def _recadrer(photo: Image.Image) -> Image.Image:
     return photo.crop((gauche, haut, gauche + LARGEUR, haut + HAUTEUR))
 
 
-def _photo_assombrie(photo: Image.Image, marque: tuple) -> Image.Image:
-    """Photo de fond de couverture : voile sombre teinte de la couleur de marque, plus dense en bas pour le texte."""
+def _photo_assombrie(photo: Image.Image, marque: tuple, voile_pourcent: int = None) -> Image.Image:
+    """
+    Photo de fond : voile sombre teinte de la couleur de marque. Par defaut plus dense en bas (couverture de carrousel) ;
+    avec voile_pourcent (40 a 90), opacite quasi uniforme reglee par l'utilisateur (avis, texte a lire partout).
+    """
     base = _recadrer(photo)
     voile = Image.new("RGB", (LARGEUR, HAUTEUR), _melange((10, 10, 14), marque, 0.25))
-    masque = Image.linear_gradient("L").resize((LARGEUR, HAUTEUR))  # noir en haut -> blanc en bas
-    masque = masque.point(lambda v: 130 + int(v * 0.45))
+    if voile_pourcent is None:
+        masque = Image.linear_gradient("L").resize((LARGEUR, HAUTEUR))  # noir en haut -> blanc en bas
+        masque = masque.point(lambda v: 130 + int(v * 0.45))
+    else:
+        opacite = max(40, min(90, int(voile_pourcent))) / 100
+        masque = Image.linear_gradient("L").resize((LARGEUR, HAUTEUR)).point(lambda v: int(255 * min(1.0, opacite - 0.06 + 0.12 * v / 255)))
     return Image.composite(voile, base, masque)
 
 
@@ -176,7 +252,7 @@ def _coller_logo(image: Image.Image, logo: Image.Image, haut: int) -> None:
 
 def dessiner_slide(
     kind: str, contenu: dict, layout: str, couleur: str, nom_client: str, numero: int, total: int,
-    logo: Image.Image = None, photo: Image.Image = None, secondaires: list = None,
+    logo: Image.Image = None, photo: Image.Image = None, secondaires: list = None, decor: str = "auto", graine: int = 0,
 ) -> Image.Image:
     """
     kind : "couverture" {titre, sous_titre}, "point" {numero, titre, texte}, "cta" {titre, texte, bouton}.
@@ -195,7 +271,7 @@ def dessiner_slide(
     else:
         image = Image.new("RGB", (LARGEUR, HAUTEUR), p["fond"])
         d = ImageDraw.Draw(image)
-        _decor(d, layout, p, marque)
+        _decor(d, layout, p, marque, decor, graine)
     if logo is not None and kind in ("couverture", "cta"):
         _coller_logo(image, logo, 90)
     zone = LARGEUR - 2 * MARGE
@@ -259,16 +335,16 @@ def dessiner_slide(
 
 def construire_carrousel(
     donnees: dict, layout: str, couleur: str, nom_client: str, logo: Image.Image = None, photo: Image.Image = None,
-    secondaires: list = None,
+    secondaires: list = None, decor: str = "auto", graine: int = 0,
 ) -> list[Image.Image]:
     """donnees : {"couverture": {...}, "points": [{titre, texte}, ...], "cta": {...}}."""
     layout = layout if layout in LAYOUTS else "plein"
     points = donnees["points"]
     total = len(points) + 2
-    slides = [dessiner_slide("couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo, secondaires)]
+    slides = [dessiner_slide("couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo, secondaires, decor, graine)]
     for i, pt in enumerate(points, start=1):
-        slides.append(dessiner_slide("point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total, secondaires=secondaires))
-    slides.append(dessiner_slide("cta", donnees["cta"], layout, couleur, nom_client, total, total, logo, secondaires=secondaires))
+        slides.append(dessiner_slide("point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total, secondaires=secondaires, decor=decor, graine=graine))
+    slides.append(dessiner_slide("cta", donnees["cta"], layout, couleur, nom_client, total, total, logo, secondaires=secondaires, decor=decor, graine=graine))
     return slides
 
 
@@ -301,15 +377,27 @@ def _etoile(dessin, centre_x: int, centre_y: int, rayon: int, couleur) -> None:
 
 def dessiner_avis(
     texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
-    secondaires: list = None,
+    secondaires: list = None, photo: Image.Image = None, voile: int = 68, decor: str = "auto", graine: int = 0,
 ) -> Image.Image:
-    """Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client."""
+    """
+    Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client.
+    photo : fond photo assombri (voile en %, texte clair), sans decor.
+    """
     marque = _rgb(couleur)
     layout = layout if layout in LAYOUTS else "plein"
     p = _avec_secondaire(_palette(layout, marque), secondaires)
-    image = Image.new("RGB", (LARGEUR, HAUTEUR), p["fond"])
-    d = ImageDraw.Draw(image)
-    _decor(d, layout, p, marque)
+    if photo is not None:
+        p = _avec_secondaire({
+            "fond": (12, 12, 16), "texte": (255, 255, 255), "doux": (225, 225, 230),
+            "accent": _melange(marque, (255, 255, 255), 0.35 if _luminance(marque) > 0.5 else 0.6),
+            "pastille": marque, "sur_accent": (255, 255, 255),
+        }, secondaires)
+        image = _photo_assombrie(photo, marque, voile)
+        d = ImageDraw.Draw(image)
+    else:
+        image = Image.new("RGB", (LARGEUR, HAUTEUR), p["fond"])
+        d = ImageDraw.Draw(image)
+        _decor(d, layout, p, marque, decor, graine)
     if logo is not None:
         _coller_logo(image, logo, 90)
     zone = LARGEUR - 2 * MARGE
