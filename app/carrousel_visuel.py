@@ -96,16 +96,42 @@ def _palette(layout: str, marque: tuple) -> dict:
             "pastille": accent, "sur_accent": (20, 20, 20) if _luminance(accent) > 0.55 else (255, 255, 255)}
 
 
+def _avec_secondaire(p: dict, secondaires: list = None) -> dict:
+    """
+    Ajoute a la palette la couleur d'accent secondaire (accent2 / sur_accent2) : la premiere couleur secondaire du
+    client assez contrastee avec le fond, sinon l'accent d'origine. Sans couleur secondaire, rien ne change.
+    En mise en page "plein", les cercles decoratifs prennent une teinte de la couleur secondaire.
+    """
+    p = dict(p)
+    p["accent2"], p["sur_accent2"] = p["accent"], p["sur_accent"]
+    valides = []
+    for c in secondaires or []:
+        try:
+            valides.append(_rgb(c))
+        except (ValueError, IndexError):
+            continue
+    for s in valides:
+        if abs(_luminance(s) - _luminance(p["fond"])) >= 0.22:
+            p["accent2"] = s
+            p["sur_accent2"] = (25, 25, 25) if _luminance(s) > 0.6 else (255, 255, 255)
+            break
+    if valides and p["fond"] != (12, 12, 16):
+        teinte = valides[1] if len(valides) > 1 else valides[0]
+        if p["accent"] == (255, 255, 255) or p["accent"] == (25, 25, 25):  # mise en page "plein"
+            p["pastille"] = _melange(p["fond"], teinte, 0.4)
+    return p
+
+
 def _decor(dessin, layout, p, marque):
     if layout == "plein":
         dessin.ellipse((LARGEUR - 380, -260, LARGEUR + 260, 380), fill=p["pastille"])
         dessin.ellipse((-200, HAUTEUR - 260, 260, HAUTEUR + 200), fill=p["pastille"])
     elif layout == "clair":
         dessin.rectangle((0, 0, LARGEUR, 26), fill=p["accent"])
-        dessin.rectangle((0, HAUTEUR - 26, LARGEUR, HAUTEUR), fill=p["accent"])
+        dessin.rectangle((0, HAUTEUR - 26, LARGEUR, HAUTEUR), fill=p.get("accent2", p["accent"]))
     else:
         dessin.rectangle((0, 0, 16, HAUTEUR), fill=p["accent"])
-        dessin.ellipse((LARGEUR - 300, HAUTEUR - 300, LARGEUR + 200, HAUTEUR + 200), outline=p["accent"], width=6)
+        dessin.ellipse((LARGEUR - 300, HAUTEUR - 300, LARGEUR + 200, HAUTEUR + 200), outline=p.get("accent2", p["accent"]), width=6)
 
 
 def _pied(dessin, p, nom_client, numero, total):
@@ -150,19 +176,20 @@ def _coller_logo(image: Image.Image, logo: Image.Image, haut: int) -> None:
 
 def dessiner_slide(
     kind: str, contenu: dict, layout: str, couleur: str, nom_client: str, numero: int, total: int,
-    logo: Image.Image = None, photo: Image.Image = None,
+    logo: Image.Image = None, photo: Image.Image = None, secondaires: list = None,
 ) -> Image.Image:
     """
     kind : "couverture" {titre, sous_titre}, "point" {numero, titre, texte}, "cta" {titre, texte, bouton}.
     logo : affiche sur la couverture et la derniere slide. photo : fond de la couverture (voile sombre, texte clair).
     """
     marque = _rgb(couleur)
-    p = _palette(layout, marque)
+    p = _avec_secondaire(_palette(layout, marque), secondaires)
     avec_photo = kind == "couverture" and photo is not None
     if avec_photo:
         p = {"fond": (12, 12, 16), "texte": (255, 255, 255), "doux": (225, 225, 230),
              "accent": _melange(marque, (255, 255, 255), 0.35 if _luminance(marque) > 0.5 else 0.6),
              "pastille": marque, "sur_accent": (255, 255, 255)}
+        p = _avec_secondaire(p, secondaires)
         image = _photo_assombrie(photo, marque)
         d = ImageDraw.Draw(image)
     else:
@@ -180,7 +207,7 @@ def dessiner_slide(
         for ligne in lignes:
             d.text((MARGE, y), ligne, font=police, fill=p["texte"])
             y += pas
-        d.rectangle((MARGE, y + 20, MARGE + 140, y + 32), fill=p["accent"])
+        d.rectangle((MARGE, y + 20, MARGE + 140, y + 32), fill=p["accent2"])
         if contenu.get("sous_titre"):
             police2, lignes2, pas2 = _texte_ajuste(d, contenu["sous_titre"], "normal", 44, 30, zone, 200, 1.3)
             y2 = y + 70
@@ -188,11 +215,11 @@ def dessiner_slide(
                 d.text((MARGE, y2), ligne, font=police2, fill=p["doux"])
                 y2 += pas2
         police_glisser = _police("gras", 36)
-        d.text((MARGE, HAUTEUR - 200), "Faites glisser", font=police_glisser, fill=p["accent"])
+        d.text((MARGE, HAUTEUR - 200), "Faites glisser", font=police_glisser, fill=p["accent2"])
         x_fleche = MARGE + int(d.textlength("Faites glisser", font=police_glisser)) + 24
         y_fleche = HAUTEUR - 200 + 30
-        d.line((x_fleche, y_fleche, x_fleche + 46, y_fleche), fill=p["accent"], width=5)
-        d.polygon([(x_fleche + 46, y_fleche - 13), (x_fleche + 62, y_fleche), (x_fleche + 46, y_fleche + 13)], fill=p["accent"])
+        d.line((x_fleche, y_fleche, x_fleche + 46, y_fleche), fill=p["accent2"], width=5)
+        d.polygon([(x_fleche + 46, y_fleche - 13), (x_fleche + 62, y_fleche), (x_fleche + 46, y_fleche + 13)], fill=p["accent2"])
     elif kind == "point":
         rayon = 62
         d.ellipse((MARGE, 200, MARGE + 2 * rayon, 200 + 2 * rayon), fill=p["pastille"])
@@ -224,23 +251,24 @@ def dessiner_slide(
         bouton = contenu.get("bouton", "Prendre contact")
         largeur_b = int(d.textlength(bouton, font=pb)) + 100
         y_b = max(y + 60, 900)
-        d.rounded_rectangle((MARGE, y_b, MARGE + largeur_b, y_b + 120), radius=60, fill=p["accent"])
-        d.text((MARGE + 50, y_b + 30), bouton, font=pb, fill=p["sur_accent"])
+        d.rounded_rectangle((MARGE, y_b, MARGE + largeur_b, y_b + 120), radius=60, fill=p["accent2"])
+        d.text((MARGE + 50, y_b + 30), bouton, font=pb, fill=p["sur_accent2"])
     _pied(d, p, nom_client, numero, total)
     return image
 
 
 def construire_carrousel(
     donnees: dict, layout: str, couleur: str, nom_client: str, logo: Image.Image = None, photo: Image.Image = None,
+    secondaires: list = None,
 ) -> list[Image.Image]:
     """donnees : {"couverture": {...}, "points": [{titre, texte}, ...], "cta": {...}}."""
     layout = layout if layout in LAYOUTS else "plein"
     points = donnees["points"]
     total = len(points) + 2
-    slides = [dessiner_slide("couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo)]
+    slides = [dessiner_slide("couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo, secondaires)]
     for i, pt in enumerate(points, start=1):
-        slides.append(dessiner_slide("point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total))
-    slides.append(dessiner_slide("cta", donnees["cta"], layout, couleur, nom_client, total, total, logo))
+        slides.append(dessiner_slide("point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total, secondaires=secondaires))
+    slides.append(dessiner_slide("cta", donnees["cta"], layout, couleur, nom_client, total, total, logo, secondaires=secondaires))
     return slides
 
 
@@ -273,11 +301,12 @@ def _etoile(dessin, centre_x: int, centre_y: int, rayon: int, couleur) -> None:
 
 def dessiner_avis(
     texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
+    secondaires: list = None,
 ) -> Image.Image:
     """Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client."""
     marque = _rgb(couleur)
     layout = layout if layout in LAYOUTS else "plein"
-    p = _palette(layout, marque)
+    p = _avec_secondaire(_palette(layout, marque), secondaires)
     image = Image.new("RGB", (LARGEUR, HAUTEUR), p["fond"])
     d = ImageDraw.Draw(image)
     _decor(d, layout, p, marque)
@@ -285,7 +314,7 @@ def dessiner_avis(
         _coller_logo(image, logo, 90)
     zone = LARGEUR - 2 * MARGE
 
-    d.text((MARGE, 130), "\u201c", font=_police("gras", 260), fill=p["accent"])
+    d.text((MARGE, 130), "\u201c", font=_police("gras", 260), fill=p["accent2"])
     note = max(1, min(5, int(note or 5)))
     for i in range(5):
         _etoile(d, MARGE + 34 + i * 76, 470, 34, OR_ETOILES if i < note else _melange(p["fond"], p["texte"], 0.25))
@@ -299,7 +328,7 @@ def dessiner_avis(
         d.text((MARGE, y), ligne, font=police, fill=p["texte"])
         y += pas
     y_auteur = min(max(y + 40, 1130), HAUTEUR - 230)
-    d.rectangle((MARGE, y_auteur - 26, MARGE + 110, y_auteur - 16), fill=p["accent"])
+    d.rectangle((MARGE, y_auteur - 26, MARGE + 110, y_auteur - 16), fill=p["accent2"])
     d.text((MARGE, y_auteur), auteur or "Un client", font=_police("gras", 48), fill=p["texte"])
     d.text((MARGE, y_auteur + 64), "Avis Google", font=_police("normal", 34), fill=p["doux"])
     d.text((MARGE, HAUTEUR - 110), nom_client, font=_police("normal", 30), fill=p["doux"])

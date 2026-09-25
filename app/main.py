@@ -199,6 +199,10 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
         if "search_console_site" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
+        if "couleur_marque" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN couleur_marque TEXT DEFAULT ''"))
+        if "couleurs_secondaires" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN couleurs_secondaires TEXT DEFAULT ''"))
         if "nom_affiche_carrousel" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN nom_affiche_carrousel TEXT DEFAULT ''"))
         if "logo_url" not in colonnes_clients:
@@ -6135,6 +6139,36 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
 COULEUR_CARROUSEL_DEFAUT = "#1f4e8c"
 
 
+REGEX_COULEUR = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def couleur_marque_client(client) -> str:
+    """Couleur principale enregistree pour ce client (charte), sinon celle detectee sur son WordPress, sinon ''."""
+    for valeur in (getattr(client, "couleur_marque", ""), getattr(client, "wordpress_couleur", "")):
+        if valeur and REGEX_COULEUR.fullmatch(valeur.strip()):
+            return valeur.strip().lower()
+    return ""
+
+
+def couleurs_secondaires_client(client) -> list:
+    """Couleurs secondaires enregistrees (0 a 2), au format #rrggbb."""
+    brut = getattr(client, "couleurs_secondaires", "") or ""
+    return [c.strip().lower() for c in brut.split(",") if REGEX_COULEUR.fullmatch(c.strip())][:2]
+
+
+def _couleurs_demandees(donnees: dict, client) -> tuple:
+    """Couleur principale et secondaires d'une requete de rendu : celles envoyees si valides, sinon celles du client."""
+    principale = (donnees.get("couleur") or "").strip()
+    if not REGEX_COULEUR.fullmatch(principale):
+        principale = couleur_marque_client(client) or COULEUR_CARROUSEL_DEFAUT
+    secondaires = donnees.get("couleurs_secondaires")
+    if isinstance(secondaires, list):
+        secondaires = [c.strip() for c in secondaires if isinstance(c, str) and REGEX_COULEUR.fullmatch(c.strip())][:2]
+    else:
+        secondaires = couleurs_secondaires_client(client)
+    return principale, secondaires
+
+
 def nom_affiche_carrousel(client) -> str:
     """
     Nom imprime sur les slides : celui que l'utilisateur a choisi, sinon le nom de la fiche sans un
@@ -6147,6 +6181,8 @@ def nom_affiche_carrousel(client) -> str:
 
 
 templates.env.globals["nom_affiche_carrousel"] = nom_affiche_carrousel
+templates.env.globals["couleur_marque_client"] = couleur_marque_client
+templates.env.globals["couleurs_secondaires_client"] = couleurs_secondaires_client
 
 
 def _slides_valides(brut) -> dict:
@@ -6179,6 +6215,34 @@ def _image_depuis_url_publique(url: str):
         return Image.open(io.BytesIO(requests.get(url, timeout=20).content))
     except Exception:
         return None
+
+
+@app.post("/clients/{client_id}/identite-visuelle")
+async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Charte du client : couleur principale, jusqu'a 2 couleurs secondaires (facultatives) et nom imprime sur les
+    visuels. Enregistree automatiquement depuis le composeur, reutilisee par les carrousels, les avis mis en avant
+    et les visuels IA. Une couleur vide efface la valeur.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    if "principale" in donnees:
+        principale = str(donnees.get("principale") or "").strip().lower()
+        client.couleur_marque = principale if REGEX_COULEUR.fullmatch(principale) else ""
+    if "secondaires" in donnees and isinstance(donnees["secondaires"], list):
+        valides = [str(c).strip().lower() for c in donnees["secondaires"] if REGEX_COULEUR.fullmatch(str(c).strip())]
+        client.couleurs_secondaires = ",".join(valides[:2])
+    if isinstance(donnees.get("nom_affiche"), str):
+        nouveau_nom = " ".join(donnees["nom_affiche"].split())[:60]
+        if nouveau_nom == nom_affiche_carrousel(SimpleNamespace(nom=client.nom, nom_affiche_carrousel="")):
+            nouveau_nom = ""
+        client.nom_affiche_carrousel = nouveau_nom
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @app.post("/publication-multi/{client_id}/carrousel/textes")
@@ -6258,9 +6322,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
         slides = _slides_valides(donnees.get("slides"))
     except ValueError as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
-    couleur = (donnees.get("couleur") or "").strip()
-    if not re.fullmatch(r"#[0-9a-fA-F]{6}", couleur):
-        couleur = client.wordpress_couleur or COULEUR_CARROUSEL_DEFAUT
+    couleur, secondaires = _couleurs_demandees(donnees, client)
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
@@ -6277,7 +6339,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
     def fabriquer():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
         photo = _image_depuis_url_publique(photo_url)
-        images = carrousel_visuel.construire_carrousel(slides, layout, couleur, nom_client, logo, photo)
+        images = carrousel_visuel.construire_carrousel(slides, layout, couleur, nom_client, logo, photo, secondaires)
         sorties = []
         for image in images:
             if not final:
@@ -6371,9 +6433,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
         note = max(1, min(5, int(donnees.get("note") or 5)))
     except (TypeError, ValueError):
         note = 5
-    couleur = (donnees.get("couleur") or "").strip()
-    if not re.fullmatch(r"#[0-9a-fA-F]{6}", couleur):
-        couleur = client.wordpress_couleur or COULEUR_CARROUSEL_DEFAUT
+    couleur, secondaires = _couleurs_demandees(donnees, client)
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
@@ -6381,7 +6441,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
 
     def fabriquer():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
-        image = carrousel_visuel.dessiner_avis(texte, auteur, note, layout, couleur, nom_client, logo)
+        image = carrousel_visuel.dessiner_avis(texte, auteur, note, layout, couleur, nom_client, logo, secondaires)
         if not final:
             image = image.resize((720, 900), Image.LANCZOS)
         tampon = io.BytesIO()
@@ -6456,6 +6516,8 @@ def reglages_wordpress(
         url_finale, utilisateur_final, mot_de_passe_final,
     )
     client.wordpress_couleur = wordpress_style.normaliser_couleur(couleur) or ""
+    if client.wordpress_couleur and not (client.couleur_marque or "").strip():
+        client.couleur_marque = client.wordpress_couleur  # la 1re couleur choisie devient celle de la charte
     lien_cta = lien_cta.strip()
     client.wordpress_lien_cta = lien_cta if re.match(r"^https?://\S+$", lien_cta) else ""
     client.wordpress_texte_cta = wordpress_publish.nettoyer_texte_bouton(texte_cta)
@@ -6962,7 +7024,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     texte_post = (donnees.get("texte_post") or "").strip()
     options_recues = donnees.get("options") if isinstance(donnees.get("options"), dict) else {}
     varier = bool(options_recues.get("varier"))
-    couleur_marque = bool(options_recues.get("couleur_marque")) and bool(client.wordpress_couleur)
+    couleur_marque = bool(options_recues.get("couleur_marque")) and bool(couleur_marque_client(client))
     choix = claude_generation.choisir_options_visuel(options_recues, varier=varier)
     avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier)
     avertissement = ""
@@ -6994,7 +7056,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
         try:
             prompt_image = prompt_genere = claude_generation.prompt_image_avec_options(
                 prompt_image, texte_post, choix, bool(inclure_reference and client.photos_reference), recents,
-                client.wordpress_couleur if couleur_marque else "",
+                couleur_marque_client(client) if couleur_marque else "", couleurs_secondaires_client(client) if couleur_marque else [],
             )
             options_appliquees = True
         except Exception as e:
@@ -7287,7 +7349,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     )
                 wordpress_publish.creer_article(
                     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
-                    titre_article, wordpress_publish.markdown_vers_html(corps_article, client.wordpress_couleur),
+                    titre_article, wordpress_publish.markdown_vers_html(corps_article, couleur_marque_client(client)),
                     publier_le, image_id, wordpress_publish.extrait_depuis_corps(corps_article),
                 )
         except Exception as e:

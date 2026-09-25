@@ -1690,6 +1690,7 @@ def libelles_choix_aleatoires(choix: dict) -> list[str]:
 
 def prompt_image_avec_options(
     idee: str, texte_post: str, choix: dict, avec_reference: bool, recents: list[str] = None, couleur: str = "",
+    couleurs_secondaires: list = None,
 ) -> str:
     """
     Prompt d'image (anglais) qui applique les options cochees a l'idee de la scene (ou, sans idee,
@@ -1724,6 +1725,11 @@ def prompt_image_avec_options(
         lignes.append(
             f"- Brand color: work the color {nom} ({couleur}) in naturally (an object, a garment, a decor accent), "
             "never as an overall tint or filter."
+            + (
+                " Secondary brand colors to use sparingly as small accents: "
+                + ", ".join(f"{nom_couleur(c)} ({c})" for c in couleurs_secondaires if nom_couleur(c)) + "."
+                if couleurs_secondaires else ""
+            )
         )
     directives = "\n".join(lignes) or "- (no specific direction: use your judgment)"
 
