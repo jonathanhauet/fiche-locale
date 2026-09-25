@@ -216,6 +216,11 @@ def _migrer_vers_multi_comptes():
         if "video_donnees" not in colonnes_posts_linkedin:
             type_binaire = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
             connexion.execute(text(f"ALTER TABLE posts_linkedin_programmes ADD COLUMN video_donnees {type_binaire}"))
+        if "document_donnees" not in colonnes_posts_linkedin:
+            type_binaire_doc = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
+            connexion.execute(text(f"ALTER TABLE posts_linkedin_programmes ADD COLUMN document_donnees {type_binaire_doc}"))
+        if "document_titre" not in colonnes_posts_linkedin:
+            connexion.execute(text("ALTER TABLE posts_linkedin_programmes ADD COLUMN document_titre TEXT DEFAULT ''"))
         if "favori_publication_multi" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
 
@@ -6980,6 +6985,9 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     except ValueError as erreur_image:
         return _erreur(f"Image refusée : {erreur_image}")
 
+    est_carrousel_ia = formulaire.get("est_carrousel") == "1" and not fichiers_partages and len(urls_partagees) >= 2
+    titre_carrousel = (formulaire.get("titre_carrousel") or "").strip()[:200]
+
     # Video partagee (optionnelle, mutuellement exclusive avec les images pour
     # un reseau donne) : un seul fichier pour Facebook/Instagram/LinkedIn, pas
     # de video dediee par reseau contrairement aux images - Google n'est pas
@@ -7066,6 +7074,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 compte_linkedin = db.get(models.CompteLinkedIn, client.compte_linkedin_id)
                 if not compte_linkedin:
                     raise RuntimeError("LinkedIn n'est pas connecte pour ce client.")
+                octets_document_linkedin, octets_images_linkedin = None, None
                 if octets_video_partagee:
                     octets_image_linkedin, octets_video_linkedin = None, octets_video_partagee
                 else:
@@ -7076,16 +7085,29 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     urls_linkedin = urls_par_reseau.get("linkedin") or []
                     octets_image_linkedin = requests.get(urls_linkedin[0], timeout=30).content if urls_linkedin else None
                     octets_video_linkedin = None
+                    if len(urls_linkedin) >= 2:
+                        # Carrousel IA : PDF a faire glisser (vrai carrousel LinkedIn). Photos multiples
+                        # televersees a la main : grille de photos (pas de PDF).
+                        telechargees = [requests.get(u, timeout=30).content for u in urls_linkedin]
+                        if est_carrousel_ia:
+                            octets_document_linkedin = carrousel_visuel.en_pdf(
+                                [Image.open(io.BytesIO(o)) for o in telechargees]
+                            )
+                        if not publier_le:  # pour un post programme, seul le PDF (ou la 1re image) est stocke
+                            octets_images_linkedin = telechargees  # repli si LinkedIn refuse le PDF
                 if publier_le:
                     db.add(models.PostLinkedInProgramme(
                         compte_linkedin_id=compte_linkedin.id, texte=texte,
                         image_donnees=octets_image_linkedin, video_donnees=octets_video_linkedin, publier_le=publier_le,
+                        document_donnees=octets_document_linkedin, document_titre=titre_carrousel if octets_document_linkedin else "",
                     ))
                     db.commit()
                 else:
                     linkedin_publish.publier_post(
                         compte_linkedin.access_token, compte_linkedin.identifiant_membre, texte,
                         octets_image=octets_image_linkedin, octets_video=octets_video_linkedin,
+                        octets_document=octets_document_linkedin, titre_document=titre_carrousel,
+                        octets_images=octets_images_linkedin,
                     )
                     _journaliser_publication_linkedin(db, compte_linkedin.id, texte)
 
@@ -7277,6 +7299,8 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
         post.image_url = meta_publish.champ_depuis_urls(images_finales)
     if nouvelle_image_linkedin != "inchangee":
         post.image_donnees = nouvelle_image_linkedin
+        if hasattr(post, "document_donnees"):
+            post.document_donnees = None  # l'image remplace le carrousel PDF
     if nouvelle_video_url != "inchangee":
         post.video_url = nouvelle_video_url
     if nouvelle_video_linkedin != "inchangee":
