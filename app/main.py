@@ -6500,6 +6500,71 @@ def publication_multi_avis(client_id: int, request: Request, source: int = None,
     return JSONResponse({"avis": sortie})
 
 
+@app.post("/publication-multi/{client_id}/titre-photo/suggestion")
+async def publication_multi_titre_photo_suggestion(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Propose un titre et une etiquette a imprimer sur la photo, a partir du texte de base."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    try:
+        proposition = await run_in_threadpool(
+            claude_generation.suggerer_titre_photo, str(donnees.get("texte") or ""), nom_affiche_carrousel(client), _contexte_ia_client(client),
+        )
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de la proposition : {erreur}"}, status_code=500)
+    return JSONResponse(proposition)
+
+
+@app.post("/publication-multi/{client_id}/titre-photo")
+async def publication_multi_titre_photo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Dessine un titre sur une photo aux couleurs du client. mode "apercu" : base64 ; "final" : JPEG heberge (URL renvoyee)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    titre = " ".join(str(donnees.get("titre") or "").split())[:120]
+    if not titre:
+        return JSONResponse({"erreur": "Écrivez le titre à imprimer sur la photo."}, status_code=400)
+    sous_titre = " ".join(str(donnees.get("sous_titre") or "").split())[:40]
+    couleur, secondaires = _couleurs_demandees(donnees, client)
+    position = donnees.get("position") if donnees.get("position") in ("bas", "haut", "centre") else "bas"
+    format_image = "carre" if donnees.get("format") == "carre" else "portrait"
+    try:
+        voile = max(20, min(90, int(donnees.get("voile") or 55)))
+    except (TypeError, ValueError):
+        voile = 55
+    final = donnees.get("mode") == "final"
+    logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
+    photo_url = str(donnees.get("photo_url") or "").strip()
+
+    def fabriquer():
+        photo = _image_depuis_url_autorisee(photo_url)
+        if photo is None:
+            raise ValueError("Choisissez d'abord une photo.")
+        logo = None if sans_logo else _image_depuis_url_publique(logo_url)
+        image = carrousel_visuel.dessiner_titre_photo(photo, titre, sous_titre, couleur, logo, secondaires, position, format_image, voile)
+        if not final:
+            image = image.resize((720, 900 if format_image == "portrait" else 720), Image.LANCZOS)
+        tampon = io.BytesIO()
+        image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
+        if not final:
+            return "data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode()
+        return ovh_upload.envoyer_octets(tampon.getvalue(), f"titre-{uuid.uuid4().hex[:10]}.jpg")
+
+    try:
+        resultat = await run_in_threadpool(fabriquer)
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec du dessin de l'image : {erreur}"}, status_code=500)
+    return JSONResponse({"image": resultat})
+
+
 @app.get("/publication-multi/{client_id}/avis/photos")
 def publication_multi_avis_photos(client_id: int, request: Request, source: int = None, db: Session = Depends(obtenir_session)):
     """Photos deja presentes sur la fiche Google (du client ou de la fiche source choisie), pour servir de fond a un visuel."""

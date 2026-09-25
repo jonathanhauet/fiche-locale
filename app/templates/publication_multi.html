@@ -269,6 +269,42 @@
     <p id="avis-statut" class="texte-vide" hidden></p>
   </details>
   {% endif %}
+  <details class="options-visuel" id="panneau-titre-photo">
+    <summary>🏷️ Ajouter un titre sur une photo</summary>
+    <p class="texte-discret">
+      Un titre accrocheur imprimé sur la photo, avec les couleurs, le logo et le nom du bloc « Identité visuelle ». Le texte est dessiné par la plateforme :
+      toujours net et sans faute de frappe.
+    </p>
+    <div class="groupe-options-visuel">
+      <span class="texte-discret">Photo</span>
+      <input type="file" id="tp-fichier" accept="image/*" style="width:auto;">
+      <button type="button" id="tp-image-actuelle" class="bouton-secondaire">🖼️ Image actuelle du post</button>
+      {% if fiches_source_avis %}
+      <select id="tp-source" style="width:auto;max-width:100%;">{% for fiche in fiches_source_avis %}<option value="{{ fiche.id }}">{{ fiche.nom }}</option>{% endfor %}</select>
+      <button type="button" id="tp-photos-fiche" class="bouton-secondaire">📷 Photos de la fiche</button>
+      {% endif %}
+    </div>
+    <div id="tp-photos" class="avis-photos-fiche" hidden></div>
+    <div class="ligne-champs">
+      <input type="text" id="tp-titre" maxlength="120" placeholder="Titre (ex : Bien reprendre après l'été :)" style="flex:2;">
+      <input type="text" id="tp-sous-titre" maxlength="40" placeholder="Étiquette (ex : Nos astuces)" style="flex:1;">
+      <button type="button" id="tp-proposer" class="bouton-secondaire">✨ Proposer</button>
+    </div>
+    <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="bas" checked> Texte en bas</label>
+      <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="centre"> Au centre</label>
+      <label class="etiquette-chip-case"><input type="radio" name="tp-position" value="haut"> En haut</label>
+      <label class="etiquette-chip-case"><input type="radio" name="tp-format" value="portrait" checked> Portrait 4:5</label>
+      <label class="etiquette-chip-case"><input type="radio" name="tp-format" value="carre"> Carré</label>
+      <label class="etiquette-chip-case">Assombrissement <input type="range" id="tp-voile" min="20" max="90" value="55" style="width:8rem;"></label>
+    </div>
+    <div id="tp-apercu" class="carrousel-apercu"></div>
+    <div class="ligne-champs">
+      <button type="button" id="tp-actualiser" class="bouton-secondaire">🔄 Actualiser</button>
+      <button type="button" id="tp-utiliser" class="bouton-secondaire">✅ Utiliser cette image</button>
+    </div>
+    <p id="tp-statut" class="texte-vide" hidden></p>
+  </details>
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
   <input type="hidden" name="avis_mis_en_avant" id="champ-avis-id" value="">
   <input type="hidden" name="avis_source" id="champ-avis-source" value="">
@@ -1274,6 +1310,118 @@
           champTexte.value = donnees.texte;
           memoriserAvis();
           message("Texte du post rédigé : relisez-le avant de publier.");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      });
+    })();
+
+
+    // ---- Titre sur une photo : photo (televersee, de la fiche ou image du post), titre, apercu net, puis image finale ----
+    (function () {
+      const base = "/publication-multi/{{ client.id }}/titre-photo";
+      const statut = document.getElementById("tp-statut");
+      const zoneApercu = document.getElementById("tp-apercu");
+      const zoneZoom = document.getElementById("carrousel-zoom");
+      const grille = document.getElementById("tp-photos");
+      let photoUrl = "";
+      let occupe = false;
+      let minuteur = null;
+
+      function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
+      async function appeler(url, options) {
+        const reponse = await fetch(url, options);
+        let donnees = {};
+        try { donnees = await reponse.json(); } catch (e) { /* non JSON */ }
+        if (!reponse.ok) throw new Error(donnees.erreur || "Échec (code " + reponse.status + ").");
+        return donnees;
+      }
+      function corps(mode) {
+        return JSON.stringify({
+          photo_url: photoUrl, titre: document.getElementById("tp-titre").value, sous_titre: document.getElementById("tp-sous-titre").value,
+          position: document.querySelector('input[name="tp-position"]:checked').value, format: document.querySelector('input[name="tp-format"]:checked').value,
+          voile: parseInt(document.getElementById("tp-voile").value, 10),
+          couleur: document.getElementById("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(), mode,
+        });
+      }
+      async function actualiser() {
+        if (occupe || !photoUrl || !document.getElementById("tp-titre").value.trim()) return;
+        occupe = true; message("Dessin de l'image...");
+        try {
+          const donnees = await appeler(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("apercu") });
+          zoneApercu.innerHTML = "";
+          const img = document.createElement("img"); img.src = donnees.image; img.alt = "Photo avec titre";
+          const zoomImg = zoneZoom.querySelector("img");
+          img.addEventListener("mouseenter", () => { zoomImg.src = donnees.image; zoneZoom.hidden = false; });
+          img.addEventListener("mouseleave", () => { zoneZoom.hidden = true; });
+          img.addEventListener("click", () => { zoomImg.src = donnees.image; zoneZoom.hidden = !zoneZoom.hidden; });
+          zoneApercu.appendChild(img);
+          message("Aperçu à jour. « Utiliser cette image » l'ajoute au post.");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      }
+      function actualiserPlusTard() { clearTimeout(minuteur); minuteur = setTimeout(actualiser, 500); }
+      function definirPhoto(url) {
+        photoUrl = url;
+        grille.querySelectorAll("img").forEach((img) => img.classList.toggle("avis-photo-choisie", img.dataset.url === url));
+        actualiser();
+      }
+
+      document.getElementById("tp-fichier").addEventListener("change", async (evenement) => {
+        const fichier = evenement.target.files[0];
+        if (!fichier) return;
+        message("Envoi de la photo...");
+        try {
+          const formulaire = new FormData();
+          formulaire.append("type_media", "photo"); formulaire.append("fichier", fichier);
+          definirPhoto((await appeler("/publication-multi/{{ client.id }}/carrousel/media", { method: "POST", body: formulaire })).url);
+        } catch (e) { message(e.message); }
+        evenement.target.value = "";
+      });
+      document.getElementById("tp-image-actuelle").addEventListener("click", () => {
+        const premiere = (champImageUrlIA.value || "").split("|").filter(Boolean)[0];
+        if (premiere) definirPhoto(premiere);
+        else message("Pas d'image générée pour l'instant : téléversez une photo, choisissez-en une de la fiche, ou générez une image IA plus haut.");
+      });
+      const boutonFiche = document.getElementById("tp-photos-fiche");
+      if (boutonFiche) boutonFiche.addEventListener("click", async () => {
+        message("Lecture des photos de la fiche...");
+        try {
+          const donnees = await appeler("/publication-multi/{{ client.id }}/avis/photos?source=" + encodeURIComponent(document.getElementById("tp-source").value));
+          grille.innerHTML = ""; grille.hidden = false;
+          if (!donnees.photos.length) { message("Aucune photo sur cette fiche."); return; }
+          donnees.photos.forEach((p) => {
+            const img = document.createElement("img");
+            img.src = p.miniature; img.dataset.url = p.url; img.alt = "Photo de la fiche"; img.title = "Utiliser cette photo";
+            img.addEventListener("click", () => definirPhoto(p.url));
+            grille.appendChild(img);
+          });
+          message("Cliquez sur une photo.");
+        } catch (e) { message(e.message); }
+      });
+      document.getElementById("tp-proposer").addEventListener("click", async () => {
+        const texte = document.getElementById("texte-base").value.trim();
+        if (!texte) { message("Écrivez d'abord le texte de base : le titre en découle."); return; }
+        message("Proposition en cours...");
+        try {
+          const donnees = await appeler(base + "/suggestion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte }) });
+          document.getElementById("tp-titre").value = donnees.titre; document.getElementById("tp-sous-titre").value = donnees.sous_titre;
+          actualiser();
+        } catch (e) { message(e.message); }
+      });
+      ["tp-titre", "tp-sous-titre"].forEach((id) => document.getElementById(id).addEventListener("input", actualiserPlusTard));
+      document.querySelectorAll('input[name="tp-position"], input[name="tp-format"]').forEach((r) => r.addEventListener("change", actualiser));
+      document.getElementById("tp-voile").addEventListener("input", actualiserPlusTard);
+      document.getElementById("tp-actualiser").addEventListener("click", actualiser);
+      document.addEventListener("identite-modifiee", actualiser);
+      document.getElementById("tp-utiliser").addEventListener("click", async () => {
+        if (occupe) return;
+        if (!photoUrl || !document.getElementById("tp-titre").value.trim()) { message("Choisissez une photo et écrivez un titre."); return; }
+        occupe = true; message("Création de l'image...");
+        try {
+          const donnees = await appeler(base, { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("final") });
+          champImagePartagee.value = "";
+          champImageUrlIA.value = donnees.image;
+          document.getElementById("champ-est-carrousel").value = "0";
+          actualiserToutesLesApercusImage();
+          message("Image ajoutée au post (aperçus plus bas).");
         } catch (e) { message(e.message); } finally { occupe = false; }
       });
     })();

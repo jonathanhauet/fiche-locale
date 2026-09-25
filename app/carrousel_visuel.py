@@ -18,6 +18,7 @@ DOSSIER_POLICES = os.path.join(os.path.dirname(__file__), "static", "polices")
 POLICES = {
     "gras": ["Poppins-Bold.ttf", "segoeuib.ttf", "DejaVuSans-Bold.ttf", "arialbd.ttf"],
     "normal": ["Poppins-Regular.ttf", "segoeui.ttf", "DejaVuSans.ttf", "arial.ttf"],
+    "titre": ["Poppins-ExtraBoldItalic.ttf", "Poppins-Bold.ttf", "segoeuib.ttf", "DejaVuSans-Bold.ttf", "arialbd.ttf"],
 }
 LAYOUTS = ("plein", "clair", "sombre")
 
@@ -211,13 +212,13 @@ def _pied(dessin, p, nom_client, numero, total):
         dessin.text((LARGEUR - MARGE - dessin.textlength(t, font=petite), HAUTEUR - 110), t, font=petite, fill=p["doux"])
 
 
-def _recadrer(photo: Image.Image) -> Image.Image:
-    """Recadre une photo au format d'une slide (remplit tout le cadre, centre)."""
+def _recadrer(photo: Image.Image, largeur: int = LARGEUR, hauteur: int = HAUTEUR) -> Image.Image:
+    """Recadre une photo au format voulu (remplit tout le cadre, centre)."""
     photo = photo.convert("RGB")
-    ratio = max(LARGEUR / photo.width, HAUTEUR / photo.height)
-    photo = photo.resize((max(LARGEUR, round(photo.width * ratio)), max(HAUTEUR, round(photo.height * ratio))), Image.LANCZOS)
-    gauche, haut = (photo.width - LARGEUR) // 2, (photo.height - HAUTEUR) // 2
-    return photo.crop((gauche, haut, gauche + LARGEUR, haut + HAUTEUR))
+    ratio = max(largeur / photo.width, hauteur / photo.height)
+    photo = photo.resize((max(largeur, round(photo.width * ratio)), max(hauteur, round(photo.height * ratio))), Image.LANCZOS)
+    gauche, haut = (photo.width - largeur) // 2, (photo.height - hauteur) // 2
+    return photo.crop((gauche, haut, gauche + largeur, haut + hauteur))
 
 
 def _photo_assombrie(photo: Image.Image, marque: tuple, voile_pourcent: int = None) -> Image.Image:
@@ -420,4 +421,67 @@ def dessiner_avis(
     d.text((MARGE, y_auteur), auteur or "Un client", font=_police("gras", 48), fill=p["texte"])
     d.text((MARGE, y_auteur + 64), "Avis Google", font=_police("normal", 34), fill=p["doux"])
     d.text((MARGE, HAUTEUR - 110), nom_client, font=_police("normal", 30), fill=p["doux"])
+    return image
+
+
+def dessiner_titre_photo(
+    photo: Image.Image, titre: str, sous_titre: str, couleur: str, logo: Image.Image = None, secondaires: list = None,
+    position: str = "bas", format_image: str = "portrait", voile: int = 55,
+) -> Image.Image:
+    """
+    Titre accrocheur sur une photo : voile degrade teinte de la couleur du client, titre en majuscules italiques
+    (blanc, ombre legere), etiquette de couleur pour le sous-titre, logo. position : "bas", "haut" ou "centre" ;
+    format_image : "portrait" (1080x1350) ou "carre" (1080x1080) ; voile : opacite du voile en % (20 a 90).
+    """
+    largeur, hauteur = LARGEUR, (HAUTEUR if format_image != "carre" else 1080)
+    marque = _rgb(couleur)
+    image = _recadrer(photo, largeur, hauteur)
+    position = position if position in ("bas", "haut", "centre") else "bas"
+    opacite = max(20, min(90, int(voile or 55))) / 100
+
+    # Voile : degrade du cote du texte (bas / haut), ou uniforme au centre.
+    degrade = Image.linear_gradient("L").resize((largeur, hauteur))          # noir en haut -> blanc en bas
+    if position == "haut":
+        degrade = degrade.transpose(Image.FLIP_TOP_BOTTOM)
+    if position == "centre":
+        masque = Image.new("L", (largeur, hauteur), int(255 * opacite * 0.75))
+    else:
+        masque = degrade.point(lambda v: int(255 * opacite * max(0.0, (v / 255 - 0.25) / 0.75) ** 0.8))
+    voile_couleur = Image.new("RGB", (largeur, hauteur), _melange((8, 8, 12), marque, 0.30))
+    image = Image.composite(voile_couleur, image, masque)
+
+    calque = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
+    d = ImageDraw.Draw(calque)
+    marge = 70
+    zone = largeur - 2 * marge
+    police, lignes, pas = _texte_ajuste(d, (titre or "").upper(), "titre", 132, 64, zone, 560, 1.06)
+    hauteur_titre = len(lignes) * pas
+    police_sous, hauteur_etiquette, largeur_etiquette, texte_sous = None, 0, 0, (sous_titre or "").strip().upper()
+    if texte_sous:
+        police_sous = _police("titre", 58)
+        largeur_etiquette = min(zone, int(d.textlength(texte_sous, font=police_sous)) + 64)
+        hauteur_etiquette = 58 + 34
+
+    bloc = hauteur_titre + (hauteur_etiquette + 18 if texte_sous else 0)
+    if position == "haut":
+        y = 190
+    elif position == "centre":
+        y = (hauteur - bloc) // 2
+    else:
+        y = hauteur - 120 - bloc
+    for ligne in lignes:
+        d.text((marge + 4, y + 5), ligne, font=police, fill=(0, 0, 0, 120))          # ombre
+        d.text((marge, y), ligne, font=police, fill=(255, 255, 255, 255))
+        y += pas
+    if texte_sous:
+        secondaire = next((_rgb(c) for c in (secondaires or []) if c), None)
+        fond_etiquette = secondaire if secondaire and abs(_luminance(secondaire) - _luminance(marque)) > 0.15 else marque
+        # Etiquette lisible sur la photo : couleur du client, texte blanc ou fonce selon son contraste.
+        texte_couleur = (20, 20, 20) if _luminance(fond_etiquette) > 0.62 else (255, 255, 255)
+        y += 18
+        d.rectangle((marge, y, marge + largeur_etiquette, y + hauteur_etiquette), fill=fond_etiquette + (255,))
+        d.text((marge + 32, y + 12), texte_sous, font=police_sous, fill=texte_couleur + (255,))
+    image = Image.alpha_composite(image.convert("RGBA"), calque).convert("RGB")
+    if logo is not None:
+        _coller_logo(image, logo, 70 if position != "haut" else hauteur - 210)
     return image

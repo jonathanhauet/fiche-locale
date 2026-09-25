@@ -2018,3 +2018,39 @@ def generer_post_avis(avis: str, auteur: str, note: int, nom_client: str, contex
     if not texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
     return _nettoyer_texte_genere(texte).replace("\u2014", "-")
+
+
+def suggerer_titre_photo(texte_post: str, nom_client: str = "", contexte: str = "") -> dict:
+    """Titre court et etiquette (sous-titre) pour habiller une photo, a partir du texte du post."""
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not (texte_post or "").strip():
+        raise RuntimeError("Ecrivez d'abord le texte de base.")
+    bloc_contexte = f"\nContexte sur l'entreprise :\n{contexte.strip()[:2500]}\n" if (contexte or "").strip() else ""
+    prompt = (
+        f"Post de l'entreprise « {nom_client} » :\n« {texte_post.strip()[:1500]} »\n{bloc_contexte}\n"
+        "Propose le texte a imprimer sur la photo qui illustre ce post, en francais :\n"
+        "- titre : accrocheur, 3 a 7 mots, en une phrase qui donne envie de lire (une promesse, une question ou un conseil), "
+        "sans point final ; il peut finir par deux-points si l'etiquette le complete (ex. « Bien reprendre apres l'ete : »).\n"
+        "- sous_titre : etiquette de 1 a 3 mots qui complete le titre (ex. « Nos astuces », « Notre conseil », « A savoir »), "
+        "ou une chaine vide si le titre se suffit.\n"
+        "Aucun emoji, pas de tiret cadratin (—), aucun chiffre ou fait qui ne soit pas dans le post."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=300, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_TITRE_PHOTO}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    donnees = json.loads(bloc)
+    return {"titre": _nettoyer_texte_genere(donnees["titre"]).replace("\u2014", "-"), "sous_titre": _nettoyer_texte_genere(donnees["sous_titre"]).replace("\u2014", "-")}
+
+
+SCHEMA_TITRE_PHOTO = {
+    "type": "object",
+    "properties": {"titre": {"type": "string"}, "sous_titre": {"type": "string"}},
+    "required": ["titre", "sous_titre"], "additionalProperties": False,
+}
