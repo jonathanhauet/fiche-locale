@@ -167,6 +167,7 @@ class Client(Base):
     # Propriete Google Search Console du site web du client ("sc-domain:exemple.fr" ou
     # "https://www.exemple.fr/"), voir search_console.py.
     search_console_site = Column(String, default="")
+    nom_affiche_carrousel = Column(String, default="")  # nom imprime sur les slides (sinon le nom de la fiche, sans "- Reseaux")
     logo_url = Column(String, default="")  # logo affiche sur les carrousels (voir carrousel_visuel.py)
     # Client mis en avant en haut de la liste de choix de /publication-multi
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les

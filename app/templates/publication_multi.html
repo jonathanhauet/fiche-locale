@@ -145,6 +145,12 @@
       <label class="etiquette-chip-case"><input type="radio" name="carrousel-layout" value="sombre"> Sombre</label>
     </fieldset>
     <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case">Nom affiché sur les slides
+        <input type="text" id="carrousel-nom-affiche" value="{{ nom_affiche_carrousel(client) }}" maxlength="60" autocomplete="off" style="width:16rem;">
+      </label>
+      <span class="texte-discret">Enregistré pour ce client (modifiable à tout moment).</span>
+    </div>
+    <div class="groupe-options-visuel">
       <label class="etiquette-chip-case">Couleur
         <input type="color" id="carrousel-couleur" value="{{ client.wordpress_couleur or '#1f4e8c' }}" style="width:3.2rem;padding:0.1rem;">
         <input type="text" id="carrousel-couleur-hex" value="{{ client.wordpress_couleur or '#1f4e8c' }}" placeholder="#1f4e8c" maxlength="7" autocomplete="off" spellcheck="false" style="width:7.5rem;">
@@ -882,7 +888,7 @@
       }
       function corpsRendu(mode) {
         const layout = document.querySelector('input[name="carrousel-layout"]:checked').value;
-        return JSON.stringify({ slides: lireSlides(), layout, couleur: document.getElementById("carrousel-couleur").value, photo_url: photoUrl, mode });
+        return JSON.stringify({ slides: lireSlides(), layout, couleur: document.getElementById("carrousel-couleur").value, photo_url: photoUrl, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode });
       }
       async function appeler(url, options) {
         const reponse = await fetch(url, options);
@@ -922,6 +928,7 @@
       const champCouleurHex = document.getElementById("carrousel-couleur-hex");
       selecteurCouleur.addEventListener("input", () => { champCouleurHex.value = selecteurCouleur.value; });
       selecteurCouleur.addEventListener("change", actualiser);
+      document.getElementById("carrousel-nom-affiche").addEventListener("change", actualiser);
       // Code hexadecimal saisi ou colle (#0a66c2, ou sans le #) : applique des qu'il est complet.
       champCouleurHex.addEventListener("input", () => {
         let valeur = champCouleurHex.value.trim();

@@ -199,6 +199,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
         if "search_console_site" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
+        if "nom_affiche_carrousel" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN nom_affiche_carrousel TEXT DEFAULT ''"))
         if "logo_url" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_url TEXT DEFAULT ''"))
         for colonne_wordpress in (
@@ -6119,6 +6121,20 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
 COULEUR_CARROUSEL_DEFAUT = "#1f4e8c"
 
 
+def nom_affiche_carrousel(client) -> str:
+    """
+    Nom imprime sur les slides : celui que l'utilisateur a choisi, sinon le nom de la fiche sans un
+    suffixe interne du type « - Reseaux » (fiche creee seulement pour gerer les reseaux sociaux).
+    """
+    if (client.nom_affiche_carrousel or "").strip():
+        return client.nom_affiche_carrousel.strip()
+    nom = re.sub(r"\s*[-–—(]\s*r[ée]seaux(\s+sociaux)?\s*\)?\s*$", "", client.nom or "", flags=re.IGNORECASE).strip()
+    return nom or (client.nom or "")
+
+
+templates.env.globals["nom_affiche_carrousel"] = nom_affiche_carrousel
+
+
 def _slides_valides(brut) -> dict:
     """Nettoie les textes de slides recus du navigateur (ValueError si la structure est inutilisable)."""
     def texte(valeur, maxi):
@@ -6234,7 +6250,15 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
-    photo_url, nom_client = (donnees.get("photo_url") or "").strip(), client.nom
+    if isinstance(donnees.get("nom_affiche"), str):
+        # Nom choisi dans le panneau : memorise pour ce client (vide = retour au nom par defaut).
+        nouveau_nom = " ".join(donnees["nom_affiche"].split())[:60]
+        if nouveau_nom == nom_affiche_carrousel(SimpleNamespace(nom=client.nom, nom_affiche_carrousel="")):
+            nouveau_nom = ""  # identique au nom par defaut : rien a memoriser
+        if nouveau_nom != (client.nom_affiche_carrousel or ""):
+            client.nom_affiche_carrousel = nouveau_nom
+            db.commit()
+    photo_url, nom_client = (donnees.get("photo_url") or "").strip(), nom_affiche_carrousel(client)
 
     def fabriquer():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
