@@ -12,7 +12,7 @@
     </thead>
     <tbody>
       {% for ligne in lignes %}
-      <tr>
+      <tr data-reseau="{{ ligne.reseau }}" data-id="{{ ligne.id }}" data-a-venir="{{ 1 if ligne.a_venir else 0 }}" data-date="{{ ligne.date.isoformat() }}" data-heure="{{ ligne.heure or '' }}">
         <td>
           <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}" title="{{ ligne.reseau|capitalize }}">
             {{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}
@@ -37,11 +37,12 @@
             <span class="apercu-texte">{% if ligne.url %}<a href="{{ ligne.url }}" target="_blank" rel="noopener">{{ ligne.titre }}</a>{% else %}{{ ligne.titre }}{% endif %}{% if ligne.externe %}<span class="mention-hors-plateforme">Hors plateforme</span>{% endif %}</span>
           </div>
         </td>
-        <td>{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
+        <td class="cellule-date-publication">{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
         <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
         <td>
           {% if ligne.a_venir %}
           <div class="actions-resume">
+            <button type="button" class="bouton-secondaire bouton-mini bouton-reprogrammer" title="Changer la date et l'heure">📅 Reprogrammer</button>
             <a class="bouton-secondaire bouton-mini" href="{{ '/posts/' ~ ligne.id if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/modifier' }}">Modifier</a>
             <form method="post" action="{{ '/posts/' ~ ligne.id ~ '/statut_rapide' if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/annuler' }}"
                   onsubmit="return confirm('Supprimer ce post programmé ? Il ne sera pas publié.');">
@@ -95,5 +96,96 @@
       });
     });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") masquer(); });
+  })();
+</script>
+
+<div id="reprogrammation-flottante" class="reprogrammation-flottante" hidden>
+  <div class="reprogrammation-titre">Reprogrammer</div>
+  <div class="reprogrammation-raccourcis">
+    <button type="button" class="bouton-secondaire bouton-mini" data-decalage="1">+ 1 jour</button>
+    <button type="button" class="bouton-secondaire bouton-mini" data-decalage="2">+ 2 jours</button>
+    <button type="button" class="bouton-secondaire bouton-mini" data-decalage="7">+ 1 semaine</button>
+    <button type="button" class="bouton-secondaire bouton-mini" data-decalage="14">+ 2 semaines</button>
+  </div>
+  <div class="reprogrammation-champs">
+    <input type="date" id="reprogrammation-date">
+    <input type="time" id="reprogrammation-heure">
+  </div>
+  <label class="filtre-case" id="reprogrammation-jumelles-label" hidden>
+    <input type="checkbox" id="reprogrammation-jumelles" checked> <span id="reprogrammation-jumelles-texte"></span>
+  </label>
+  <p class="message-erreur" id="reprogrammation-erreur" hidden></p>
+  <div class="reprogrammation-actions">
+    <button type="button" class="bouton bouton-mini" id="reprogrammation-valider">Valider</button>
+    <button type="button" class="bouton-secondaire bouton-mini" id="reprogrammation-fermer">Annuler</button>
+  </div>
+</div>
+<script>
+  // Reprogrammation rapide d'un post programme, sans quitter la page : raccourcis (+1 jour...) ou date/heure exactes.
+  (function () {
+    const panneau = document.getElementById("reprogrammation-flottante");
+    const lignes = Array.from(document.querySelectorAll(".tableau-resume tbody tr"));
+    if (!panneau || !lignes.length) return;
+    const champDate = document.getElementById("reprogrammation-date"), champHeure = document.getElementById("reprogrammation-heure");
+    const jumellesLabel = document.getElementById("reprogrammation-jumelles-label"), jumelles = document.getElementById("reprogrammation-jumelles");
+    const erreur = document.getElementById("reprogrammation-erreur");
+    let ligneCourante = null;
+
+    function jumellesDe(ligne) {
+      return lignes.filter((l) => l !== ligne && l.dataset.aVenir === "1" && l.dataset.date === ligne.dataset.date && l.dataset.heure === ligne.dataset.heure);
+    }
+    function ajouterJours(iso, jours) {
+      const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + jours);
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+    function fermer() { panneau.hidden = true; ligneCourante = null; }
+    function ouvrir(ligne, bouton) {
+      ligneCourante = ligne;
+      champDate.value = ligne.dataset.date; champHeure.value = ligne.dataset.heure || "08:30";
+      const autres = jumellesDe(ligne);
+      jumellesLabel.hidden = !autres.length;
+      document.getElementById("reprogrammation-jumelles-texte").textContent = "Déplacer aussi les " + autres.length + " autre(s) publication(s) prévue(s) au même moment";
+      erreur.hidden = true; panneau.hidden = false;
+      const r = bouton.getBoundingClientRect();
+      const largeur = panneau.offsetWidth, hauteur = panneau.offsetHeight;
+      panneau.style.left = Math.max(12, Math.min(r.right - largeur, window.innerWidth - largeur - 12)) + "px";
+      panneau.style.top = (r.bottom + hauteur + 12 > window.innerHeight ? Math.max(12, r.top - hauteur - 6) : r.bottom + 6) + "px";
+    }
+    async function appliquer(dateIso, heure) {
+      if (!ligneCourante) return;
+      erreur.hidden = true;
+      try {
+        const reponse = await fetch("/publication-multi/" + ligneCourante.dataset.reseau + "/" + ligneCourante.dataset.id + "/reprogrammer", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: dateIso, heure: heure, avec_jumelles: !jumellesLabel.hidden && jumelles.checked }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { erreur.textContent = donnees.erreur || "Échec."; erreur.hidden = false; return; }
+        const [jour, mois, annee] = [donnees.date_iso.slice(8), donnees.date_iso.slice(5, 7), donnees.date_iso.slice(0, 4)];
+        donnees.deplaces.forEach((d) => {
+          const l = lignes.find((x) => x.dataset.reseau === d.reseau && x.dataset.id === String(d.id));
+          if (!l) return;
+          const ancien = l.querySelector(".cellule-date-publication").textContent.trim();
+          const nouveau = jour + "/" + mois + "/" + annee + " à " + donnees.heure;
+          l.querySelector(".cellule-date-publication").textContent = nouveau;
+          const modele = l.querySelector("template.modele-apercu-publication");
+          if (modele && ancien) modele.innerHTML = modele.innerHTML.split(ancien).join(nouveau);
+          l.dataset.date = donnees.date_iso; l.dataset.heure = donnees.heure;
+        });
+        fermer();
+      } catch (e) { erreur.textContent = "Erreur réseau."; erreur.hidden = false; }
+    }
+
+    lignes.forEach((ligne) => {
+      const bouton = ligne.querySelector(".bouton-reprogrammer");
+      if (bouton) bouton.addEventListener("click", (e) => { e.stopPropagation(); ouvrir(ligne, bouton); });
+    });
+    panneau.querySelectorAll("[data-decalage]").forEach((b) => b.addEventListener("click", () => {
+      if (ligneCourante) appliquer(ajouterJours(ligneCourante.dataset.date, parseInt(b.dataset.decalage, 10)), ligneCourante.dataset.heure || "08:30");
+    }));
+    document.getElementById("reprogrammation-valider").addEventListener("click", () => appliquer(champDate.value, champHeure.value));
+    document.getElementById("reprogrammation-fermer").addEventListener("click", fermer);
+    document.addEventListener("click", (e) => { if (!panneau.hidden && !panneau.contains(e.target)) fermer(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") fermer(); });
   })();
 </script>

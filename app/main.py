@@ -7535,6 +7535,63 @@ def _reponse_modifier_post_programme(request: Request, reseau: str, post, client
     )
 
 
+@app.post("/publication-multi/{reseau}/{post_id}/reprogrammer")
+async def publication_multi_reprogrammer(reseau: str, post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Change la date et l'heure d'un post programme (Google, Facebook, Instagram ou LinkedIn) sans rouvrir sa page de
+    modification. avec_jumelles : deplace aussi les autres posts programmes du meme client au meme moment
+    (typiquement le meme contenu sur Facebook et Instagram).
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    donnees = await request.json()
+    try:
+        nouveau = datetime.strptime(f"{str(donnees.get('date') or '').strip()} {str(donnees.get('heure') or '').strip() or '08:30'}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return JSONResponse({"erreur": "Date ou heure invalide."}, status_code=400)
+    if nouveau < datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None) - timedelta(minutes=1):
+        return JSONResponse({"erreur": "Cette date est déjà passée."}, status_code=400)
+
+    def moment(post, reseau_post):
+        if reseau_post == "google":
+            return datetime.combine(post.date_prevue, datetime.strptime(post.heure_prevue or "08:30", "%H:%M").time()) if post.date_prevue else None
+        return post.publier_le
+
+    if reseau == "google":
+        post = db.get(models.Post, post_id)
+        client = db.get(models.Client, post.client_id) if post else None
+        if not post or post.statut != "A_PUBLIER":
+            return JSONResponse({"erreur": "Post introuvable ou déjà traité."}, status_code=404)
+    else:
+        post, client = _post_programme_modifiable(db, reseau, post_id)
+        if not post or not client:
+            return JSONResponse({"erreur": "Post introuvable ou déjà traité."}, status_code=404)
+
+    ancien = moment(post, reseau)
+    a_deplacer = [(reseau, post)]
+    if donnees.get("avec_jumelles") and ancien:
+        candidats = [("google", p) for p in db.query(models.Post).filter_by(client_id=client.id, statut="A_PUBLIER").all()]
+        candidats += [("facebook", p) for p in db.query(models.PostMetaProgramme).filter_by(client_id=client.id, etat="EN_ATTENTE").all()]
+        candidats += [("instagram", p) for p in db.query(models.PostInstagramProgramme).filter_by(client_id=client.id, etat="EN_ATTENTE").all()]
+        if client.compte_linkedin_id:
+            candidats += [("linkedin", p) for p in db.query(models.PostLinkedInProgramme).filter_by(compte_linkedin_id=client.compte_linkedin_id, etat="EN_ATTENTE").all()]
+        for r, p in candidats:
+            if (r, p.id) != (reseau, post.id) and moment(p, r) and moment(p, r).replace(second=0, microsecond=0) == ancien.replace(second=0, microsecond=0):
+                a_deplacer.append((r, p))
+
+    for r, p in a_deplacer:
+        if r == "google":
+            p.date_prevue, p.heure_prevue = nouveau.date(), nouveau.strftime("%H:%M")
+        else:
+            p.publier_le = nouveau
+    db.commit()
+    return JSONResponse({
+        "ok": True, "deplaces": [{"reseau": r, "id": p.id} for r, p in a_deplacer],
+        "date_iso": nouveau.strftime("%Y-%m-%d"), "heure": nouveau.strftime("%H:%M"),
+        "date_affichee": nouveau.strftime("%d/%m/%Y à %H:%M"),
+    })
+
+
 @app.get("/publication-multi/{reseau}/{post_id}/modifier", response_class=HTMLResponse)
 def publication_multi_modifier_formulaire(reseau: str, post_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
