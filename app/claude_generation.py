@@ -392,6 +392,9 @@ def generer_post_expert(
         "n'invente aucun detail factuel (date, chiffre, fonctionnalite, citation) qui n'y "
         "figure pas. Si l'extrait ne suffit pas a etayer un point, reste general ou passe a "
         "l'analyse/l'avis plutot que de combler par une supposition presentee comme un fait.\n"
+        "- L'extrait peut etre en anglais : redige en francais naturel, sans traduction mot a mot. Si l'article decrit "
+        "un test ou une fonctionnalite observee aux Etats-Unis, dis-le clairement et n'affirme pas qu'elle est deja "
+        "disponible en France ou en Belgique, sauf si l'extrait le precise.\n"
         "- Reformule entierement avec tes propres mots et ta propre structure : ne recopie "
         "aucune phrase ni formulation de l'extrait source, meme partiellement (pas de "
         "plagiat). L'objectif est ton avis et ta voix sur ce que dit l'article, pas un "
@@ -783,7 +786,12 @@ def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5, sujets_deja
         "- Privilegie les sujets les plus recents et les plus specifiques (evite les "
         "generalites deja connues).\n"
         "- Chaque sujet doit donner un angle clair (ex : une consequence pratique, une "
-        "question que ca souleve, un conseil qui en decoule), pas juste redire le titre."
+        "question que ca souleve, un conseil qui en decoule), pas juste redire le titre.\n"
+        "- Les articles sont en francais ou en anglais ; les sources marquees « (États-Unis) » sont americaines. "
+        "Formule toujours le sujet en francais. Pour un article americain, presente la nouveaute comme une "
+        "tendance venue des Etats-Unis (« aux Etats-Unis, Google teste... ») sans affirmer qu'elle est deja "
+        "disponible en France ou en Belgique, sauf si l'article le dit. Garde un bon melange de sources "
+        "francophones et americaines."
     )
 
     client = Anthropic(api_key=CLE_API)

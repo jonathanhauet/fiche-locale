@@ -26,11 +26,22 @@ from html import unescape
 import requests
 
 SOURCES_VEILLE = [
+    # France
     "https://www.abondance.com/feed",
-    "https://searchengineland.com/feed",
     "https://www.blogdumoderateur.com/feed/",
+    # Etats-Unis / Amerique du Nord : souvent en avance sur les nouveautes Google (tests, fonctionnalites locales)
     "https://www.seroundtable.com/index.rdf",
+    "https://www.searchenginejournal.com/feed/",
+    "https://www.searchenginewatch.com/feed/",
+    "https://nearmedia.co/feed/",
+    "https://whitespark.ca/feed/",
+    # Search Engine Land bloque les lecteurs automatiques (403) : ne fonctionne pas.
 ]
+DOMAINES_ETATS_UNIS = {
+    "seroundtable.com", "searchenginejournal.com", "searchenginewatch.com", "nearmedia.co", "whitespark.ca",
+    "searchengineland.com",
+}
+LIBELLE_ETATS_UNIS = "États-Unis"
 
 MOTS_CLES_PERTINENCE = [
     "google business", "business profile", "fiche google", "fiche d'établissement",
@@ -81,9 +92,11 @@ def _recuperer_flux(url: str, limite: int) -> list[dict]:
                 pass
 
         domaine = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
+        est_us = domaine in DOMAINES_ETATS_UNIS
         resultats.append({
             "titre": titre,
-            "source": domaine,
+            "source": f"{domaine} ({'Canada' if domaine.endswith('.ca') else LIBELLE_ETATS_UNIS})" if est_us else domaine,
+            "pays": "US" if est_us else "FR",
             "url": (item.findtext("link") or "").strip(),
             "date_publication": date_publication,
             "extrait": extrait,
@@ -93,7 +106,7 @@ def _recuperer_flux(url: str, limite: int) -> list[dict]:
     return resultats
 
 
-def rechercher_actualites(limite_par_source: int = 8, limite_totale: int = 25) -> list[dict]:
+def rechercher_actualites(limite_par_source: int = 8, limite_totale: int = 27) -> list[dict]:
     """
     Interroge chaque flux de SOURCES_VEILLE, ne garde que les articles dont
     le titre ou le contenu touche a la thematique (voir _pertinent), deduplique
@@ -115,4 +128,13 @@ def rechercher_actualites(limite_par_source: int = 8, limite_totale: int = 25) -
             tous.append(article)
 
     tous.sort(key=lambda a: a["date_publication"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
-    return tous[:limite_totale]
+    # Un quota par pays : sans lui, les sources americaines (plus nombreuses et plus prolifiques) noient les
+    # francophones, ou l'inverse selon les jours.
+    quota_fr, quota_us = limite_totale * 4 // 9, limite_totale * 5 // 9
+    fr = [a for a in tous if a["pays"] == "FR"][:quota_fr]
+    us = [a for a in tous if a["pays"] == "US"][:quota_us]
+    reste = [a for a in tous if a not in fr and a not in us]
+    retenus = fr + us
+    retenus += reste[:max(0, limite_totale - len(retenus))]  # un pays sans matiere laisse la place a l'autre
+    retenus.sort(key=lambda a: a["date_publication"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return retenus[:limite_totale]
