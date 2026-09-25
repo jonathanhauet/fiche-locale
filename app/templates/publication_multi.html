@@ -371,89 +371,9 @@
 })();
 </script>
 
-{% if posts_programmes.google or posts_programmes.facebook or posts_programmes.instagram or posts_programmes.linkedin %}
+{% if publications_programmees %}
 <h2>Publications programmées pour {{ client.nom }}</h2>
-
-{% if posts_programmes.google %}
-<h3>Google Business Profile</h3>
-<ul>
-  {% for post in posts_programmes.google %}
-  <li>
-    <a href="/clients/{{ client.id }}#post-{{ post.id }}">{{ post.texte[:60] }}{% if post.texte|length > 60 %}…{% endif %}</a>
-    — {{ post.date_prevue.strftime("%d/%m/%Y") }}{% if post.heure_prevue %} à {{ post.heure_prevue }}{% endif %}
-  </li>
-  {% endfor %}
-</ul>
-{% endif %}
-
-{% if posts_programmes.facebook %}
-<h3>Facebook</h3>
-<div class="conteneur-tableau">
-  <table class="tableau-historique">
-    <thead><tr><th>Texte</th><th>Publication prévue</th><th></th></tr></thead>
-    <tbody>
-      {% for post in posts_programmes.facebook %}
-      <tr>
-        <td>{{ post.texte[:80] }}{% if post.texte|length > 80 %}…{% endif %}</td>
-        <td>{{ post.publier_le.strftime("%d/%m/%Y à %H:%M") }}</td>
-        <td>
-          <form method="post" action="/publication-multi/facebook/{{ post.id }}/annuler"
-                onsubmit="return confirm('Annuler ce post programmé ?');">
-            <button type="submit" class="bouton-danger">Annuler</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{% if posts_programmes.instagram %}
-<h3>Instagram</h3>
-<div class="conteneur-tableau">
-  <table class="tableau-historique">
-    <thead><tr><th>Texte</th><th>Publication prévue</th><th></th></tr></thead>
-    <tbody>
-      {% for post in posts_programmes.instagram %}
-      <tr>
-        <td>{{ post.texte[:80] }}{% if post.texte|length > 80 %}…{% endif %}</td>
-        <td>{{ post.publier_le.strftime("%d/%m/%Y à %H:%M") }}</td>
-        <td>
-          <form method="post" action="/publication-multi/instagram/{{ post.id }}/annuler"
-                onsubmit="return confirm('Annuler ce post programmé ?');">
-            <button type="submit" class="bouton-danger">Annuler</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{% if posts_programmes.linkedin %}
-<h3>LinkedIn</h3>
-<div class="conteneur-tableau">
-  <table class="tableau-historique">
-    <thead><tr><th>Texte</th><th>Publication prévue</th><th></th></tr></thead>
-    <tbody>
-      {% for post in posts_programmes.linkedin %}
-      <tr>
-        <td>{{ post.texte[:80] }}{% if post.texte|length > 80 %}…{% endif %}</td>
-        <td>{{ post.publier_le.strftime("%d/%m/%Y à %H:%M") }}</td>
-        <td>
-          <form method="post" action="/publication-multi/linkedin/{{ post.id }}/annuler"
-                onsubmit="return confirm('Annuler ce post programmé ?');">
-            <button type="submit" class="bouton-danger">Annuler</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+{% with lignes=publications_programmees, retour="" %}{% include "_resume_publications.html" %}{% endwith %}
 {% endif %}
 
 <script>

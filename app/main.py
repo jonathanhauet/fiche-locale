@@ -1152,7 +1152,7 @@ def _journaliser_publication_linkedin(db: Session, compte_linkedin_id: int, text
 
 
 def _publications_multi_reseaux(
-    db: Session, client: "models.Client", limite: int = 30, posts_google_en_ligne: list = None,
+    db: Session, client: "models.Client", limite: int = 30, posts_google_en_ligne: list = None, avec_externes: bool = True,
 ) -> list:
     """
     Vue unifiee, tous reseaux confondus, des publications d'un client
@@ -1227,7 +1227,7 @@ def _publications_multi_reseaux(
     }
     cles_deja_suivies = {(l["reseau"], _cle_texte(l["titre"])) for l in lignes if l["reseau"] != "google"}
     # Les titres locaux sont tronques a 60 caracteres, la cle en garde 40 : comparables.
-    for externe in _publications_externes(client, posts_google_en_ligne, ids_google_connus):
+    for externe in (_publications_externes(client, posts_google_en_ligne, ids_google_connus) if avec_externes else []):
         if externe["reseau"] != "google" and (externe["reseau"], _cle_texte(externe["titre"])) in cles_deja_suivies:
             continue
         lignes.append(externe)
@@ -6039,6 +6039,10 @@ def _contexte_publication_multi(
         "erreur": erreur,
         "resultat": resultat,
         "posts_programmes": _posts_multi_programmes(db, client),
+        "publications_programmees": sorted(
+            [l for l in _publications_multi_reseaux(db, client, limite=200, avec_externes=False) if l["a_venir"]],
+            key=lambda l: (l["date"], l.get("heure") or "00:00"),
+        ),
         "suggestions_du_jour_json": _suggestions_du_jour_json(db, client.id),
         "prompt_image_initial": prompt_image_initial,
         "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,

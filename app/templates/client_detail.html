@@ -921,107 +921,10 @@
 </div>
 <p class="texte-discret">Publications suivies par la plateforme, tous réseaux confondus (Google, Facebook, Instagram, LinkedIn).</p>
 {% if publications_multi_reseaux %}
-<div class="conteneur-tableau">
-  <table class="tableau-historique tableau-resume">
-    <thead>
-      <tr>
-        <th></th>
-        <th>Publication</th>
-        <th>Date</th>
-        <th>Statut</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for ligne in publications_multi_reseaux %}
-      <tr>
-        <td>
-          <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}" title="{{ ligne.reseau|capitalize }}">
-            {{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}
-          </span>
-        </td>
-        <td>
-          <template class="modele-apercu-publication">
-            <div class="apercu-publication-entete">
-              <span class="badge-reseau badge-reseau-petit badge-reseau-{{ ligne.reseau }}">{{ {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in"}[ligne.reseau] }}</span>
-              <span>{{ ligne.reseau|capitalize }} · {{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %} · {{ ligne.statut_libelle }}</span>
-            </div>
-            {% if ligne.images %}
-            <div class="apercu-publication-images apercu-publication-images-{{ [ligne.images|length, 4]|min }}">
-              {% for image in ligne.images[:4] %}<img src="{{ image }}" alt="">{% endfor %}
-            </div>
-            {% if ligne.images|length > 4 %}<div class="texte-discret">+ {{ ligne.images|length - 4 }} autre(s) image(s)</div>{% endif %}
-            {% elif ligne.video %}<div class="texte-discret">🎬 Vidéo</div>{% endif %}
-            <div class="apercu-publication-texte">{{ ligne.texte or ligne.titre }}</div>
-          </template>
-          <div class="ligne-publication-resume">
-            {% if ligne.image_url %}<img src="{{ ligne.image_url }}" alt="" class="miniature-publication-resume">{% elif ligne.video %}<span class="miniature-publication-resume miniature-video" title="Vidéo">🎬</span>{% endif %}
-            <span class="apercu-texte">{% if ligne.url %}<a href="{{ ligne.url }}" target="_blank" rel="noopener">{{ ligne.titre }}</a>{% else %}{{ ligne.titre }}{% endif %}{% if ligne.externe %}<span class="mention-hors-plateforme">Hors plateforme</span>{% endif %}</span>
-          </div>
-        </td>
-        <td>{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
-        <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
-        <td>
-          {% if ligne.a_venir %}
-          <div class="actions-resume">
-            <a class="bouton-secondaire bouton-mini" href="{{ '/posts/' ~ ligne.id if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/modifier' }}">Modifier</a>
-            <form method="post" action="{{ '/posts/' ~ ligne.id ~ '/statut_rapide' if ligne.reseau == 'google' else '/publication-multi/' ~ ligne.reseau ~ '/' ~ ligne.id ~ '/annuler' }}"
-                  onsubmit="return confirm('Supprimer ce post programmé ? Il ne sera pas publié.');">
-              {% if ligne.reseau == 'google' %}<input type="hidden" name="statut" value="SUPPRIME">{% else %}<input type="hidden" name="retour" value="client">{% endif %}
-              <button type="submit" class="bouton-danger bouton-mini">Supprimer</button>
-            </form>
-          </div>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% with lignes=publications_multi_reseaux, retour="client" %}{% include "_resume_publications.html" %}{% endwith %}
 {% else %}
 <p class="texte-vide">Aucune publication pour l'instant.</p>
 {% endif %}
-
-<div id="apercu-publication-flottant" class="apercu-publication-flottant" hidden></div>
-<script>
-  // Apercu d'une publication du resume multi-reseaux : au survol (ou au toucher), texte complet et images en grand.
-  (function () {
-    const flottant = document.getElementById("apercu-publication-flottant");
-    const lignes = document.querySelectorAll(".tableau-resume tbody tr");
-    if (!flottant || !lignes.length) return;
-    let ligneActive = null;
-
-    function positionner(x, y) {
-      const largeur = flottant.offsetWidth, hauteur = flottant.offsetHeight;
-      let gauche = x + 18, haut = y + 14;
-      if (gauche + largeur > window.innerWidth - 12) gauche = Math.max(12, x - largeur - 18);
-      if (haut + hauteur > window.innerHeight - 12) haut = Math.max(12, window.innerHeight - hauteur - 12);
-      flottant.style.left = gauche + "px"; flottant.style.top = haut + "px";
-    }
-    function afficher(ligne, x, y) {
-      const modele = ligne.querySelector("template.modele-apercu-publication");
-      if (!modele) return;
-      flottant.innerHTML = "";
-      flottant.appendChild(modele.content.cloneNode(true));
-      flottant.hidden = false; ligneActive = ligne;
-      positionner(x, y);
-    }
-    function masquer() { flottant.hidden = true; ligneActive = null; }
-
-    lignes.forEach((ligne) => {
-      ligne.addEventListener("mouseenter", (e) => afficher(ligne, e.clientX, e.clientY));
-      ligne.addEventListener("mousemove", (e) => { if (ligneActive === ligne) positionner(e.clientX, e.clientY); });
-      ligne.addEventListener("mouseleave", masquer);
-      // Ecran tactile (pas de survol) : un toucher sur le texte de la publication l'affiche ou le masque.
-      ligne.querySelector(".ligne-publication-resume")?.addEventListener("click", (e) => {
-        if (e.target.closest("a")) return;
-        if (ligneActive === ligne && window.matchMedia("(hover: none)").matches) masquer();
-        else if (window.matchMedia("(hover: none)").matches) afficher(ligne, e.clientX, e.clientY);
-      });
-    });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") masquer(); });
-  })();
-</script>
 
 {% set brouillons = posts|selectattr("statut", "equalto", "BROUILLON")|list %}
 {% if brouillons|length > 1 %}
