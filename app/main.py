@@ -6267,7 +6267,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
         sorties = []
         for image in images:
             if not final:
-                image = image.resize((540, 675), Image.LANCZOS)
+                image = image.resize((720, 900), Image.LANCZOS)
             tampon = io.BytesIO()
             image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
             sorties.append(tampon.getvalue())

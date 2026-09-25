@@ -170,6 +170,7 @@
     </div>
     <div id="carrousel-edition" hidden></div>
     <div id="carrousel-apercu" class="carrousel-apercu"></div>
+    <div id="carrousel-zoom" class="carrousel-zoom" hidden><img alt="Slide agrandie"></div>
     <div class="ligne-champs" id="carrousel-actions" hidden>
       <button type="button" id="carrousel-actualiser" class="bouton-secondaire">🔄 Actualiser l'aperçu</button>
       <button type="button" id="carrousel-utiliser" class="bouton-secondaire">✅ Utiliser ce carrousel</button>
@@ -850,6 +851,10 @@
       const zoneEdition = document.getElementById("carrousel-edition");
       const zoneApercu = document.getElementById("carrousel-apercu");
       const zoneActions = document.getElementById("carrousel-actions");
+      const zoneZoom = document.getElementById("carrousel-zoom");
+      const zoomImg = zoneZoom.querySelector("img");
+      zoneZoom.addEventListener("click", () => { zoneZoom.hidden = true; });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") zoneZoom.hidden = true; });
       const statut = document.getElementById("carrousel-statut");
       const boutonLogoRetirer = document.getElementById("carrousel-logo-retirer");
       const boutonPhotoRetirer = document.getElementById("carrousel-photo-retirer");
@@ -903,7 +908,14 @@
         try {
           const donnees = await appeler(base + "/rendu", { method: "POST", headers: { "Content-Type": "application/json" }, body: corpsRendu("apercu") });
           zoneApercu.innerHTML = "";
-          donnees.images.forEach((src) => { const img = document.createElement("img"); img.src = src; img.alt = "Slide"; zoneApercu.appendChild(img); });
+          donnees.images.forEach((src, i) => {
+            const img = document.createElement("img"); img.src = src; img.alt = "Slide " + (i + 1);
+            // Zoom au survol (ou au toucher) pour relire chaque slide en grand.
+            img.addEventListener("mouseenter", () => { zoomImg.src = src; zoneZoom.hidden = false; });
+            img.addEventListener("mouseleave", () => { zoneZoom.hidden = true; });
+            img.addEventListener("click", () => { zoomImg.src = src; zoneZoom.hidden = !zoneZoom.hidden; });
+            zoneApercu.appendChild(img);
+          });
           message("Aperçu à jour. Modifiez un texte si besoin, puis « Utiliser ce carrousel ».");
         } catch (e) { message(e.message); } finally { occupe = false; }
       }
