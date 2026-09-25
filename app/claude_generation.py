@@ -1674,10 +1674,10 @@ OPTIONS_VISUEL = {
         ("isometrique", "Isométrique", "an isometric illustration of a small cutaway scene: clean lines, soft flat colors, tidy details"),
         ("bd", "BD (ligne claire)", "a comic-book (bande dessinee) illustration in the franco-belgian clear-line style: confident ink outlines, flat colors, expressive characters with natural proportions"),
         ("humour", "Humour (dessin d'humour)", "a humorous cartoon drawing in the spirit of a witty web comic: simplified characters with big expressive faces, thick hand-drawn outlines, bright flat colors, a light comedic situation; no speech bubbles containing text"),
-        ("schema", "Schéma dessiné à la main", "a hand-drawn explanatory diagram, like a sketch on a whiteboard or paper: simple line drawings linked by arrows and brackets, marker strokes; no legible words, use only unlabeled shapes, arrows and numbered dots"),
+        ("schema", "Schéma dessiné à la main", "a hand-drawn explanatory diagram, like a sketch on a whiteboard or paper: simple line drawings linked by arrows and brackets, marker strokes; unlabeled shapes, icons and arrows only"),
         ("croquis", "Croquis au crayon", "a loose pencil sketch with visible construction lines and hatching on off-white paper, unfinished sketchbook look, a single accent color"),
         ("aquarelle", "Aquarelle", "a soft watercolor illustration with gentle washes and visible paper texture"),
-        ("craie", "Craie sur tableau noir", "a chalk drawing on a dark blackboard: white and pastel chalk lines, hand-drawn look, no legible words"),
+        ("craie", "Craie sur tableau noir", "a chalk drawing on a dark blackboard: white and pastel chalk lines, hand-drawn look"),
         ("vintage", "Affiche vintage", "a retro vintage poster illustration: limited palette, screen-print texture, bold simple shapes"),
         ("decoupe", "Papier découpé", "a layered paper-cut illustration with soft shadows between the layers"),
     ],
@@ -1811,7 +1811,7 @@ def libelles_choix_aleatoires(choix: dict) -> list[str]:
 
 def prompt_image_avec_options(
     idee: str, texte_post: str, choix: dict, avec_reference: bool, recents: list[str] = None, couleur: str = "",
-    couleurs_secondaires: list = None,
+    couleurs_secondaires: list = None, texte_fr: bool = False,
 ) -> str:
     """
     Prompt d'image (anglais) qui applique les options cochees a l'idee de la scene (ou, sans idee,
@@ -1877,7 +1877,15 @@ def prompt_image_avec_options(
         f"directions:\n{directives}\n\n"
         f"{style_de_base}"
         "Aim for a concrete, specific scene directly tied to the post's subject (not an abstract metaphor). "
-        "No legible text anywhere (papers, screens, signs, clothes), no logo, no geographic reference. Avoid generic "
+        + (
+            "Text in the image: include at most 4 very short labels (1 to 3 common words each) written in FRENCH and "
+            "relevant to the post's subject. In the prompt you write, give these labels between double quotes and state "
+            "that they must be rendered EXACTLY as written, with correct French spelling and accents, and that no other "
+            "text appears. No logo, no geographic reference. "
+            if texte_fr else
+            "No text anywhere (papers, screens, signs, clothes, labels, numbers), no logo, no geographic reference. "
+        ) +
+        "Avoid generic "
         "AI-illustration cliches (padlock/shield, abstract dashboard, light bulb, handshake, connected globe, gears) "
         "unless the subject truly requires them.\n"
         "Reply with the prompt only, in 3 to 5 sentences, without introduction or quotation marks."

@@ -7190,9 +7190,10 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     texte_post = (donnees.get("texte_post") or "").strip()
     options_recues = donnees.get("options") if isinstance(donnees.get("options"), dict) else {}
     varier = bool(options_recues.get("varier"))
+    texte_fr = bool(options_recues.get("texte_fr"))
     couleur_marque = bool(options_recues.get("couleur_marque")) and bool(couleur_marque_client(client))
     choix = claude_generation.choisir_options_visuel(options_recues, varier=varier)
-    avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier)
+    avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier) or texte_fr
     avertissement = ""
     if avec_options:
         # Un type sans visage (detail, illustration, lieu) ou "qui apparait" sans moi : pas de photos de reference.
@@ -7223,6 +7224,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
             prompt_image = prompt_genere = claude_generation.prompt_image_avec_options(
                 prompt_image, texte_post, choix, bool(inclure_reference and client.photos_reference), recents,
                 couleur_marque_client(client) if couleur_marque else "", couleurs_secondaires_client(client) if couleur_marque else [],
+                texte_fr,
             )
             options_appliquees = True
         except Exception as e:
@@ -7260,7 +7262,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
         # Carre plutot que paysage : reste correct sur Google/Facebook/LinkedIn
         # et evite le format mal adapte a Instagram (bandes noires) qui
         # resulterait du format paysage par defaut.
-        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio="1:1", images_reference=images_reference)
+        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio="1:1", images_reference=images_reference, texte_autorise=texte_fr)
         nom_fichier = f"multi-ia-{uuid.uuid4().hex[:10]}.png"
         url_image = ovh_upload.envoyer_octets(octets_image, nom_fichier)
     except Exception as e:

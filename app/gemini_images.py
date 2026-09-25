@@ -39,7 +39,15 @@ def _prompt_avec_personne(prompt_image: str) -> str:
     return f"{INSTRUCTION_PERSONNE}{nettoye}"
 
 
-def generer_image(prompt_image: str, aspect_ratio: str = None, images_reference: list[bytes] = None) -> bytes:
+CONSIGNE_SANS_TEXTE = (
+    "\n\nIMPORTANT: the image must contain absolutely no text: no letters, words, numbers, labels, captions, "
+    "signs or writing of any kind anywhere in the picture (use plain shapes, icons and arrows instead)."
+)
+
+
+def generer_image(
+    prompt_image: str, aspect_ratio: str = None, images_reference: list[bytes] = None, texte_autorise: bool = False,
+) -> bytes:
     """
     Genere une image via Gemini a partir d'un prompt et renvoie les octets
     (PNG). aspect_ratio optionnel (ex. "1:1", "4:5", "16:9") : sans lui,
@@ -60,6 +68,10 @@ def generer_image(prompt_image: str, aspect_ratio: str = None, images_reference:
         raise RuntimeError("GEMINI_API_KEY manquant dans plateforme_web/.env.")
 
     client = genai.Client(api_key=CLE_GEMINI)
+    # Par defaut jamais de texte dans l'image : Gemini l'invente en anglais et avec des fautes. Le texte n'est
+    # autorise que si le prompt en fournit lui-meme les mots exacts (option « mots en francais » du composeur).
+    if not texte_autorise:
+        prompt_image = prompt_image + CONSIGNE_SANS_TEXTE
     if images_reference:
         entree = [{"type": "text", "text": _prompt_avec_personne(prompt_image)}] + [
             {"type": "image", "data": base64.b64encode(octets).decode("utf-8"), "mime_type": "image/jpeg"}

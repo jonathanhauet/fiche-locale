@@ -129,6 +129,10 @@
     {% endfor %}
     <div class="groupe-options-visuel">
       <label class="etiquette-chip-case">
+        <input type="checkbox" id="visuel-texte-fr">
+        Ajouter quelques mots en français dans l'image (à relire : l'IA peut faire des fautes)
+      </label>
+      <label class="etiquette-chip-case">
         <input type="checkbox" id="visuel-varier">
         Varier automatiquement (l'IA évite de refaire les derniers visuels de ce client)
       </label>
@@ -825,6 +829,7 @@
         if (cochees.length) options[groupe] = (groupe === "cadrage" || groupe === "decor" || groupe === "lumiere") ? cochees : cochees[0];
       });
       if (document.getElementById("visuel-varier").checked) options.varier = true;
+      if (document.getElementById("visuel-texte-fr").checked) options.texte_fr = true;
       const couleur = document.getElementById("visuel-couleur-marque");
       if (couleur.checked && !couleur.disabled) options.couleur_marque = true;
       return options;
