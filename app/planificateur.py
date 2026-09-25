@@ -724,6 +724,7 @@ def publier_posts_linkedin_programmes():
                 linkedin_publish.publier_post(
                     post.compte.access_token, post.compte.identifiant_membre, post.texte,
                     octets_image=post.image_donnees, octets_video=post.video_donnees,
+                    octets_document=post.document_donnees, titre_document=post.document_titre or "",
                 )
                 post.etat = "PUBLIE"
             except Exception as erreur:
