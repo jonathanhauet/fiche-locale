@@ -147,6 +147,7 @@
     <div class="groupe-options-visuel">
       <label class="etiquette-chip-case">Couleur
         <input type="color" id="carrousel-couleur" value="{{ client.wordpress_couleur or '#1f4e8c' }}" style="width:3.2rem;padding:0.1rem;">
+        <input type="text" id="carrousel-couleur-hex" value="{{ client.wordpress_couleur or '#1f4e8c' }}" placeholder="#1f4e8c" maxlength="7" autocomplete="off" spellcheck="false" style="width:7.5rem;">
       </label>
       <label class="etiquette-chip-case">Logo
         <input type="file" id="carrousel-logo" accept="image/*" style="width:auto;">
@@ -917,7 +918,17 @@
       });
       document.getElementById("carrousel-actualiser").addEventListener("click", actualiser);
       document.querySelectorAll('input[name="carrousel-layout"]').forEach((r) => r.addEventListener("change", actualiser));
-      document.getElementById("carrousel-couleur").addEventListener("change", actualiser);
+      const selecteurCouleur = document.getElementById("carrousel-couleur");
+      const champCouleurHex = document.getElementById("carrousel-couleur-hex");
+      selecteurCouleur.addEventListener("input", () => { champCouleurHex.value = selecteurCouleur.value; });
+      selecteurCouleur.addEventListener("change", actualiser);
+      // Code hexadecimal saisi ou colle (#0a66c2, ou sans le #) : applique des qu'il est complet.
+      champCouleurHex.addEventListener("input", () => {
+        let valeur = champCouleurHex.value.trim();
+        if (/^[0-9a-fA-F]{6}$/.test(valeur)) valeur = "#" + valeur;
+        else if (/^#[0-9a-fA-F]{3}$/.test(valeur)) valeur = "#" + valeur.slice(1).split("").map((c) => c + c).join("");
+        if (/^#[0-9a-fA-F]{6}$/.test(valeur)) { selecteurCouleur.value = valeur.toLowerCase(); actualiser(); }
+      });
 
       document.getElementById("carrousel-utiliser").addEventListener("click", async () => {
         if (occupe) return;
