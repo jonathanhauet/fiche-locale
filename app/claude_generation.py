@@ -736,7 +736,55 @@ SCHEMA_SUGGESTIONS_SUJETS = {
 }
 
 
-def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5, sujets_deja_traites: list[str] = None) -> list[dict]:
+SCHEMA_VEILLE_CLIENT = {
+    "type": "object",
+    "properties": {
+        "type": {"type": "string", "enum": ["seo", "metier"]},
+        "requetes": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["type", "requetes"],
+    "additionalProperties": False,
+}
+
+
+def definir_veille_client(nom_client: str, contexte: str = "") -> dict:
+    """
+    Decide quelle veille d'actualite convient a un client : "seo" (agence / consultant en SEO, marketing digital,
+    referencement local : veille SEO habituelle) ou "metier" (tout autre metier : actualite de son secteur), et,
+    pour "metier", 3 requetes de recherche d'actualite (francophone, Belgique / France) tirees de son activite.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    bloc_contexte = f"\nContenu de son site web :\n{contexte.strip()[:3500]}\n" if (contexte or "").strip() else ""
+    prompt = (
+        f"Entreprise : « {nom_client} ».\n{bloc_contexte}\n"
+        "Deduis de son nom (et de son site s'il est fourni) son metier. Renvoie :\n"
+        "- type : « seo » UNIQUEMENT si l'entreprise est elle-meme une agence ou un consultant en referencement (SEO), "
+        "referencement local, marketing digital ou webmarketing ; « metier » pour tout autre activite.\n"
+        "- requetes : 3 requetes courtes (2 a 4 mots) pour chercher dans l'actualite francophone (Belgique, France) "
+        "des sujets utiles a cette entreprise pour communiquer aupres de ses clients : son metier et ses clients "
+        "(prevention, conseils, reglementation, materiel, saison), pas l'actualite de l'entreprise elle-meme ni "
+        "de sa concurrence. Pour « seo », renvoie une liste vide."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=400, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_VEILLE_CLIENT}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucune reponse exploitable.")
+    donnees = json.loads(bloc)
+    requetes = [r.strip() for r in donnees["requetes"] if r.strip()][:4]
+    if donnees["type"] == "metier" and not requetes:
+        raise RuntimeError("Aucune requete de veille deduite pour ce client.")
+    return {"type": donnees["type"], "requetes": requetes}
+
+
+def suggerer_sujets_actualite(
+    articles: list[dict], nombre: int = 5, sujets_deja_traites: list[str] = None, nom_client_metier: str = "",
+) -> list[dict]:
     """
     A partir d'articles d'actualite deja recuperes (voir veille_actualite.py),
     fait choisir et reformuler par l'IA les {nombre} sujets les plus
@@ -771,14 +819,27 @@ def suggerer_sujets_actualite(articles: list[dict], nombre: int = 5, sujets_deja
             f"trop proche de l'un de ceux-ci, meme sur un article different) :\n{liste_deja_traites}\n"
         )
 
+    if nom_client_metier:
+        introduction = (
+            f"Voici une liste d'articles d'actualite recente en lien avec l'activite de l'entreprise « {nom_client_metier} » "
+            f"(deduis son metier de son nom) :\n\n{liste_articles}\n{bloc_deja_traites}\n"
+            f"Choisis les {nombre} articles les plus interessants a commenter pour ce professionnel qui veut publier du "
+            "contenu utile et credible aupres de ses clients (pas juste relayer l'info). Ecarte les faits divers "
+            "sans conseil utile et tout angle alarmiste : transforme l'actualite en conseil concret et rassurant. "
+            "Pour chacun, reformule un sujet de post concret et accrocheur "
+        )
+    else:
+        introduction = (
+            "Voici une liste d'articles d'actualite recente sur le SEO local, Google Business "
+            "Profile, Google AI Overviews et Google Local Services Ads :\n\n"
+            f"{liste_articles}\n"
+            f"{bloc_deja_traites}\n"
+            f"Choisis les {nombre} articles les plus interessants a commenter pour un expert "
+            "SEO local qui veut publier du contenu qui donne envie de le suivre (pas juste "
+            "relayer l'info). Pour chacun, reformule un sujet de post concret et accrocheur "
+        )
     prompt = (
-        "Voici une liste d'articles d'actualite recente sur le SEO local, Google Business "
-        "Profile, Google AI Overviews et Google Local Services Ads :\n\n"
-        f"{liste_articles}\n"
-        f"{bloc_deja_traites}\n"
-        f"Choisis les {nombre} articles les plus interessants a commenter pour un expert "
-        "SEO local qui veut publier du contenu qui donne envie de le suivre (pas juste "
-        "relayer l'info). Pour chacun, reformule un sujet de post concret et accrocheur "
+        f"{introduction}"
         "(une phrase courte, en francais, prete a etre utilisee comme angle de redaction - "
         "pas juste le titre de l'article recopie), et indique l'index de l'article source.\n"
         "Consignes :\n"

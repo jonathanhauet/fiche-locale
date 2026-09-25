@@ -54,6 +54,24 @@
   <p class="texte-discret">
     Tendance : basé sur l'actualité récente. Evergreen : des idées qui ne s'épuisent jamais, utile les jours calmes côté actualité.
   </p>
+  <details class="options-visuel" id="reglages-veille">
+    <summary>⚙️ Actualité suivie pour ce client{% if veille_type == "seo" %} (SEO local){% elif veille_type == "metier" %} (son métier){% endif %}</summary>
+    <p class="texte-discret">
+      « Sujets tendance » cherche l'actualité de <strong>son métier</strong> (thèmes déduits de son activité au premier clic, modifiables ici)
+      ou, pour une agence SEO, l'actualité du référencement local.
+    </p>
+    <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case"><input type="radio" name="veille-type" value="metier" {% if veille_type != "seo" %}checked{% endif %}> Actualité de son métier</label>
+      <label class="etiquette-chip-case"><input type="radio" name="veille-type" value="seo" {% if veille_type == "seo" %}checked{% endif %}> SEO local</label>
+    </div>
+    <label for="veille-themes">Thèmes à suivre (un par ligne, 4 maximum{% if not themes_actualite_texte %} : laissés vides, ils seront déduits au premier clic sur « Sujets tendance »{% endif %})</label>
+    <textarea id="veille-themes" rows="3" placeholder="ex : serrurier cambriolage&#10;sécurité porte d'entrée">{{ themes_actualite_texte }}</textarea>
+    <div class="ligne-champs">
+      <button type="button" id="veille-enregistrer" class="bouton-secondaire">Enregistrer</button>
+      <span id="veille-statut" class="texte-discret"></span>
+    </div>
+  </details>
+
   <div id="zone-sujets-tendance" hidden>
     <p id="texte-statut-sujets" class="texte-vide" hidden></p>
     <ul id="liste-sujets-tendance" class="liste-sujets-tendance"></ul>
@@ -763,6 +781,20 @@
         boutonGenererTexte.disabled = false;
         spinnerGenererTexte.hidden = true;
       }
+    });
+
+
+    document.getElementById("veille-enregistrer").addEventListener("click", async () => {
+      const statut = document.getElementById("veille-statut");
+      statut.textContent = "Enregistrement...";
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/veille", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: document.querySelector('input[name="veille-type"]:checked').value, themes: document.getElementById("veille-themes").value }),
+        });
+        const donnees = await reponse.json();
+        statut.textContent = reponse.ok ? "Enregistré : cliquez sur « Sujets tendance » pour actualiser." : (donnees.erreur || "Échec.");
+      } catch (e) { statut.textContent = "Erreur réseau."; }
     });
 
     const boutonGenererImage = document.getElementById("bouton-generer-image");

@@ -199,6 +199,16 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN profil_voix TEXT DEFAULT ''"))
         if "search_console_site" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN search_console_site TEXT DEFAULT ''"))
+        if "veille_type" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN veille_type TEXT DEFAULT ''"))
+        if "themes_actualite" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN themes_actualite TEXT DEFAULT ''"))
+        if "suggestions_sujet_jour" in inspecteur.get_table_names():
+            # Anciens sujets tendance des autres clients : ils venaient de la veille SEO, hors sujet pour leur metier.
+            connexion.execute(text(
+                "DELETE FROM suggestions_sujet_jour WHERE client_id IN (SELECT id FROM clients WHERE "
+                "(veille_type IS NULL OR veille_type = '') AND nom <> 'Jonathan Hauet Marketing')"
+            )) if "veille_type" in colonnes_clients else None
         if "style_decor" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN style_decor TEXT DEFAULT ''"))
         if "couleur_marque" not in colonnes_clients:
@@ -6044,6 +6054,8 @@ def _contexte_publication_multi(
             key=lambda l: (l["date"], l.get("heure") or "00:00"),
         ),
         "suggestions_du_jour_json": _suggestions_du_jour_json(db, client.id),
+        "veille_type": client.veille_type or ("seo" if client.nom == "Jonathan Hauet Marketing" else ""),
+        "themes_actualite_texte": client.themes_actualite or "",
         "prompt_image_initial": prompt_image_initial,
         "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
         "origine_vocale": origine_vocale,
@@ -6750,6 +6762,49 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
     return JSONResponse(post_genere)
 
 
+def _themes_actualite_client(client) -> list:
+    return [t.strip() for t in (client.themes_actualite or "").split("\n") if t.strip()]
+
+
+def _determiner_veille_client(db: Session, client: "models.Client") -> None:
+    """
+    Fixe une fois pour toutes (modifiable ensuite depuis le composeur) la veille d'un client : SEO local (veille
+    habituelle) ou actualite de son metier, avec ses requetes de recherche. La fiche « Jonathan Hauet Marketing »
+    reste sur la veille SEO (c'est aussi celle du planificateur du matin).
+    """
+    if client.veille_type in ("seo", "metier"):
+        return
+    if client.nom == "Jonathan Hauet Marketing":
+        client.veille_type = "seo"
+    else:
+        configuration = claude_generation.definir_veille_client(client.nom, _contexte_ia_client(client))
+        client.veille_type = configuration["type"]
+        client.themes_actualite = "\n".join(configuration["requetes"])
+    db.commit()
+
+
+@app.post("/publication-multi/{client_id}/veille")
+async def publication_multi_reglages_veille(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Reglage de l'actualite suivie pour ce client : type (SEO local ou metier) et themes de recherche (un par ligne)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    type_veille = donnees.get("type")
+    if type_veille not in ("seo", "metier"):
+        return JSONResponse({"erreur": "Type de veille invalide."}, status_code=400)
+    themes = [" ".join(str(t).split())[:80] for t in str(donnees.get("themes") or "").split("\n") if t.strip()][:4]
+    if type_veille == "metier" and not themes:
+        return JSONResponse({"erreur": "Indiquez au moins un thème à suivre."}, status_code=400)
+    client.veille_type, client.themes_actualite = type_veille, "\n".join(themes)
+    # Les sujets deja affiches venaient de l'ancienne veille : on les retire.
+    db.query(models.SuggestionSujetJour).filter_by(client_id=client.id).delete()
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
 @app.post("/publication-multi/{client_id}/sujets_tendance")
 def publication_multi_sujets_tendance(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -6774,13 +6829,21 @@ def publication_multi_sujets_tendance(client_id: int, request: Request, db: Sess
         return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
 
     try:
-        articles = veille_actualite.rechercher_actualites()
+        _determiner_veille_client(db, client)
         suggestions_actuelles = db.query(models.SuggestionSujetJour).filter_by(client_id=client.id).all()
         sujets_deja_traites = (
             _sujets_deja_traites_client(db, client.id, limite=15)
             + [s.sujet for s in suggestions_actuelles]
         )
-        suggestions = claude_generation.suggerer_sujets_actualite(articles, nombre=5, sujets_deja_traites=sujets_deja_traites)
+        if client.veille_type == "metier":
+            articles = veille_actualite.rechercher_actualites_metier(_themes_actualite_client(client))
+            suggestions = claude_generation.suggerer_sujets_actualite(
+                articles, nombre=5, sujets_deja_traites=sujets_deja_traites, nom_client_metier=client.nom,
+            )
+            veille_actualite.enrichir_suggestions(suggestions, articles)
+        else:
+            articles = veille_actualite.rechercher_actualites()
+            suggestions = claude_generation.suggerer_sujets_actualite(articles, nombre=5, sujets_deja_traites=sujets_deja_traites)
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la veille : {e}"}, status_code=500)
 

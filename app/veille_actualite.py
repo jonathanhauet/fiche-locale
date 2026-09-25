@@ -19,9 +19,11 @@ sujet.
 
 import re
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -138,3 +140,126 @@ def rechercher_actualites(limite_par_source: int = 8, limite_totale: int = 27) -
     retenus += reste[:max(0, limite_totale - len(retenus))]  # un pays sans matiere laisse la place a l'autre
     retenus.sort(key=lambda a: a["date_publication"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     return retenus[:limite_totale]
+
+
+# ---------------------------------------------------------------------------
+# Veille par metier : actualite du secteur d'un client (hors SEO), a partir de requetes deduites de son activite.
+# Bing Actualites (extrait + vraie URL de l'article) complete par Google Actualites (titres, plus nombreux).
+# ---------------------------------------------------------------------------
+JOURS_MAX_ACTUALITE_METIER = 75
+
+
+def _url_reelle_bing(lien: str) -> str:
+    try:
+        return parse_qs(urlparse(lien).query).get("url", [""])[0]
+    except Exception:
+        return ""
+
+
+def _articles_bing(requete: str) -> list[dict]:
+    reponse = requests.get(
+        "https://www.bing.com/news/search", params={"q": requete, "format": "rss", "setlang": "fr", "mkt": "fr-BE"},
+        headers=EN_TETES, timeout=15,
+    )
+    if reponse.status_code != 200:
+        return []
+    resultats = []
+    for item in ET.fromstring(reponse.content).findall("./channel/item"):
+        url = _url_reelle_bing(item.findtext("link") or "")
+        titre = (item.findtext("title") or "").strip()
+        if not titre:
+            continue
+        try:
+            date_publication = parsedate_to_datetime(item.findtext("pubDate") or "")
+        except (TypeError, ValueError):
+            date_publication = None
+        resultats.append({
+            "titre": titre, "source": re.sub(r"^https?://(www\.)?", "", url).split("/")[0] if url else "Bing Actualités",
+            "pays": "FR", "url": url or (item.findtext("link") or "").strip(), "url_reelle": url,
+            "date_publication": date_publication, "extrait": _texte_depuis_html(item.findtext("description") or "")[:LONGUEUR_EXTRAIT],
+        })
+    return resultats
+
+
+def _articles_google_actualites(requete: str) -> list[dict]:
+    reponse = requests.get(
+        "https://news.google.com/rss/search", params={"q": requete, "hl": "fr", "gl": "BE", "ceid": "BE:fr"},
+        headers=EN_TETES, timeout=15,
+    )
+    if reponse.status_code != 200:
+        return []
+    resultats = []
+    for item in ET.fromstring(reponse.content).findall("./channel/item"):
+        titre = (item.findtext("title") or "").strip()
+        source = (item.findtext("source") or "").strip()
+        if source and titre.endswith(f" - {source}"):
+            titre = titre[: -len(source) - 3].strip()
+        if not titre:
+            continue
+        try:
+            date_publication = parsedate_to_datetime(item.findtext("pubDate") or "")
+        except (TypeError, ValueError):
+            date_publication = None
+        # Lien Google (redirection) : ouvre l'article pour un lecteur, mais pas de contenu exploitable ici.
+        resultats.append({
+            "titre": titre, "source": source or "Google Actualités", "pays": "FR",
+            "url": (item.findtext("link") or "").strip(), "url_reelle": "", "date_publication": date_publication, "extrait": "",
+        })
+    return resultats
+
+
+def rechercher_actualites_metier(requetes: list[str], limite_par_requete: int = 8, limite_totale: int = 25) -> list[dict]:
+    """
+    Articles recents (75 jours max) sur les requetes de veille d'un client, dedoublonnes par titre, les plus recents
+    d'abord. Une source qui echoue est ignoree ; leve RuntimeError si rien n'est trouve du tout.
+    """
+    limite_date = datetime.now(timezone.utc) - timedelta(days=JOURS_MAX_ACTUALITE_METIER)
+    vus, tous = set(), []
+    for requete in [r.strip() for r in requetes if r.strip()][:4]:
+        for recuperer in (_articles_bing, _articles_google_actualites):
+            try:
+                articles = recuperer(requete)
+            except Exception:
+                continue
+            gardes = 0
+            for article in articles:
+                cle = re.sub(r"\W+", " ", article["titre"].lower()).strip()[:80]
+                date_article = article["date_publication"]
+                if not cle or cle in vus or (date_article and date_article.tzinfo and date_article < limite_date):
+                    continue
+                vus.add(cle)
+                tous.append(article)
+                gardes += 1
+                if gardes >= limite_par_requete:
+                    break
+    if not tous:
+        raise RuntimeError("Aucune actualité récente trouvée sur les thèmes suivis pour ce client.")
+    tous.sort(key=lambda a: a["date_publication"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return tous[:limite_totale]
+
+
+def extraire_texte_article(url: str, longueur: int = LONGUEUR_EXTRAIT) -> str:
+    """Texte des paragraphes d'une page d'article (au mieux : "" si la page est bloquee ou illisible)."""
+    if not url:
+        return ""
+    try:
+        reponse = requests.get(url, headers=EN_TETES, timeout=8)
+        if reponse.status_code != 200 or "html" not in (reponse.headers.get("content-type") or ""):
+            return ""
+        paragraphes = re.findall(r"<p[^>]*>(.*?)</p>", reponse.text, flags=re.S | re.I)
+        texte = " ".join(_texte_depuis_html(p) for p in paragraphes)
+        texte = re.sub(r"\s+", " ", texte).strip()
+        return texte[:longueur] if len(texte) >= 300 else ""
+    except Exception:
+        return ""
+
+
+def enrichir_suggestions(suggestions: list[dict], articles: list[dict]) -> None:
+    """Remplace l'extrait court de chaque suggestion par le texte de l'article quand la page est lisible (en parallele)."""
+    par_titre = {a["titre"]: a for a in articles}
+    a_traiter = [(s, par_titre.get(s["titre_article"], {}).get("url_reelle", "")) for s in suggestions]
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        textes = list(pool.map(lambda x: extraire_texte_article(x[1]), a_traiter))
+    for (suggestion, _), texte in zip(a_traiter, textes):
+        if texte:
+            suggestion["extrait"] = texte

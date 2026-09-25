@@ -167,6 +167,8 @@ class Client(Base):
     # Propriete Google Search Console du site web du client ("sc-domain:exemple.fr" ou
     # "https://www.exemple.fr/"), voir search_console.py.
     search_console_site = Column(String, default="")
+    veille_type = Column(String, default="")  # "" = pas encore determine, "seo" = veille SEO local, "metier" = actualite du secteur du client
+    themes_actualite = Column(Text, default="")  # requetes de veille du client (une par ligne) quand veille_type = "metier"
     style_decor = Column(String, default="")  # decor des visuels : "" = automatique (varie selon le client)
     couleur_marque = Column(String, default="")  # couleur principale de la charte (visuels, carrousels, avis)
     couleurs_secondaires = Column(String, default="")  # jusqu'a 2 couleurs secondaires, separees par des virgules
