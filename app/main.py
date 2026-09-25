@@ -6286,6 +6286,120 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
     return JSONResponse({"images": resultat})
 
 
+# ---------------------------------------------------------------------------
+# Mise en avant d'un avis Google : liste des avis positifs (avec repere "deja utilise"), visuel a la
+# couleur du client, texte du post. L'avis est memorise a la publication (voir publication_multi_publier).
+# ---------------------------------------------------------------------------
+LONGUEUR_MIN_AVIS_MIS_EN_AVANT = 25
+
+
+def _nom_court_avis(auteur: str) -> str:
+    """« Marie Dupont » -> « Marie D. » : prenom + initiale, pour ne pas afficher le nom complet d'un client."""
+    mots = (auteur or "").split()
+    if len(mots) >= 2:
+        return f"{mots[0]} {mots[-1][0].upper()}."
+    return mots[0] if mots else "Un client"
+
+
+@app.get("/publication-multi/{client_id}/avis")
+def publication_multi_avis(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Avis 4 et 5 etoiles avec commentaire de la fiche (jamais les autres : contenu montre au client, positif uniquement)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"erreur": "Ce client n'a pas de fiche Google."}, status_code=400)
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({"erreur": "Compte Google non valide (a reconnecter depuis Comptes Google)."}, status_code=400)
+    try:
+        avis = google_reviews.lister_avis_complet_client(identifiants, client)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Impossible de lire les avis : {erreur}"}, status_code=500)
+
+    deja = {a.review_id: a.utilise_le for a in db.query(models.AvisMisEnAvant).filter_by(client_id=client.id).all()}
+    sortie = []
+    for a in avis:
+        texte = (a["commentaire"] or "").strip()
+        if a["note"] < 4 or len(texte) < LONGUEUR_MIN_AVIS_MIS_EN_AVANT:
+            continue
+        utilise = deja.get(a["review_id"])
+        sortie.append({
+            "review_id": a["review_id"], "auteur": _nom_court_avis(a["auteur"]), "note": a["note"], "texte": texte,
+            "date": (a["date_avis"] or "")[:10], "deja_utilise": utilise.strftime("%d/%m/%Y") if utilise else "",
+        })
+    # Jamais utilises d'abord, puis les plus recents.
+    sortie.sort(key=lambda a: a["date"], reverse=True)
+    sortie.sort(key=lambda a: bool(a["deja_utilise"]))
+    return JSONResponse({"avis": sortie})
+
+
+@app.post("/publication-multi/{client_id}/avis/visuel")
+async def publication_multi_avis_visuel(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Dessine le visuel de l'avis. mode "apercu" : image en base64 ; mode "final" : JPEG heberge sur OVH (URL renvoyee)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    texte = " ".join(str(donnees.get("texte") or "").split())[:900]
+    if not texte:
+        return JSONResponse({"erreur": "Le texte de l'avis est vide."}, status_code=400)
+    auteur = " ".join(str(donnees.get("auteur") or "").split())[:40]
+    try:
+        note = max(1, min(5, int(donnees.get("note") or 5)))
+    except (TypeError, ValueError):
+        note = 5
+    couleur = (donnees.get("couleur") or "").strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", couleur):
+        couleur = client.wordpress_couleur or COULEUR_CARROUSEL_DEFAUT
+    layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
+    final = donnees.get("mode") == "final"
+    logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
+    nom_client = " ".join(str(donnees.get("nom_affiche") or "").split())[:60] or nom_affiche_carrousel(client)
+
+    def fabriquer():
+        logo = None if sans_logo else _image_depuis_url_publique(logo_url)
+        image = carrousel_visuel.dessiner_avis(texte, auteur, note, layout, couleur, nom_client, logo)
+        if not final:
+            image = image.resize((720, 900), Image.LANCZOS)
+        tampon = io.BytesIO()
+        image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
+        if not final:
+            return "data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode()
+        return ovh_upload.envoyer_octets(tampon.getvalue(), f"avis-{uuid.uuid4().hex[:10]}.jpg")
+
+    try:
+        resultat = await run_in_threadpool(fabriquer)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec du dessin du visuel : {erreur}"}, status_code=500)
+    return JSONResponse({"image": resultat})
+
+
+@app.post("/publication-multi/{client_id}/avis/texte")
+async def publication_multi_avis_texte(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Texte du post qui accompagne l'avis mis en avant."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    try:
+        note = int(donnees.get("note") or 5)
+    except (TypeError, ValueError):
+        note = 5
+    try:
+        texte = await run_in_threadpool(
+            claude_generation.generer_post_avis, str(donnees.get("texte") or ""), str(donnees.get("auteur") or ""),
+            note, nom_affiche_carrousel(client), _contexte_ia_client(client),
+        )
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de la rédaction : {erreur}"}, status_code=500)
+    return JSONResponse({"texte": texte})
+
+
 @app.post("/clients/{client_id}/wordpress")
 def reglages_wordpress(
     client_id: int, request: Request, action: str = Form("enregistrer"), url: str = Form(""),
@@ -7158,6 +7272,19 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 )
         except Exception as e:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
+
+    # Avis mis en avant : memorise des qu'au moins un reseau a reussi, pour ne pas le remettre en avant plus tard.
+    id_avis = (formulaire.get("avis_mis_en_avant") or "").strip()
+    if id_avis and len(echecs) < len(reseaux):
+        try:
+            if not db.query(models.AvisMisEnAvant).filter_by(client_id=client.id, review_id=id_avis).first():
+                db.add(models.AvisMisEnAvant(
+                    client_id=client.id, review_id=id_avis,
+                    auteur=(formulaire.get("avis_auteur") or "")[:80], extrait=(formulaire.get("avis_extrait") or "")[:200],
+                ))
+                db.commit()
+        except Exception:
+            db.rollback()
 
     if echecs:
         return templates.TemplateResponse(

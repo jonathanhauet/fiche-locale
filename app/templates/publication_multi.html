@@ -177,7 +177,43 @@
     </div>
     <p id="carrousel-statut" class="texte-vide" hidden></p>
   </details>
+  {% if client.account_id and client.location_id %}
+  <details class="options-visuel" id="panneau-avis">
+    <summary>⭐ Mettre en avant un avis Google</summary>
+    <p class="texte-discret">
+      Choisissez un avis 4 ou 5 étoiles de la fiche : la plateforme dessine un visuel aux couleurs du client (couleur, logo et nom réglés dans
+      « Créer un carrousel ») et propose un texte de post. Un avis déjà mis en avant est signalé, pour ne pas le republier.
+    </p>
+    <div class="ligne-champs">
+      <button type="button" id="avis-charger" class="bouton-secondaire">
+        <span class="spinner" id="avis-spinner" hidden></span>
+        📥 Charger les avis
+      </button>
+    </div>
+    <div id="avis-liste" class="avis-liste"></div>
+    <div id="avis-edition" hidden>
+      <label for="avis-texte">Texte de l'avis affiché sur le visuel (raccourcissez-le si besoin, sans le déformer)</label>
+      <textarea id="avis-texte" rows="4"></textarea>
+      <div class="groupe-options-visuel">
+        <label class="etiquette-chip-case">Nom affiché <input type="text" id="avis-auteur" maxlength="40" style="width:11rem;"></label>
+        <label class="etiquette-chip-case"><input type="radio" name="avis-layout" value="plein" checked> Plein</label>
+        <label class="etiquette-chip-case"><input type="radio" name="avis-layout" value="clair"> Clair</label>
+        <label class="etiquette-chip-case"><input type="radio" name="avis-layout" value="sombre"> Sombre</label>
+      </div>
+      <div id="avis-apercu" class="carrousel-apercu"></div>
+      <div class="ligne-champs">
+        <button type="button" id="avis-actualiser" class="bouton-secondaire">🔄 Actualiser le visuel</button>
+        <button type="button" id="avis-utiliser" class="bouton-secondaire">✅ Utiliser ce visuel</button>
+        <button type="button" id="avis-rediger" class="bouton-secondaire">✍️ Rédiger le texte du post</button>
+      </div>
+    </div>
+    <p id="avis-statut" class="texte-vide" hidden></p>
+  </details>
+  {% endif %}
   <input type="hidden" name="image_url_ia" id="champ-image-url-ia" value="{{ image_url_initial }}">
+  <input type="hidden" name="avis_mis_en_avant" id="champ-avis-id" value="">
+  <input type="hidden" name="avis_auteur" id="champ-avis-auteur" value="">
+  <input type="hidden" name="avis_extrait" id="champ-avis-extrait" value="">
   <input type="hidden" name="est_carrousel" id="champ-est-carrousel" value="0">
   <input type="hidden" name="titre_carrousel" id="champ-titre-carrousel" value="">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
@@ -1001,6 +1037,123 @@
         evenement.target.value = "";
       });
       boutonPhotoRetirer.addEventListener("click", () => { photoUrl = ""; boutonPhotoRetirer.hidden = true; actualiser(); });
+    })();
+
+
+    // ---- Mise en avant d'un avis Google : liste (avec repere "deja utilise"), visuel, texte du post ----
+    (function () {
+      const panneau = document.getElementById("panneau-avis");
+      if (!panneau) return;
+      const base = "/publication-multi/{{ client.id }}/avis";
+      const liste = document.getElementById("avis-liste");
+      const edition = document.getElementById("avis-edition");
+      const statut = document.getElementById("avis-statut");
+      const zoneApercu = document.getElementById("avis-apercu");
+      const zoneZoom = document.getElementById("carrousel-zoom");
+      let avisChoisi = null;
+      let occupe = false;
+
+      function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
+      async function appeler(url, options) {
+        const reponse = await fetch(url, options);
+        let donnees = {};
+        try { donnees = await reponse.json(); } catch (e) { /* non JSON */ }
+        if (!reponse.ok) throw new Error(donnees.erreur || "Échec (code " + reponse.status + ").");
+        return donnees;
+      }
+      function corps(mode) {
+        return JSON.stringify({
+          texte: document.getElementById("avis-texte").value, auteur: document.getElementById("avis-auteur").value,
+          note: avisChoisi ? avisChoisi.note : 5, layout: document.querySelector('input[name="avis-layout"]:checked').value,
+          couleur: document.getElementById("carrousel-couleur").value, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode,
+        });
+      }
+      async function actualiser() {
+        if (!avisChoisi || occupe) return;
+        occupe = true; message("Dessin du visuel...");
+        try {
+          const donnees = await appeler(base + "/visuel", { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("apercu") });
+          zoneApercu.innerHTML = "";
+          const img = document.createElement("img"); img.src = donnees.image; img.alt = "Visuel de l'avis";
+          const zoomImg = zoneZoom.querySelector("img");
+          img.addEventListener("mouseenter", () => { zoomImg.src = donnees.image; zoneZoom.hidden = false; });
+          img.addEventListener("mouseleave", () => { zoneZoom.hidden = true; });
+          img.addEventListener("click", () => { zoomImg.src = donnees.image; zoneZoom.hidden = !zoneZoom.hidden; });
+          zoneApercu.appendChild(img);
+          message("Visuel à jour. « Utiliser ce visuel » l'ajoute au post.");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      }
+      function choisir(avis) {
+        if (avis.deja_utilise && !confirm("Cet avis a déjà été mis en avant le " + avis.deja_utilise + ". Le mettre en avant à nouveau ?")) return;
+        avisChoisi = avis;
+        document.getElementById("avis-texte").value = avis.texte;
+        document.getElementById("avis-auteur").value = avis.auteur;
+        edition.hidden = false;
+        actualiser();
+      }
+      function afficherListe(avis) {
+        liste.innerHTML = "";
+        if (!avis.length) { message("Aucun avis 4 ou 5 étoiles avec un commentaire assez développé sur cette fiche."); return; }
+        avis.forEach((a) => {
+          const ligne = document.createElement("div");
+          ligne.className = "avis-ligne" + (a.deja_utilise ? " avis-deja" : "");
+          const entete = document.createElement("div");
+          entete.className = "avis-entete";
+          entete.textContent = "★".repeat(a.note) + "  " + a.auteur + (a.date ? "  ·  " + a.date.split("-").reverse().join("/") : "");
+          if (a.deja_utilise) {
+            const badge = document.createElement("span");
+            badge.className = "avis-badge-utilise"; badge.textContent = "Déjà mis en avant le " + a.deja_utilise;
+            entete.appendChild(badge);
+          }
+          const texte = document.createElement("div");
+          texte.className = "avis-texte"; texte.textContent = a.texte;
+          const bouton = document.createElement("button");
+          bouton.type = "button"; bouton.className = "bouton-secondaire"; bouton.textContent = "Choisir cet avis";
+          bouton.addEventListener("click", () => choisir(a));
+          ligne.append(entete, texte, bouton);
+          liste.appendChild(ligne);
+        });
+        message("");
+      }
+
+      document.getElementById("avis-charger").addEventListener("click", async () => {
+        const spinner = document.getElementById("avis-spinner");
+        spinner.hidden = false; message("Lecture des avis de la fiche...");
+        try { afficherListe((await appeler(base)).avis); } catch (e) { message(e.message); } finally { spinner.hidden = true; }
+      });
+      document.getElementById("avis-actualiser").addEventListener("click", actualiser);
+      document.querySelectorAll('input[name="avis-layout"]').forEach((r) => r.addEventListener("change", actualiser));
+
+      function memoriserAvis() {
+        document.getElementById("champ-avis-id").value = avisChoisi.review_id;
+        document.getElementById("champ-avis-auteur").value = document.getElementById("avis-auteur").value;
+        document.getElementById("champ-avis-extrait").value = document.getElementById("avis-texte").value.slice(0, 200);
+      }
+      document.getElementById("avis-utiliser").addEventListener("click", async () => {
+        if (!avisChoisi || occupe) return;
+        occupe = true; message("Création de l'image...");
+        try {
+          const donnees = await appeler(base + "/visuel", { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("final") });
+          champImagePartagee.value = "";
+          champImageUrlIA.value = donnees.image;
+          document.getElementById("champ-est-carrousel").value = "0";
+          actualiserToutesLesApercusImage();
+          memoriserAvis();
+          message("Visuel ajouté au post (aperçus plus bas). L'avis sera marqué « déjà mis en avant » à la publication.");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      });
+      document.getElementById("avis-rediger").addEventListener("click", async () => {
+        if (!avisChoisi || occupe) return;
+        const champTexte = document.getElementById("texte-base");
+        if (champTexte.value.trim() && !confirm("Remplacer le texte de base actuel par un texte sur cet avis ?")) return;
+        occupe = true; message("Rédaction du texte...");
+        try {
+          const donnees = await appeler(base + "/texte", { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("apercu") });
+          champTexte.value = donnees.texte;
+          memoriserAvis();
+          message("Texte du post rédigé : relisez-le avant de publier.");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      });
     })();
 
     const boutonAdapter = document.getElementById("bouton-adapter");

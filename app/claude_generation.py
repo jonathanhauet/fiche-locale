@@ -1843,3 +1843,41 @@ def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4) -> dic
         "points": [{k: propre(v) for k, v in pt.items()} for pt in donnees["points"]][:nb_points],
         "cta": {k: propre(v) for k, v in donnees["cta"].items()},
     }
+
+
+def generer_post_avis(avis: str, auteur: str, note: int, nom_client: str, contexte: str = "") -> str:
+    """
+    Court texte de post qui met en avant un avis client (remerciement + ce que l'avis illustre), sans
+    inventer aucun fait et sans recopier l'avis en entier (il est deja sur le visuel).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not (avis or "").strip():
+        raise RuntimeError("Aucun avis fourni.")
+    bloc_contexte = f"\nContexte sur l'entreprise (site web, voix de l'auteur) :\n{contexte.strip()[:4000]}\n" if (contexte or "").strip() else ""
+    prompt = (
+        f"Nous sommes le {date.today().strftime('%d/%m/%Y')}.\n"
+        f"Redige un court post pour les reseaux sociaux de l'entreprise « {nom_client} », en francais, qui met en "
+        f"avant l'avis Google suivant ({note}/5, par {auteur or 'un client'}) :\n\n"
+        f"\"{avis.strip()[:1500]}\"\n"
+        f"{bloc_contexte}\n"
+        "Consignes :\n"
+        "- 300 a 600 caracteres, paragraphes courts separes par une ligne vide. La premiere ligne donne envie de lire "
+        "la suite. Remercie chaleureusement la personne (par son prenom seulement, jamais son nom de famille) et "
+        "dis ce que cet avis represente pour l'entreprise, sans exageration.\n"
+        "- N'inclus pas l'avis en entier : il figure deja sur le visuel. Tu peux en reprendre un court passage entre guillemets.\n"
+        "- N'invente aucun fait, chiffre, prix, delai ou detail d'intervention qui ne figure pas dans l'avis ou le contexte.\n"
+        "- Personne grammaticale : si le contexte contient un bloc « VOIX DU CLIENT », suis la sienne. Sinon « nous » pour "
+        "une entreprise, « je » pour un independant clairement identifie. Une seule personne dans tout le texte.\n"
+        "- Termine par une courte invitation a contacter l'entreprise, sans numero de telephone ni lien.\n"
+        "- Pas de tiret cadratin (—), pas de hashtag, au plus un emoji. Reponds uniquement avec le texte du post."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=800, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((b.text for b in reponse.content if b.type == "text"), "").strip().strip('"')
+    if not texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    return _nettoyer_texte_genere(texte).replace("\u2014", "-")

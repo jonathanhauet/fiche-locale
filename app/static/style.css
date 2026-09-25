@@ -3154,3 +3154,10 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .carrousel-zoom { pointer-events: none; position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
 .carrousel-zoom[hidden] { display: none; }
 .carrousel-zoom img { height: min(90vh, 900px); width: auto; max-width: 92vw; border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+
+.avis-liste { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; max-height: 380px; overflow-y: auto; }
+.avis-ligne { border: 1px solid var(--carte-bordure); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.avis-deja { opacity: 0.6; }
+.avis-entete { font-weight: 600; }
+.avis-badge-utilise { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--carte-bordure); font-weight: 400; font-size: 0.85em; }
+.avis-texte { white-space: pre-wrap; }

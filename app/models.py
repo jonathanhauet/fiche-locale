@@ -755,6 +755,23 @@ class PromptImageGenere(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class AvisMisEnAvant(Base):
+    """
+    Avis Google deja mis en avant dans un post (composeur multi-reseaux) : permet de le signaler ensuite
+    pour ne pas le republier. Enregistre a la publication ou a la programmation du post.
+    """
+
+    __tablename__ = "avis_mis_en_avant"
+    __table_args__ = (UniqueConstraint("client_id", "review_id", name="uq_avis_mis_en_avant"),)
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    review_id = Column(String, nullable=False)
+    auteur = Column(String, default="")
+    extrait = Column(String, default="")
+    utilise_le = Column(DateTime, default=datetime.utcnow)
+
+
 class SuggestionSujetJour(Base):
     """
     Sujets tendance generes automatiquement chaque matin (voir

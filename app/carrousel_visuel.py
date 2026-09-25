@@ -256,3 +256,51 @@ def en_pdf(images: list[Image.Image]) -> bytes:
     tampon = io.BytesIO()
     pages[0].save(tampon, format="PDF", save_all=True, append_images=pages[1:], resolution=150.0)
     return tampon.getvalue()
+
+
+OR_ETOILES = (250, 190, 20)
+
+
+def _etoile(dessin, centre_x: int, centre_y: int, rayon: int, couleur) -> None:
+    import math
+    points = []
+    for i in range(10):
+        angle = -math.pi / 2 + i * math.pi / 5
+        r = rayon if i % 2 == 0 else rayon * 0.42
+        points.append((centre_x + r * math.cos(angle), centre_y + r * math.sin(angle)))
+    dessin.polygon(points, fill=couleur)
+
+
+def dessiner_avis(
+    texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
+) -> Image.Image:
+    """Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client."""
+    marque = _rgb(couleur)
+    layout = layout if layout in LAYOUTS else "plein"
+    p = _palette(layout, marque)
+    image = Image.new("RGB", (LARGEUR, HAUTEUR), p["fond"])
+    d = ImageDraw.Draw(image)
+    _decor(d, layout, p, marque)
+    if logo is not None:
+        _coller_logo(image, logo, 90)
+    zone = LARGEUR - 2 * MARGE
+
+    d.text((MARGE, 130), "\u201c", font=_police("gras", 260), fill=p["accent"])
+    note = max(1, min(5, int(note or 5)))
+    for i in range(5):
+        _etoile(d, MARGE + 34 + i * 76, 470, 34, OR_ETOILES if i < note else _melange(p["fond"], p["texte"], 0.25))
+
+    citation = " ".join((texte or "").split())
+    police, lignes, pas = _texte_ajuste(d, citation, "normal", 68, 34, zone, 500, 1.32)
+    if len(_lignes(d, citation, police, zone)) > len(lignes):
+        lignes[-1] = lignes[-1].rstrip(" ,;:.") + "\u2026"
+    y = 540
+    for ligne in lignes:
+        d.text((MARGE, y), ligne, font=police, fill=p["texte"])
+        y += pas
+    y_auteur = min(max(y + 40, 1130), HAUTEUR - 230)
+    d.rectangle((MARGE, y_auteur - 26, MARGE + 110, y_auteur - 16), fill=p["accent"])
+    d.text((MARGE, y_auteur), auteur or "Un client", font=_police("gras", 48), fill=p["texte"])
+    d.text((MARGE, y_auteur + 64), "Avis Google", font=_police("normal", 34), fill=p["doux"])
+    d.text((MARGE, HAUTEUR - 110), nom_client, font=_police("normal", 30), fill=p["doux"])
+    return image
