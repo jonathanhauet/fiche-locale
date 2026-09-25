@@ -17,6 +17,12 @@ load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
 
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{os.path.join(DOSSIER_PLATEFORME, 'donnees.db')}"
 
+# Force le pilote installe (psycopg2-binary) : les versions recentes de SQLAlchemy prennent "psycopg" (v3)
+# par defaut pour "postgresql://", pilote absent d'ici, et la plateforme ne demarrait plus.
+for _prefixe in ("postgres://", "postgresql://"):
+    if DATABASE_URL.startswith(_prefixe):
+        DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len(_prefixe):]
+
 arguments_connexion = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=arguments_connexion)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
