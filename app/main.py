@@ -7417,8 +7417,13 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier) or texte_fr
     avertissement = ""
     if avec_options:
-        # Un type sans visage (detail, illustration, lieu) ou "qui apparait" sans moi : pas de photos de reference.
-        if choix["type"] in claude_generation.TYPES_SANS_VISAGE or choix["personnes"] in claude_generation.PERSONNES_SANS_REFERENCE:
+        # Un type sans visage (detail, lieu, schema dessine) ou "qui apparait" sans moi : pas de photos de reference.
+        # Les autres styles d'illustration (BD, humour...) peuvent tres bien mettre en scene la personne.
+        type_sans_visage = (
+            choix["type"] in claude_generation.TYPES_SANS_VISAGE
+            or (choix["type"] == "illustration" and choix.get("illustration") in claude_generation.ILLUSTRATIONS_SANS_VISAGE)
+        )
+        if type_sans_visage or choix["personnes"] in claude_generation.PERSONNES_SANS_REFERENCE:
             if inclure_reference:
                 avertissement = "Ce choix de visuel n'affiche pas de visage : vos photos de reference n'ont pas ete utilisees."
             inclure_reference = False

@@ -1715,7 +1715,10 @@ LIBELLES_GROUPES_VISUEL = {
     "personnes": "Qui apparaît",
 }
 # Le type impose des limites : ces types ne montrent pas de visage, donc jamais les photos de reference.
-TYPES_SANS_VISAGE = {"detail", "illustration", "lieu"}
+TYPES_SANS_VISAGE = {"detail", "lieu"}
+# Parmi les styles d'illustration, seul le schema (diagramme, formes et fleches) n'a pas de personnage :
+# les autres (BD, humour, aquarelle...) peuvent tres bien mettre en scene la personne des photos de reference.
+ILLUSTRATIONS_SANS_VISAGE = {"schema"}
 PERSONNES_AVEC_REFERENCE = {"moi", "moi_client"}
 PERSONNES_SANS_REFERENCE = {"mains", "personne", "equipe"}
 
@@ -1837,9 +1840,14 @@ def prompt_image_avec_options(
     personnes = choix["personnes"]
     if avec_reference and personnes not in PERSONNES_SANS_REFERENCE:
         consigne = _index_options("personnes")[personnes][1] if personnes in PERSONNES_AVEC_REFERENCE else _index_options("personnes")["moi"][1]
+        consigne_style = (
+            " Draw them as a character fully rendered in the chosen illustration style (not a photo pasted in), "
+            "while keeping their recognizable likeness (face shape, hair, skin tone)."
+            if choix["type"] == "illustration" else ""
+        )
         lignes.append(
             f"- People: {consigne}. Write \"the person from the reference photos\" and NEVER describe their physique "
-            "(face, hair, age, clothes): the face comes from the photos. Keep the face clearly visible."
+            f"(face, hair, age, clothes): the face comes from the photos. Keep the face clearly visible.{consigne_style}"
         )
     elif personnes:
         lignes.append(f"- People: {_index_options('personnes')[personnes][1]}.")
