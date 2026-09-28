@@ -1821,6 +1821,28 @@ def _heure_depuis_formulaire(source, defaut: str = "08:30") -> str:
     return HEURES_PREREGLEES.get(mode, defaut)
 
 
+SUFFIXES_NON_VILLE = {"réseaux", "reseaux", "réseaux sociaux", "reseaux sociaux", "social", "rs"}
+REGEX_VARIABLE_POST = re.compile(r"\{\s*(ville|marque|nom)\s*\}", re.IGNORECASE)
+
+
+def variables_fiche(client) -> dict:
+    """
+    Valeurs des variables d'un post en masse pour une fiche : {ville}, {marque} (nom avant « - ») et {nom} (nom complet).
+    La ville est celle enregistree sur la fiche, sinon ce qui suit « - » dans son nom (« GoldUnion - Agen » -> Agen),
+    sauf un suffixe comme « Reseaux » ; vide si elle n'est pas reconnaissable.
+    """
+    nom = (client.nom or "").strip()
+    marque, _, suffixe = nom.partition(" - ")
+    ville = (getattr(client, "localisation_ville", "") or "").strip()
+    if not ville and suffixe.strip() and suffixe.strip().lower() not in SUFFIXES_NON_VILLE:
+        ville = suffixe.strip()
+    return {"ville": ville, "marque": marque.strip() or nom, "nom": nom}
+
+
+def appliquer_variables_post(texte: str, variables: dict) -> str:
+    return REGEX_VARIABLE_POST.sub(lambda m: variables.get(m.group(1).lower(), m.group(0)), texte or "")
+
+
 def _clients_json_avec_etiquettes(db: Session) -> str:
     clients = (
         db.query(models.Client)
@@ -1829,7 +1851,7 @@ def _clients_json_avec_etiquettes(db: Session) -> str:
         .all()
     )
     return json.dumps([
-        {"id": c.id, "nom": c.nom, "etiquette_ids": [e.id for e in c.etiquettes]} for c in clients
+        {"id": c.id, "nom": c.nom, "etiquette_ids": [e.id for e in c.etiquettes], **variables_fiche(c)} for c in clients
     ]).replace("</", "<\\/")
 
 
@@ -2039,18 +2061,38 @@ async def creer_posts_multi(request: Request, db: Session = Depends(obtenir_sess
     if not client_ids:
         return _reponse_posts_multi(request, db, erreur="Selectionnez au moins un client.", valeurs=valeurs)
 
+    # Variables {ville}, {marque}, {nom} : une fiche sans ville reconnue bloque la creation (jamais de « {ville} »
+    # ni de trou dans un post publie) - on liste les fiches concernees.
+    champs_avec_variables = " ".join([titre, texte, evenement_titre, offre_conditions, prompt_image])
+    if re.search(r"\{\s*ville\s*\}", champs_avec_variables, re.IGNORECASE):
+        sans_ville = [
+            c.nom for c in (db.get(models.Client, i) for i in client_ids) if c and not variables_fiche(c)["ville"]
+        ]
+        if sans_ville:
+            return _reponse_posts_multi(
+                request, db, valeurs=valeurs,
+                erreur="Le texte utilise {ville}, mais la ville n'est pas reconnue pour : " + ", ".join(sans_ville[:15])
+                + (f" et {len(sans_ville) - 15} autre(s)" if len(sans_ville) > 15 else "")
+                + ". Nommez la fiche « Marque - Ville », renseignez sa ville, ou décochez-la.",
+            )
+
     lot_id = uuid.uuid4().hex[:12]
     for client_id in client_ids:
         client = db.get(models.Client, client_id)
         if not client:
             continue
+        variables = variables_fiche(client)
+
+        def perso(valeur):
+            return appliquer_variables_post(valeur, variables)
+
         db.add(models.Post(
-            client_id=client.id, titre=titre, texte=texte, prompt_image=prompt_image,
+            client_id=client.id, titre=perso(titre), texte=perso(texte), prompt_image=perso(prompt_image),
             image_url=image_url, type_appel_action=type_appel_action, url_appel_action=url_appel_action,
-            type_post=type_post, evenement_titre=evenement_titre,
+            type_post=type_post, evenement_titre=perso(evenement_titre),
             evenement_date_debut=evenement_date_debut, evenement_heure_debut=evenement_heure_debut or None,
             evenement_date_fin=evenement_date_fin, evenement_heure_fin=evenement_heure_fin or None,
-            offre_code=offre_code, offre_url=offre_url, offre_conditions=offre_conditions,
+            offre_code=offre_code, offre_url=offre_url, offre_conditions=perso(offre_conditions),
             statut="BROUILLON", lot_id=lot_id,
         ))
     db.commit()

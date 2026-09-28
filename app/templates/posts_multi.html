@@ -119,6 +119,26 @@
     <textarea name="texte" rows="8" required>{{ valeurs.texte }}</textarea>
   </label>
 
+  <div class="carte-variables" id="carte-variables">
+    <div class="carte-variables-entete">
+      <strong>Variables automatiques</strong>
+      <span class="texte-discret">remplacées pour chaque fiche à la création des brouillons</span>
+    </div>
+    <div class="carte-variables-boutons">
+      <button type="button" class="bouton-secondaire bouton-mini" data-variable="{ville}" title="Ville de la fiche : « GoldUnion - Agen » donne Agen">{ville}</button>
+      <button type="button" class="bouton-secondaire bouton-mini" data-variable="{marque}" title="Nom avant « - » : « GoldUnion - Agen » donne GoldUnion">{marque}</button>
+      <button type="button" class="bouton-secondaire bouton-mini" data-variable="{nom}" title="Nom complet de la fiche">{nom}</button>
+      <span class="texte-discret">Cliquez pour insérer à l'endroit du curseur (titre ou texte). Ex : « Chez {marque} à {ville}, on rachète votre or. »</span>
+    </div>
+    <div id="apercu-variables" class="apercu-variables" hidden>
+      <label>Aperçu pour la fiche
+        <select id="apercu-variables-fiche"></select>
+      </label>
+      <div id="apercu-variables-texte" class="apercu-variables-texte"></div>
+      <p id="apercu-variables-alerte" class="message-erreur" hidden></p>
+    </div>
+  </div>
+
   <details class="carte-ia" open>
     <summary class="carte-ia-entete">
       <span class="carte-ia-icone">✨</span>
@@ -433,6 +453,57 @@
   }
   selectTypePost.addEventListener("change", actualiserTypePost);
   actualiserTypePost();
+})();
+</script>
+
+<script>
+(function () {
+  // Variables {ville}, {marque}, {nom} : insertion, apercu par fiche et alerte si une ville n'est pas reconnue.
+  const carte = document.getElementById("carte-variables");
+  if (!carte) return;
+  const champTitre = document.querySelector('input[name="titre"]');
+  const champTexte = document.querySelector('textarea[name="texte"]');
+  const clients = JSON.parse(document.getElementById("donnees-clients-posts")?.textContent || "[]");
+  let dernierChamp = champTexte;
+  [champTitre, champTexte].forEach((c) => c.addEventListener("focus", () => { dernierChamp = c; }));
+
+  carte.querySelectorAll("[data-variable]").forEach((b) => b.addEventListener("click", () => {
+    const champ = dernierChamp, debut = champ.selectionStart ?? champ.value.length, fin = champ.selectionEnd ?? champ.value.length;
+    champ.value = champ.value.slice(0, debut) + b.dataset.variable + champ.value.slice(fin);
+    champ.focus(); const position = debut + b.dataset.variable.length; champ.setSelectionRange(position, position);
+    actualiser();
+  }));
+
+  function remplacer(texte, c) {
+    return texte.replace(/\{\s*(ville|marque|nom)\s*\}/gi, (m, cle) => c[cle.toLowerCase()] || m);
+  }
+  function fichesCochees() {
+    const ids = Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((i) => Number(i.value));
+    return clients.filter((c) => ids.includes(c.id));
+  }
+  function actualiser() {
+    const texte = champTexte.value, titre = champTitre.value;
+    const utilise = /\{\s*(ville|marque|nom)\s*\}/i.test(texte + " " + titre);
+    const zone = document.getElementById("apercu-variables");
+    zone.hidden = !utilise;
+    if (!utilise) return;
+    const fiches = fichesCochees();
+    const select = document.getElementById("apercu-variables-fiche");
+    const courant = select.value;
+    select.innerHTML = fiches.map((c) => '<option value="' + c.id + '">' + c.nom.replace(/</g, "&lt;") + "</option>").join("");
+    if (fiches.some((c) => String(c.id) === courant)) select.value = courant;
+    const fiche = fiches.find((c) => String(c.id) === select.value) || fiches[0];
+    const sortie = document.getElementById("apercu-variables-texte");
+    sortie.textContent = fiche ? (titre ? remplacer(titre, fiche) + "\n\n" : "") + remplacer(texte, fiche) : "Sélectionnez d'abord des fiches (étiquettes ci-dessus).";
+    const alerte = document.getElementById("apercu-variables-alerte");
+    const sansVille = /\{\s*ville\s*\}/i.test(texte + " " + titre) ? fiches.filter((c) => !c.ville) : [];
+    alerte.hidden = !sansVille.length;
+    if (sansVille.length) alerte.textContent = "Ville non reconnue pour " + sansVille.length + " fiche(s) : " + sansVille.slice(0, 8).map((c) => c.nom).join(", ") + (sansVille.length > 8 ? "…" : "") + ". Nommez-les « Marque - Ville » ou décochez-les.";
+  }
+  [champTitre, champTexte].forEach((c) => c.addEventListener("input", actualiser));
+  document.getElementById("apercu-variables-fiche").addEventListener("change", actualiser);
+  document.addEventListener("change", (e) => { if (e.target.matches && e.target.matches('#liste-clients-cibles input, .case-filtre-etiquette')) setTimeout(actualiser, 0); });
+  actualiser();
 })();
 </script>
 {% endblock %}
