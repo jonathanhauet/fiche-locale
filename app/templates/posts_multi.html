@@ -284,6 +284,14 @@
     return div.innerHTML;
   }
 
+  // Fiche connue comme non validee (ou inaccessible) : decochee par defaut, a cocher volontairement.
+  function nonValidee(c) { return c.validation === "non_valide" || c.validation === "inaccessible"; }
+  function phraseCompte(correspondants) {
+    const exclues = correspondants.filter(nonValidee).length;
+    return `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.` + (exclues
+      ? ` ${exclues} fiche(s) non validée(s) par Google sont décochées : un post programmé dessus attend sa validation (7 jours au maximum) avant d'être abandonné.` : "");
+  }
+
   function actualiserListe() {
     const etiquettesActives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
     if (!etiquettesActives.length) {
@@ -295,10 +303,10 @@
     const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
     texteAucunClient.hidden = true;
     texteCompteClients.hidden = false;
-    texteCompteClients.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    texteCompteClients.textContent = phraseCompte(correspondants);
     conteneurClients.innerHTML = correspondants.map((c) => `
-      <label class="etiquette-chip-case">
-        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      <label class="etiquette-chip-case${nonValidee(c) ? " puce-non-validee" : ""}" title="${nonValidee(c) ? "Fiche non validée par Google : les posts ne pourront pas être publiés tant qu'elle ne l'est pas" : ""}">
+        <input type="checkbox" name="client_ids" value="${c.id}" ${nonValidee(c) ? "" : "checked"}> ${echapper(c.nom)}${nonValidee(c) ? " <em>(non validée)</em>" : ""}
       </label>
     `).join("");
   }
@@ -321,10 +329,10 @@
     const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => etiquettesActives.includes(id)));
     texteAucunClientMasse.hidden = true;
     texteCompteClientsMasse.hidden = false;
-    texteCompteClientsMasse.textContent = `${correspondants.length} fiche(s) correspondante(s) — décochez celles à exclure.`;
+    texteCompteClientsMasse.textContent = phraseCompte(correspondants);
     conteneurClientsMasse.innerHTML = correspondants.map((c) => `
-      <label class="etiquette-chip-case">
-        <input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}
+      <label class="etiquette-chip-case${nonValidee(c) ? " puce-non-validee" : ""}" title="${nonValidee(c) ? "Fiche non validée par Google : les posts ne pourront pas être publiés tant qu'elle ne l'est pas" : ""}">
+        <input type="checkbox" name="client_ids" value="${c.id}" ${nonValidee(c) ? "" : "checked"}> ${echapper(c.nom)}${nonValidee(c) ? " <em>(non validée)</em>" : ""}
       </label>
     `).join("");
   }

@@ -39,6 +39,9 @@ def _heure_prevue_atteinte(date_prevue: date, heure_prevue: str, maintenant: dat
     return datetime.combine(date_prevue, time(hour=heure, minute=minute)) <= maintenant
 
 
+JOURS_ATTENTE_FICHE_NON_VALIDEE = 7
+
+
 def verifier_et_publier_posts_programmes():
     """Publie automatiquement tous les posts 'A_PUBLIER' dont la date et l'heure prevues sont arrivees."""
     db = SessionLocal()
@@ -64,6 +67,16 @@ def verifier_et_publier_posts_programmes():
 
         for post in posts_a_publier:
             if not post.client.account_id or not post.client.location_id:
+                continue
+
+            # Fiche non validee (ou inaccessible) : Google refuserait la publication. Le post reste programme et
+            # part des que la fiche est validee ; passe JOURS_ATTENTE_FICHE_NON_VALIDEE jours, il est abandonne
+            # (visible comme echec) plutot que de sortir tres en retard, par exemple une offre datee.
+            if post.client.dernier_statut_validation in ("non_valide", "inaccessible"):
+                if (maintenant.date() - post.date_prevue).days > JOURS_ATTENTE_FICHE_NON_VALIDEE:
+                    post.statut = "ECHEC_PUBLICATION"
+                    db.add(models.EvenementPublication(post_id=post.id, etat="FICHE_NON_VALIDEE"))
+                    db.commit()
                 continue
 
             compte_id = post.client.compte_google_id

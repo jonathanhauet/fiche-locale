@@ -1851,7 +1851,7 @@ def _clients_json_avec_etiquettes(db: Session) -> str:
         .all()
     )
     return json.dumps([
-        {"id": c.id, "nom": c.nom, "etiquette_ids": [e.id for e in c.etiquettes], **variables_fiche(c)} for c in clients
+        {"id": c.id, "nom": c.nom, "etiquette_ids": [e.id for e in c.etiquettes], **variables_fiche(c), "validation": c.dernier_statut_validation or ""} for c in clients
     ]).replace("</", "<\\/")
 
 
