@@ -13,7 +13,7 @@
 <div class="bandeau-avertissement">{{ erreur }}</div>
 {% endif %}
 {% if resultat %}
-<div class="bandeau-info">Publication {{ resultat }} avec succès sur les réseaux sélectionnés.</div>
+<div class="bandeau-info">{{ resultat }}</div>
 {% endif %}
 
 {% for brouillon in brouillons_whatsapp_en_attente %}
@@ -476,11 +476,31 @@
   <label for="date-publication">Programmer pour plus tard (optionnel — laisser vide pour publier immédiatement)</label>
   <div class="ligne-champs">
     <input type="date" id="date-publication" name="publier_date">
-    <input type="time" name="publier_heure">
+    <input type="time" id="heure-publication" name="publier_heure">
+  </div>
+  <p id="suggestion-horaire-commune" class="texte-discret" hidden></p>
+
+  <label class="etiquette-chip-case">
+    <input type="checkbox" id="case-horaires-par-reseau">
+    Utiliser un horaire différent selon le réseau
+  </label>
+  <div id="horaires-par-reseau" class="horaires-par-reseau" hidden>
+    <p class="texte-discret">Laissez un champ vide pour reprendre l'horaire commun ci-dessus (ou une publication immédiate s'il est vide aussi).</p>
+    <div id="lignes-horaires-reseau"></div>
   </div>
 
   <button type="submit" class="bouton">Publier / programmer sur les réseaux sélectionnés</button>
 </form>
+<template id="modele-horaire-reseau">
+  <div class="ligne-horaire-reseau" data-reseau="">
+    <span class="badge-reseau badge-reseau-petit"></span>
+    <span class="nom-horaire-reseau"></span>
+    <input type="date" class="champ-date-reseau">
+    <input type="time" class="champ-heure-reseau">
+    <button type="button" class="bouton-secondaire bouton-mini bouton-suggerer-horaire" title="Appliquer l'horaire suggéré pour ce réseau et ce jour">💡 Suggérer</button>
+    <span class="note-horaire-reseau texte-discret"></span>
+  </div>
+</template>
 
 <div class="voile-chargement" id="voile-chargement-publication" hidden>
   <div class="barre-chargement"><div class="barre-chargement-remplissage"></div></div>
@@ -505,6 +525,106 @@
     const bouton = formulaire.querySelector('button[type="submit"]');
     if (bouton) bouton.disabled = true;
   });
+})();
+</script>
+
+<script id="donnees-horaires-recommandes" type="application/json">{{ horaires_recommandes|tojson }}</script>
+<script id="donnees-noms-reseaux" type="application/json">{{ noms_reseaux|tojson }}</script>
+<script>
+(function () {
+  // Horaires par reseau : programmer un meme post a des heures differentes selon le reseau, avec une suggestion
+  // (reperes generalistes, pas mesures sur l'audience du client) applicable en un clic.
+  const HORAIRES = JSON.parse(document.getElementById("donnees-horaires-recommandes").textContent);
+  const NOMS = JSON.parse(document.getElementById("donnees-noms-reseaux").textContent);
+  const INITIALES = { google: "G", facebook: "f", instagram: "IG", linkedin: "in", wordpress: "W" };
+  const NOMS_JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+
+  const champDate = document.getElementById("date-publication");
+  const champHeure = document.getElementById("heure-publication");
+  const suggestionCommune = document.getElementById("suggestion-horaire-commune");
+  const caseParReseau = document.getElementById("case-horaires-par-reseau");
+  const conteneurParReseau = document.getElementById("horaires-par-reseau");
+  const zoneLignes = document.getElementById("lignes-horaires-reseau");
+  const modele = document.getElementById("modele-horaire-reseau");
+  const casesReseaux = Array.from(document.querySelectorAll(".case-reseau-input"));
+  if (!champDate || !modele) return;
+
+  function jourSemaine(valeurDate) {
+    // 0 = lundi ... 6 = dimanche, comme date.weekday() cote serveur.
+    const d = valeurDate ? new Date(valeurDate + "T12:00:00") : new Date();
+    return (d.getDay() + 6) % 7;
+  }
+  function suggestion(reseau, jour) {
+    const table = HORAIRES[reseau];
+    if (!table) return [null, ""];
+    if ("null" in table) return table.null;
+    return table[String(jour)] || [null, ""];
+  }
+  function reseauxCoches() {
+    return casesReseaux.filter((c) => c.checked && !c.disabled).map((c) => c.dataset.reseau);
+  }
+
+  function actualiserResumeCommun() {
+    if (!suggestionCommune) return;
+    if (caseParReseau.checked) { suggestionCommune.hidden = true; return; }
+    const coches = reseauxCoches();
+    if (!coches.length) { suggestionCommune.hidden = true; return; }
+    const jour = jourSemaine(champDate.value);
+    const morceaux = coches.map((r) => {
+      const [heure] = suggestion(r, jour);
+      const nom = NOMS[r] || r;
+      return heure ? `${nom} ${heure.replace(":", "h")}` : `${nom} (à éviter ce jour-là)`;
+    });
+    suggestionCommune.hidden = false;
+    suggestionCommune.textContent = "💡 Suggestions pour " + NOMS_JOURS[jour] + " : " + morceaux.join(" · ")
+      + ". Repères généraux, pas mesurés sur l'audience de ce client — cochez « horaire différent selon le réseau » pour les appliquer.";
+  }
+
+  function ajouterLigne(reseau) {
+    if (zoneLignes.querySelector(`.ligne-horaire-reseau[data-reseau="${reseau}"]`)) return;
+    const frag = modele.content.cloneNode(true);
+    const ligne = frag.querySelector(".ligne-horaire-reseau");
+    ligne.dataset.reseau = reseau;
+    const badge = ligne.querySelector(".badge-reseau");
+    badge.classList.add("badge-reseau-" + reseau);
+    badge.textContent = INITIALES[reseau] || reseau.slice(0, 1).toUpperCase();
+    ligne.querySelector(".nom-horaire-reseau").textContent = NOMS[reseau] || reseau;
+    const champDateR = ligne.querySelector(".champ-date-reseau");
+    const champHeureR = ligne.querySelector(".champ-heure-reseau");
+    champDateR.name = "publier_date_" + reseau;
+    champHeureR.name = "publier_heure_" + reseau;
+    champDateR.value = champDate.value;
+    champHeureR.value = champHeure.value;
+    const note = ligne.querySelector(".note-horaire-reseau");
+    ligne.querySelector(".bouton-suggerer-horaire").addEventListener("click", () => {
+      const jour = jourSemaine(champDateR.value || champDate.value);
+      const [heure, texteNote] = suggestion(reseau, jour);
+      if (heure) champHeureR.value = heure;
+      note.textContent = texteNote || "";
+    });
+    champDateR.addEventListener("change", () => { note.textContent = ""; });
+    zoneLignes.appendChild(ligne);
+  }
+  function synchroniserLignes() {
+    const coches = reseauxCoches();
+    coches.forEach(ajouterLigne);
+    Array.from(zoneLignes.querySelectorAll(".ligne-horaire-reseau")).forEach((l) => {
+      if (!coches.includes(l.dataset.reseau)) l.remove();
+    });
+  }
+
+  caseParReseau.addEventListener("change", () => {
+    conteneurParReseau.hidden = !caseParReseau.checked;
+    if (caseParReseau.checked) synchroniserLignes();
+    else zoneLignes.innerHTML = "";
+    actualiserResumeCommun();
+  });
+  casesReseaux.forEach((c) => c.addEventListener("change", () => {
+    if (caseParReseau.checked) synchroniserLignes();
+    actualiserResumeCommun();
+  }));
+  champDate.addEventListener("change", actualiserResumeCommun);
+  actualiserResumeCommun();
 })();
 </script>
 

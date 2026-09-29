@@ -3231,3 +3231,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .apercu-variables-texte { white-space: pre-wrap; background: var(--fond); border-radius: 8px; padding: 8px 10px; font-size: 0.92em; max-height: 220px; overflow-y: auto; }
 .puce-non-validee { opacity: 0.75; border-style: dashed; }
 .puce-non-validee em { font-size: 0.85em; color: var(--texte-discret); }
+
+.horaires-par-reseau { border: 1px solid var(--carte-bordure); border-radius: 10px; padding: 10px 12px; margin: 8px 0 14px; background: var(--carte); display: flex; flex-direction: column; gap: 8px; }
+.ligne-horaire-reseau { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px dashed var(--carte-bordure); }
+.ligne-horaire-reseau:first-child { border-top: 0; }
+.nom-horaire-reseau { font-weight: 600; min-width: 70px; }
+.note-horaire-reseau { flex-basis: 100%; }

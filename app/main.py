@@ -62,6 +62,7 @@ from . import (
     google_place_actions,
     google_publish,
     google_reviews,
+    horaires_publication,
     ia_visibilite,
     instagram_engagement,
     instagram_oauth,
@@ -6120,6 +6121,25 @@ def _fiches_source_avis(db: Session, client: "models.Client") -> list:
     return [{"id": f.id, "nom": f.nom} for f in fiches]
 
 
+def _message_resultat_publication(reseaux: list, publier_le_par_reseau: dict) -> str:
+    """
+    Phrase de confirmation affichee apres /publier : distingue les reseaux publies tout de suite de ceux
+    programmes (chacun pouvant avoir sa propre date/heure, voir la case "Utiliser un horaire different selon le
+    reseau"), plutot qu'un simple "publie"/"programme" qui ne refletait pas un envoi a heures differentes.
+    """
+    immediats = [r for r in reseaux if not publier_le_par_reseau.get(r)]
+    programmes = [r for r in reseaux if publier_le_par_reseau.get(r)]
+    noms = lambda rs: ", ".join(claude_generation.NOMS_RESEAUX.get(r, r) for r in rs)  # noqa: E731
+    if not programmes:
+        return "Publication publiée avec succès sur les réseaux sélectionnés."
+    if not immediats:
+        horaires = {publier_le_par_reseau[r] for r in programmes}
+        if len(horaires) == 1:
+            return f"Publication programmée avec succès pour le {next(iter(horaires)).strftime('%d/%m/%Y à %H:%M')}."
+        return "Publication programmée avec succès, avec un horaire différent selon le réseau."
+    return f"Publication publiée immédiatement sur {noms(immediats)}, et programmée sur {noms(programmes)}."
+
+
 def _contexte_publication_multi(
     db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
     variantes: dict = None, erreur: str = None, resultat: str = None,
@@ -6353,6 +6373,8 @@ templates.env.globals["titre_pictos"] = titre_photo.PICTOS
 templates.env.globals["titre_cadres"] = titre_photo.CADRES
 templates.env.globals["libelles_decor"] = carrousel_visuel.LIBELLES_DECOR
 templates.env.globals["couleurs_secondaires_client"] = couleurs_secondaires_client
+templates.env.globals["horaires_recommandes"] = horaires_publication.HORAIRES_RECOMMANDES
+templates.env.globals["noms_reseaux"] = claude_generation.NOMS_RESEAUX
 
 
 def _slides_valides(brut) -> dict:
@@ -7630,6 +7652,21 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
         except ValueError:
             return _erreur("Date ou heure de publication invalide.")
 
+    # Horaire different par reseau (facultatif, voir la case "Utiliser un horaire different selon le reseau") :
+    # un champ publier_date_{reseau} rempli remplace la date/heure commune pour ce reseau uniquement ; sans lui,
+    # le reseau suit la date/heure commune (ou est publie immediatement si elle aussi est vide).
+    publier_le_par_reseau = {}
+    for reseau in reseaux:
+        date_r = (formulaire.get(f"publier_date_{reseau}") or "").strip()
+        heure_r = (formulaire.get(f"publier_heure_{reseau}") or "").strip()
+        if not date_r:
+            publier_le_par_reseau[reseau] = publier_le
+            continue
+        try:
+            publier_le_par_reseau[reseau] = datetime.strptime(f"{date_r} {heure_r or '00:00'}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return _erreur(f"Date ou heure de publication invalide pour {claude_generation.NOMS_RESEAUX.get(reseau, reseau)}.")
+
     # Image partagee (optionnelle), televersee une seule fois sur OVH et
     # reutilisee pour chaque reseau sans image dediee. Un fichier choisi a la
     # main est prioritaire ; sinon on reprend l'image deja generee par IA
@@ -7706,31 +7743,32 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
         if not texte:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : texte manquant.")
             continue
+        publier_le_reseau = publier_le_par_reseau[reseau]
         try:
             if reseau == "google":
                 post = models.Post(
                     client_id=client.id, titre=texte[:60], texte=texte, image_url=(urls_par_reseau.get("google") or [""])[0],
                     type_appel_action=type_cta_google, url_appel_action=url_cta_google,
-                    statut="A_PUBLIER" if publier_le else "BROUILLON",
-                    date_prevue=publier_le.date() if publier_le else None,
-                    heure_prevue=publier_le.strftime("%H:%M") if publier_le else None,
+                    statut="A_PUBLIER" if publier_le_reseau else "BROUILLON",
+                    date_prevue=publier_le_reseau.date() if publier_le_reseau else None,
+                    heure_prevue=publier_le_reseau.strftime("%H:%M") if publier_le_reseau else None,
                 )
                 db.add(post)
                 db.commit()
                 db.refresh(post)
-                if not publier_le:
+                if not publier_le_reseau:
                     identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
                     if not identifiants:
                         raise RuntimeError("Google n'est pas connecte pour ce client.")
                     google_publish.publier_et_verifier(db, identifiants, post)
 
             elif reseau == "facebook":
-                if publier_le:
+                if publier_le_reseau:
                     db.add(models.PostMetaProgramme(
                         client_id=client.id, texte=texte,
                         image_url=None if video_url_partagee else meta_publish.champ_depuis_urls(urls_par_reseau.get("facebook")),
                         video_url=video_url_partagee,
-                        publier_le=publier_le,
+                        publier_le=publier_le_reseau,
                     ))
                     db.commit()
                 elif video_url_partagee:
@@ -7743,12 +7781,12 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     _journaliser_publication_meta(db, models.PostMetaProgramme, client.id, texte, urls_par_reseau.get("facebook"))
 
             elif reseau == "instagram":
-                if publier_le:
+                if publier_le_reseau:
                     db.add(models.PostInstagramProgramme(
                         client_id=client.id, texte=texte,
                         image_url=None if video_url_partagee else meta_publish.champ_depuis_urls(urls_par_reseau.get("instagram")),
                         video_url=video_url_partagee,
-                        publier_le=publier_le,
+                        publier_le=publier_le_reseau,
                     ))
                     db.commit()
                 elif video_url_partagee:
@@ -7783,12 +7821,12 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                             octets_document_linkedin = carrousel_visuel.en_pdf(
                                 [Image.open(io.BytesIO(o)) for o in telechargees]
                             )
-                        if not publier_le:  # pour un post programme, seul le PDF (ou la 1re image) est stocke
+                        if not publier_le_reseau:  # pour un post programme, seul le PDF (ou la 1re image) est stocke
                             octets_images_linkedin = telechargees  # repli si LinkedIn refuse le PDF
-                if publier_le:
+                if publier_le_reseau:
                     db.add(models.PostLinkedInProgramme(
                         compte_linkedin_id=compte_linkedin.id, texte=texte,
-                        image_donnees=octets_image_linkedin, video_donnees=octets_video_linkedin, publier_le=publier_le,
+                        image_donnees=octets_image_linkedin, video_donnees=octets_video_linkedin, publier_le=publier_le_reseau,
                         document_donnees=octets_document_linkedin, document_titre=titre_carrousel if octets_document_linkedin else "",
                     ))
                     db.commit()
@@ -7820,15 +7858,15 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 article_cree = wordpress_publish.creer_article(
                     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
                     titre_article, wordpress_publish.markdown_vers_html(corps_article, couleur_marque_client(client)),
-                    publier_le, image_id, wordpress_publish.extrait_depuis_corps(corps_article),
+                    publier_le_reseau, image_id, wordpress_publish.extrait_depuis_corps(corps_article),
                 )
                 # Trace locale, pour que l'article apparaisse dans le resume et l'historique des publications.
                 try:
                     db.add(models.PostWordPress(
                         client_id=client.id, titre=titre_article[:200], texte=corps_article,
                         image_url=urls_wordpress[0] if urls_wordpress else None,
-                        publier_le=publier_le or datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None, second=0, microsecond=0),
-                        wp_id=article_cree.get("id"), lien=article_cree.get("lien") or "", programme=bool(publier_le),
+                        publier_le=publier_le_reseau or datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None, second=0, microsecond=0),
+                        wp_id=article_cree.get("id"), lien=article_cree.get("lien") or "", programme=bool(publier_le_reseau),
                         lien_edition=(
                             f"{wordpress_publish.normaliser_url(client.wordpress_url)}/wp-admin/post.php?post={article_cree['id']}&action=edit"
                             if article_cree.get("id") else ""
@@ -7865,7 +7903,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     return templates.TemplateResponse(
         request, "publication_multi.html",
         _contexte_publication_multi(
-            db, client, resultat=("programmé" if publier_le else "publié"),
+            db, client, resultat=_message_resultat_publication(reseaux, publier_le_par_reseau),
         ),
     )
 
