@@ -126,6 +126,9 @@ class Client(Base):
     # attente cote LinkedIn), donc uniquement pertinent pour un client dont le
     # profil personnel EST la presence a publier (ex: Jonathan lui-meme).
     compte_linkedin_id = Column(Integer, ForeignKey("comptes_linkedin.id"), nullable=True)
+    # Chaine YouTube liee (voir youtube_oauth.py) - compte Google distinct de celui de la fiche Business Profile,
+    # multi-comptes comme CompteGoogle : chaque client peut avoir sa propre chaine.
+    compte_youtube_id = Column(Integer, ForeignKey("comptes_youtube.id"), nullable=True)
     # Numero WhatsApp (format international, ex "33612345678") pour le mode
     # rapide vocal par WhatsApp - voir whatsapp_business.py. Optionnel, non
     # lie a une connexion OAuth (pas de "compte" a proprement parler cote
@@ -635,6 +638,46 @@ class CompteLinkedIn(Base):
     identifiant_membre = Column(String, default="")
     access_token = Column(Text, default="")
     expire_le = Column(DateTime, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class CompteYouTube(Base):
+    """
+    Une chaine YouTube connectee via OAuth Google (voir youtube_oauth.py, scope youtube.upload) - meme identifiant
+    OAuth que la fiche Business Profile (GOOGLE_CLIENT_ID/SECRET), mais une autorisation et une redirection
+    distinctes : reconnecter separement meme si c'est le meme compte Google. Multi-comptes comme CompteGoogle,
+    chaque client peut avoir sa propre chaine. Le refresh token Google se rafraichit indefiniment (contrairement a
+    LinkedIn), tant que l'acces n'a pas ete revoque.
+    """
+
+    __tablename__ = "comptes_youtube"
+
+    id = Column(Integer, primary_key=True)
+    libelle = Column(String, default="")  # e-mail du compte Google connecte
+    channel_id = Column(String, default="")
+    channel_titre = Column(String, default="")
+    refresh_token = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class PostYouTube(Base):
+    """
+    Video publiee ou programmee sur YouTube depuis le composeur multi-reseaux (voir youtube_publish.py) : trace
+    locale uniquement, pour l'afficher dans le resume / l'historique des publications - meme principe que
+    PostWordPress. Une video programmee est mise en "privee" avec status.publishAt : YouTube la rend publique
+    lui-meme a l'heure prevue, pas besoin d'un planificateur local.
+    """
+
+    __tablename__ = "posts_youtube"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    titre = Column(String, default="")
+    texte = Column(Text, default="")
+    video_id = Column(String, nullable=True)
+    lien = Column(String, default="")
+    publier_le = Column(DateTime, nullable=False)
+    programme = Column(Boolean, default=False)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 

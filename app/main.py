@@ -82,10 +82,13 @@ from . import (
     search_console,
     soldes_api,
     veille_actualite,
+    veo_video,
     whatsapp_business,
     wordpress_publish,
     wordpress_style,
     titre_photo,
+    youtube_oauth,
+    youtube_publish,
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
@@ -208,6 +211,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN veille_type TEXT DEFAULT ''"))
         if "themes_actualite" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN themes_actualite TEXT DEFAULT ''"))
+        if "compte_youtube_id" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_youtube_id INTEGER"))
         if "suggestions_sujet_jour" in inspecteur.get_table_names():
             # Anciens sujets tendance des autres clients : ils venaient de la veille SEO, hors sujet pour leur metier.
             connexion.execute(text(
@@ -1272,6 +1277,18 @@ def _publications_multi_reseaux(
             "image_url": article.image_url, "date": article.publier_le.date(), "heure": article.publier_le.strftime("%H:%M"),
             "id": article.id, "a_venir": a_venir, "statut_brut": "EN_ATTENTE" if a_venir else "PUBLIE",
             "statut_libelle": "Programmé" if a_venir else "Publié", "url": article.lien, "lien_edition": article.lien_edition,
+        })
+
+    # Videos YouTube : programmees par YouTube lui-meme (privacyStatus "private" + publishAt), meme principe que
+    # les articles WordPress ci-dessus - pas de table locale "EN_ATTENTE" a gerer, juste une trace pour l'affichage.
+    for video in db.query(models.PostYouTube).filter_by(client_id=client.id).all():
+        a_venir = bool(video.programme and video.publier_le > maintenant_local)
+        lignes.append({
+            "reseau": "youtube", "titre": video.titre[:60] + ("…" if len(video.titre) > 60 else ""),
+            "texte": video.texte or "", "images": [], "image_url": None, "video": True,
+            "date": video.publier_le.date(), "heure": video.publier_le.strftime("%H:%M"),
+            "id": video.id, "a_venir": a_venir, "statut_brut": "EN_ATTENTE" if a_venir else "PUBLIE",
+            "statut_libelle": "Programmé" if a_venir else "Publié", "url": video.lien,
         })
 
     ids_google_connus = {
@@ -6034,6 +6051,112 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
     return RedirectResponse("/linkedin/comptes", status_code=303)
 
 
+# --- Connexion YouTube (OAuth, Data API v3) ---------------------------------
+
+
+@app.get("/youtube/connecter")
+def youtube_connecter(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    redirect_uri = str(request.url_for("youtube_callback"))
+    flow = youtube_oauth.construire_flow(redirect_uri)
+    url_autorisation, state = flow.authorization_url(access_type="offline", prompt="consent")
+    request.session["oauth_yt_state"] = state
+    request.session["oauth_yt_code_verifier"] = flow.code_verifier
+    return RedirectResponse(url_autorisation)
+
+
+@app.get("/youtube/callback", name="youtube_callback")
+def youtube_callback(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    if request.query_params.get("error"):
+        return HTMLResponse(
+            f"Connexion YouTube annulée ou refusée : {request.query_params.get('error_description', '')}",
+            status_code=400,
+        )
+
+    state_attendu = request.session.get("oauth_yt_state")
+    if state_attendu and request.query_params.get("state") != state_attendu:
+        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /youtube/connecter.", status_code=400)
+
+    redirect_uri = str(request.url_for("youtube_callback"))
+    flow = youtube_oauth.construire_flow(redirect_uri, code_verifier=request.session.get("oauth_yt_code_verifier"))
+    try:
+        flow.fetch_token(authorization_response=str(request.url))
+        if not flow.credentials.refresh_token:
+            return HTMLResponse("Google n'a pas renvoye de jeton durable : recommencez depuis /youtube/connecter.", status_code=400)
+        youtube_oauth.enregistrer_compte(db, flow.credentials.refresh_token)
+    except Exception as erreur:
+        return HTMLResponse(f"Echec de la connexion YouTube : {erreur}", status_code=400)
+
+    return RedirectResponse("/youtube/comptes", status_code=303)
+
+
+@app.get("/youtube/comptes", response_class=HTMLResponse)
+def youtube_comptes(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    comptes = youtube_oauth.lister_comptes(db)
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
+    clients_par_compte_id = {c.compte_youtube_id: c for c in clients if c.compte_youtube_id}
+    return templates.TemplateResponse(
+        request, "youtube_comptes.html",
+        {"comptes": comptes, "erreur": None, "clients": clients, "clients_par_compte_id": clients_par_compte_id},
+    )
+
+
+@app.post("/youtube/comptes/{compte_id}/lier")
+def youtube_lier_compte(compte_id: int, request: Request, client_id: int = Form(...), db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteYouTube, compte_id)
+    client = db.get(models.Client, client_id)
+    if compte and client:
+        client.compte_youtube_id = compte.id
+        db.commit()
+
+    return RedirectResponse("/youtube/comptes", status_code=303)
+
+
+@app.post("/youtube/comptes/{compte_id}/deconnecter")
+def youtube_deconnecter_compte(compte_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteYouTube, compte_id)
+    if compte:
+        clients = db.query(models.Client).order_by(models.Client.nom).all()
+        clients_par_compte_id = {c.compte_youtube_id: c for c in clients if c.compte_youtube_id}
+        clients_lies = clients_par_compte_id.get(compte_id)
+        if clients_lies:
+            comptes = youtube_oauth.lister_comptes(db)
+            return templates.TemplateResponse(
+                request, "youtube_comptes.html",
+                {
+                    "comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id,
+                    "erreur": (
+                        f"Impossible de deconnecter ce compte : le client {clients_lies.nom} y est encore "
+                        "rattache. Reliez-le a un autre compte d'abord (ou retirez le lien)."
+                    ),
+                },
+                status_code=400,
+            )
+        db.delete(compte)
+        db.commit()
+
+    return RedirectResponse("/youtube/comptes", status_code=303)
+
+
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---
 
 
@@ -6075,6 +6198,7 @@ def _reseaux_disponibles_client(client: "models.Client") -> dict:
         "instagram": bool(client.instagram_id_meta and client.token_instagram),
         "linkedin": bool(client.compte_linkedin_id),
         "wordpress": bool(client.wordpress_url and client.wordpress_utilisateur and client.wordpress_mot_de_passe),
+        "youtube": bool(client.compte_youtube_id),
     }
 
 
@@ -7611,6 +7735,54 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     })
 
 
+@app.post("/publication-multi/{client_id}/generer_video")
+async def publication_multi_generer_video(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Genere une courte video via Veo (voir veo_video.py) a partir d'un prompt (ou du texte de base si le prompt
+    est vide, voir claude_generation.prompt_video_depuis_texte), avec en option la premiere photo de reference
+    du client comme image de depart. Meme principe que /generer_image : rien n'est encore enregistre en base,
+    on renvoie juste l'URL hebergee sur OVH, prete a servir de video partagee du formulaire. Bloque potentiellement
+    plusieurs minutes (voir veo_video.ATTENTE_MAX_SECONDES) : execute hors du thread principal (run_in_threadpool).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    prompt_video = (donnees.get("prompt_video") or "").strip()
+    texte_post = (donnees.get("texte_post") or "").strip()
+    qualite = donnees.get("qualite") if donnees.get("qualite") in veo_video.MODELES else veo_video.QUALITE_DEFAUT
+    inclure_reference = bool(donnees.get("inclure_reference"))
+
+    prompt_genere = ""
+    if not prompt_video:
+        if not texte_post:
+            return JSONResponse({"erreur": "Ecrivez le texte de base ou decrivez la vidéo souhaitée."}, status_code=400)
+        try:
+            prompt_video = prompt_genere = claude_generation.prompt_video_depuis_texte(texte_post)
+        except Exception as e:
+            return JSONResponse({"erreur": f"Impossible de deduire la description de la vidéo du texte : {e}"}, status_code=500)
+
+    image_depart = None
+    if inclure_reference and client.photos_reference:
+        try:
+            image_depart = _jpeg_normalise(requests.get(client.photos_reference[0].image_url, timeout=20).content, 1536)
+        except Exception:
+            return JSONResponse({"erreur": "Impossible de recuperer la photo de reference."}, status_code=500)
+
+    try:
+        octets_video = await run_in_threadpool(veo_video.generer_video, prompt_video, qualite, image_depart)
+        url_video = _televerser_video_publication(octets_video, "video.mp4", "multi-ia")
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la generation de la vidéo : {e}"}, status_code=500)
+
+    return JSONResponse({"url": url_video, "prompt_utilise": prompt_video if prompt_genere else "", "prompt_genere": prompt_genere})
+
+
 @app.post("/publication-multi/{client_id}/publier", response_class=HTMLResponse)
 async def publication_multi_publier(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -7630,7 +7802,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     formulaire = await request.form()
     reseaux = formulaire.getlist("reseaux")
     texte_base = (formulaire.get("texte_base") or "").strip()
-    variantes_soumises = {r: (formulaire.get(f"texte_{r}") or "").strip() for r in ("google", "facebook", "instagram", "linkedin", "wordpress")}
+    variantes_soumises = {r: (formulaire.get(f"texte_{r}") or "").strip() for r in ("google", "facebook", "instagram", "linkedin", "wordpress", "youtube")}
 
     def _erreur(message, code=400):
         return templates.TemplateResponse(
@@ -7727,6 +7899,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
     # Facebook ou Instagram sont coches (LinkedIn televerse directement les
     # octets a son API, voir plus bas).
     fichier_video = formulaire.get("video")
+    video_url_ia = (formulaire.get("video_url_ia") or "").strip()
     octets_video_partagee = None
     video_url_partagee = None
     if fichier_video is not None and getattr(fichier_video, "filename", ""):
@@ -7738,9 +7911,15 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 _valider_video(octets_video_partagee, fichier_video.filename)
         except ValueError as erreur_video:
             return _erreur(f"Vidéo refusée : {erreur_video}")
+    elif video_url_ia:
+        # Video generee par IA (voir /generer_video, Veo) : deja hebergee sur OVH, pas de nouveau televersement.
+        video_url_partagee = video_url_ia
+        octets_video_partagee = requests.get(video_url_ia, timeout=30).content
 
     if "instagram" in reseaux and not video_url_partagee and not urls_par_reseau.get("instagram"):
         return _erreur("Instagram necessite une image ou une vidéo (partagee ou dediee).")
+    if "youtube" in reseaux and not octets_video_partagee:
+        return _erreur("YouTube necessite une vidéo (televersee ou generee par IA).")
 
     echecs = []
     for reseau in reseaux:
@@ -7880,6 +8059,27 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     db.commit()
                 except Exception:
                     db.rollback()
+
+            elif reseau == "youtube":
+                # Publication video (Short ou video classique) : la premiere ligne du texte devient le titre
+                # YouTube (95 caracteres max, marge sous la limite de 100 de l'API), le reste sert de description.
+                compte_youtube = db.get(models.CompteYouTube, client.compte_youtube_id)
+                if not compte_youtube:
+                    raise RuntimeError("YouTube n'est pas connecte pour ce client.")
+                identifiants_youtube = youtube_oauth.obtenir_identifiants(db, compte_youtube.id)
+                if not identifiants_youtube:
+                    raise RuntimeError("Acces YouTube expire ou revoque : reconnectez la chaîne depuis /youtube/comptes.")
+                titre_video = (texte.splitlines()[0].strip() if texte.strip() else "Vidéo")[:95]
+                resultat_youtube = youtube_publish.publier_video(
+                    identifiants_youtube.token, octets_video_partagee, titre_video, texte, publier_le_reseau,
+                )
+                db.add(models.PostYouTube(
+                    client_id=client.id, titre=titre_video[:200], texte=texte,
+                    video_id=resultat_youtube.get("id", ""), lien=resultat_youtube.get("lien", ""),
+                    publier_le=publier_le_reseau or datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None, second=0, microsecond=0),
+                    programme=bool(publier_le_reseau),
+                ))
+                db.commit()
         except Exception as e:
             echecs.append(f"{claude_generation.NOMS_RESEAUX.get(reseau, reseau)} : {e}")
 

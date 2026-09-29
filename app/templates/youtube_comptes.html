@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% set page_actuelle = "comptes_youtube" %}
+{% block titre %}Comptes YouTube — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Chaînes YouTube connectées</h1>
+  <a class="bouton" href="/youtube/connecter">+ Connecter une chaîne YouTube</a>
+</div>
+
+<p class="texte-vide">
+  Une fois une chaîne reliée à un client, YouTube apparaît comme réseau disponible dans la publication
+  multi-réseaux de ce client (vidéos courtes de type Short, ou vidéos classiques). Aucun formulaire de
+  publication direct ici : tout se fait depuis le composeur, comme pour les autres réseaux.
+</p>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+{% if comptes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique tableau-comptes">
+    <thead>
+      <tr>
+        <th>Chaîne</th>
+        <th>Connecté le</th>
+        <th>Client associé</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for compte in comptes %}
+      {% set client_lie = clients_par_compte_id.get(compte.id) %}
+      <tr>
+        <td>
+          <span class="ligne-compte-reseau">
+            <span class="badge-reseau badge-reseau-youtube badge-reseau-petit">YT</span>
+            {{ compte.libelle }}{% if compte.channel_titre %} ({{ compte.channel_titre }}){% endif %}
+          </span>
+        </td>
+        <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>
+          <div class="cellule-actions-compte">
+            <form method="post" action="/youtube/comptes/{{ compte.id }}/lier">
+              <select name="client_id" required>
+                <option value="" disabled {{ "selected" if not client_lie else "" }}>Choisir un client…</option>
+                {% for client in clients %}
+                <option value="{{ client.id }}" {{ "selected" if client_lie and client_lie.id == client.id else "" }}>{{ client.nom }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
+            </form>
+            <form method="post" action="/youtube/comptes/{{ compte.id }}/deconnecter"
+                  onsubmit="return confirm('Deconnecter cette chaîne YouTube ?');">
+              <button type="submit" class="bouton-danger">Déconnecter</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="etat-vide-carte">
+  <span class="badge-reseau badge-reseau-youtube">YT</span>
+  <p class="texte-vide">Aucune chaîne YouTube connectée pour l'instant.</p>
+</div>
+{% endif %}
+{% endblock %}

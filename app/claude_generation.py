@@ -1422,7 +1422,7 @@ TONS_RESEAUX = {
 
 NOMS_RESEAUX = {
     "google": "Google Business Profile", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn",
-    "wordpress": "WordPress",
+    "wordpress": "WordPress", "youtube": "YouTube",
 }
 
 
@@ -1448,6 +1448,41 @@ def prompt_image_depuis_texte(texte_post: str) -> str:
         "smartphone (cadrage naturel, lumiere naturelle inegale, leger grain, lieu vecu et legerement en desordre, "
         "pas de flou d'arriere-plan artificiel) et non comme une photo de banque d'images. Aucun texte lisible "
         "nulle part (papiers, ecrans, affiches). Evite les cliches d'illustration IA generique (cadenas/bouclier de "
+        "securite, tableau de bord abstrait, ampoule, poignee de main, reseau de points/globe connecte, engrenages) "
+        "sauf si le sujet les impose vraiment. Sans logo, sans reference geographique.\n"
+        "Reponds uniquement par le prompt, en 2 a 3 phrases, sans introduction ni guillemets."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=400, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), "").strip().strip('"')
+    if not texte:
+        raise RuntimeError("L'IA n'a renvoye aucun prompt exploitable.")
+    return _nettoyer_texte_genere(texte)
+
+
+def prompt_video_depuis_texte(texte_post: str) -> str:
+    """
+    Prompt video (en anglais) deduit du texte d'un post ecrit a la main, pour Veo (voir veo_video.py). Meme
+    esprit que prompt_image_depuis_texte : une scene concrete et specifique, pas une metaphore abstraite - mais
+    pensee pour un court plan filme (quelques secondes) plutot qu'une photo fixe.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not texte_post.strip():
+        raise RuntimeError("Aucun texte de post fourni.")
+
+    prompt = (
+        "Voici le texte d'un post pour les reseaux sociaux :\n\n"
+        f"{texte_post.strip()[:2500]}\n\n"
+        "Ecris un prompt, en anglais, pour un generateur de video (quelques secondes, un seul plan) qui illustre "
+        "ce post. Vise une scene concrete et specifique, directement liee a son sujet precis (un lieu, un objet "
+        "ou une situation reconnaissable, pas une metaphore abstraite), decris un mouvement de camera simple et "
+        "realiste (lent traveling, leger zoom, camera fixe) et une action naturelle qui se deroule dans le plan. "
+        "Rendu comme filme sur le vif au smartphone, pas comme une publicite lissee. Aucun texte lisible nulle "
+        "part (papiers, ecrans, affiches). Evite les cliches d'illustration IA generique (cadenas/bouclier de "
         "securite, tableau de bord abstrait, ampoule, poignee de main, reseau de points/globe connecte, engrenages) "
         "sauf si le sujet les impose vraiment. Sans logo, sans reference geographique.\n"
         "Reponds uniquement par le prompt, en 2 a 3 phrases, sans introduction ni guillemets."

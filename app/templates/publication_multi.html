@@ -90,7 +90,7 @@
 
   <label>Réseaux</label>
   <div class="grille-cartes-reseaux">
-    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn (profil personnel)", "in"), ("wordpress", "WordPress (blog)", "W")] %}
+    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn (profil personnel)", "in"), ("wordpress", "WordPress (blog)", "W"), ("youtube", "YouTube", "YT")] %}
     <label class="carte-reseau carte-reseau-{{ reseau }}{{ ' indisponible' if not reseaux_disponibles[reseau] else '' }}">
       <input type="checkbox" name="reseaux" value="{{ reseau }}" class="case-reseau-input" data-reseau="{{ reseau }}"
              {% if not reseaux_disponibles[reseau] %}disabled{% endif %}
@@ -393,12 +393,32 @@
   <input type="hidden" name="titre_carrousel" id="champ-titre-carrousel" value="">
   <p id="texte-statut-image-ia" class="texte-vide" hidden></p>
 
-  <label for="video-partagee">Vidéo (optionnelle — remplace les images ci-dessus pour Facebook, Instagram et LinkedIn)</label>
+  <label for="video-partagee">Vidéo (optionnelle — remplace les images ci-dessus pour Facebook, Instagram, LinkedIn et YouTube)</label>
   <input type="file" id="video-partagee" name="video" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v">
   <p class="texte-discret">
     Fichier MP4 ou MOV, 200 Mo maximum. Publiée en Reel sur Instagram. Google n'est pas concerné (images uniquement).
-    Si une vidéo est choisie, les images ci-dessus ne sont pas utilisées sur ces trois réseaux.
+    Si une vidéo est choisie, les images ci-dessus ne sont pas utilisées sur ces réseaux.
   </p>
+  <div class="ligne-champs">
+    <input type="text" id="prompt-video-ia" placeholder="Description de la vidéo (laissez vide : l'IA la déduit de votre texte de base)" style="flex:1;">
+    <select id="qualite-video-ia" title="Qualité de la vidéo générée">
+      <option value="lite" selected>IA légère (moins chère)</option>
+      <option value="fast">IA rapide (meilleure qualité, plus chère)</option>
+    </select>
+    <button type="button" id="bouton-generer-video" class="bouton-secondaire">
+      <span class="spinner" id="spinner-generer-video" hidden></span>
+      🎬 Générer une vidéo (IA)
+    </button>
+  </div>
+  {% if client.photos_reference %}
+  <label class="etiquette-chip-case">
+    <input type="checkbox" id="case-video-reference">
+    Utiliser une de vos photos de référence comme image de départ
+  </label>
+  {% endif %}
+  <p id="texte-statut-video-ia" class="texte-vide" hidden></p>
+  <video id="apercu-video-ia" controls hidden style="max-width:320px; display:block; margin-bottom:0.5rem;"></video>
+  <input type="hidden" name="video_url_ia" id="champ-video-url-ia" value="">
 
   <button type="button" id="bouton-adapter" class="bouton-secondaire">
     <span class="spinner" id="spinner-adapter" hidden></span>
@@ -407,7 +427,7 @@
   <p id="texte-statut-adaptation" class="texte-vide" hidden></p>
 
   <div id="zone-variantes">
-    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn", "in"), ("wordpress", "WordPress", "W")] %}
+    {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn", "in"), ("wordpress", "WordPress", "W"), ("youtube", "YouTube", "YT")] %}
     <div class="bloc-variante-reseau" data-reseau="{{ reseau }}" {% if reseau not in reseaux_coches %}hidden{% endif %}>
       <div class="colonne-edition-reseau">
         <div class="ligne-label-avec-bouton">
@@ -426,11 +446,20 @@
           par WordPress à la date choisie.
         </p>
         {% endif %}
+        {% if reseau == "youtube" %}
+        <p class="texte-discret">
+          Vidéo obligatoire (voir « Vidéo » ci-dessus, ou générée par IA). La première ligne du texte devient le
+          titre de la vidéo YouTube, le reste sert de description. Publiée tout de suite, ou programmée par YouTube
+          lui-même à la date choisie.
+        </p>
+        {% endif %}
+        {% if reseau != "youtube" %}
         <label>
           <input type="checkbox" class="case-activer-image-dediee" data-reseau="{{ reseau }}">
           Utiliser une image différente pour ce réseau
         </label>
         <input type="file" name="image_{{ reseau }}" accept="image/*" class="champ-image-dediee" data-reseau="{{ reseau }}" hidden>
+        {% endif %}
         {% if reseau == "google" %}
         <label for="select-cta-google">Bouton d'appel à l'action (Google)</label>
         <select id="select-cta-google" name="type_appel_action_google">
@@ -512,12 +541,13 @@
   const voile = document.getElementById("voile-chargement-publication");
   const texte = document.getElementById("texte-voile-chargement-publication");
   const champVideo = document.getElementById("video-partagee");
+  const champVideoUrlIA = document.getElementById("champ-video-url-ia");
   if (!formulaire || !voile) return;
   // "submit" (et non "click" sur le bouton) : ne se declenche qu'une fois le
   // formulaire valide, apres actualiserExigenceTexteBase - jamais affiche si
   // la soumission est bloquee par un champ manquant.
   formulaire.addEventListener("submit", () => {
-    const aVideo = champVideo && champVideo.files && champVideo.files.length > 0;
+    const aVideo = (champVideo && champVideo.files && champVideo.files.length > 0) || (champVideoUrlIA && champVideoUrlIA.value);
     texte.textContent = aVideo
       ? "Publication en cours… l'envoi et le traitement d'une vidéo peuvent prendre plusieurs minutes (surtout pour un Reel Instagram)."
       : "Publication en cours, merci de patienter sans fermer cette page…";
@@ -536,7 +566,7 @@
   // (reperes generalistes, pas mesures sur l'audience du client) applicable en un clic.
   const HORAIRES = JSON.parse(document.getElementById("donnees-horaires-recommandes").textContent);
   const NOMS = JSON.parse(document.getElementById("donnees-noms-reseaux").textContent);
-  const INITIALES = { google: "G", facebook: "f", instagram: "IG", linkedin: "in", wordpress: "W" };
+  const INITIALES = { google: "G", facebook: "f", instagram: "IG", linkedin: "in", wordpress: "W", youtube: "YT" };
   const NOMS_JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
   const champDate = document.getElementById("date-publication");
@@ -1120,7 +1150,64 @@
       }
     });
 
+    const boutonGenererVideo = document.getElementById("bouton-generer-video");
+    const spinnerGenererVideo = document.getElementById("spinner-generer-video");
+    const texteStatutVideoIA = document.getElementById("texte-statut-video-ia");
+    const apercuVideoIA = document.getElementById("apercu-video-ia");
+    const champVideoUrlIA = document.getElementById("champ-video-url-ia");
+    const caseVideoReference = document.getElementById("case-video-reference");
 
+    boutonGenererVideo && boutonGenererVideo.addEventListener("click", async () => {
+      const promptVideo = document.getElementById("prompt-video-ia").value.trim();
+      texteStatutVideoIA.hidden = false;
+      if (!promptVideo && !document.getElementById("texte-base").value.trim()) {
+        texteStatutVideoIA.textContent = "Écrivez d'abord le texte de base, ou décrivez la vidéo souhaitée.";
+        return;
+      }
+
+      boutonGenererVideo.disabled = true;
+      spinnerGenererVideo.hidden = false;
+      texteStatutVideoIA.textContent = "Génération de la vidéo en cours (peut prendre une à quelques minutes)...";
+
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/generer_video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt_video: promptVideo,
+            texte_post: document.getElementById("texte-base").value,
+            qualite: document.getElementById("qualite-video-ia").value,
+            inclure_reference: Boolean(caseVideoReference && caseVideoReference.checked),
+          }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          texteStatutVideoIA.textContent = donnees.erreur || "Échec de la génération de la vidéo.";
+          return;
+        }
+        if (donnees.prompt_genere) document.getElementById("prompt-video-ia").value = donnees.prompt_genere;
+        document.getElementById("video-partagee").value = "";
+        champVideoUrlIA.value = donnees.url;
+        apercuVideoIA.src = donnees.url;
+        apercuVideoIA.hidden = false;
+        texteStatutVideoIA.textContent = "Vidéo générée — visible ci-dessus."
+          + (donnees.prompt_utilise ? " Scène demandée à l'IA : « " + donnees.prompt_utilise + " »" : "");
+      } catch (erreur) {
+        texteStatutVideoIA.textContent = "Erreur réseau lors de la génération de la vidéo.";
+      } finally {
+        boutonGenererVideo.disabled = false;
+        spinnerGenererVideo.hidden = true;
+      }
+    });
+
+    // Un fichier video televerse a la main reste prioritaire (voir le backend) : la video generee par IA
+    // n'a plus lieu d'etre envoyee si l'utilisateur choisit ensuite son propre fichier.
+    document.getElementById("video-partagee").addEventListener("change", (e) => {
+      if (e.target.files && e.target.files.length) {
+        champVideoUrlIA.value = "";
+        apercuVideoIA.hidden = true;
+      }
+    });
 
     // ---- Identite visuelle du client : couleurs, nom, enregistrement automatique ----
     (function () {
@@ -1810,8 +1897,9 @@
     // application du resultat aux champs/apercus concernes.
     async function adapterReseaux(listeReseaux, { onStatut, onFinally } = {}) {
       // WordPress n'est pas une adaptation de post mais un article complet, redige
-      // par genererArticle (voir plus bas) : jamais envoye a /adapter.
-      listeReseaux = listeReseaux.filter((r) => r !== "wordpress");
+      // par genererArticle (voir plus bas) : jamais envoye a /adapter. YouTube n'a pas
+      // de ton dedie (voir TONS_RESEAUX) : le texte de base sert directement de description.
+      listeReseaux = listeReseaux.filter((r) => r !== "wordpress" && r !== "youtube");
       const texteBase = document.getElementById("texte-base").value.trim();
       if (!texteBase) { onStatut && onStatut("Écrivez d'abord le texte de base."); onFinally && onFinally(); return; }
       if (!listeReseaux.length) { onStatut && onStatut("Sélectionnez au moins un réseau."); onFinally && onFinally(); return; }
@@ -1853,7 +1941,7 @@
     boutonAdapter.addEventListener("click", async () => {
       texteStatut.hidden = false;
       const reseauxCoches = casesReseaux.filter((c) => c.checked).map((c) => c.dataset.reseau);
-      const reseauxPosts = reseauxCoches.filter((r) => r !== "wordpress");
+      const reseauxPosts = reseauxCoches.filter((r) => r !== "wordpress" && r !== "youtube");
       const avecArticle = reseauxCoches.includes("wordpress");
       if (!reseauxCoches.length) { texteStatut.textContent = "Sélectionnez au moins un réseau."; return; }
 
