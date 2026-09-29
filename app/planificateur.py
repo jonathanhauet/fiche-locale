@@ -812,3 +812,17 @@ def publier_posts_instagram_programmes():
             db.commit()
     finally:
         db.close()
+
+
+JOURS_CONSERVATION_MESSAGES_WHATSAPP_TRAITES = 7
+
+
+def purger_messages_whatsapp_traites():
+    """Retire les identifiants de messages WhatsApp deja traites de plus de 7 jours (voir models.MessageWhatsAppTraite)."""
+    db = SessionLocal()
+    try:
+        limite = datetime.utcnow() - timedelta(days=JOURS_CONSERVATION_MESSAGES_WHATSAPP_TRAITES)
+        db.query(models.MessageWhatsAppTraite).filter(models.MessageWhatsAppTraite.recu_le < limite).delete()
+        db.commit()
+    finally:
+        db.close()

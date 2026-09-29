@@ -848,6 +848,21 @@ class EtatConversationWhatsApp(Base):
     client = relationship("Client", back_populates="etats_conversation_whatsapp")
 
 
+class MessageWhatsAppTraite(Base):
+    """
+    Identifiants des messages WhatsApp entrants deja traites (voir _traiter_message_whatsapp) : Meta relivre le
+    meme webhook si notre reponse HTTP n'arrive pas assez vite (transcription + generation IA peuvent depasser son
+    delai d'attente), et sans ce garde-fou, le second passage retombe sur un etat de conversation deja consomme et
+    reste bloque en boucle ("Repondez d'abord avec le numero..."). Purge automatiquement les entrees de plus de
+    quelques jours (voir planificateur.py), une simple table de deduplication n'a pas besoin de grandir indefiniment.
+    """
+
+    __tablename__ = "messages_whatsapp_traites"
+
+    id = Column(String, primary_key=True)  # identifiant du message fourni par Meta ("wamid...")
+    recu_le = Column(DateTime, default=datetime.utcnow)
+
+
 class QuestionWhatsAppPosee(Base):
     """
     Historique des questions deja envoyees par WhatsApp a un client (voir

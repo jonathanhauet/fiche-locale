@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -96,6 +96,7 @@ from .planificateur import (
     publier_posts_instagram_programmes,
     publier_posts_linkedin_programmes,
     publier_posts_meta_programmes,
+    purger_messages_whatsapp_traites,
     rafraichir_tokens_instagram,
     verifier_avis_supprimes,
     verifier_et_publier_photos_programmees,
@@ -533,6 +534,14 @@ planificateur.add_job(
     hour=7,
     timezone="Europe/Brussels",
     id="rafraichissement_tokens_instagram",
+)
+# Purge des identifiants de messages WhatsApp deja traites (voir planificateur.purger_messages_whatsapp_traites).
+planificateur.add_job(
+    purger_messages_whatsapp_traites,
+    "cron",
+    hour=4,
+    timezone="Europe/Brussels",
+    id="purge_messages_whatsapp_traites",
 )
 # Publication programmee LinkedIn (voir planificateur.publier_posts_linkedin_programmes) :
 # meme frequence que la publication programmee Google.
@@ -7232,11 +7241,27 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
     avalee : un webhook qui repond une erreur HTTP a Meta declenche des
     reessais automatiques repetes, pire que de simplement ignorer un
     message qu'on n'a pas su traiter.
+
+    Deduplication (voir models.MessageWhatsAppTraite) : Meta relivre le meme webhook si notre traitement prend du
+    temps (transcription + generation IA d'un vocal), et sans elle, le second passage tombe sur un etat de
+    conversation deja consomme par le premier (question_choisie remis a zero) et redemande la question a l'infini.
     """
     numero = message.get("from", "")
     type_message = message.get("type")
+    id_message = message.get("id", "")
     if not numero or not type_message:
         return
+
+    if id_message:
+        if db.get(models.MessageWhatsAppTraite, id_message):
+            return  # deja traite (webhook relivre par Meta) : on ignore, la reponse est deja partie
+        db.add(models.MessageWhatsAppTraite(id=id_message))
+        try:
+            db.commit()
+        except Exception:
+            # Deux passages concurrents sur le meme message (rare) : l'autre l'a pris en charge en premier.
+            db.rollback()
+            return
 
     client = db.query(models.Client).filter(models.Client.numero_whatsapp == numero).first()
     if not client:
@@ -7369,9 +7394,14 @@ def _traiter_statut_whatsapp(statut: dict) -> None:
         notifications.notifier("Statut message WhatsApp", f"{etat} - vers {destinataire}")
 
 
-@app.post("/whatsapp/webhook")
-async def whatsapp_webhook_reception(request: Request, db: Session = Depends(obtenir_session)):
-    donnees = await request.json()
+def _traiter_donnees_whatsapp(donnees: dict) -> None:
+    """
+    Contenu d'un webhook WhatsApp, traite en tache de fond (voir whatsapp_webhook_reception) : la transcription et
+    la generation IA d'un vocal peuvent prendre plusieurs secondes, largement plus que le delai que Meta accorde
+    avant de relivrer le meme webhook - on accuse reception tout de suite et on traite ensuite, avec sa propre
+    session DB (celle de la requete est deja fermee une fois la reponse envoyee).
+    """
+    db = SessionLocal()
     try:
         for entree in donnees.get("entry", []):
             for changement in entree.get("changes", []):
@@ -7382,6 +7412,14 @@ async def whatsapp_webhook_reception(request: Request, db: Session = Depends(obt
                     _traiter_statut_whatsapp(statut)
     except Exception:
         pass
+    finally:
+        db.close()
+
+
+@app.post("/whatsapp/webhook")
+async def whatsapp_webhook_reception(request: Request, taches_fond: BackgroundTasks):
+    donnees = await request.json()
+    taches_fond.add_task(_traiter_donnees_whatsapp, donnees)
     return JSONResponse({"status": "ok"})
 
 
