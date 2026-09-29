@@ -1164,6 +1164,22 @@ def _journaliser_publication_linkedin(db: Session, compte_linkedin_id: int, text
     db.commit()
 
 
+def _apercu_image_linkedin(octets: bytes, cote_max: int = 240) -> str:
+    """
+    Miniature (data URI base64) d'une image LinkedIn stockee en octets en base (pas d'URL publique, contrairement
+    aux autres reseaux - voir PostLinkedInProgramme.image_donnees) : reduite pour ne pas alourdir la page du resume
+    ou plusieurs publications LinkedIn peuvent s'afficher a la fois. "" si l'image est illisible.
+    """
+    try:
+        image = Image.open(io.BytesIO(octets)).convert("RGB")
+        image.thumbnail((cote_max, cote_max))
+        tampon = io.BytesIO()
+        image.save(tampon, "JPEG", quality=70)
+        return "data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode()
+    except Exception:
+        return ""
+
+
 def _publications_multi_reseaux(
     db: Session, client: "models.Client", limite: int = 30, posts_google_en_ligne: list = None, avec_externes: bool = True,
 ) -> list:
@@ -1218,12 +1234,14 @@ def _publications_multi_reseaux(
 
     if client.compte_linkedin_id:
         for post in db.query(models.PostLinkedInProgramme).filter_by(compte_linkedin_id=client.compte_linkedin_id).all():
+            # L'image LinkedIn est stockee en octets (pas d'URL publique) : miniature calculee a la volee pour l'afficher.
+            apercu_linkedin = _apercu_image_linkedin(post.image_donnees) if post.image_donnees and not post.video_donnees else ""
             lignes.append({
                 "reseau": "linkedin",
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
                 "texte": post.texte or "",
-                "images": [],
-                "image_url": None,  # stockee en octets, pas d'URL directe (voir PostLinkedInProgramme)
+                "images": [apercu_linkedin] if apercu_linkedin else [],
+                "image_url": apercu_linkedin or None,
                 "video": bool(post.video_donnees),
                 "date": post.publier_le.date(),
                 "heure": post.publier_le.strftime("%H:%M"),
