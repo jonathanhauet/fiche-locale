@@ -1705,6 +1705,7 @@ OPTIONS_VISUEL = {
     "personnes": [
         ("moi", "Moi", "the person from the reference photos is the main subject"),
         ("moi_client", "Moi avec un client ou un collègue", "the person from the reference photos interacting naturally with a second, different person (a client or a colleague, who is NOT the reference person)"),
+        ("lieu_reference", "Le lieu / bâtiment (photos de référence)", "the exact place shown in the reference photos is the subject"),
         ("mains", "Mes mains seulement", "only hands are visible, no face"),
         ("personne", "Personne", "no people at all"),
         ("equipe", "Une équipe", "a small team of two to four people working together, faces not the focus"),
@@ -1712,15 +1713,20 @@ OPTIONS_VISUEL = {
 }
 LIBELLES_GROUPES_VISUEL = {
     "type": "Type de visuel", "illustration": "Style d'illustration", "cadrage": "Cadrage", "decor": "Décor", "lumiere": "Lumière et ambiance",
-    "personnes": "Qui apparaît",
+    "personnes": "Qui ou quoi apparaît",
 }
-# Le type impose des limites : ces types ne montrent pas de visage, donc jamais les photos de reference.
+# Le type impose des limites : ces types ne montrent pas de visage, donc jamais les photos de reference d'un
+# visage - sauf "lieu_reference", qui a justement pour but de montrer le lieu (voir REFERENCE_LIEU ci-dessous).
 TYPES_SANS_VISAGE = {"detail", "lieu"}
 # Parmi les styles d'illustration, seul le schema (diagramme, formes et fleches) n'a pas de personnage :
 # les autres (BD, humour, aquarelle...) peuvent tres bien mettre en scene la personne des photos de reference.
 ILLUSTRATIONS_SANS_VISAGE = {"schema"}
 PERSONNES_AVEC_REFERENCE = {"moi", "moi_client"}
 PERSONNES_SANS_REFERENCE = {"mains", "personne", "equipe"}
+# Photos de reference d'un lieu (chantier, programme immobilier...) plutot que d'un visage : memes photos de
+# reference client (voir models.PhotoReferenceClient), mais reutilisees pour reproduire fidelement un lieu/batiment
+# plutot qu'une personne - jamais soumises aux memes limites que les photos de visage (TYPES_SANS_VISAGE).
+REFERENCE_LIEU = {"lieu_reference"}
 
 
 def _index_options(groupe: str) -> dict:
@@ -1838,7 +1844,20 @@ def prompt_image_avec_options(
             libelle = {"cadrage": "Framing", "decor": "Setting", "lumiere": "Light and mood"}[groupe]
             lignes.append(f"- {libelle}: " + "; ".join(consignes) + ".")
     personnes = choix["personnes"]
-    if avec_reference and personnes not in PERSONNES_SANS_REFERENCE:
+    if personnes in REFERENCE_LIEU:
+        if avec_reference:
+            consigne_style = (
+                " Render it fully in the chosen illustration style (not a photo pasted in) while keeping it clearly recognizable."
+                if choix["type"] == "illustration" else ""
+            )
+            lignes.append(
+                "- Place: this must be the exact building/place shown in the reference photos, never a different one. "
+                "Reproduce its real architecture, materials, proportions, colors and surroundings faithfully. You may "
+                "change the angle, the time of day, the season, the weather, or add people/staging/furnishings if the "
+                f"scene calls for it, but the building itself must stay accurate and recognizable.{consigne_style}"
+            )
+        # Sans photo de reference disponible, rien a ajouter : l'IA improvise le lieu a partir du texte seul.
+    elif avec_reference and personnes not in PERSONNES_SANS_REFERENCE:
         consigne = _index_options("personnes")[personnes][1] if personnes in PERSONNES_AVEC_REFERENCE else _index_options("personnes")["moi"][1]
         consigne_style = (
             " Draw them as a character fully rendered in the chosen illustration style (not a photo pasted in), "

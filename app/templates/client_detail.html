@@ -243,7 +243,7 @@
   </div>
 
   <div class="choix-image-bloc">
-    <span class="choix-image-titre">Photos de référence (pour apparaître dans les images générées par l'IA)</span>
+    <span class="choix-image-titre">Photos de référence (pour réutiliser un visage, un lieu ou un bâtiment dans les images générées par l'IA)</span>
     {% if client.photos_reference %}
     <div class="grille-photos-reference">
       {% for photo in client.photos_reference %}
@@ -264,7 +264,7 @@
       <button type="submit" class="bouton-secondaire">Ajouter</button>
     </form>
     {% endif %}
-    <p class="texte-discret">3 à 5 photos sous différents angles, bien visible et bien éclairé. 5 maximum. Utilisées uniquement quand la case "M'inclure dans l'image" est cochée au moment de générer une image.</p>
+    <p class="texte-discret">3 à 5 photos sous différents angles, bien visibles et bien éclairées (un visage, ou un lieu/bâtiment à reproduire fidèlement — par exemple un programme immobilier). 5 maximum. Utilisées selon le choix fait dans « Qui ou quoi apparaît » au moment de générer une image.</p>
   </div>
 
   {% if client.numero_whatsapp and client.whatsapp_opt_in_confirme %}

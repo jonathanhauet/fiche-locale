@@ -1093,7 +1093,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt_image: promptImage,
-            inclure_reference: !!document.querySelector('input[name="visuel-personnes"][value^="moi"]:checked'),
+            inclure_reference: ["moi", "moi_client", "lieu_reference"].includes((document.querySelector('input[name="visuel-personnes"]:checked') || {}).value),
             options: options,
             texte_post: document.getElementById("texte-base").value,
           }),

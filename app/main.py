@@ -7515,18 +7515,23 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier) or texte_fr
     avertissement = ""
     if avec_options:
-        # Un type sans visage (detail, lieu, schema dessine) ou "qui apparait" sans moi : pas de photos de reference.
-        # Les autres styles d'illustration (BD, humour...) peuvent tres bien mettre en scene la personne.
-        type_sans_visage = (
-            choix["type"] in claude_generation.TYPES_SANS_VISAGE
-            or (choix["type"] == "illustration" and choix.get("illustration") in claude_generation.ILLUSTRATIONS_SANS_VISAGE)
-        )
-        if type_sans_visage or choix["personnes"] in claude_generation.PERSONNES_SANS_REFERENCE:
-            if inclure_reference:
-                avertissement = "Ce choix de visuel n'affiche pas de visage : vos photos de reference n'ont pas ete utilisees."
-            inclure_reference = False
-        elif choix["personnes"] in claude_generation.PERSONNES_AVEC_REFERENCE:
+        if choix["personnes"] in claude_generation.REFERENCE_LIEU:
+            # Photos de reference d'un lieu/batiment (pas un visage) : jamais soumises aux limites ci-dessous,
+            # qui n'existent que pour eviter de gaspiller une photo de visage sur un cadrage qui ne le montrerait pas.
             inclure_reference = bool(client.photos_reference)
+        else:
+            # Un type sans visage (detail, lieu, schema dessine) ou "qui apparait" sans moi : pas de photos de reference.
+            # Les autres styles d'illustration (BD, humour...) peuvent tres bien mettre en scene la personne.
+            type_sans_visage = (
+                choix["type"] in claude_generation.TYPES_SANS_VISAGE
+                or (choix["type"] == "illustration" and choix.get("illustration") in claude_generation.ILLUSTRATIONS_SANS_VISAGE)
+            )
+            if type_sans_visage or choix["personnes"] in claude_generation.PERSONNES_SANS_REFERENCE:
+                if inclure_reference:
+                    avertissement = "Ce choix de visuel n'affiche pas de visage : vos photos de reference n'ont pas ete utilisees."
+                inclure_reference = False
+            elif choix["personnes"] in claude_generation.PERSONNES_AVEC_REFERENCE:
+                inclure_reference = bool(client.photos_reference)
 
     # Texte saisi a la main : pas de prompt d'image fourni par un generateur,
     # on le deduit du texte (et le navigateur l'affiche pour qu'on puisse l'ajuster).
