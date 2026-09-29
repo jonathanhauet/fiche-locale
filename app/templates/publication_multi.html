@@ -287,8 +287,11 @@
             <select id="tp-source" title="Fiche Google dont on prend les photos" style="width:auto;max-width:100%;">{% for fiche in fiches_source_avis %}<option value="{{ fiche.id }}">{{ fiche.nom }}</option>{% endfor %}</select>
             <button type="button" id="tp-photos-fiche" class="bouton-secondaire">📷 Photos de la fiche</button>
             {% endif %}
+            <button type="button" id="tp-photos-whatsapp" class="bouton-secondaire" title="Photos de chantier ou autres reçues par WhatsApp pour ce client">📱 Photos WhatsApp</button>
           </div>
           <div id="tp-photos-fiche-grille" class="avis-photos-fiche" hidden></div>
+          <div id="tp-photos-whatsapp-grille" class="avis-photos-fiche" hidden></div>
+          <p id="tp-ordre-aide" class="texte-discret" hidden>Utilisez les flèches ‹ › sous chaque vignette pour remettre les photos dans l'ordre (ex. avant / pendant / après).</p>
           <div id="tp-photos-choisies" class="tp-photos-choisies"></div>
           <label id="tp-titre-photo-label" class="tp-titre-photo-label" hidden>Titre propre à la photo sélectionnée (facultatif, sinon le titre commun)
             <input type="text" id="tp-titre-photo" maxlength="120">
@@ -1483,17 +1486,34 @@
       }
 
       // ----- photos -----
+      function deplacerPhoto(i, decalage) {
+        const j = i + decalage;
+        if (j < 0 || j >= photos.length) return;
+        [photos[i], photos[j]] = [photos[j], photos[i]];
+        if (index === i) index = j; else if (index === j) index = i;
+        afficherPhotos(); modifie();
+      }
       function afficherPhotos() {
         const zone = $("tp-photos-choisies"); zone.innerHTML = "";
         photos.forEach((p, i) => {
           const cellule = document.createElement("div"); cellule.className = "tp-photo" + (i === index ? " tp-photo-active" : "");
           const img = document.createElement("img"); img.src = p.miniature || p.url; img.alt = "Photo " + (i + 1);
           img.addEventListener("click", () => { index = i; afficherPhotos(); demanderApercu(); });
-          const retirer = document.createElement("button"); retirer.type = "button"; retirer.textContent = "✕"; retirer.title = "Retirer cette photo";
+          const retirer = document.createElement("button"); retirer.type = "button"; retirer.className = "tp-photo-retirer"; retirer.textContent = "✕"; retirer.title = "Retirer cette photo";
           retirer.addEventListener("click", () => { photos.splice(i, 1); index = Math.max(0, Math.min(index, photos.length - 1)); afficherPhotos(); modifie(); });
-          cellule.append(img, retirer); zone.appendChild(cellule);
+          cellule.append(img, retirer);
+          if (photos.length > 1) {
+            const ordre = document.createElement("div"); ordre.className = "tp-photo-ordre";
+            const gauche = document.createElement("button"); gauche.type = "button"; gauche.textContent = "‹"; gauche.title = "Déplacer avant"; gauche.disabled = i === 0;
+            gauche.addEventListener("click", (e) => { e.stopPropagation(); deplacerPhoto(i, -1); });
+            const droite = document.createElement("button"); droite.type = "button"; droite.textContent = "›"; droite.title = "Déplacer après"; droite.disabled = i === photos.length - 1;
+            droite.addEventListener("click", (e) => { e.stopPropagation(); deplacerPhoto(i, 1); });
+            ordre.append(gauche, droite); cellule.appendChild(ordre);
+          }
+          zone.appendChild(cellule);
         });
         $("tp-titre-photo-label").hidden = photos.length < 2;
+        $("tp-ordre-aide").hidden = photos.length < 2;
         if (photos.length > 1) $("tp-titre-photo").value = photos[index].titre || "";
         $("tp-navigation").hidden = photos.length < 2;
         $("tp-position-photo").textContent = photos.length ? "Photo " + (index + 1) + " / " + photos.length : "";
@@ -1585,6 +1605,21 @@
             grille.appendChild(img);
           });
           message("Cliquez sur une ou plusieurs photos pour les ajouter.");
+        } catch (e) { message(e.message); }
+      });
+      $("tp-photos-whatsapp").addEventListener("click", async () => {
+        message("Lecture des photos reçues par WhatsApp...");
+        try {
+          const donnees = await appeler("/publication-multi/{{ client.id }}/photos-whatsapp");
+          const grille = $("tp-photos-whatsapp-grille"); grille.innerHTML = ""; grille.hidden = false;
+          if (!donnees.photos.length) { message("Aucune photo reçue par WhatsApp pour ce client pour l'instant."); return; }
+          donnees.photos.forEach((p) => {
+            const img = document.createElement("img");
+            img.src = p.miniature; img.alt = "Photo reçue par WhatsApp"; img.title = "Ajouter cette photo";
+            img.addEventListener("click", () => ajouterPhoto(p.url, p.miniature));
+            grille.appendChild(img);
+          });
+          message("Cliquez sur une ou plusieurs photos pour les ajouter (les plus récentes en premier).");
         } catch (e) { message(e.message); }
       });
       $("tp-titre-photo").addEventListener("input", () => { if (photos[index]) { photos[index].titre = $("tp-titre-photo").value; modifie(); } });

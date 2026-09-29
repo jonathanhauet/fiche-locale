@@ -3199,7 +3199,10 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .tp-photo { position: relative; flex-shrink: 0; }
 .tp-photo img { height: 84px; width: auto; border-radius: 8px; border: 2px solid transparent; cursor: pointer; display: block; }
 .tp-photo-active img { border-color: var(--accent); }
-.tp-photo button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: #444; color: #fff; font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.tp-photo-retirer { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: #444; color: #fff; font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.tp-photo-ordre { display: flex; justify-content: space-between; margin-top: 3px; }
+.tp-photo-ordre button { border: 1px solid var(--carte-bordure); background: var(--fond); color: inherit; border-radius: 5px; width: 26px; height: 20px; line-height: 1; font-size: 13px; cursor: pointer; padding: 0; }
+.tp-photo-ordre button:disabled { opacity: 0.3; cursor: default; }
 .tp-titre-photo-label { display: block; margin-top: 6px; font-size: 0.9em; }
 .tp-mots { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .tp-mot { border: 1px solid var(--carte-bordure); background: var(--fond); color: inherit; border-radius: 999px; padding: 4px 12px; cursor: pointer; font: inherit; }

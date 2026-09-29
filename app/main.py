@@ -6766,6 +6766,20 @@ def publication_multi_avis_photos(client_id: int, request: Request, source: int 
     return JSONResponse({"photos": [{"url": p["url"], "miniature": p.get("miniature") or p["url"], "categorie": p.get("categorie", "")} for p in utiles]})
 
 
+@app.get("/publication-multi/{client_id}/photos-whatsapp")
+def publication_multi_photos_whatsapp(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Photos recues par WhatsApp pour ce client (voir models.PhotoWhatsAppRecue), les plus recentes d'abord."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    if not db.get(models.Client, client_id):
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    photos = (
+        db.query(models.PhotoWhatsAppRecue).filter_by(client_id=client_id)
+        .order_by(models.PhotoWhatsAppRecue.cree_le.desc()).limit(40).all()
+    )
+    return JSONResponse({"photos": [{"url": p.image_url, "miniature": p.image_url} for p in photos]})
+
+
 @app.post("/publication-multi/{client_id}/avis/visuel")
 async def publication_multi_avis_visuel(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Dessine le visuel de l'avis. mode "apercu" : image en base64 ; mode "final" : JPEG heberge sur OVH (URL renvoyee)."""
@@ -7299,6 +7313,10 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             extension = ".png" if "png" in mime else ".jpg"
             nom_fichier = f"whatsapp_{client.id}_{uuid.uuid4().hex[:10]}{extension}"
             url_image = ovh_upload.envoyer_octets(octets, nom_fichier)
+            # Conservee independamment de l'etat de conversation (voir models.PhotoWhatsAppRecue) : plusieurs
+            # photos envoyees a la suite (chantier, avant/apres...) restent toutes disponibles dans le composeur,
+            # meme si une seule sert au post genere automatiquement ci-dessous.
+            db.add(models.PhotoWhatsAppRecue(client_id=client.id, image_url=url_image))
             etat.image_url = url_image
             etat.maj_le = datetime.utcnow()
             # Photo envoyee APRES le vocal (l'etat a deja ete supprime puis
@@ -7318,7 +7336,9 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             db.commit()
             try:
                 whatsapp_business.envoyer_message_texte(
-                    numero, "Photo bien reçue 📸 (si vous en aviez déjà envoyé une, celle-ci la remplace).",
+                    numero,
+                    "Photo bien reçue 📸 (utilisée pour le prochain post ; les précédentes restent disponibles "
+                    "dans le composeur pour vos carrousels).",
                 )
             except Exception:
                 pass

@@ -923,6 +923,23 @@ class BrouillonWhatsApp(Base):
     client = relationship("Client", back_populates="brouillons_whatsapp")
 
 
+class PhotoWhatsAppRecue(Base):
+    """
+    Chaque photo recue par WhatsApp pour un client (chantier, avant/apres...), conservee independamment du
+    brouillon genere par le vocal (qui n'en garde qu'une seule, voir BrouillonWhatsApp.image_url) - sans cette
+    table, un client qui envoie plusieurs photos a la suite les perdait toutes sauf la derniere (chaque nouvelle
+    photo ecrasait EtatConversationWhatsApp.image_url). Proposees dans le composeur (carrousel, titre sur photo)
+    comme source de photos, au meme titre que celles de la fiche Google.
+    """
+
+    __tablename__ = "photos_whatsapp_recues"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    image_url = Column(String, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class PhotoReferenceClient(Base):
     """
     Photo de reference du client (visage, sous differents angles), fournie
