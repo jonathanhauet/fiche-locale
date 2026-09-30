@@ -614,6 +614,7 @@
 
 <script id="donnees-horaires-recommandes" type="application/json">{{ horaires_recommandes|tojson }}</script>
 <script id="donnees-noms-reseaux" type="application/json">{{ noms_reseaux|tojson }}</script>
+<script id="donnees-images-deja-utilisees" type="application/json">{{ images_deja_utilisees_json|safe }}</script>
 <script>
 (function () {
   // Horaires par reseau : programmer un meme post a des heures differentes selon le reseau, avec une suggestion
@@ -892,6 +893,20 @@
       const statutPhotos = document.getElementById("texte-statut-photos-principal");
       function message(texte) { statutPhotos.hidden = false; statutPhotos.textContent = texte; }
 
+      // Photos deja utilisees dans une publication recente (tous reseaux, voir _images_deja_utilisees) : signalees
+      // pour eviter une repetition visuelle, sans empecher de les reutiliser quand meme si besoin.
+      const URLS_DEJA_UTILISEES = new Set(JSON.parse(document.getElementById("donnees-images-deja-utilisees").textContent));
+      function creerVignettePhoto(p, alt) {
+        const img = document.createElement("img");
+        img.src = p.miniature; img.alt = alt;
+        img.title = URLS_DEJA_UTILISEES.has(p.url)
+          ? "⚠ Déjà utilisée dans une publication récente — cliquez pour l'ajouter quand même"
+          : "Ajouter cette photo au post";
+        if (URLS_DEJA_UTILISEES.has(p.url)) img.classList.add("photo-deja-utilisee");
+        img.addEventListener("click", () => ajouterImagePrincipale(p.url));
+        return img;
+      }
+
       const boutonFichePrincipal = document.getElementById("bouton-photos-fiche-principal");
       boutonFichePrincipal && boutonFichePrincipal.addEventListener("click", async () => {
         message("Lecture des photos de la fiche...");
@@ -903,13 +918,8 @@
           const grille = document.getElementById("grille-photos-fiche-principal");
           grille.innerHTML = ""; grille.hidden = false;
           if (!donnees.photos.length) { message("Aucune photo sur cette fiche."); return; }
-          donnees.photos.forEach((p) => {
-            const img = document.createElement("img");
-            img.src = p.miniature; img.alt = "Photo de la fiche"; img.title = "Ajouter cette photo au post";
-            img.addEventListener("click", () => ajouterImagePrincipale(p.url));
-            grille.appendChild(img);
-          });
-          message("Cliquez sur une ou plusieurs photos pour les ajouter au post.");
+          donnees.photos.forEach((p) => grille.appendChild(creerVignettePhoto(p, "Photo de la fiche")));
+          message("Cliquez sur une ou plusieurs photos pour les ajouter au post. Bordure orange : déjà utilisée récemment.");
         } catch (e) { message("Erreur réseau lors de la lecture des photos."); }
       });
 
@@ -923,13 +933,8 @@
           const grille = document.getElementById("grille-photos-whatsapp-principal");
           grille.innerHTML = ""; grille.hidden = false;
           if (!donnees.photos.length) { message("Aucune photo reçue par WhatsApp pour ce client pour l'instant."); return; }
-          donnees.photos.forEach((p) => {
-            const img = document.createElement("img");
-            img.src = p.miniature; img.alt = "Photo reçue par WhatsApp"; img.title = "Ajouter cette photo au post";
-            img.addEventListener("click", () => ajouterImagePrincipale(p.url));
-            grille.appendChild(img);
-          });
-          message("Cliquez sur une ou plusieurs photos pour les ajouter au post (les plus récentes en premier).");
+          donnees.photos.forEach((p) => grille.appendChild(creerVignettePhoto(p, "Photo reçue par WhatsApp")));
+          message("Cliquez sur une ou plusieurs photos pour les ajouter au post (les plus récentes en premier). Bordure orange : déjà utilisée récemment.");
         } catch (e) { message("Erreur réseau lors de la lecture des photos."); }
       });
     })();

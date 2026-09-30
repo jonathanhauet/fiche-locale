@@ -6331,6 +6331,18 @@ def _message_resultat_publication(reseaux: list, publier_le_par_reseau: dict) ->
     return f"Publication publiée immédiatement sur {noms(immediats)}, et programmée sur {noms(programmes)}."
 
 
+def _images_deja_utilisees(db: Session, client: "models.Client", limite: int = NB_POSTS_RECENTS_PHOTO) -> set:
+    """
+    URLs d'images utilisees dans les publications les plus recentes de ce client, tous reseaux confondus (voir
+    _publications_multi_reseaux) - pour avertir si on s'apprete a reutiliser la meme photo dans le composeur
+    (meme principe que client_detail.html, mais limite a Google jusqu'ici). Comparaison par URL exacte : une
+    publication hors plateforme (avec_externes=False ici, pour rester rapide) ou dont l'hebergement a change
+    d'URL entre temps ne sera pas detectee - ne se trompe jamais dans l'autre sens.
+    """
+    lignes = _publications_multi_reseaux(db, client, limite=limite, avec_externes=False)
+    return {url for ligne in lignes for url in (ligne.get("images") or []) if url and url.startswith("http")}
+
+
 def _contexte_publication_multi(
     db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
     variantes: dict = None, erreur: str = None, resultat: str = None,
@@ -6362,6 +6374,7 @@ def _contexte_publication_multi(
             db.query(models.BrouillonWhatsApp).filter_by(client_id=client.id).order_by(models.BrouillonWhatsApp.id).all()
         ),
         "pistes_musicales": db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all(),
+        "images_deja_utilisees_json": json.dumps(sorted(_images_deja_utilisees(db, client))),
     }
 
 
