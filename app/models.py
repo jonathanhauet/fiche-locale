@@ -681,6 +681,22 @@ class PostYouTube(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class PisteMusicale(Base):
+    """
+    Musique de fond libre de droits, televersee par l'agence (voir montage_video.py) pour le montage video
+    (diaporama de photos ou clip IA + texte incruste + musique). Partagee entre tous les clients - la licence de
+    chaque piste est verifiee par l'agence avant televersement, pas par la plateforme.
+    """
+
+    __tablename__ = "pistes_musicales"
+
+    id = Column(Integer, primary_key=True)
+    nom = Column(String, default="")
+    fichier_url = Column(String, default="")
+    duree_secondes = Column(Float, default=0.0)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class PostLinkedInProgramme(Base):
     """
     Post LinkedIn en attente de publication a une date/heure future (voir

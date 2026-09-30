@@ -420,6 +420,34 @@
   <video id="apercu-video-ia" controls hidden style="max-width:320px; display:block; margin-bottom:0.5rem;"></video>
   <input type="hidden" name="video_url_ia" id="champ-video-url-ia" value="">
 
+  <details class="options-visuel">
+    <summary>🎬 Monter une vidéo (texte incrusté + musique)</summary>
+    <p class="texte-discret">
+      À partir de vos propres photos (diaporama) ou de la vidéo déjà présente ci-dessus (générée par IA ou
+      téléversée) : ajoute un texte incrusté et une musique de fond, prêt à publier. Sans musique choisie, la
+      vidéo reste muette (le son d'origine d'une vidéo de départ n'est pas conservé).
+    </p>
+    <label for="photos-montage">Vos photos (diaporama — laissez vide pour utiliser la vidéo ci-dessus à la place)</label>
+    <input type="file" id="photos-montage" name="photos_montage" accept="image/*" multiple>
+    <label for="texte-montage">Texte incrusté (court, une ligne)</label>
+    <input type="text" id="texte-montage" maxlength="70" placeholder="Ex : Promo de la semaine !">
+    <label for="musique-montage">Musique de fond (optionnelle)</label>
+    <select id="musique-montage">
+      <option value="">Aucune musique</option>
+      {% for piste in pistes_musicales %}
+      <option value="{{ piste.id }}">{{ piste.nom }}</option>
+      {% endfor %}
+    </select>
+    {% if not pistes_musicales %}
+    <p class="texte-discret">Aucune piste dans la <a href="/musiques" target="_blank">bibliothèque musicale</a> pour l'instant.</p>
+    {% endif %}
+    <button type="button" id="bouton-monter-video" class="bouton-secondaire">
+      <span class="spinner" id="spinner-monter-video" hidden></span>
+      🎬 Assembler le montage
+    </button>
+    <p id="texte-statut-montage" class="texte-vide" hidden></p>
+  </details>
+
   <button type="button" id="bouton-adapter" class="bouton-secondaire">
     <span class="spinner" id="spinner-adapter" hidden></span>
     🤖 Adapter le texte par réseau (IA)
@@ -1206,6 +1234,53 @@
       if (e.target.files && e.target.files.length) {
         champVideoUrlIA.value = "";
         apercuVideoIA.hidden = true;
+      }
+    });
+
+    const boutonMonterVideo = document.getElementById("bouton-monter-video");
+    const spinnerMonterVideo = document.getElementById("spinner-monter-video");
+    const texteStatutMontage = document.getElementById("texte-statut-montage");
+    const champPhotosMontage = document.getElementById("photos-montage");
+
+    boutonMonterVideo && boutonMonterVideo.addEventListener("click", async () => {
+      const aPhotos = champPhotosMontage.files && champPhotosMontage.files.length > 0;
+      const videoDepart = champVideoUrlIA.value;
+      texteStatutMontage.hidden = false;
+      if (!aPhotos && !videoDepart) {
+        texteStatutMontage.textContent = "Ajoutez des photos, ou générez/téléversez d'abord une vidéo ci-dessus (le montage ne peut pas partir d'un fichier vidéo tout juste sélectionné sur votre ordinateur, seulement d'une vidéo déjà en ligne).";
+        return;
+      }
+
+      boutonMonterVideo.disabled = true;
+      spinnerMonterVideo.hidden = false;
+      texteStatutMontage.textContent = "Montage en cours (quelques secondes à une minute)...";
+
+      const donnees = new FormData();
+      donnees.append("texte_montage", document.getElementById("texte-montage").value);
+      donnees.append("musique_id", document.getElementById("musique-montage").value);
+      if (aPhotos) {
+        Array.from(champPhotosMontage.files).forEach((f) => donnees.append("photos_montage", f));
+      } else {
+        donnees.append("video_url_depart", videoDepart);
+      }
+
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/monter_video", { method: "POST", body: donnees });
+        const resultat = await reponse.json();
+        if (!reponse.ok) {
+          texteStatutMontage.textContent = resultat.erreur || "Échec du montage.";
+          return;
+        }
+        document.getElementById("video-partagee").value = "";
+        champVideoUrlIA.value = resultat.url;
+        apercuVideoIA.src = resultat.url;
+        apercuVideoIA.hidden = false;
+        texteStatutMontage.textContent = "Montage assemblé — visible ci-dessus.";
+      } catch (erreur) {
+        texteStatutMontage.textContent = "Erreur réseau lors du montage.";
+      } finally {
+        boutonMonterVideo.disabled = false;
+        spinnerMonterVideo.hidden = true;
       }
     });
 

@@ -1,0 +1,5 @@
+# Ajoute ffmpeg (montage video, voir app/montage_video.py) a l'image construite par Railway. Nixpacks detecte le
+# projet Python (requirements.txt) automatiquement ; ce fichier complete juste la phase d'installation avec un
+# paquet systeme supplementaire, sans toucher au reste de la configuration.
+[phases.setup]
+nixPkgs = ["...", "ffmpeg"]

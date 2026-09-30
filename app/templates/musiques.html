@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set page_actuelle = "musiques" %}
+{% block titre %}Bibliothèque musicale — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Bibliothèque musicale</h1>
+</div>
+
+<p class="texte-vide">
+  Musiques de fond utilisables dans le montage vidéo (composeur multi-réseaux, section « Monter une vidéo »).
+  Partagées entre tous les clients. Vérifiez la licence de chaque piste avant de l'ajouter (par exemple la
+  <a href="https://www.youtube.com/audiolibrary" target="_blank" rel="noopener">bibliothèque audio YouTube</a>,
+  conçue spécifiquement pour être utilisée sans risque sur des vidéos publiées).
+</p>
+
+{% if erreur %}
+<div class="bandeau-avertissement">{{ erreur }}</div>
+{% endif %}
+
+<form method="post" action="/musiques/ajouter" enctype="multipart/form-data" class="formulaire ligne-champs">
+  <input type="text" name="nom" placeholder="Nom de la piste (ex : Ambiance légère)" required style="flex:1;">
+  <input type="file" name="fichier" accept="audio/mpeg,audio/mp4,audio/wav,.mp3,.m4a,.wav" required>
+  <button type="submit" class="bouton">Ajouter</button>
+</form>
+
+{% if pistes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique tableau-comptes">
+    <thead>
+      <tr>
+        <th>Piste</th>
+        <th>Durée</th>
+        <th></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for piste in pistes %}
+      <tr>
+        <td>{{ piste.nom }}</td>
+        <td>{{ (piste.duree_secondes // 60)|int }}:{{ "%02d"|format(piste.duree_secondes % 60) }}</td>
+        <td><audio controls src="{{ piste.fichier_url }}" style="height:32px; max-width:220px;"></audio></td>
+        <td>
+          <form method="post" action="/musiques/{{ piste.id }}/supprimer" onsubmit="return confirm('Supprimer cette piste ?');">
+            <button type="submit" class="bouton-danger">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="etat-vide-carte">
+  <p class="texte-vide">Aucune piste ajoutée pour l'instant.</p>
+</div>
+{% endif %}
+{% endblock %}

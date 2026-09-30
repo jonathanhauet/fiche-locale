@@ -73,6 +73,7 @@ from . import (
     meta_oauth,
     meta_publish,
     models,
+    montage_video,
     notifications,
     ovh_upload,
     rank_tracking,
@@ -6157,6 +6158,72 @@ def youtube_deconnecter_compte(compte_id: int, request: Request, db: Session = D
     return RedirectResponse("/youtube/comptes", status_code=303)
 
 
+# --- Bibliotheque musicale (montage video) -----------------------------------
+
+
+EXTENSIONS_AUDIO_AUTORISEES = {"mp3", "m4a", "wav"}
+TAILLE_MAX_AUDIO = 20 * 1024 * 1024  # 20 Mo : largement suffisant pour une piste de quelques minutes en mp3
+
+
+@app.get("/musiques", response_class=HTMLResponse)
+def liste_musiques(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
+    return templates.TemplateResponse(request, "musiques.html", {"pistes": pistes, "erreur": None})
+
+
+@app.post("/musiques/ajouter")
+async def ajouter_musique(request: Request, nom: str = Form(...), fichier: UploadFile = File(...), db: Session = Depends(obtenir_session)):
+    """
+    Ajoute une piste a la bibliotheque musicale partagee (voir montage_video.py) - la licence de chaque piste est
+    verifiee par l'agence avant televersement (ex : YouTube Audio Library), pas par la plateforme.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    def _erreur(message):
+        pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
+        return templates.TemplateResponse(request, "musiques.html", {"pistes": pistes, "erreur": message}, status_code=400)
+
+    extension = fichier.filename.rsplit(".", 1)[-1].lower() if fichier.filename and "." in fichier.filename else ""
+    if extension not in EXTENSIONS_AUDIO_AUTORISEES:
+        return _erreur("Format non pris en charge (utilisez un fichier MP3, M4A ou WAV).")
+
+    octets = await fichier.read()
+    if not octets:
+        return _erreur("Fichier vide ou illisible.")
+    if len(octets) > TAILLE_MAX_AUDIO:
+        return _erreur(f"Fichier trop volumineux ({len(octets) // (1024 * 1024)} Mo, {TAILLE_MAX_AUDIO // (1024 * 1024)} Mo maximum).")
+
+    try:
+        duree = montage_video.duree_octets_audio(octets)
+        url = ovh_upload.envoyer_octets(octets, f"musique-{uuid.uuid4().hex[:10]}.{extension}")
+    except Exception as erreur:
+        return _erreur(f"Échec de l'envoi : {erreur}")
+
+    db.add(models.PisteMusicale(nom=(nom or "").strip()[:100] or "(sans titre)", fichier_url=url, duree_secondes=duree))
+    db.commit()
+    return RedirectResponse("/musiques", status_code=303)
+
+
+@app.post("/musiques/{piste_id}/supprimer")
+def supprimer_musique(piste_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    piste = db.get(models.PisteMusicale, piste_id)
+    if piste:
+        db.delete(piste)
+        db.commit()
+
+    return RedirectResponse("/musiques", status_code=303)
+
+
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---
 
 
@@ -6294,6 +6361,7 @@ def _contexte_publication_multi(
         "brouillons_whatsapp_en_attente": (
             db.query(models.BrouillonWhatsApp).filter_by(client_id=client.id).order_by(models.BrouillonWhatsApp.id).all()
         ),
+        "pistes_musicales": db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all(),
     }
 
 
@@ -7781,6 +7849,57 @@ async def publication_multi_generer_video(client_id: int, request: Request, db: 
         return JSONResponse({"erreur": f"Echec de la generation de la vidéo : {e}"}, status_code=500)
 
     return JSONResponse({"url": url_video, "prompt_utilise": prompt_video if prompt_genere else "", "prompt_genere": prompt_genere})
+
+
+@app.post("/publication-multi/{client_id}/monter_video")
+async def publication_multi_monter_video(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Assemble une courte video (voir montage_video.py) a partir soit de photos televersees (diaporama), soit d'une
+    video deja presente dans le formulaire (clip genere par IA ou televerse), avec texte incruste et musique de
+    fond facultatifs. Meme principe que /generer_video : rien n'est encore enregistre en base, on renvoie l'URL
+    hebergee sur OVH. Bloque le temps de l'encodage : execute hors du thread principal (run_in_threadpool).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    formulaire = await request.form()
+    texte = (formulaire.get("texte_montage") or "").strip()
+    video_url_depart = (formulaire.get("video_url_depart") or "").strip()
+    piste_id = formulaire.get("musique_id") or ""
+    fichiers_photos = [f for f in formulaire.getlist("photos_montage") if getattr(f, "filename", "")]
+
+    musique_octets = None
+    if piste_id.isdigit():
+        piste = db.get(models.PisteMusicale, int(piste_id))
+        if piste:
+            try:
+                musique_octets = requests.get(piste.fichier_url, timeout=30).content
+            except Exception:
+                return JSONResponse({"erreur": "Impossible de récupérer la musique choisie."}, status_code=500)
+
+    photos_octets = None
+    video_octets = None
+    try:
+        if fichiers_photos:
+            photos_octets = [_jpeg_normalise(await f.read(), 1600) for f in fichiers_photos]
+        elif video_url_depart:
+            video_octets = requests.get(video_url_depart, timeout=30).content
+        else:
+            return JSONResponse({"erreur": "Ajoutez des photos, ou générez/téléversez d'abord une vidéo à utiliser comme base."}, status_code=400)
+
+        octets_sortie = await run_in_threadpool(
+            montage_video.monter_video, photos=photos_octets, video_base=video_octets, texte=texte, musique=musique_octets,
+        )
+        url_sortie = _televerser_video_publication(octets_sortie, "montage.mp4", "multi-montage")
+    except Exception as e:
+        return JSONResponse({"erreur": f"Échec du montage : {e}"}, status_code=500)
+
+    return JSONResponse({"url": url_sortie})
 
 
 @app.post("/publication-multi/{client_id}/publier", response_class=HTMLResponse)
