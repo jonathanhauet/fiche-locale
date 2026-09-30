@@ -416,6 +416,19 @@
     Utiliser une de vos photos de référence comme image de départ
   </label>
   {% endif %}
+  <label class="etiquette-chip-case">
+    <input type="checkbox" id="case-video-multi-plans">
+    Enchaîner plusieurs plans IA cohérents à partir du texte de base (une vraie petite histoire, plus long et
+    plus cher : un appel IA par plan, quelques minutes au total)
+  </label>
+  <div class="ligne-champs" id="zone-nb-scenes" hidden>
+    <label for="nb-scenes-video">Nombre de plans</label>
+    <select id="nb-scenes-video">
+      <option value="2">2 plans</option>
+      <option value="3" selected>3 plans</option>
+      <option value="4">4 plans</option>
+    </select>
+  </div>
   <p id="texte-statut-video-ia" class="texte-vide" hidden></p>
   <video id="apercu-video-ia" controls hidden style="max-width:320px; display:block; margin-bottom:0.5rem;"></video>
   <input type="hidden" name="video_url_ia" id="champ-video-url-ia" value="">
@@ -1184,9 +1197,17 @@
     const apercuVideoIA = document.getElementById("apercu-video-ia");
     const champVideoUrlIA = document.getElementById("champ-video-url-ia");
     const caseVideoReference = document.getElementById("case-video-reference");
+    const caseVideoMultiPlans = document.getElementById("case-video-multi-plans");
+    const zoneNbScenes = document.getElementById("zone-nb-scenes");
+
+    caseVideoMultiPlans && caseVideoMultiPlans.addEventListener("change", () => {
+      zoneNbScenes.hidden = !caseVideoMultiPlans.checked;
+      if (caseVideoReference) caseVideoReference.closest("label").hidden = caseVideoMultiPlans.checked;
+    });
 
     boutonGenererVideo && boutonGenererVideo.addEventListener("click", async () => {
       const promptVideo = document.getElementById("prompt-video-ia").value.trim();
+      const multiPlans = caseVideoMultiPlans && caseVideoMultiPlans.checked;
       texteStatutVideoIA.hidden = false;
       if (!promptVideo && !document.getElementById("texte-base").value.trim()) {
         texteStatutVideoIA.textContent = "Écrivez d'abord le texte de base, ou décrivez la vidéo souhaitée.";
@@ -1195,18 +1216,28 @@
 
       boutonGenererVideo.disabled = true;
       spinnerGenererVideo.hidden = false;
-      texteStatutVideoIA.textContent = "Génération de la vidéo en cours (peut prendre une à quelques minutes)...";
+      texteStatutVideoIA.textContent = multiPlans
+        ? "Préparation des plans puis génération de chacun (peut prendre plusieurs minutes, ne fermez pas la page)..."
+        : "Génération de la vidéo en cours (peut prendre une à quelques minutes)...";
 
       try {
-        const reponse = await fetch("/publication-multi/{{ client.id }}/generer_video", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt_video: promptVideo,
-            texte_post: document.getElementById("texte-base").value,
-            qualite: document.getElementById("qualite-video-ia").value,
-            inclure_reference: Boolean(caseVideoReference && caseVideoReference.checked),
-          }),
+        const url = multiPlans
+          ? "/publication-multi/{{ client.id }}/generer_video_multi"
+          : "/publication-multi/{{ client.id }}/generer_video";
+        const corps = multiPlans
+          ? {
+              texte_post: document.getElementById("texte-base").value,
+              qualite: document.getElementById("qualite-video-ia").value,
+              nb_scenes: document.getElementById("nb-scenes-video").value,
+            }
+          : {
+              prompt_video: promptVideo,
+              texte_post: document.getElementById("texte-base").value,
+              qualite: document.getElementById("qualite-video-ia").value,
+              inclure_reference: Boolean(caseVideoReference && caseVideoReference.checked),
+            };
+        const reponse = await fetch(url, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {
@@ -1219,7 +1250,8 @@
         apercuVideoIA.src = donnees.url;
         apercuVideoIA.hidden = false;
         texteStatutVideoIA.textContent = "Vidéo générée — visible ci-dessus."
-          + (donnees.prompt_utilise ? " Scène demandée à l'IA : « " + donnees.prompt_utilise + " »" : "");
+          + (donnees.prompt_utilise ? " Scène demandée à l'IA : « " + donnees.prompt_utilise + " »" : "")
+          + (donnees.prompts ? " Plans enchaînés : " + donnees.prompts.length + "." : "");
       } catch (erreur) {
         texteStatutVideoIA.textContent = "Erreur réseau lors de la génération de la vidéo.";
       } finally {

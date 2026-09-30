@@ -7851,6 +7851,48 @@ async def publication_multi_generer_video(client_id: int, request: Request, db: 
     return JSONResponse({"url": url_video, "prompt_utilise": prompt_video if prompt_genere else "", "prompt_genere": prompt_genere})
 
 
+@app.post("/publication-multi/{client_id}/generer_video_multi")
+async def publication_multi_generer_video_multi(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Genere plusieurs plans Veo qui se suivent logiquement (voir claude_generation.storyboard_video_depuis_texte,
+    a partir du texte du post) puis les enchaine en un seul montage avec fondus (voir montage_video.py) - pour une
+    vraie coherence entre les plans plutot que des clips independants juxtaposes au hasard. Un appel Veo par plan,
+    l'un apres l'autre : peut prendre plusieurs minutes au total. Execute hors du thread principal.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    texte_post = (donnees.get("texte_post") or "").strip()
+    qualite = donnees.get("qualite") if donnees.get("qualite") in veo_video.MODELES else veo_video.QUALITE_DEFAUT
+    try:
+        nb_scenes = max(2, min(int(donnees.get("nb_scenes") or 3), 4))
+    except (TypeError, ValueError):
+        nb_scenes = 3
+
+    if not texte_post:
+        return JSONResponse({"erreur": "Écrivez d'abord le texte de base."}, status_code=400)
+
+    try:
+        prompts = await run_in_threadpool(claude_generation.storyboard_video_depuis_texte, texte_post, nb_scenes)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Impossible de préparer les plans : {e}"}, status_code=500)
+
+    try:
+        clips = [await run_in_threadpool(veo_video.generer_video, prompt, qualite) for prompt in prompts]
+        octets_final = await run_in_threadpool(montage_video.monter_video, videos=clips)
+        url_finale = _televerser_video_publication(octets_final, "montage.mp4", "multi-montage")
+    except Exception as e:
+        return JSONResponse({"erreur": f"Échec de la génération : {e}"}, status_code=500)
+
+    return JSONResponse({"url": url_finale, "prompts": prompts})
+
+
 @app.post("/publication-multi/{client_id}/monter_video")
 async def publication_multi_monter_video(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """

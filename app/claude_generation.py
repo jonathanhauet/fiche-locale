@@ -1498,6 +1498,47 @@ def prompt_video_depuis_texte(texte_post: str) -> str:
     return _nettoyer_texte_genere(texte)
 
 
+def storyboard_video_depuis_texte(texte_post: str, nb_scenes: int = 3) -> list:
+    """
+    Decoupe le texte d'un post en plusieurs plans video (en anglais, pour Veo - voir veo_video.py) qui se suivent
+    logiquement pour raconter une seule histoire coherente (ex : plan d'ensemble, puis un detail ou une action,
+    puis une conclusion) plutot que des scenes sans rapport entre elles simplement juxtaposees. Chaque plan est
+    ensuite genere separement par Veo puis enchaine (voir montage_video.monter_video, parametre videos).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not texte_post.strip():
+        raise RuntimeError("Aucun texte de post fourni.")
+    nb_scenes = max(2, min(int(nb_scenes or 3), 4))
+
+    prompt = (
+        "Voici le texte d'un post pour les reseaux sociaux :\n\n"
+        f"{texte_post.strip()[:2500]}\n\n"
+        f"Decoupe-le en exactement {nb_scenes} plans video courts (quelques secondes chacun) qui se suivent "
+        "logiquement pour raconter une seule histoire coherente autour de ce sujet (par exemple : un plan "
+        "d'ensemble ou d'etablissement, puis un plan de detail ou d'action, puis un plan de conclusion) - jamais "
+        "des scenes sans rapport entre elles. Pour chaque plan, ecris un prompt en anglais pour un generateur de "
+        "video : une scene concrete et specifique liee au sujet (pas une metaphore abstraite), un mouvement de "
+        "camera simple et realiste (leger travelling, zoom lent, camera fixe), une action naturelle qui se "
+        "deroule dans le plan. Rendu comme filme sur le vif au smartphone, pas comme une publicite lissee. Aucun "
+        "texte lisible nulle part (papiers, ecrans, affiches). Evite les cliches d'illustration IA generique "
+        "(cadenas/bouclier de securite, tableau de bord abstrait, ampoule, poignee de main, reseau de points/"
+        "globe connecte, engrenages) sauf si le sujet les impose vraiment. Sans logo, sans reference geographique.\n"
+        f"Reponds uniquement par les {nb_scenes} prompts, un par ligne, numerotes (1. ... 2. ... etc), sans autre texte."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=700, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), "").strip()
+    lignes = [re.sub(r"^\s*\d+[\.\)]\s*", "", l).strip().strip('"') for l in texte.splitlines()]
+    lignes = [l for l in lignes if l][:nb_scenes]
+    if len(lignes) < 2:
+        raise RuntimeError("L'IA n'a pas renvoyé assez de plans exploitables.")
+    return lignes
+
+
 def prompt_image_avec_auteur(prompt_image: str, texte_post: str = "") -> str:
     """
     Reecrit un prompt d'image pour que l'AUTEUR du post (la personne des
