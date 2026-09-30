@@ -1,12 +1,19 @@
 """
-Connexion YouTube (Data API v3) pour la plateforme web : OAuth Google standard, meme identifiant client que
-google_oauth.py (GOOGLE_CLIENT_ID/SECRET, projet Google Cloud "Extraction-GBP") mais un scope et une redirection
-distincts - youtube.upload n'a rien a voir avec business.manage (fiches Business Profile) et doit etre autorise
-separement, meme si c'est le meme compte Google.
+Connexion YouTube (Data API v3) pour la plateforme web : OAuth Google standard, mais avec son PROPRE projet Google
+Cloud et son propre identifiant (YOUTUBE_CLIENT_ID/SECRET), separe du projet "Extraction-GBP" utilise par
+google_oauth.py pour la fiche Business Profile. Ce n'est pas juste une precaution : Google bloque totalement (pas
+seulement un avertissement contournable) tout compte qui tente d'autoriser un scope YouTube tant que l'appli n'est
+pas verifiee - impossible donc de tester ou d'enregistrer la video de demonstration exigee par Google si ce scope
+est ajoute au projet Extraction-GBP, deja en mode "Production" (passer ce projet en mode "Test" couperait le risque
+de bloquer l'acces Business Profile en production pour les clients non listes comme testeurs). Le projet YouTube
+dedie reste en mode "Test" (avec le compte de l'agence comme testeur) : l'ecran de blocage devient alors un simple
+avertissement contournable, ce qui permet de tester et, plus tard, de faire la demande de validation aupres de
+Google sans jamais toucher au projet Business Profile.
 
-Prealables cote Google Cloud (a faire une fois, comme pour Search Console) :
-- Activer "YouTube Data API v3" dans le projet.
+Prealables cote Google Cloud (dans ce projet YouTube dedie) :
+- Activer "YouTube Data API v3".
 - Ajouter l'URL de callback (https://.../youtube/callback) aux "URI de redirection autorisees" de l'identifiant OAuth.
+- Ajouter le(s) compte(s) Google testeurs (Audience > Utilisateurs test) tant que l'appli n'est pas verifiee.
 Attention au quota par defaut de l'API (10000 unites/jour, un televersement de video en coute 1600 - environ 6
 televersements/jour possibles sans demande d'augmentation de quota auprès de Google).
 """
@@ -34,8 +41,8 @@ DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
 DOSSIER_PLATEFORME = os.path.dirname(DOSSIER_APP)
 load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
 
-CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET")
 
 
 def _configuration_client():
