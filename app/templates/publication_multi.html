@@ -112,6 +112,18 @@
       🎨 Générer une image (IA)
     </button>
   </div>
+  <div class="ligne-champs">
+    {% if fiches_source_avis %}
+    <select id="img-source-fiche" title="Fiche Google dont on prend les photos" style="width:auto;max-width:100%;">
+      {% for fiche in fiches_source_avis %}<option value="{{ fiche.id }}">{{ fiche.nom }}</option>{% endfor %}
+    </select>
+    <button type="button" id="bouton-photos-fiche-principal" class="bouton-secondaire">📷 Photos de la fiche</button>
+    {% endif %}
+    <button type="button" id="bouton-photos-whatsapp-principal" class="bouton-secondaire">📱 Photos WhatsApp</button>
+  </div>
+  <div id="grille-photos-fiche-principal" class="avis-photos-fiche" hidden></div>
+  <div id="grille-photos-whatsapp-principal" class="avis-photos-fiche" hidden></div>
+  <p id="texte-statut-photos-principal" class="texte-vide" hidden></p>
   <details class="options-visuel" id="options-visuel">
     <summary>Options du visuel IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
     {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
@@ -834,6 +846,64 @@
     function actualiserToutesLesApercusImage() {
       document.querySelectorAll(".bloc-variante-reseau").forEach((bloc) => actualiserApercuImage(bloc.dataset.reseau));
     }
+
+    // Reprendre une photo deja existante (fiche Google ou WhatsApp) comme image du post, sans re-televerser
+    // depuis l'ordinateur - meme mecanisme que l'image generee par IA (champ-image-url-ia, "|" separe).
+    function ajouterImagePrincipale(url) {
+      const urls = champImageUrlIA.value ? champImageUrlIA.value.split("|").filter(Boolean) : [];
+      if (urls.includes(url)) return;
+      if (urls.length >= 10) { alert("10 images maximum par publication."); return; }
+      urls.push(url);
+      champImagePartagee.value = "";
+      champImageUrlIA.value = urls.join("|");
+      actualiserToutesLesApercusImage();
+    }
+
+    (function () {
+      const statutPhotos = document.getElementById("texte-statut-photos-principal");
+      function message(texte) { statutPhotos.hidden = false; statutPhotos.textContent = texte; }
+
+      const boutonFichePrincipal = document.getElementById("bouton-photos-fiche-principal");
+      boutonFichePrincipal && boutonFichePrincipal.addEventListener("click", async () => {
+        message("Lecture des photos de la fiche...");
+        try {
+          const source = document.getElementById("img-source-fiche").value;
+          const reponse = await fetch(`/publication-multi/{{ client.id }}/avis/photos?source=${encodeURIComponent(source)}`);
+          const donnees = await reponse.json();
+          if (!reponse.ok) { message(donnees.erreur || "Échec de la lecture des photos."); return; }
+          const grille = document.getElementById("grille-photos-fiche-principal");
+          grille.innerHTML = ""; grille.hidden = false;
+          if (!donnees.photos.length) { message("Aucune photo sur cette fiche."); return; }
+          donnees.photos.forEach((p) => {
+            const img = document.createElement("img");
+            img.src = p.miniature; img.alt = "Photo de la fiche"; img.title = "Ajouter cette photo au post";
+            img.addEventListener("click", () => ajouterImagePrincipale(p.url));
+            grille.appendChild(img);
+          });
+          message("Cliquez sur une ou plusieurs photos pour les ajouter au post.");
+        } catch (e) { message("Erreur réseau lors de la lecture des photos."); }
+      });
+
+      const boutonWhatsAppPrincipal = document.getElementById("bouton-photos-whatsapp-principal");
+      boutonWhatsAppPrincipal.addEventListener("click", async () => {
+        message("Lecture des photos reçues par WhatsApp...");
+        try {
+          const reponse = await fetch("/publication-multi/{{ client.id }}/photos-whatsapp");
+          const donnees = await reponse.json();
+          if (!reponse.ok) { message(donnees.erreur || "Échec de la lecture des photos."); return; }
+          const grille = document.getElementById("grille-photos-whatsapp-principal");
+          grille.innerHTML = ""; grille.hidden = false;
+          if (!donnees.photos.length) { message("Aucune photo reçue par WhatsApp pour ce client pour l'instant."); return; }
+          donnees.photos.forEach((p) => {
+            const img = document.createElement("img");
+            img.src = p.miniature; img.alt = "Photo reçue par WhatsApp"; img.title = "Ajouter cette photo au post";
+            img.addEventListener("click", () => ajouterImagePrincipale(p.url));
+            grille.appendChild(img);
+          });
+          message("Cliquez sur une ou plusieurs photos pour les ajouter au post (les plus récentes en premier).");
+        } catch (e) { message("Erreur réseau lors de la lecture des photos."); }
+      });
+    })();
 
     // Bouton d'appel a l'action Google : URL demandee sauf pour "Appeler
     // maintenant" (numero de la fiche, automatique) et "Aucun".
