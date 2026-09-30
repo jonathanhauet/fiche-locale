@@ -20,6 +20,11 @@ POLICES = {
     "normal": ["Poppins-Regular.ttf", "segoeui.ttf", "DejaVuSans.ttf", "arial.ttf"],
 }
 LAYOUTS = ("plein", "clair", "sombre")
+POSITIONS_LOGO = {
+    "haut_droite": "Haut droite", "haut_gauche": "Haut gauche", "bas_droite": "Bas droite",
+    "bas_gauche": "Bas gauche", "bas_centre": "Bas, centré",
+}
+STYLES_LOGO = {"pastille": "Pastille blanche", "cercle": "Cercle blanc"}
 
 
 def _police(style: str, taille: int) -> ImageFont.FreeTypeFont:
@@ -236,23 +241,52 @@ def _photo_assombrie(photo: Image.Image, marque: tuple, voile_pourcent: int = No
     return Image.composite(voile, base, masque)
 
 
-def _coller_logo(image: Image.Image, logo: Image.Image, haut: int) -> None:
-    """Logo sur une pastille blanche arrondie, en haut a droite (lisible sur tous les fonds)."""
+def _coller_logo(
+    image: Image.Image, logo: Image.Image, haut: int, position: str = "haut_droite", style: str = "pastille",
+) -> None:
+    """
+    Logo sur un fond blanc (lisible sur tous les fonds), place dans l'un des 5 coins/centre-bas (POSITIONS_LOGO).
+    style "pastille" (defaut) : forme arrondie qui epouse le logo. style "cercle" : toujours un cercle strict,
+    le logo centre dedans quelle que soit sa forme d'origine. haut : position verticale pour les 2 coins du
+    haut uniquement (deja calculee par l'appelant pour eviter le texte) - ignoree pour les positions du bas.
+    """
     logo = logo.convert("RGBA")
     ratio = min(220 / logo.width, 96 / logo.height)
     logo = logo.resize((max(1, round(logo.width * ratio)), max(1, round(logo.height * ratio))), Image.LANCZOS)
     marge = 18
-    largeur, hauteur = logo.width + 2 * marge, logo.height + 2 * marge
-    x = LARGEUR - MARGE - largeur
-    pastille = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
-    ImageDraw.Draw(pastille).rounded_rectangle((0, 0, largeur - 1, hauteur - 1), radius=24, fill=(255, 255, 255, 255))
-    image.paste(pastille, (x, haut), pastille)
-    image.paste(logo, (x + marge, haut + marge), logo)
+    if style == "cercle":
+        cote = max(logo.width, logo.height) + 2 * marge
+        largeur = hauteur = cote
+    else:
+        largeur, hauteur = logo.width + 2 * marge, logo.height + 2 * marge
+
+    if position == "haut_gauche":
+        x, y = MARGE, haut
+    elif position == "bas_droite":
+        x, y = LARGEUR - MARGE - largeur, HAUTEUR - MARGE - hauteur
+    elif position == "bas_gauche":
+        x, y = MARGE, HAUTEUR - MARGE - hauteur
+    elif position == "bas_centre":
+        x, y = (LARGEUR - largeur) // 2, HAUTEUR - MARGE - hauteur
+    else:  # "haut_droite" (defaut, non-regression)
+        x, y = LARGEUR - MARGE - largeur, haut
+
+    fond = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
+    dessin = ImageDraw.Draw(fond)
+    if style == "cercle":
+        dessin.ellipse((0, 0, largeur - 1, hauteur - 1), fill=(255, 255, 255, 255))
+        decalage_x, decalage_y = (largeur - logo.width) // 2, (hauteur - logo.height) // 2
+    else:
+        dessin.rounded_rectangle((0, 0, largeur - 1, hauteur - 1), radius=24, fill=(255, 255, 255, 255))
+        decalage_x = decalage_y = marge
+    image.paste(fond, (x, y), fond)
+    image.paste(logo, (x + decalage_x, y + decalage_y), logo)
 
 
 def dessiner_slide(
     kind: str, contenu: dict, layout: str, couleur: str, nom_client: str, numero: int, total: int,
     logo: Image.Image = None, photo: Image.Image = None, secondaires: list = None, decor: str = "auto", graine: int = 0,
+    logo_position: str = "haut_droite", logo_style: str = "pastille",
 ) -> Image.Image:
     """
     kind : "couverture" {titre, sous_titre}, "point" {numero, titre, texte}, "cta" {titre, texte, bouton}.
@@ -273,7 +307,7 @@ def dessiner_slide(
         d = ImageDraw.Draw(image)
         _decor(d, layout, p, marque, decor, graine)
     if logo is not None and kind in ("couverture", "cta"):
-        _coller_logo(image, logo, 90)
+        _coller_logo(image, logo, 90, logo_position, logo_style)
     zone = LARGEUR - 2 * MARGE
 
     if kind == "couverture":
@@ -336,15 +370,22 @@ def dessiner_slide(
 def construire_carrousel(
     donnees: dict, layout: str, couleur: str, nom_client: str, logo: Image.Image = None, photo: Image.Image = None,
     secondaires: list = None, decor: str = "auto", graine: int = 0,
+    logo_position: str = "haut_droite", logo_style: str = "pastille",
 ) -> list[Image.Image]:
     """donnees : {"couverture": {...}, "points": [{titre, texte}, ...], "cta": {...}}."""
     layout = layout if layout in LAYOUTS else "plein"
     points = donnees["points"]
     total = len(points) + 2
-    slides = [dessiner_slide("couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo, secondaires, decor, graine)]
+    slides = [dessiner_slide(
+        "couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo, secondaires,
+        decor, graine, logo_position, logo_style,
+    )]
     for i, pt in enumerate(points, start=1):
         slides.append(dessiner_slide("point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total, secondaires=secondaires, decor=decor, graine=graine))
-    slides.append(dessiner_slide("cta", donnees["cta"], layout, couleur, nom_client, total, total, logo, secondaires=secondaires, decor=decor, graine=graine))
+    slides.append(dessiner_slide(
+        "cta", donnees["cta"], layout, couleur, nom_client, total, total, logo, secondaires=secondaires, decor=decor,
+        graine=graine, logo_position=logo_position, logo_style=logo_style,
+    ))
     return slides
 
 
@@ -378,6 +419,7 @@ def _etoile(dessin, centre_x: int, centre_y: int, rayon: int, couleur) -> None:
 def dessiner_avis(
     texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
     secondaires: list = None, photo: Image.Image = None, voile: int = 68, decor: str = "auto", graine: int = 0,
+    logo_position: str = "haut_droite", logo_style: str = "pastille",
 ) -> Image.Image:
     """
     Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client.
@@ -399,7 +441,7 @@ def dessiner_avis(
         d = ImageDraw.Draw(image)
         _decor(d, layout, p, marque, decor, graine)
     if logo is not None:
-        _coller_logo(image, logo, 90)
+        _coller_logo(image, logo, 90, logo_position, logo_style)
     zone = LARGEUR - 2 * MARGE
 
     d.text((MARGE, 130), "\u201c", font=_police("gras", 260), fill=p["accent2"])

@@ -230,6 +230,7 @@ def _pastille(largeur, hauteur, texte, fond, accent_texte):
 def dessiner(
     photo: Image.Image, titre: str, sous_titre: str, couleur: str, logo: Image.Image = None, secondaires: list = None,
     reglages: dict = None, nom_client: str = "", numero: int = None, total: int = 1,
+    logo_position: str = "haut_droite", logo_style: str = "pastille",
 ) -> Image.Image:
     r = normaliser_reglages(reglages)
     largeur = LARGEUR
@@ -412,7 +413,8 @@ def dessiner(
         police_f = _police("sobre", 40)
         largeur_t = int(d.textlength("Glissez", font=police_f))
         x_f = largeur - MARGE - largeur_t - 90
-        if position == "haut" and logo is not None:  # le logo occupe le coin bas droit : la fleche se place apres le bouton
+        logo_coin_bas_droit = logo is not None and (logo_position == "bas_droite" or (logo_position == "haut_droite" and position == "haut"))
+        if logo_coin_bas_droit:  # le logo occupe le coin bas droit : la fleche se place apres le bouton
             x_f = MARGE + (int(d.textlength(r["bouton"], font=_police("sobre", 42))) + 90 + 50 if r["bouton"] else 0)
         d.text((x_f, y_bas - 66), "Glissez", font=police_f, fill=(255, 255, 255, 255))
         y_a = y_bas - 42
@@ -421,14 +423,18 @@ def dessiner(
 
     image = Image.alpha_composite(image.convert("RGBA"), calque).convert("RGB")
     if logo is not None:
-        cv._coller_logo(image, logo, 70 if position != "haut" else hauteur - 210)
+        haut_logo = 70 if position != "haut" else hauteur - 210
+        cv._coller_logo(image, logo, haut_logo, logo_position, logo_style)
     return image
 
 
-def apercus_styles(photo, titre, sous_titre, couleur, logo, secondaires, reglages, nom_client="", largeur_apercu=360):
+def apercus_styles(photo, titre, sous_titre, couleur, logo, secondaires, reglages, nom_client="", largeur_apercu=360, logo_position="haut_droite", logo_style="pastille"):
     """Un petit apercu par style (avec les autres reglages en cours) : pour choisir le style d'un coup d'oeil."""
     sorties = []
     for cle, libelle in STYLES.items():
-        image = dessiner(photo, titre, sous_titre, couleur, logo, secondaires, {**(reglages or {}), "style": cle}, nom_client)
+        image = dessiner(
+            photo, titre, sous_titre, couleur, logo, secondaires, {**(reglages or {}), "style": cle}, nom_client,
+            logo_position=logo_position, logo_style=logo_style,
+        )
         sorties.append((cle, libelle, image.resize((largeur_apercu, round(largeur_apercu * image.height / image.width)), Image.LANCZOS)))
     return sorties

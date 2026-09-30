@@ -230,6 +230,10 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN nom_affiche_carrousel TEXT DEFAULT ''"))
         if "logo_url" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_url TEXT DEFAULT ''"))
+        if "logo_position" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_position TEXT DEFAULT ''"))
+        if "logo_style" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_style TEXT DEFAULT ''"))
         for colonne_wordpress in (
             "wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe", "wordpress_couleur", "wordpress_lien_cta", "wordpress_texte_cta",
         ):
@@ -6531,6 +6535,28 @@ def _decor_demande(donnees: dict, client) -> str:
     return valeur if valeur in carrousel_visuel.STYLES_DECOR or valeur == "auto" else style_decor_client(client)
 
 
+def logo_position_client(client) -> str:
+    """Position du logo enregistree pour ce client ("haut_droite" par defaut)."""
+    valeur = (getattr(client, "logo_position", "") or "").strip()
+    return valeur if valeur in carrousel_visuel.POSITIONS_LOGO else "haut_droite"
+
+
+def logo_style_client(client) -> str:
+    """Style de fond du logo enregistre pour ce client ("pastille" par defaut)."""
+    valeur = (getattr(client, "logo_style", "") or "").strip()
+    return valeur if valeur in carrousel_visuel.STYLES_LOGO else "pastille"
+
+
+def _logo_position_demandee(donnees: dict, client) -> str:
+    valeur = donnees.get("logo_position")
+    return valeur if valeur in carrousel_visuel.POSITIONS_LOGO else logo_position_client(client)
+
+
+def _logo_style_demandee(donnees: dict, client) -> str:
+    valeur = donnees.get("logo_style")
+    return valeur if valeur in carrousel_visuel.STYLES_LOGO else logo_style_client(client)
+
+
 REGEX_URL_PHOTO_GOOGLE = re.compile(r"https://lh\d*\.googleusercontent\.com/")
 
 
@@ -6572,11 +6598,15 @@ def nom_affiche_carrousel(client) -> str:
 templates.env.globals["nom_affiche_carrousel"] = nom_affiche_carrousel
 templates.env.globals["couleur_marque_client"] = couleur_marque_client
 templates.env.globals["style_decor_client"] = style_decor_client
+templates.env.globals["logo_position_client"] = logo_position_client
+templates.env.globals["logo_style_client"] = logo_style_client
 templates.env.globals["titre_styles"] = titre_photo.STYLES
 templates.env.globals["titre_polices"] = titre_photo.POLICES
 templates.env.globals["titre_pictos"] = titre_photo.PICTOS
 templates.env.globals["titre_cadres"] = titre_photo.CADRES
 templates.env.globals["libelles_decor"] = carrousel_visuel.LIBELLES_DECOR
+templates.env.globals["libelles_position_logo"] = carrousel_visuel.POSITIONS_LOGO
+templates.env.globals["libelles_style_logo"] = carrousel_visuel.STYLES_LOGO
 templates.env.globals["couleurs_secondaires_client"] = couleurs_secondaires_client
 templates.env.globals["horaires_recommandes"] = horaires_publication.HORAIRES_RECOMMANDES
 templates.env.globals["noms_reseaux"] = claude_generation.NOMS_RESEAUX
@@ -6641,6 +6671,12 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
     if "style_decor" in donnees:
         style = str(donnees.get("style_decor") or "")
         client.style_decor = style if style in carrousel_visuel.STYLES_DECOR else ""
+    if "logo_position" in donnees:
+        position = str(donnees.get("logo_position") or "")
+        client.logo_position = position if position in carrousel_visuel.POSITIONS_LOGO else ""
+    if "logo_style" in donnees:
+        style_logo = str(donnees.get("logo_style") or "")
+        client.logo_style = style_logo if style_logo in carrousel_visuel.STYLES_LOGO else ""
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -6724,6 +6760,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
     couleur, secondaires = _couleurs_demandees(donnees, client)
     decor, graine_decor = _decor_demande(donnees, client), client.id
+    logo_position, logo_style = _logo_position_demandee(donnees, client), _logo_style_demandee(donnees, client)
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
@@ -6740,7 +6777,9 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
     def fabriquer():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
         photo = _image_depuis_url_autorisee(photo_url)
-        images = carrousel_visuel.construire_carrousel(slides, layout, couleur, nom_client, logo, photo, secondaires, decor, graine_decor)
+        images = carrousel_visuel.construire_carrousel(
+            slides, layout, couleur, nom_client, logo, photo, secondaires, decor, graine_decor, logo_position, logo_style,
+        )
         sorties = []
         for image in images:
             if not final:
@@ -6873,6 +6912,7 @@ def _preparer_titre_photo(client, donnees: dict) -> dict:
         "titre": titre, "sous_titre": " ".join(str(donnees.get("sous_titre") or "").split())[:40],
         "couleur": couleur, "secondaires": secondaires, "reglages": titre_photo.normaliser_reglages(donnees.get("reglages")),
         "logo_url": client.logo_url, "sans_logo": bool(donnees.get("sans_logo")), "nom": nom_affiche_carrousel(client),
+        "logo_position": _logo_position_demandee(donnees, client), "logo_style": _logo_style_demandee(donnees, client),
     }
 
 
@@ -6915,7 +6955,7 @@ async def publication_multi_titre_photo(client_id: int, request: Request, db: Se
             titre_photo_i = " ".join(str(photo_infos.get("titre") or "").split())[:120] or commun["titre"]
             image = titre_photo.dessiner(
                 photo, titre_photo_i, commun["sous_titre"], commun["couleur"], logo, commun["secondaires"], commun["reglages"],
-                commun["nom"], i + 1, len(photos),
+                commun["nom"], i + 1, len(photos), commun["logo_position"], commun["logo_style"],
             )
             if not final:
                 image = image.resize((720, round(720 * image.height / image.width)), Image.LANCZOS)
@@ -6960,6 +7000,7 @@ async def publication_multi_titre_photo_styles(client_id: int, request: Request,
         resultats = []
         for cle, libelle, image in titre_photo.apercus_styles(
             photo, commun["titre"], commun["sous_titre"], commun["couleur"], logo, commun["secondaires"], commun["reglages"], commun["nom"],
+            logo_position=commun["logo_position"], logo_style=commun["logo_style"],
         ):
             tampon = io.BytesIO()
             image.save(tampon, format="JPEG", quality=72)
@@ -7026,6 +7067,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
         note = 5
     couleur, secondaires = _couleurs_demandees(donnees, client)
     decor, graine_decor = _decor_demande(donnees, client), client.id
+    logo_position, logo_style = _logo_position_demandee(donnees, client), _logo_style_demandee(donnees, client)
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
@@ -7041,6 +7083,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
         photo = _image_depuis_url_autorisee(photo_url)
         image = carrousel_visuel.dessiner_avis(
             texte, auteur, note, layout, couleur, nom_client, logo, secondaires, photo, voile, decor, graine_decor,
+            logo_position, logo_style,
         )
         if not final:
             image = image.resize((720, 900), Image.LANCZOS)

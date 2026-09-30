@@ -197,6 +197,18 @@
       <span id="carrousel-logo-etat" class="texte-discret">{% if client.logo_url %}Logo enregistré pour ce client.{% else %}Pas de logo (facultatif, enregistré pour les prochains visuels).{% endif %}</span>
       <button type="button" id="carrousel-logo-retirer" class="bouton-secondaire" {% if not client.logo_url %}hidden{% endif %}>Retirer le logo</button>
     </div>
+    <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case">Position du logo
+        <select id="identite-logo-position" style="width:auto;">
+          {% for cle, libelle in libelles_position_logo.items() %}<option value="{{ cle }}" {% if logo_position_client(client) == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="etiquette-chip-case">Style du logo
+        <select id="identite-logo-style" style="width:auto;">
+          {% for cle, libelle in libelles_style_logo.items() %}<option value="{{ cle }}" {% if logo_style_client(client) == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
     <p id="identite-statut" class="texte-discret" hidden></p>
   </details>
   <details class="options-visuel" id="panneau-carrousel">
@@ -1439,7 +1451,12 @@
       function enregistrer() {
         fetch(url, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ principale: principale.value, secondaires: secondaires(), nom_affiche: nom.value, style_decor: document.getElementById("identite-decor").value === "auto" ? "" : document.getElementById("identite-decor").value }),
+          body: JSON.stringify({
+            principale: principale.value, secondaires: secondaires(), nom_affiche: nom.value,
+            style_decor: document.getElementById("identite-decor").value === "auto" ? "" : document.getElementById("identite-decor").value,
+            logo_position: document.getElementById("identite-logo-position").value,
+            logo_style: document.getElementById("identite-logo-style").value,
+          }),
         }).then((r) => {
           statut.hidden = false;
           statut.textContent = r.ok ? "Identité visuelle enregistrée pour ce client." : "Échec de l'enregistrement.";
@@ -1462,6 +1479,8 @@
       principaleHex.addEventListener("input", () => { const valeur = normaliser(principaleHex.value); if (valeur) { principale.value = valeur; principaleHex.value = valeur; modifiee(); } });
       nom.addEventListener("change", modifiee);
       document.getElementById("identite-decor").addEventListener("change", modifiee);
+      document.getElementById("identite-logo-position").addEventListener("change", modifiee);
+      document.getElementById("identite-logo-style").addEventListener("change", modifiee);
       [1, 2].forEach((n) => {
         const selecteur = document.getElementById("identite-sec-" + n);
         const hex = document.getElementById("identite-sec-hex-" + n);
@@ -1528,7 +1547,13 @@
       }
       function corpsRendu(mode) {
         const layout = document.querySelector('input[name="carrousel-layout"]:checked').value;
-        return JSON.stringify({ slides: lireSlides(), layout, couleur: document.getElementById("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(), decor: document.getElementById("identite-decor").value, photo_url: photoUrl, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode });
+        return JSON.stringify({
+          slides: lireSlides(), layout, couleur: document.getElementById("carrousel-couleur").value,
+          couleurs_secondaires: window.secondairesIdentite(), decor: document.getElementById("identite-decor").value,
+          logo_position: document.getElementById("identite-logo-position").value,
+          logo_style: document.getElementById("identite-logo-style").value,
+          photo_url: photoUrl, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode,
+        });
       }
       async function appeler(url, options) {
         const reponse = await fetch(url, options);
@@ -1673,6 +1698,8 @@
           note: avisChoisi ? avisChoisi.note : 5, layout: document.querySelector('input[name="avis-layout"]:checked').value,
           couleur: document.getElementById("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
           decor: document.getElementById("identite-decor").value, photo_url: avisPhotoUrl, voile: parseInt(document.getElementById("avis-voile").value, 10),
+          logo_position: document.getElementById("identite-logo-position").value,
+          logo_style: document.getElementById("identite-logo-style").value,
           nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode,
         });
       }
@@ -1949,6 +1976,7 @@
         return JSON.stringify({
           photos: photos.map((p) => ({ url: p.url, titre: p.titre })), index, mode, titre: $("tp-titre").value, sous_titre: $("tp-sous-titre").value,
           reglages: lireReglages(), couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
+          logo_position: $("identite-logo-position").value, logo_style: $("identite-logo-style").value,
         });
       }
       function pret() { return photos.length && $("tp-titre").value.trim(); }

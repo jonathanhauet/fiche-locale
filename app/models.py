@@ -178,6 +178,8 @@ class Client(Base):
     couleurs_secondaires = Column(String, default="")  # jusqu'a 2 couleurs secondaires, separees par des virgules
     nom_affiche_carrousel = Column(String, default="")  # nom imprime sur les slides (sinon le nom de la fiche, sans "- Reseaux")
     logo_url = Column(String, default="")  # logo affiche sur les carrousels (voir carrousel_visuel.py)
+    logo_position = Column(String, default="")  # "haut_droite" (defaut) / "haut_gauche" / "bas_droite" / "bas_gauche" / "bas_centre"
+    logo_style = Column(String, default="")  # "pastille" (defaut) / "cercle"
     # Client mis en avant en haut de la liste de choix de /publication-multi
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
     # clients publiés le plus souvent.
