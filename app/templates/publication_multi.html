@@ -124,6 +124,7 @@
   <div id="grille-photos-fiche-principal" class="avis-photos-fiche" hidden></div>
   <div id="grille-photos-whatsapp-principal" class="avis-photos-fiche" hidden></div>
   <p id="texte-statut-photos-principal" class="texte-vide" hidden></p>
+  <div id="apercu-images-choisies" class="images-choisies" hidden></div>
   <details class="options-visuel" id="options-visuel">
     <summary>Options du visuel IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
     {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
@@ -845,6 +846,34 @@
 
     function actualiserToutesLesApercusImage() {
       document.querySelectorAll(".bloc-variante-reseau").forEach((bloc) => actualiserApercuImage(bloc.dataset.reseau));
+      actualiserImagesChoisies();
+    }
+
+    // Liste des images du post (champ-image-url-ia, "|" separe) avec un bouton pour en retirer une - alimentee
+    // par toutes les sources (IA, fiche, WhatsApp, avis, titre sur photo...), toutes passent par ce meme champ.
+    function actualiserImagesChoisies() {
+      const conteneur = document.getElementById("apercu-images-choisies");
+      if (!conteneur) return;
+      const urls = champImageUrlIA.value ? champImageUrlIA.value.split("|").filter(Boolean) : [];
+      conteneur.innerHTML = "";
+      conteneur.hidden = !urls.length;
+      urls.forEach((url, i) => {
+        const bloc = document.createElement("div");
+        bloc.className = "image-choisie";
+        const img = document.createElement("img");
+        img.src = url; img.alt = "Image du post";
+        const retirer = document.createElement("button");
+        retirer.type = "button"; retirer.className = "image-choisie-retirer"; retirer.title = "Retirer cette image";
+        retirer.textContent = "×";
+        retirer.addEventListener("click", () => {
+          const nouvelles = urls.filter((_, j) => j !== i);
+          champImageUrlIA.value = nouvelles.join("|");
+          if (!nouvelles.length) document.getElementById("champ-est-carrousel").value = "0";
+          actualiserToutesLesApercusImage();
+        });
+        bloc.appendChild(img); bloc.appendChild(retirer);
+        conteneur.appendChild(bloc);
+      });
     }
 
     // Reprendre une photo deja existante (fiche Google ou WhatsApp) comme image du post, sans re-televerser
