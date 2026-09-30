@@ -107,30 +107,44 @@ def lister_fiches_multi_comptes(comptes_avec_identifiants) -> list[dict]:
 
 def lister_photos(identifiants, account_id: str, location_id: str):
     """
-    Renvoie les photos deja presentes sur une fiche :
+    Renvoie TOUTES les photos deja presentes sur une fiche (suit nextPageToken - une fiche active peut largement
+    depasser une seule page) :
     [{"url": str, "miniature": str, "categorie": str, "nom_media": str, "date_publication": str}, ...]
     """
     url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/media"
-    reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"})
-    if reponse.status_code != 200:
-        return []
-
     resultats = []
-    for item in reponse.json().get("mediaItems", []):
-        url_photo = item.get("googleUrl")
-        if url_photo:
-            resultats.append({
-                "url": url_photo,
-                # Une photo tres recemment ajoutee peut ne pas encore etre disponible a
-                # l'URL pleine resolution (delai de traitement cote Google) ; la miniature
-                # est generalement disponible plus vite et sert de repli a l'affichage.
-                "miniature": item.get("thumbnailUrl", ""),
-                "categorie": item.get("locationAssociation", {}).get("category", ""),
-                # "accounts/{a}/locations/{l}/media/{m}" - identifiant complet requis
-                # pour la suppression (voir supprimer_photo_fiche_google).
-                "nom_media": item.get("name", ""),
-                "date_publication": item.get("createTime", ""),
-            })
+    page_token = None
+
+    while True:
+        params = {"pageSize": 100}
+        if page_token:
+            params["pageToken"] = page_token
+
+        reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params=params)
+        if reponse.status_code != 200:
+            break
+        donnees = reponse.json()
+
+        for item in donnees.get("mediaItems", []):
+            url_photo = item.get("googleUrl")
+            if url_photo:
+                resultats.append({
+                    "url": url_photo,
+                    # Une photo tres recemment ajoutee peut ne pas encore etre disponible a
+                    # l'URL pleine resolution (delai de traitement cote Google) ; la miniature
+                    # est generalement disponible plus vite et sert de repli a l'affichage.
+                    "miniature": item.get("thumbnailUrl", ""),
+                    "categorie": item.get("locationAssociation", {}).get("category", ""),
+                    # "accounts/{a}/locations/{l}/media/{m}" - identifiant complet requis
+                    # pour la suppression (voir supprimer_photo_fiche_google).
+                    "nom_media": item.get("name", ""),
+                    "date_publication": item.get("createTime", ""),
+                })
+
+        page_token = donnees.get("nextPageToken")
+        if not page_token:
+            break
+
     return resultats
 
 

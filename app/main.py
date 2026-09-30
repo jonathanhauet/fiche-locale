@@ -6976,7 +6976,7 @@ def publication_multi_avis_photos(client_id: int, request: Request, source: int 
         photos = _photos_pour_client(db, client)
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible de lire les photos : {erreur}"}, status_code=500)
-    utiles = [p for p in photos if p.get("categorie") != "LOGO"][:40]
+    utiles = [p for p in photos if p.get("categorie") != "LOGO"][:300]
     return JSONResponse({"photos": [{"url": p["url"], "miniature": p.get("miniature") or p["url"], "categorie": p.get("categorie", "")} for p in utiles]})
 
 
