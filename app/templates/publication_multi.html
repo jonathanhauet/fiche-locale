@@ -26,6 +26,14 @@
 {% endfor %}
 
 <form method="post" action="/publication-multi/{{ client.id }}/publier" enctype="multipart/form-data" class="formulaire">
+  <div class="barre-onglets-etapes" role="tablist">
+    <button type="button" class="onglet-etape actif" data-cible-onglet="texte">1. Texte</button>
+    <button type="button" class="onglet-etape" data-cible-onglet="visuel">2. Visuel</button>
+    <button type="button" class="onglet-etape" data-cible-onglet="reseaux">3. Réseaux &amp; réglages</button>
+    <button type="button" class="onglet-etape" data-cible-onglet="publier">4. Publier</button>
+  </div>
+
+  <div class="onglet-panneau" data-onglet="texte">
   <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir)</label>
   <div class="ligne-champs">
     <input type="text" id="theme-ia" placeholder="Ex : la dernière mise à jour Google AI Overviews" style="flex:1;">
@@ -88,6 +96,9 @@
     <span class="texte-discret">Dicter à la voix</span>
   </div>
 
+  </div>
+
+  <div class="onglet-panneau" data-onglet="reseaux" hidden>
   <label>Réseaux</label>
   <div class="grille-cartes-reseaux">
     {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn (profil personnel)", "in"), ("wordpress", "WordPress (blog)", "W"), ("youtube", "YouTube", "YT")] %}
@@ -101,7 +112,9 @@
     </label>
     {% endfor %}
   </div>
+  </div>
 
+  <div class="onglet-panneau" data-onglet="visuel" hidden>
   <label for="image-partagee">Image(s) (optionnelles — partagées par défaut sur tous les réseaux, Instagram en a besoin)</label>
   <input type="file" id="image-partagee" name="image" accept="image/*" multiple>
   <p class="texte-discret">Jusqu'à 10 images : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique ; un carrousel IA (ci-dessous) compte comme plusieurs images.</p>
@@ -485,7 +498,9 @@
     </button>
     <p id="texte-statut-montage" class="texte-vide" hidden></p>
   </details>
+  </div>
 
+  <div class="onglet-panneau" data-onglet="reseaux" hidden>
   <button type="button" id="bouton-adapter" class="bouton-secondaire">
     <span class="spinner" id="spinner-adapter" hidden></span>
     🤖 Adapter le texte par réseau (IA)
@@ -583,8 +598,12 @@
     <p class="texte-discret">Laissez un champ vide pour reprendre l'horaire commun ci-dessus (ou une publication immédiate s'il est vide aussi).</p>
     <div id="lignes-horaires-reseau"></div>
   </div>
+  </div>
 
+  <div class="onglet-panneau" data-onglet="publier" hidden>
+  <p class="texte-discret">Vérifiez le texte, le visuel et les réseaux sélectionnés dans les étapes précédentes, puis publiez.</p>
   <button type="submit" class="bouton">Publier / programmer sur les réseaux sélectionnés</button>
+  </div>
 </form>
 <template id="modele-horaire-reseau">
   <div class="ligne-horaire-reseau" data-reseau="">
@@ -729,6 +748,30 @@
 <h2>Publications programmées pour {{ client.nom }}</h2>
 {% with lignes=publications_programmees, retour="" %}{% include "_resume_publications.html" %}{% endwith %}
 {% endif %}
+
+<script>
+  // Navigation par etapes (Texte / Visuel / Reseaux & reglages / Publier) : simple bascule de visibilite, aucune
+  // section n'est deplacee dans le DOM (plusieurs panneaux peuvent partager le meme data-onglet, ex. "reseaux"
+  // qui regroupe le choix des reseaux plus haut et l'adaptation du texte/programmation plus bas).
+  (function () {
+    const onglets = Array.from(document.querySelectorAll(".onglet-etape"));
+    const panneaux = Array.from(document.querySelectorAll(".onglet-panneau"));
+    function activerOnglet(cle) {
+      onglets.forEach((b) => b.classList.toggle("actif", b.dataset.cibleOnglet === cle));
+      panneaux.forEach((p) => { p.hidden = p.dataset.onglet !== cle; });
+    }
+    onglets.forEach((b) => b.addEventListener("click", () => activerOnglet(b.dataset.cibleOnglet)));
+
+    // Un champ requis (ex. texte de base) reste valide pour la soumission meme cache dans un onglet inactif,
+    // mais le navigateur ne peut pas lui rendre le focus ni afficher son infobulle native - sans ca, cliquer sur
+    // "Publier" ne ferait rien de visible. "invalid" ne remonte pas (pas de bubbling) : ecoute en phase de capture.
+    const formulaire = document.querySelector('form[action*="/publier"]');
+    formulaire.addEventListener("invalid", (evenement) => {
+      const panneau = evenement.target.closest(".onglet-panneau");
+      if (panneau) activerOnglet(panneau.dataset.onglet);
+    }, true);
+  })();
+</script>
 
 <script>
   (function () {

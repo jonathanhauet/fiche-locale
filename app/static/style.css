@@ -3168,6 +3168,17 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .avis-photos-fiche img.avis-photo-choisie { border-color: var(--accent); }
 .avis-photos-fiche img.photo-deja-utilisee { border-color: #f79009; }
 
+.barre-onglets-etapes {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 1.2rem; border-bottom: 1px solid var(--carte-bordure);
+  position: sticky; top: 0; background: var(--fond); z-index: 5; padding-top: 4px;
+}
+.onglet-etape {
+  padding: 0.6rem 1rem; border: none; background: none; color: var(--texte-discret, #6b7280);
+  font-size: 0.92rem; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; border-radius: 0;
+}
+.onglet-etape:hover { color: var(--texte, #1f2937); }
+.onglet-etape.actif { color: var(--accent); border-bottom-color: var(--accent); }
+.onglet-etape.onglet-avec-erreur::after { content: " ⚠"; }
 .images-choisies { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0; }
 .image-choisie { position: relative; flex-shrink: 0; }
 .image-choisie img { height: 72px; width: auto; border-radius: 6px; display: block; }
