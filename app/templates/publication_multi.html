@@ -283,6 +283,30 @@
     </div>
     <p id="carrousel-statut" class="texte-vide" hidden></p>
   </details>
+  <details class="options-visuel" id="panneau-carrousel-bd">
+    <summary>🎨 Carrousel de visuels BD (IA)</summary>
+    <p class="texte-discret">
+      L'IA imagine plusieurs scènes en style bande dessinée qui se suivent pour raconter une seule histoire à partir du texte de base, et génère une image par scène (peut prendre une à deux minutes).
+    </p>
+    <div class="ligne-champs">
+      <label for="carrousel-bd-nb-slides" class="texte-discret">Nombre de slides</label>
+      <select id="carrousel-bd-nb-slides" style="width:auto;">
+        <option value="3">3</option><option value="4" selected>4</option><option value="5">5</option>
+      </select>
+      {% if client.photos_reference %}
+      <label class="etiquette-chip-case">
+        <input type="checkbox" id="carrousel-bd-reaction">
+        M'inclure en réaction (petit cameo à partir de mes photos de référence)
+      </label>
+      {% endif %}
+      <button type="button" id="carrousel-bd-generer" class="bouton-secondaire">
+        <span class="spinner" id="carrousel-bd-spinner" hidden></span>
+        🎨 Générer le carrousel BD
+      </button>
+    </div>
+    <div id="carrousel-bd-apercu" class="images-choisies" hidden></div>
+    <p id="carrousel-bd-statut" class="texte-vide" hidden></p>
+  </details>
   {% if fiches_source_avis %}
   <details class="options-visuel" id="panneau-avis">
     <summary>⭐ Mettre en avant un avis Google</summary>
@@ -1440,6 +1464,59 @@
         spinnerGenererImage.hidden = true;
       }
     });
+
+    const boutonCarrouselBd = document.getElementById("carrousel-bd-generer");
+    if (boutonCarrouselBd) {
+      const spinnerCarrouselBd = document.getElementById("carrousel-bd-spinner");
+      const statutCarrouselBd = document.getElementById("carrousel-bd-statut");
+      const apercuCarrouselBd = document.getElementById("carrousel-bd-apercu");
+      boutonCarrouselBd.addEventListener("click", async () => {
+        const texte = document.getElementById("texte-base").value.trim();
+        statutCarrouselBd.hidden = false;
+        if (!texte) {
+          statutCarrouselBd.textContent = "Écrivez d'abord le texte de base.";
+          return;
+        }
+        boutonCarrouselBd.disabled = true;
+        spinnerCarrouselBd.hidden = false;
+        statutCarrouselBd.textContent = "Génération des scènes en cours (peut prendre une à deux minutes)...";
+        apercuCarrouselBd.hidden = true;
+        apercuCarrouselBd.innerHTML = "";
+        try {
+          const caseReaction = document.getElementById("carrousel-bd-reaction");
+          const reponse = await fetch("/publication-multi/{{ client.id }}/generer_carrousel_images_ia", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              texte_post: texte,
+              nb_slides: document.getElementById("carrousel-bd-nb-slides").value,
+              avec_reaction: Boolean(caseReaction && caseReaction.checked),
+            }),
+          });
+          const donnees = await reponse.json();
+          if (!reponse.ok) {
+            statutCarrouselBd.textContent = donnees.erreur || "Échec de la génération du carrousel.";
+            return;
+          }
+          champImagePartagee.value = "";
+          champImageUrlIA.value = donnees.urls.join("|");
+          document.getElementById("champ-est-carrousel").value = "1";
+          actualiserToutesLesApercusImage();
+          donnees.urls.forEach((url) => {
+            const img = document.createElement("img");
+            img.src = url; img.className = "image-choisie";
+            apercuCarrouselBd.appendChild(img);
+          });
+          apercuCarrouselBd.hidden = false;
+          statutCarrouselBd.textContent = donnees.urls.length + " images générées — utilisées comme carrousel (aperçus plus bas).";
+        } catch (erreur) {
+          statutCarrouselBd.textContent = "Erreur réseau lors de la génération du carrousel.";
+        } finally {
+          boutonCarrouselBd.disabled = false;
+          spinnerCarrouselBd.hidden = true;
+        }
+      });
+    }
 
     const boutonGenererVideo = document.getElementById("bouton-generer-video");
     const spinnerGenererVideo = document.getElementById("spinner-generer-video");

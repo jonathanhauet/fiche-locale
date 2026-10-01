@@ -1539,6 +1539,62 @@ def storyboard_video_depuis_texte(texte_post: str, nb_scenes: int = 3) -> list:
     return lignes
 
 
+STYLE_BD = (
+    "a comic-book (bande dessinee) illustration in the franco-belgian clear-line style: confident ink outlines, "
+    "flat colors, expressive characters with natural proportions"
+)
+
+
+def storyboard_images_depuis_texte(texte_post: str, nb_slides: int = 4, avec_reaction: bool = False) -> list:
+    """
+    Decoupe le texte d'un post en plusieurs scenes illustrees (prompts anglais, meme style BD - voir STYLE_BD -
+    repete a l'identique sur chaque plan pour que la serie reste coherente) qui se suivent logiquement pour
+    raconter une seule histoire, pour un carrousel d'images generees par IA (voir gemini_images.py). avec_reaction :
+    ajoute a chaque scene un petit cameo de "la personne des photos de reference" qui reagit a ce qui s'y passe,
+    en coin, pose/position differente a chaque plan - jamais decrit physiquement (meme regle que
+    prompt_image_avec_options : le visage vient des photos, pas du texte).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not texte_post.strip():
+        raise RuntimeError("Aucun texte de post fourni.")
+    nb_slides = max(3, min(int(nb_slides or 4), 5))
+
+    consigne_reaction = (
+        "\nPour chaque plan, ajoute aussi un petit cameo de \"the person from the reference photos\" qui reagit a "
+        "ce qui se passe dans la scene, en retrait dans un coin (varie le coin et sa pose/expression d'un plan a "
+        "l'autre pour correspondre a ce qui s'y dit : surpris, qui hoche la tete, qui pointe du doigt, pouce leve, "
+        "pensif...). Ne decris jamais son physique (visage, cheveux, age, vetements) : le visage vient des photos "
+        "de reference, garde-le toujours bien visible et reconnaissable."
+        if avec_reaction else ""
+    )
+
+    prompt = (
+        "Voici le texte d'un post pour les reseaux sociaux :\n\n"
+        f"{texte_post.strip()[:2500]}\n\n"
+        f"Decoupe-le en exactement {nb_slides} plans qui se suivent logiquement pour raconter une seule histoire "
+        "coherente autour de ce sujet (par exemple : une scene d'ouverture qui plante le decor, un ou deux plans "
+        "de detail ou d'action qui developpent le propos, puis une scene de conclusion) - jamais des scenes sans "
+        "rapport entre elles. Pour chaque plan, ecris un prompt en anglais pour un generateur d'images : une scene "
+        f"concrete et specifique liee au sujet (pas une metaphore abstraite). Precise systematiquement ce style "
+        f"visuel, dans ces termes exacts : \"{STYLE_BD}\" - le meme style sur les {nb_slides} plans, pour que la "
+        f"serie reste coherente visuellement. Aucun texte lisible nulle part (bulles, affiches, ecrans)."
+        f"{consigne_reaction}\n"
+        f"Reponds uniquement par les {nb_slides} prompts, un par ligne, numerotes (1. ... 2. ... etc), sans autre texte."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=900, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), "").strip()
+    lignes = [re.sub(r"^\s*\d+[\.\)]\s*", "", l).strip().strip('"') for l in texte.splitlines()]
+    lignes = [l for l in lignes if l][:nb_slides]
+    if len(lignes) < 2:
+        raise RuntimeError("L'IA n'a pas renvoyé assez de plans exploitables.")
+    return lignes
+
+
 def prompt_image_avec_auteur(prompt_image: str, texte_post: str = "") -> str:
     """
     Reecrit un prompt d'image pour que l'AUTEUR du post (la personne des
@@ -2157,3 +2213,107 @@ SCHEMA_TITRE_PHOTO = {
     "properties": {"titre": {"type": "string"}, "sous_titre": {"type": "string"}},
     "required": ["titre", "sous_titre"], "additionalProperties": False,
 }
+
+
+STYLE_SCRIPT_VIDEO = """
+Le ton de Jonathan Hauët (Expert Produit Google, spécialiste en référencement local) dans ses scripts vidéo face caméra :
+- Intro quasi systématique : il se présente ("Bonjour à tous, je suis Jonathan Hauët, Expert Produit Google" ou une variante
+  courte comme "Salut à tous, c'est Jonathan") et invite tôt à s'abonner à sa chaîne pour les prochains conseils.
+- Ton direct, pédagogue, oral : phrases courtes, "vous", quelques questions rhétoriques ("Vous l'avez compris ?",
+  "Alors comment faire ?"), jamais de jargon non expliqué.
+- Structure : une accroche qui pose le sujet et pourquoi il compte, puis le cœur du sujet en étapes numérotées ou en
+  liste de points (raisons, erreurs, étapes à suivre...), souvent illustré par un exemple concret ou vécu ("Un
+  professionnel que j'ai accompagné...", "Exemple réel :"), puis une conclusion qui résume le message.
+- Conclusion quasi systématique : invite à s'abonner et/ou à commenter, puis une formule de clôture courte
+  ("À très vite pour une nouvelle vidéo !", "À très bientôt !").
+- Vocabulaire récurrent : "fiche d'établissement Google" / "fiche Google Business", "visibilité locale",
+  "référencement local", "Pack Local". Pas d'anglicisme sauf les termes propres au métier (SEO, Google Ads...).
+- Jamais de tiret cadratin (—) : un tiret simple ou une virgule à la place.
+- Longueur adaptée à la richesse du sujet, dans l'esprit de ses scripts existants (environ 400 à 900 mots).
+- Écrit avec les accents français corrects partout (é, è, à, ê, ô, ç...).
+""".strip()
+
+EXEMPLES_SCRIPT_VIDEO = [
+    (
+        "Salut tout le monde.\n"
+        "Aujourd'hui une vidéo courte et explicative sur la mise en place des liens vers vos réseaux sociaux sur "
+        "votre fiche d'établissement Google.\n"
+        "Depuis peu, Google vous propose de mettre en place des liens sur votre fiche vers plusieurs types de "
+        "plateforme : Facebook, Instagram, Twitter, YouTube, TikTok et Pinterest.\n"
+        "Jusqu'à présent, Google se permettait de mettre en place ces liens automatiquement sur votre fiche s'il "
+        "repérait grâce à son algorithme l'existence de réseaux sociaux pour votre entreprise.\n"
+        "Aujourd'hui, vous avez la main, et je vous montre comment faire.\n"
+        "Direction votre application Google Maps sur votre téléphone. Cliquez sur « Vos Fiches d'établissement » "
+        "puis sur « éditer la fiche ».\n"
+        "Dans l'onglet « Contact », ou en descendant quelque peu sur votre écran, vous allez voir cette nouvelle "
+        "section « Profils sur les réseaux sociaux ». En cliquant sur Modifier, l'icône du crayon, vous allez "
+        "pouvoir ajouter ou modifier les différents liens vers vos réseaux sociaux.\n"
+        "Il vous suffit ensuite de cliquer sur Enregistrer pour voir apparaître en quelques heures ces nouveaux "
+        "liens à disposition de vos clients et futurs clients sur votre fiche.\n"
+        "Je ne vais pas vous faire un cours sur les réseaux sociaux mais simplement vous donner un conseil très "
+        "simple. Votre présence sur les réseaux ne répond qu'à une seule logique : celle de communiquer avec vos "
+        "clients ou potentiels clients. Ne vous challengez pas à être présent sur 5 réseaux sociaux différents si "
+        "votre clientèle n'est majoritairement présente que sur une d'entre elle.\n"
+        "Un conseil simple pour votre entreprise : mieux vaut travailler très bien sur un réseau social que "
+        "moyennement sur trois différents.\n"
+        "Placez le ou les bons liens, et profitez de cette nouvelle opportunité de trafic que vous propose votre "
+        "fiche d'établissement Google Business. À très vite pour une nouvelle vidéo !"
+    ),
+    (
+        "Bonjour à tous,\n"
+        "Je suis Jonathan Hauët, Expert Produit Google et spécialiste du référencement local.\n"
+        "Dans cette vidéo, je vais vous expliquer comment demander la propriété d'une fiche Google Business.\n"
+        "Que vous ayez perdu vos identifiants, qu'un ancien salarié soit encore gestionnaire, ou que la fiche ait "
+        "déjà été revendiquée par quelqu'un d'autre... la procédure est simple, à condition de bien suivre les "
+        "étapes.\n"
+        "Première étape : Recherchez votre établissement sur Google. Tapez le nom de votre entreprise dans la "
+        "barre de recherche. Si une fiche existe, elle apparaîtra sur la droite de l'écran, ou directement dans "
+        "les résultats de recherche. À ce moment-là, vous verrez un lien intitulé « Vous êtes le propriétaire de "
+        "cet établissement ? ». Cliquez dessus. Puis, cliquez sur le bouton « Demander l'accès ».\n"
+        "Deuxième étape : Remplissez le formulaire. Google va vous poser quelques questions. Votre nom, votre "
+        "lien avec l'entreprise, et éventuellement un numéro de téléphone ou un justificatif. Prenez le temps de "
+        "tout renseigner sérieusement.\n"
+        "Troisième étape : Attendez la réponse du propriétaire actuel. Dès que vous avez envoyé votre demande, "
+        "Google envoie un email à la personne actuellement en charge de la fiche. Cette personne a trois jours "
+        "pour répondre. Si elle accepte votre demande, vous recevrez un email de confirmation et vous deviendrez "
+        "officiellement gestionnaire de la fiche.\n"
+        "Et si la demande est refusée ou ignorée ? Si vous ne recevez pas de réponse après trois jours, retournez "
+        "dans l'email de confirmation que Google vous a envoyé, cliquez sur « Afficher la demande », et suivez les "
+        "instructions à l'écran pour revendiquer et vérifier vous-même la propriété de la fiche.\n"
+        "Voilà. Vous avez maintenant toutes les clés pour reprendre la main sur votre fiche Google Business. Une "
+        "fiche bien gérée, c'est plus de visibilité, plus d'appels, et surtout, plus de clients.\n"
+        "Merci pour votre attention, et à très bientôt dans une prochaine vidéo."
+    ),
+]
+
+
+def generer_script_video_youtube(sujet: str, angle: str = "") -> str:
+    """
+    Script à lire face caméra pour une vidéo YouTube, dans le ton de Jonathan Hauët (voir STYLE_SCRIPT_VIDEO et
+    EXEMPLES_SCRIPT_VIDEO, deux de ses scripts réels servant de modèle de style). sujet : le thème de la vidéo.
+    angle : précision facultative (ex. un angle particulier, un public cible, une longueur souhaitée).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not (sujet or "").strip():
+        raise RuntimeError("Indiquez d'abord le sujet de la vidéo.")
+
+    bloc_angle = f"\nPrécision supplémentaire à respecter : {angle.strip()[:500]}\n" if (angle or "").strip() else ""
+    exemples = "\n\n---\n\n".join(EXEMPLES_SCRIPT_VIDEO)
+    prompt = (
+        f"{STYLE_SCRIPT_VIDEO}\n\n"
+        f"Voici deux exemples réels de scripts déjà écrits par Jonathan, à prendre comme modèle de ton et de "
+        f"structure (pas de contenu, le sujet du jour est différent) :\n\n{exemples}\n\n---\n\n"
+        f"Écris maintenant, dans ce même ton, un nouveau script vidéo face caméra sur le sujet suivant : "
+        f"« {sujet.strip()[:500]} »{bloc_angle}\n"
+        "Réponds uniquement par le script, prêt à être lu, sans titre ni note avant ou après."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=2200, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((b.text for b in reponse.content if b.type == "text"), "").strip()
+    if not texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    return _nettoyer_texte_genere(texte)

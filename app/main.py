@@ -6245,6 +6245,35 @@ def supprimer_musique(piste_id: int, request: Request, db: Session = Depends(obt
     return RedirectResponse("/musiques", status_code=303)
 
 
+@app.get("/scripts-video", response_class=HTMLResponse)
+def page_scripts_video(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    return templates.TemplateResponse(request, "scripts_video.html", {"page_actuelle": "scripts_video"})
+
+
+@app.post("/scripts-video/generer")
+async def generer_script_video(request: Request):
+    """Script face camera pour YouTube dans le ton de Jonathan (voir claude_generation.generer_script_video_youtube)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    donnees = await request.json()
+    sujet = (donnees.get("sujet") or "").strip()
+    angle = (donnees.get("angle") or "").strip()
+    if not sujet:
+        return JSONResponse({"erreur": "Indiquez d'abord le sujet de la vidéo."}, status_code=400)
+
+    try:
+        script = await run_in_threadpool(claude_generation.generer_script_video_youtube, sujet, angle)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Impossible de générer le script : {e}"}, status_code=500)
+
+    return JSONResponse({"script": script})
+
+
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---
 
 
@@ -7893,6 +7922,62 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
         "prompt_genere": prompt_genere, "avertissement": avertissement,
         "choix_aleatoires": claude_generation.libelles_choix_aleatoires(choix) if varier else [],
     })
+
+
+@app.post("/publication-multi/{client_id}/generer_carrousel_images_ia")
+async def publication_multi_generer_carrousel_images_ia(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Carrousel d'images generees par IA (style BD, voir claude_generation.storyboard_images_depuis_texte) a partir
+    du texte du post - plusieurs scenes qui racontent une seule histoire, au lieu d'une image isolee. Avec
+    reaction : chaque scene inclut en coin un petit cameo de la personne des photos de reference. Peut prendre
+    une a plusieurs minutes (un appel IA par plan) : execute hors du thread principal.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    texte_post = (donnees.get("texte_post") or "").strip()
+    avec_reaction = bool(donnees.get("avec_reaction")) and bool(client.photos_reference)
+    try:
+        nb_slides = max(3, min(int(donnees.get("nb_slides") or 4), 5))
+    except (TypeError, ValueError):
+        nb_slides = 4
+
+    if not texte_post:
+        return JSONResponse({"erreur": "Ecrivez d'abord le texte de base."}, status_code=400)
+
+    try:
+        prompts = await run_in_threadpool(
+            claude_generation.storyboard_images_depuis_texte, texte_post, nb_slides, avec_reaction,
+        )
+    except Exception as e:
+        return JSONResponse({"erreur": f"Impossible de preparer les plans : {e}"}, status_code=500)
+
+    images_reference = None
+    if avec_reaction:
+        images_reference = []
+        for photo in client.photos_reference:
+            try:
+                images_reference.append(_jpeg_normalise(requests.get(photo.image_url, timeout=20).content, 1536))
+            except Exception:
+                continue
+        if not images_reference:
+            images_reference = None
+
+    try:
+        urls = []
+        for prompt in prompts:
+            octets = await run_in_threadpool(gemini_images.generer_image, prompt, "1:1", images_reference, False)
+            urls.append(ovh_upload.envoyer_octets(octets, f"carrousel-ia-{uuid.uuid4().hex[:10]}.png"))
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
+
+    return JSONResponse({"urls": urls, "prompts": prompts})
 
 
 @app.post("/publication-multi/{client_id}/generer_video")

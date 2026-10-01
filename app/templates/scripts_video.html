@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% set page_actuelle = "scripts_video" %}
+{% block titre %}Scripts vidéo (IA) — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Scripts vidéo (IA)</h1>
+</div>
+
+<p class="texte-vide">
+  Génère un script à lire face caméra pour YouTube, dans votre ton habituel (celui de vos scripts Google Business
+  déjà publiés) : indiquez le sujet, l'IA rédige le script complet.
+</p>
+
+<div class="formulaire">
+  <label for="script-sujet">Sujet de la vidéo</label>
+  <textarea id="script-sujet" rows="3" placeholder="Ex : Comment répondre à un avis négatif sur Google Business"></textarea>
+
+  <label for="script-angle">Précision facultative (angle, public visé, longueur souhaitée...)</label>
+  <input type="text" id="script-angle" placeholder="Ex : insister sur les artisans sans local physique">
+
+  <div class="ligne-champs">
+    <button type="button" id="script-generer" class="bouton">
+      <span class="spinner" id="script-spinner" hidden></span>
+      🎬 Générer le script
+    </button>
+  </div>
+  <p id="script-statut" class="texte-vide" hidden></p>
+
+  <div id="script-resultat" hidden>
+    <label for="script-texte">Script généré (modifiable)</label>
+    <textarea id="script-texte" rows="20"></textarea>
+    <div class="ligne-champs">
+      <button type="button" id="script-copier" class="bouton-secondaire">📋 Copier</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const champSujet = document.getElementById("script-sujet");
+    const champAngle = document.getElementById("script-angle");
+    const bouton = document.getElementById("script-generer");
+    const spinner = document.getElementById("script-spinner");
+    const statut = document.getElementById("script-statut");
+    const resultat = document.getElementById("script-resultat");
+    const champTexte = document.getElementById("script-texte");
+    const boutonCopier = document.getElementById("script-copier");
+
+    function ajusterHauteur(champ) {
+      champ.style.height = "auto";
+      champ.style.height = (champ.scrollHeight + 2) + "px";
+    }
+    champTexte.addEventListener("input", () => ajusterHauteur(champTexte));
+
+    bouton.addEventListener("click", async () => {
+      const sujet = champSujet.value.trim();
+      statut.hidden = false;
+      if (!sujet) {
+        statut.textContent = "Indiquez d'abord le sujet de la vidéo.";
+        return;
+      }
+      bouton.disabled = true;
+      spinner.hidden = false;
+      resultat.hidden = true;
+      statut.textContent = "Rédaction du script en cours (peut prendre une minute)...";
+
+      try {
+        const reponse = await fetch("/scripts-video/generer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sujet: sujet, angle: champAngle.value.trim() }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) {
+          statut.textContent = donnees.erreur || "Échec de la génération du script.";
+          return;
+        }
+        champTexte.value = donnees.script;
+        resultat.hidden = false;
+        ajusterHauteur(champTexte);
+        statut.textContent = "Script généré — relisez-le avant de tourner.";
+      } catch (erreur) {
+        statut.textContent = "Erreur réseau lors de la génération du script.";
+      } finally {
+        bouton.disabled = false;
+        spinner.hidden = true;
+      }
+    });
+
+    boutonCopier.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(champTexte.value);
+        boutonCopier.textContent = "✅ Copié";
+        setTimeout(() => { boutonCopier.textContent = "📋 Copier"; }, 2000);
+      } catch (erreur) {
+        champTexte.select();
+        document.execCommand("copy");
+      }
+    });
+  })();
+</script>
+{% endblock %}
