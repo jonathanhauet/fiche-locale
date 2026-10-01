@@ -73,12 +73,17 @@ def _lignes(dessin, texte: str, police, largeur_max: int) -> list[str]:
 
 
 def _texte_ajuste(dessin, texte, style, taille_max, taille_min, largeur, hauteur_max, interligne=1.22):
-    """Plus grande taille de police pour laquelle le texte tient dans la boite. Renvoie (police, lignes, pas)."""
+    """
+    Plus grande taille de police pour laquelle le texte tient dans la boite. Renvoie (police, lignes, pas).
+    Verifie aussi que chaque ligne tient reellement en largeur (pas seulement le nombre de lignes en hauteur) :
+    _lignes() peut laisser un mot isole trop long deborder sans ca (ex. un mot compose), puisqu'elle ne force
+    jamais une ligne a revenir en dessous de la largeur max si un seul mot la depasse deja a lui seul.
+    """
     for taille in range(taille_max, taille_min - 1, -2):
         police = _police(style, taille)
         lignes = _lignes(dessin, texte, police, largeur)
         pas = int(taille * interligne)
-        if len(lignes) * pas <= hauteur_max:
+        if len(lignes) * pas <= hauteur_max and all(dessin.textlength(l, font=police) <= largeur for l in lignes):
             return police, lignes, pas
     police = _police(style, taille_min)
     pas = int(taille_min * interligne)

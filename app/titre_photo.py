@@ -162,14 +162,26 @@ def _lignes_mots(d, mots, police, largeur_max):
     return lignes, espace
 
 
+def _largeur_ligne(ligne, espace) -> float:
+    return sum(w for _, _, w in ligne) + espace * (len(ligne) - 1)
+
+
 def _ajuster(d, mots, cle_police, taille_max, largeur_max, hauteur_max, max_lignes):
-    """Plus grande taille pour laquelle le titre tient (largeur, hauteur, nombre de lignes). Renvoie (police, lignes, espace, pas)."""
+    """
+    Plus grande taille pour laquelle le titre tient (largeur, hauteur, nombre de lignes). Renvoie (police, lignes,
+    espace, pas). Verifie aussi que chaque ligne tient reellement en largeur : _lignes_mots() peut laisser un mot
+    isole trop long (ex. un mot compose) deborder sans ca, puisqu'elle ne revient jamais sous la largeur max si
+    un seul mot la depasse deja a lui seul.
+    """
     interligne = INTERLIGNE[cle_police]
     for taille in range(max(taille_max, 52), 51, -4):
         police = _police(cle_police, taille)
         lignes, espace = _lignes_mots(d, mots, police, largeur_max)
         pas = int(taille * interligne)
-        if len(lignes) <= max_lignes and len(lignes) * pas <= hauteur_max:
+        if (
+            len(lignes) <= max_lignes and len(lignes) * pas <= hauteur_max
+            and all(_largeur_ligne(ligne, espace) <= largeur_max for ligne in lignes)
+        ):
             return police, lignes, espace, pas
     police = _police(cle_police, 52)
     lignes, espace = _lignes_mots(d, mots, police, largeur_max)
