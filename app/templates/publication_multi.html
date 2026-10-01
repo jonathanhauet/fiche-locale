@@ -18,7 +18,7 @@
 
 {% for brouillon in brouillons_whatsapp_en_attente %}
 <div class="bandeau-info bandeau-brouillon-whatsapp">
-  <span>📱 Un brouillon est prêt à partir de votre réponse WhatsApp du {{ brouillon.cree_le.strftime("%d/%m/%Y à %H:%M") }}.</span>
+  <span>📱 Un brouillon est prêt à partir de votre réponse WhatsApp du {{ brouillon.cree_le | heure_locale }}.</span>
   <form method="post" action="/publication-multi/{{ client.id }}/charger_brouillon_whatsapp/{{ brouillon.id }}">
     <button type="submit" class="bouton-secondaire">Charger dans le composeur</button>
   </form>

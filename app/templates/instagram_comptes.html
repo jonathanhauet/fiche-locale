@@ -39,8 +39,8 @@
             @{{ compte.libelle }}
           </span>
         </td>
-        <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
-        <td>{{ compte.expire_le.strftime("%Y-%m-%d") if compte.expire_le else "—" }}</td>
+        <td>{{ compte.cree_le | heure_locale("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ compte.expire_le | heure_locale("%Y-%m-%d") if compte.expire_le else "—" }}</td>
         <td>
           <div class="cellule-actions-compte">
             <form method="post" action="/instagram/comptes/{{ compte.id }}/lier">

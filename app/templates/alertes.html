@@ -61,7 +61,7 @@
     <div class="entete-avis">
       <div>
         <strong>{{ libelles_statut_validation.get(alerte.statut_avant, alerte.statut_avant) }} → {{ libelles_statut_validation.get(alerte.statut_apres, alerte.statut_apres) }}</strong>
-        <span class="date-avis">détecté le {{ alerte.detecte_le.strftime("%d/%m/%Y") }}</span>
+        <span class="date-avis">détecté le {{ alerte.detecte_le | heure_locale("%d/%m/%Y") }}</span>
       </div>
       <a href="/clients/{{ alerte.client_id }}"><span class="etiquette-statut">{{ alerte.client.nom }}</span></a>
     </div>
@@ -93,7 +93,7 @@
     <div class="entete-avis">
       <div>
         <strong>{{ alerte.libelle_champ }}</strong>
-        <span class="date-avis">détecté le {{ alerte.detecte_le.strftime("%d/%m/%Y") }}</span>
+        <span class="date-avis">détecté le {{ alerte.detecte_le | heure_locale("%d/%m/%Y") }}</span>
       </div>
       <a href="/clients/{{ alerte.client_id }}"><span class="etiquette-statut">{{ alerte.client.nom }}</span></a>
     </div>

@@ -34,7 +34,7 @@
     <tbody>
       {% for c in comparatifs %}
       <tr>
-        <td>{{ c.cree_le.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td>{{ c.cree_le | heure_locale("%d/%m/%Y %H:%M") }}</td>
         <td class="cellule-libre">{{ c.libelle }}</td>
         <td>{{ c.date_debut.strftime("%d/%m/%Y") }} → {{ c.date_fin.strftime("%d/%m/%Y") }}</td>
         <td>{{ c.total_periode }}</td>

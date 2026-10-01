@@ -24,12 +24,12 @@
       <span class="texte-discret">
         <a href="mailto:{{ lead.email }}">{{ lead.email }}</a>
         {% if lead.telephone %} · <a href="tel:{{ lead.telephone }}">{{ lead.telephone }}</a>{% endif %}
-        · {{ lead.cree_le.strftime("%d/%m/%Y à %H:%M") }}
+        · {{ lead.cree_le | heure_locale }}
       </span>
     </div>
     <div class="actions-avis">
       {% if lead.envoye_le %}
-      <span class="etiquette-statut etiquette-publie_live">✓ Envoyé le {{ lead.envoye_le.strftime("%d/%m/%Y") }}</span>
+      <span class="etiquette-statut etiquette-publie_live">✓ Envoyé le {{ lead.envoye_le | heure_locale("%d/%m/%Y") }}</span>
       <a class="bouton-secondaire" href="/leads/{{ lead.id }}/pdf">📥 PDF</a>
       {% elif lead.pdf_audit_base64 %}
       <span class="etiquette-statut etiquette-avertissement">Audit prêt</span>

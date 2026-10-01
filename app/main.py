@@ -1060,6 +1060,21 @@ def _televerser_video_publication(octets: bytes, nom_fichier: str, prefixe: str)
 
 
 FUSEAU_PARIS = ZoneInfo("Europe/Brussels")
+
+
+def heure_locale(dt: datetime, format: str = "%d/%m/%Y à %H:%M") -> str:
+    """
+    Filtre Jinja : convertit un datetime naif stocke en UTC (convention cree_le = Column(DateTime,
+    default=datetime.utcnow) dans tout models.py) vers l'heure de Bruxelles avant affichage - sans ca, un
+    cree_le.strftime() direct dans un template affiche l'heure UTC telle quelle (decalage d'1 a 2h selon la
+    saison, jamais l'heure que voit l'utilisateur).
+    """
+    if dt is None:
+        return ""
+    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(FUSEAU_PARIS).strftime(format)
+
+
+templates.env.filters["heure_locale"] = heure_locale
 DUREE_CACHE_PUBLICATIONS_EXTERNES = 300  # secondes
 _cache_publications_externes: dict = {}
 

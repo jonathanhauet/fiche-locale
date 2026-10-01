@@ -19,7 +19,7 @@
     <tbody>
       {% for evenement in evenements %}
       <tr>
-        <td>{{ evenement.horodatage.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ evenement.horodatage | heure_locale("%Y-%m-%d %H:%M") }}</td>
         <td>{{ evenement.post.client.nom }}</td>
         <td><a href="/posts/{{ evenement.post.id }}">{{ evenement.post.titre }}</a></td>
         <td><span class="etiquette-statut etiquette-{{ evenement.etat|lower }}">{{ evenement.etat }}</span></td>

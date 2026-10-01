@@ -567,7 +567,7 @@
     <div class="carte-reponse-interview">
       <p class="question-reponse-interview">{{ reponse.question }}</p>
       <p class="texte-reponse-interview">{{ reponse.reponse_transcrite }}</p>
-      <p class="texte-discret">{{ reponse.cree_le.strftime('%d/%m/%Y') }}</p>
+      <p class="texte-discret">{{ reponse.cree_le | heure_locale('%d/%m/%Y') }}</p>
     </div>
     {% endfor %}
   </div>
@@ -646,7 +646,7 @@
       <li><strong>Statut</strong> {{ libelles_statut_ouverture.get(client.protection_statut_ref, client.protection_statut_ref) }}</li>
     </ul>
     <p class="texte-discret">
-      Référence enregistrée le {{ client.protection_reference_maj_le.strftime("%d/%m/%Y à %H:%M") if client.protection_reference_maj_le else "—" }}.
+      Référence enregistrée le {{ client.protection_reference_maj_le | heure_locale if client.protection_reference_maj_le else "—" }}.
     </p>
     <form method="post" action="/clients/{{ client.id }}/protection/desactiver"
           onsubmit="return confirm('Désactiver la protection de cette fiche ? Les changements ne seront plus surveillés.');">

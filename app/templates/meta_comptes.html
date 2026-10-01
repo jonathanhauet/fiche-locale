@@ -32,7 +32,7 @@
             {{ compte.libelle }}
           </span>
         </td>
-        <td>{{ compte.cree_le.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ compte.cree_le | heure_locale("%Y-%m-%d %H:%M") }}</td>
         <td>
           <div class="cellule-actions-compte">
             <a class="bouton-secondaire" href="/meta/comptes/{{ compte.id }}/pages">Voir les Pages</a>

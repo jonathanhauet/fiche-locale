@@ -98,7 +98,7 @@
     <tbody>
       {% for releve in releves %}
       <tr>
-        <td>{{ releve.cree_le.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td>{{ releve.cree_le | heure_locale("%d/%m/%Y %H:%M") }}</td>
         <td>{{ releve.mot_cle_texte }}</td>
         <td>{{ releve.taille_grille }}×{{ releve.taille_grille }}</td>
         <td><span class="etiquette-statut etiquette-{{ releve.statut|lower }}">{{ releve.statut }}</span></td>

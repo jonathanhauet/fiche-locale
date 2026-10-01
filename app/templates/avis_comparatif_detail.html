@@ -11,7 +11,7 @@
 
 <p class="texte-discret">
   Période du {{ comparatif.date_debut.strftime("%d/%m/%Y") }} au {{ comparatif.date_fin.strftime("%d/%m/%Y") }}
-  — généré le {{ comparatif.cree_le.strftime("%d/%m/%Y à %H:%M") }}. Chiffres figés au moment de la génération
+  — généré le {{ comparatif.cree_le | heure_locale }}. Chiffres figés au moment de la génération
   (pas recalculés depuis).
 </p>
 
