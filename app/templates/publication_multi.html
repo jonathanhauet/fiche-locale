@@ -91,6 +91,20 @@
 
   <label for="texte-base">Texte de base</label>
   <textarea id="texte-base" name="texte_base" rows="10">{{ texte_base }}</textarea>
+  <script>
+    // Hauteur ajustee au contenu (jamais de petit cadre qui tronque un texte deja long) : reajustee a chaque
+    // frappe, et exposee globalement pour les endroits qui remplissent ce champ par JS (IA, brouillons...).
+    (function () {
+      const champ = document.getElementById("texte-base");
+      function ajuster() {
+        champ.style.height = "auto";
+        champ.style.height = (champ.scrollHeight + 2) + "px";
+      }
+      champ.addEventListener("input", ajuster);
+      window.ajusterHauteurTexteBase = ajuster;
+      ajuster();
+    })();
+  </script>
   <div class="ligne-champs">
     <button type="button" id="bouton-micro-texte" class="bouton-micro" title="Dicter à la voix" hidden>🎤</button>
     <span class="texte-discret">Dicter à la voix</span>
@@ -784,6 +798,10 @@
       onglets.forEach((b) => b.classList.toggle("actif", b.dataset.cibleOnglet === cle));
       panneaux.forEach((p) => { p.hidden = p.dataset.onglet !== cle; });
       if (cle === "publier") mettreAJourRecap();
+      // Un textarea cache (display:none) a un scrollHeight de 0 : si son contenu a change pendant qu'il etait
+      // masque (ex. texte redige depuis l'outil "avis", dans un autre onglet), sa hauteur n'a pas pu s'ajuster -
+      // on la recalcule des qu'on revient sur l'onglet qui le contient.
+      if (cle === "texte" && window.ajusterHauteurTexteBase) window.ajusterHauteurTexteBase();
       if (barre) barre.scrollIntoView({ block: "start" });
     }
     // Un seul attribut data-cible-onglet pour la barre d'onglets ET les boutons Suivant/Precedent en bas de
@@ -1312,6 +1330,7 @@
         }
         const zoneTexte = document.getElementById("texte-base");
         zoneTexte.value = donnees.texte;
+        window.ajusterHauteurTexteBase && window.ajusterHauteurTexteBase();
         document.getElementById("prompt-image-ia").value = donnees.prompt_image || "";
         texteStatutGeneration.textContent = "Texte généré — relisez avant de publier (vous pouvez aussi générer une image ci-dessous).";
       } catch (erreur) {
@@ -1959,6 +1978,7 @@
         try {
           const donnees = await appeler(base + "/texte", { method: "POST", headers: { "Content-Type": "application/json" }, body: corps("apercu") });
           champTexte.value = donnees.texte;
+          window.ajusterHauteurTexteBase && window.ajusterHauteurTexteBase();
           memoriserAvis();
           message("Texte du post rédigé : relisez-le avant de publier.");
         } catch (e) { message(e.message); } finally { occupe = false; }
