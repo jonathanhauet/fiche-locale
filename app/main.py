@@ -234,6 +234,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_position TEXT DEFAULT ''"))
         if "logo_style" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_style TEXT DEFAULT ''"))
+        if "logo_couleur_fond" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_couleur_fond TEXT DEFAULT ''"))
         for colonne_wordpress in (
             "wordpress_url", "wordpress_utilisateur", "wordpress_mot_de_passe", "wordpress_couleur", "wordpress_lien_cta", "wordpress_texte_cta",
         ):
@@ -6572,6 +6574,17 @@ def _logo_style_demandee(donnees: dict, client) -> str:
     return valeur if valeur in carrousel_visuel.STYLES_LOGO else logo_style_client(client)
 
 
+def logo_couleur_fond_client(client) -> str:
+    """Couleur du fond derriere le logo enregistree pour ce client (blanc, c-a-d vide, par defaut)."""
+    valeur = (getattr(client, "logo_couleur_fond", "") or "").strip().lower()
+    return valeur if REGEX_COULEUR.fullmatch(valeur) else ""
+
+
+def _logo_couleur_fond_demandee(donnees: dict, client) -> str:
+    valeur = str(donnees.get("logo_couleur_fond") or "").strip().lower()
+    return valeur if REGEX_COULEUR.fullmatch(valeur) else logo_couleur_fond_client(client)
+
+
 REGEX_URL_PHOTO_GOOGLE = re.compile(r"https://lh\d*\.googleusercontent\.com/")
 
 
@@ -6615,6 +6628,7 @@ templates.env.globals["couleur_marque_client"] = couleur_marque_client
 templates.env.globals["style_decor_client"] = style_decor_client
 templates.env.globals["logo_position_client"] = logo_position_client
 templates.env.globals["logo_style_client"] = logo_style_client
+templates.env.globals["logo_couleur_fond_client"] = logo_couleur_fond_client
 templates.env.globals["titre_styles"] = titre_photo.STYLES
 templates.env.globals["titre_polices"] = titre_photo.POLICES
 templates.env.globals["titre_pictos"] = titre_photo.PICTOS
@@ -6692,6 +6706,9 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
     if "logo_style" in donnees:
         style_logo = str(donnees.get("logo_style") or "")
         client.logo_style = style_logo if style_logo in carrousel_visuel.STYLES_LOGO else ""
+    if "logo_couleur_fond" in donnees:
+        couleur_fond = str(donnees.get("logo_couleur_fond") or "").strip().lower()
+        client.logo_couleur_fond = couleur_fond if REGEX_COULEUR.fullmatch(couleur_fond) else ""
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -6776,6 +6793,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
     couleur, secondaires = _couleurs_demandees(donnees, client)
     decor, graine_decor = _decor_demande(donnees, client), client.id
     logo_position, logo_style = _logo_position_demandee(donnees, client), _logo_style_demandee(donnees, client)
+    logo_couleur_fond = _logo_couleur_fond_demandee(donnees, client)
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
@@ -6794,6 +6812,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
         photo = _image_depuis_url_autorisee(photo_url)
         images = carrousel_visuel.construire_carrousel(
             slides, layout, couleur, nom_client, logo, photo, secondaires, decor, graine_decor, logo_position, logo_style,
+            logo_couleur_fond,
         )
         sorties = []
         for image in images:
@@ -6928,6 +6947,7 @@ def _preparer_titre_photo(client, donnees: dict) -> dict:
         "couleur": couleur, "secondaires": secondaires, "reglages": titre_photo.normaliser_reglages(donnees.get("reglages")),
         "logo_url": client.logo_url, "sans_logo": bool(donnees.get("sans_logo")), "nom": nom_affiche_carrousel(client),
         "logo_position": _logo_position_demandee(donnees, client), "logo_style": _logo_style_demandee(donnees, client),
+        "logo_couleur_fond": _logo_couleur_fond_demandee(donnees, client),
     }
 
 
@@ -6970,7 +6990,7 @@ async def publication_multi_titre_photo(client_id: int, request: Request, db: Se
             titre_photo_i = " ".join(str(photo_infos.get("titre") or "").split())[:120] or commun["titre"]
             image = titre_photo.dessiner(
                 photo, titre_photo_i, commun["sous_titre"], commun["couleur"], logo, commun["secondaires"], commun["reglages"],
-                commun["nom"], i + 1, len(photos), commun["logo_position"], commun["logo_style"],
+                commun["nom"], i + 1, len(photos), commun["logo_position"], commun["logo_style"], commun["logo_couleur_fond"],
             )
             if not final:
                 image = image.resize((720, round(720 * image.height / image.width)), Image.LANCZOS)
@@ -7015,7 +7035,7 @@ async def publication_multi_titre_photo_styles(client_id: int, request: Request,
         resultats = []
         for cle, libelle, image in titre_photo.apercus_styles(
             photo, commun["titre"], commun["sous_titre"], commun["couleur"], logo, commun["secondaires"], commun["reglages"], commun["nom"],
-            logo_position=commun["logo_position"], logo_style=commun["logo_style"],
+            logo_position=commun["logo_position"], logo_style=commun["logo_style"], logo_couleur_fond=commun["logo_couleur_fond"],
         ):
             tampon = io.BytesIO()
             image.save(tampon, format="JPEG", quality=72)
@@ -7083,6 +7103,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
     couleur, secondaires = _couleurs_demandees(donnees, client)
     decor, graine_decor = _decor_demande(donnees, client), client.id
     logo_position, logo_style = _logo_position_demandee(donnees, client), _logo_style_demandee(donnees, client)
+    logo_couleur_fond = _logo_couleur_fond_demandee(donnees, client)
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
     final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
@@ -7098,7 +7119,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
         photo = _image_depuis_url_autorisee(photo_url)
         image = carrousel_visuel.dessiner_avis(
             texte, auteur, note, layout, couleur, nom_client, logo, secondaires, photo, voile, decor, graine_decor,
-            logo_position, logo_style,
+            logo_position, logo_style, logo_couleur_fond,
         )
         if not final:
             image = image.resize((720, 900), Image.LANCZOS)

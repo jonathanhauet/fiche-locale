@@ -230,7 +230,7 @@ def _pastille(largeur, hauteur, texte, fond, accent_texte):
 def dessiner(
     photo: Image.Image, titre: str, sous_titre: str, couleur: str, logo: Image.Image = None, secondaires: list = None,
     reglages: dict = None, nom_client: str = "", numero: int = None, total: int = 1,
-    logo_position: str = "haut_droite", logo_style: str = "pastille",
+    logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "",
 ) -> Image.Image:
     r = normaliser_reglages(reglages)
     largeur = LARGEUR
@@ -424,17 +424,17 @@ def dessiner(
     image = Image.alpha_composite(image.convert("RGBA"), calque).convert("RGB")
     if logo is not None:
         haut_logo = 70 if position != "haut" else hauteur - 210
-        cv._coller_logo(image, logo, haut_logo, logo_position, logo_style)
+        cv._coller_logo(image, logo, haut_logo, logo_position, logo_style, logo_couleur_fond)
     return image
 
 
-def apercus_styles(photo, titre, sous_titre, couleur, logo, secondaires, reglages, nom_client="", largeur_apercu=360, logo_position="haut_droite", logo_style="pastille"):
+def apercus_styles(photo, titre, sous_titre, couleur, logo, secondaires, reglages, nom_client="", largeur_apercu=360, logo_position="haut_droite", logo_style="pastille", logo_couleur_fond=""):
     """Un petit apercu par style (avec les autres reglages en cours) : pour choisir le style d'un coup d'oeil."""
     sorties = []
     for cle, libelle in STYLES.items():
         image = dessiner(
             photo, titre, sous_titre, couleur, logo, secondaires, {**(reglages or {}), "style": cle}, nom_client,
-            logo_position=logo_position, logo_style=logo_style,
+            logo_position=logo_position, logo_style=logo_style, logo_couleur_fond=logo_couleur_fond,
         )
         sorties.append((cle, libelle, image.resize((largeur_apercu, round(largeur_apercu * image.height / image.width)), Image.LANCZOS)))
     return sorties

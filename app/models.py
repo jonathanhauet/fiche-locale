@@ -180,6 +180,7 @@ class Client(Base):
     logo_url = Column(String, default="")  # logo affiche sur les carrousels (voir carrousel_visuel.py)
     logo_position = Column(String, default="")  # "haut_droite" (defaut) / "haut_gauche" / "bas_droite" / "bas_gauche" / "bas_centre"
     logo_style = Column(String, default="")  # "pastille" (defaut) / "cercle"
+    logo_couleur_fond = Column(String, default="")  # #rrggbb du fond derriere le logo, blanc si vide
     # Client mis en avant en haut de la liste de choix de /publication-multi
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
     # clients publiés le plus souvent.

@@ -243,12 +243,15 @@ def _photo_assombrie(photo: Image.Image, marque: tuple, voile_pourcent: int = No
 
 def _coller_logo(
     image: Image.Image, logo: Image.Image, haut: int, position: str = "haut_droite", style: str = "pastille",
+    couleur_fond: str = "",
 ) -> None:
     """
-    Logo sur un fond blanc (lisible sur tous les fonds), place dans l'un des 5 coins/centre-bas (POSITIONS_LOGO).
-    style "pastille" (defaut) : forme arrondie qui epouse le logo. style "cercle" : toujours un cercle strict,
-    le logo centre dedans quelle que soit sa forme d'origine. haut : position verticale pour les 2 coins du
-    haut uniquement (deja calculee par l'appelant pour eviter le texte) - ignoree pour les positions du bas.
+    Logo sur un fond derriere lui (blanc par defaut - lisible sur tous les fonds), place dans l'un des 5
+    coins/centre-bas (POSITIONS_LOGO). style "pastille" (defaut) : forme arrondie qui epouse le logo. style
+    "cercle" : toujours un cercle strict, le logo centre dedans quelle que soit sa forme d'origine. couleur_fond :
+    #rrggbb pour remplacer le blanc par defaut - utile pour un logo avec des elements blancs (texte, traits) qui
+    disparaissent sinon sur un fond blanc. haut : position verticale pour les 2 coins du haut uniquement (deja
+    calculee par l'appelant pour eviter le texte) - ignoree pour les positions du bas.
     """
     logo = logo.convert("RGBA")
     ratio = min(220 / logo.width, 96 / logo.height)
@@ -271,13 +274,21 @@ def _coller_logo(
     else:  # "haut_droite" (defaut, non-regression)
         x, y = LARGEUR - MARGE - largeur, haut
 
+    couleur_fond_rgba = (255, 255, 255, 255)
+    hexa = (couleur_fond or "").lstrip("#")
+    if len(hexa) == 6:
+        try:
+            couleur_fond_rgba = tuple(int(hexa[i:i + 2], 16) for i in (0, 2, 4)) + (255,)
+        except ValueError:
+            pass
+
     fond = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
     dessin = ImageDraw.Draw(fond)
     if style == "cercle":
-        dessin.ellipse((0, 0, largeur - 1, hauteur - 1), fill=(255, 255, 255, 255))
+        dessin.ellipse((0, 0, largeur - 1, hauteur - 1), fill=couleur_fond_rgba)
         decalage_x, decalage_y = (largeur - logo.width) // 2, (hauteur - logo.height) // 2
     else:
-        dessin.rounded_rectangle((0, 0, largeur - 1, hauteur - 1), radius=24, fill=(255, 255, 255, 255))
+        dessin.rounded_rectangle((0, 0, largeur - 1, hauteur - 1), radius=24, fill=couleur_fond_rgba)
         decalage_x = decalage_y = marge
     image.paste(fond, (x, y), fond)
     image.paste(logo, (x + decalage_x, y + decalage_y), logo)
@@ -286,7 +297,7 @@ def _coller_logo(
 def dessiner_slide(
     kind: str, contenu: dict, layout: str, couleur: str, nom_client: str, numero: int, total: int,
     logo: Image.Image = None, photo: Image.Image = None, secondaires: list = None, decor: str = "auto", graine: int = 0,
-    logo_position: str = "haut_droite", logo_style: str = "pastille",
+    logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "",
 ) -> Image.Image:
     """
     kind : "couverture" {titre, sous_titre}, "point" {numero, titre, texte}, "cta" {titre, texte, bouton}.
@@ -307,7 +318,7 @@ def dessiner_slide(
         d = ImageDraw.Draw(image)
         _decor(d, layout, p, marque, decor, graine)
     if logo is not None and kind in ("couverture", "cta"):
-        _coller_logo(image, logo, 90, logo_position, logo_style)
+        _coller_logo(image, logo, 90, logo_position, logo_style, logo_couleur_fond)
     zone = LARGEUR - 2 * MARGE
 
     if kind == "couverture":
@@ -370,7 +381,7 @@ def dessiner_slide(
 def construire_carrousel(
     donnees: dict, layout: str, couleur: str, nom_client: str, logo: Image.Image = None, photo: Image.Image = None,
     secondaires: list = None, decor: str = "auto", graine: int = 0,
-    logo_position: str = "haut_droite", logo_style: str = "pastille",
+    logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "",
 ) -> list[Image.Image]:
     """donnees : {"couverture": {...}, "points": [{titre, texte}, ...], "cta": {...}}."""
     layout = layout if layout in LAYOUTS else "plein"
@@ -378,13 +389,13 @@ def construire_carrousel(
     total = len(points) + 2
     slides = [dessiner_slide(
         "couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo, secondaires,
-        decor, graine, logo_position, logo_style,
+        decor, graine, logo_position, logo_style, logo_couleur_fond,
     )]
     for i, pt in enumerate(points, start=1):
         slides.append(dessiner_slide("point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total, secondaires=secondaires, decor=decor, graine=graine))
     slides.append(dessiner_slide(
         "cta", donnees["cta"], layout, couleur, nom_client, total, total, logo, secondaires=secondaires, decor=decor,
-        graine=graine, logo_position=logo_position, logo_style=logo_style,
+        graine=graine, logo_position=logo_position, logo_style=logo_style, logo_couleur_fond=logo_couleur_fond,
     ))
     return slides
 
@@ -419,7 +430,7 @@ def _etoile(dessin, centre_x: int, centre_y: int, rayon: int, couleur) -> None:
 def dessiner_avis(
     texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
     secondaires: list = None, photo: Image.Image = None, voile: int = 68, decor: str = "auto", graine: int = 0,
-    logo_position: str = "haut_droite", logo_style: str = "pastille",
+    logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "",
 ) -> Image.Image:
     """
     Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client.
@@ -441,7 +452,7 @@ def dessiner_avis(
         d = ImageDraw.Draw(image)
         _decor(d, layout, p, marque, decor, graine)
     if logo is not None:
-        _coller_logo(image, logo, 90, logo_position, logo_style)
+        _coller_logo(image, logo, 90, logo_position, logo_style, logo_couleur_fond)
     zone = LARGEUR - 2 * MARGE
 
     d.text((MARGE, 130), "\u201c", font=_police("gras", 260), fill=p["accent2"])

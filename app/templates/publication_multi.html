@@ -224,6 +224,12 @@
           {% for cle, libelle in libelles_style_logo.items() %}<option value="{{ cle }}" {% if logo_style_client(client) == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
         </select>
       </label>
+      <label class="etiquette-chip-case">Fond derrière le logo
+        <input type="color" id="identite-logo-couleur-fond" value="{{ logo_couleur_fond_client(client) or '#ffffff' }}" style="width:3.2rem;padding:0.1rem;">
+        <input type="text" id="identite-logo-couleur-fond-hex" value="{{ logo_couleur_fond_client(client) }}" placeholder="blanc" maxlength="7" autocomplete="off" spellcheck="false" style="width:7.5rem;">
+        <button type="button" class="bouton-secondaire" id="identite-logo-couleur-fond-effacer" title="Revenir au blanc">✕</button>
+      </label>
+      <span class="texte-discret">Utile si le logo a des éléments blancs qui disparaissent sur fond blanc.</span>
     </div>
     <p id="identite-statut" class="texte-discret" hidden></p>
   </details>
@@ -1563,6 +1569,7 @@
             style_decor: document.getElementById("identite-decor").value === "auto" ? "" : document.getElementById("identite-decor").value,
             logo_position: document.getElementById("identite-logo-position").value,
             logo_style: document.getElementById("identite-logo-style").value,
+            logo_couleur_fond: document.getElementById("identite-logo-couleur-fond-hex").value,
           }),
         }).then((r) => {
           statut.hidden = false;
@@ -1588,6 +1595,17 @@
       document.getElementById("identite-decor").addEventListener("change", modifiee);
       document.getElementById("identite-logo-position").addEventListener("change", modifiee);
       document.getElementById("identite-logo-style").addEventListener("change", modifiee);
+      (function () {
+        const selecteur = document.getElementById("identite-logo-couleur-fond");
+        const hex = document.getElementById("identite-logo-couleur-fond-hex");
+        selecteur.addEventListener("input", () => { hex.value = selecteur.value; });
+        selecteur.addEventListener("change", modifiee);
+        hex.addEventListener("input", () => {
+          const valeur = normaliser(hex.value);
+          if (valeur) { selecteur.value = valeur; hex.value = valeur; modifiee(); } else if (!hex.value.trim()) modifiee();
+        });
+        document.getElementById("identite-logo-couleur-fond-effacer").addEventListener("click", () => { hex.value = ""; selecteur.value = "#ffffff"; modifiee(); });
+      })();
       [1, 2].forEach((n) => {
         const selecteur = document.getElementById("identite-sec-" + n);
         const hex = document.getElementById("identite-sec-hex-" + n);
@@ -1659,6 +1677,7 @@
           couleurs_secondaires: window.secondairesIdentite(), decor: document.getElementById("identite-decor").value,
           logo_position: document.getElementById("identite-logo-position").value,
           logo_style: document.getElementById("identite-logo-style").value,
+          logo_couleur_fond: document.getElementById("identite-logo-couleur-fond-hex").value,
           photo_url: photoUrl, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode,
         });
       }
@@ -1807,6 +1826,7 @@
           decor: document.getElementById("identite-decor").value, photo_url: avisPhotoUrl, voile: parseInt(document.getElementById("avis-voile").value, 10),
           logo_position: document.getElementById("identite-logo-position").value,
           logo_style: document.getElementById("identite-logo-style").value,
+          logo_couleur_fond: document.getElementById("identite-logo-couleur-fond-hex").value,
           nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode,
         });
       }
@@ -2084,6 +2104,7 @@
           photos: photos.map((p) => ({ url: p.url, titre: p.titre })), index, mode, titre: $("tp-titre").value, sous_titre: $("tp-sous-titre").value,
           reglages: lireReglages(), couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
           logo_position: $("identite-logo-position").value, logo_style: $("identite-logo-style").value,
+          logo_couleur_fond: $("identite-logo-couleur-fond-hex").value,
         });
       }
       function pret() { return photos.length && $("tp-titre").value.trim(); }
