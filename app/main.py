@@ -6246,12 +6246,25 @@ def supprimer_musique(piste_id: int, request: Request, db: Session = Depends(obt
     return RedirectResponse("/musiques", status_code=303)
 
 
+def _client_marque_personnelle(db: Session):
+    """
+    Fiche « Jonathan Hauet Marketing » : utilisee comme ancrage de contenu pour la marque personnelle de Jonathan
+    (deja le cas pour la veille SEO, voir _determiner_veille_client) - reutilisee ici pour les sujets tendance et
+    idees evergreen proposes sur la page Scripts video, qui ne sont pas rattaches a un client precis.
+    """
+    return db.query(models.Client).filter_by(nom="Jonathan Hauet Marketing").first()
+
+
 @app.get("/scripts-video", response_class=HTMLResponse)
-def page_scripts_video(request: Request):
+def page_scripts_video(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
-    return templates.TemplateResponse(request, "scripts_video.html", {"page_actuelle": "scripts_video"})
+    client = _client_marque_personnelle(db)
+    return templates.TemplateResponse(request, "scripts_video.html", {
+        "page_actuelle": "scripts_video",
+        "client_marque_id": client.id if client else None,
+    })
 
 
 @app.post("/scripts-video/generer")
@@ -6264,15 +6277,31 @@ async def generer_script_video(request: Request):
     donnees = await request.json()
     sujet = (donnees.get("sujet") or "").strip()
     angle = (donnees.get("angle") or "").strip()
-    if not sujet:
-        return JSONResponse({"erreur": "Indiquez d'abord le sujet de la vidéo."}, status_code=400)
 
     try:
-        script = await run_in_threadpool(claude_generation.generer_script_video_youtube, sujet, angle)
+        resultat = await run_in_threadpool(claude_generation.generer_script_video_youtube, sujet, angle)
     except Exception as e:
         return JSONResponse({"erreur": f"Impossible de générer le script : {e}"}, status_code=500)
 
-    return JSONResponse({"script": script})
+    return JSONResponse(resultat)
+
+
+@app.post("/scripts-video/sujets_tendance")
+def scripts_video_sujets_tendance(request: Request, db: Session = Depends(obtenir_session)):
+    """Reutilise /publication-multi/{client_id}/sujets_tendance sur la fiche de marque personnelle (voir _client_marque_personnelle)."""
+    client = _client_marque_personnelle(db)
+    if not client:
+        return JSONResponse({"erreur": "Fiche de référence introuvable (« Jonathan Hauet Marketing »)."}, status_code=404)
+    return publication_multi_sujets_tendance(client.id, request, db)
+
+
+@app.post("/scripts-video/sujets_evergreen")
+def scripts_video_sujets_evergreen(request: Request, db: Session = Depends(obtenir_session)):
+    """Reutilise /publication-multi/{client_id}/sujets_evergreen sur la fiche de marque personnelle (voir _client_marque_personnelle)."""
+    client = _client_marque_personnelle(db)
+    if not client:
+        return JSONResponse({"erreur": "Fiche de référence introuvable (« Jonathan Hauet Marketing »)."}, status_code=404)
+    return publication_multi_sujets_evergreen(client.id, request, db)
 
 
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---

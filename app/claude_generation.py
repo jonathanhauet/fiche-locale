@@ -2304,26 +2304,43 @@ EXEMPLES_SCRIPT_VIDEO = [
 ]
 
 
-def generer_script_video_youtube(sujet: str, angle: str = "") -> str:
+def generer_script_video_youtube(sujet: str = "", angle: str = "") -> dict:
     """
     Script à lire face caméra pour une vidéo YouTube, dans le ton de Jonathan Hauët (voir STYLE_SCRIPT_VIDEO et
-    EXEMPLES_SCRIPT_VIDEO, deux de ses scripts réels servant de modèle de style). sujet : le thème de la vidéo.
-    angle : précision facultative (ex. un angle particulier, un public cible, une longueur souhaitée).
+    EXEMPLES_SCRIPT_VIDEO, deux de ses scripts réels servant de modèle de style). sujet : le thème de la vidéo,
+    optionnel - si vide, l'IA choisit elle-même un sujet dans son domaine d'expertise (Google Business Profile,
+    SEO local), comme pour generer_post_expert. angle : précision facultative (ex. un angle particulier, un
+    public cible, une longueur souhaitée). Renvoie {"script", "sujet_utilise"} - sujet_utilise n'est rempli que
+    lorsque le sujet a été choisi par l'IA (vide sinon), pour l'afficher à l'utilisateur.
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
-    if not (sujet or "").strip():
-        raise RuntimeError("Indiquez d'abord le sujet de la vidéo.")
+    sujet = (sujet or "").strip()
+    angle = (angle or "").strip()
 
-    bloc_angle = f"\nPrécision supplémentaire à respecter : {angle.strip()[:500]}\n" if (angle or "").strip() else ""
+    bloc_angle = f"\nPrécision supplémentaire à respecter : {angle[:500]}\n" if angle else ""
     exemples = "\n\n---\n\n".join(EXEMPLES_SCRIPT_VIDEO)
+
+    if sujet:
+        consigne_sujet = f"sur le sujet suivant : « {sujet[:500]} »"
+        consigne_format = "Réponds uniquement par le script, prêt à être lu, sans titre ni note avant ou après."
+    else:
+        consigne_sujet = (
+            "sur un sujet que tu choisis toi-même, dans l'esprit de l'expertise de Jonathan (fiche d'établissement "
+            "Google, Google Business Profile, SEO local, avis clients, visibilité locale) - un sujet concret et "
+            "utile, différent des deux exemples ci-dessus"
+        )
+        consigne_format = (
+            "Réponds en commençant par une première ligne exactement sous la forme \"SUJET : <le sujet choisi, "
+            "6 à 12 mots>\", puis une ligne vide, puis le script, prêt à être lu, sans autre titre ni note."
+        )
+
     prompt = (
         f"{STYLE_SCRIPT_VIDEO}\n\n"
         f"Voici deux exemples réels de scripts déjà écrits par Jonathan, à prendre comme modèle de ton et de "
         f"structure (pas de contenu, le sujet du jour est différent) :\n\n{exemples}\n\n---\n\n"
-        f"Écris maintenant, dans ce même ton, un nouveau script vidéo face caméra sur le sujet suivant : "
-        f"« {sujet.strip()[:500]} »{bloc_angle}\n"
-        "Réponds uniquement par le script, prêt à être lu, sans titre ni note avant ou après."
+        f"Écris maintenant, dans ce même ton, un nouveau script vidéo face caméra {consigne_sujet}.{bloc_angle}\n"
+        f"{consigne_format}"
     )
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
@@ -2333,4 +2350,12 @@ def generer_script_video_youtube(sujet: str, angle: str = "") -> str:
     texte = next((b.text for b in reponse.content if b.type == "text"), "").strip()
     if not texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
-    return _nettoyer_texte_genere(texte)
+
+    sujet_utilise = ""
+    if not sujet:
+        correspondance = re.match(r"^SUJET\s*:\s*(.+)$", texte.splitlines()[0].strip(), re.IGNORECASE)
+        if correspondance:
+            sujet_utilise = correspondance.group(1).strip()
+            texte = texte[len(texte.splitlines()[0]):].lstrip("\n")
+
+    return {"script": _nettoyer_texte_genere(texte.strip()), "sujet_utilise": sujet_utilise}
