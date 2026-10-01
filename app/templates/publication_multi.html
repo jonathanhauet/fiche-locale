@@ -277,7 +277,6 @@
     </div>
     <div id="carrousel-edition" hidden></div>
     <div id="carrousel-apercu" class="carrousel-apercu"></div>
-    <div id="carrousel-zoom" class="carrousel-zoom" hidden><img alt="Slide agrandie"></div>
     <div class="ligne-champs" id="carrousel-actions" hidden>
       <button type="button" id="carrousel-actualiser" class="bouton-secondaire">🔄 Actualiser l'aperçu</button>
       <button type="button" id="carrousel-utiliser" class="bouton-secondaire">✅ Utiliser ce carrousel</button>
@@ -642,6 +641,9 @@
   <button type="submit" class="bouton">Publier / programmer sur les réseaux sélectionnés</button>
   </div>
 </form>
+<!-- Agrandissement au survol d'un apercu genere (carrousel, avis, titre sur photo) : element partage, place en
+     dehors des onglets/accordeons pour ne jamais se retrouver prisonnier d'un panneau ou d'un <details> ferme. -->
+<div id="carrousel-zoom" class="carrousel-zoom" hidden><img alt="Aperçu agrandi"></div>
 <template id="modele-horaire-reseau">
   <div class="ligne-horaire-reseau" data-reseau="">
     <span class="badge-reseau badge-reseau-petit"></span>
