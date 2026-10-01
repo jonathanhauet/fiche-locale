@@ -121,6 +121,24 @@ def _couleur_accent(marque: tuple, secondaires: list) -> tuple:
     return _eclaircir(marque)
 
 
+def _palette_accent(marque: tuple, secondaires: list) -> list:
+    """
+    Couleurs disponibles pour les mots mis en avant : secondaires valides d'abord (coherent avec _couleur_accent,
+    pour qu'un seul mot colore garde exactement le meme rendu qu'avant), puis la couleur principale eclaircie -
+    si plusieurs mots sont choisis, ils tournent entre toutes ces couleurs de la marque plutot que de repeter
+    toujours la meme. Les autres usages decoratifs (etiquette, bordure, bouton...) continuent d'utiliser une
+    seule couleur representative (_couleur_accent, inchangee).
+    """
+    palette = []
+    for s in secondaires or []:
+        try:
+            palette.append(_rgb_sur_sombre(cv._rgb(s)))
+        except (ValueError, IndexError):
+            continue
+    palette.append(_eclaircir(marque))
+    return palette
+
+
 def _rgb_sur_sombre(c: tuple) -> tuple:
     return c if cv._luminance(c) >= 0.35 else _eclaircir(c, 0.4)
 
@@ -158,20 +176,28 @@ def _ajuster(d, mots, cle_police, taille_max, largeur_max, hauteur_max, max_lign
     return police, lignes[:max_lignes], espace, int(52 * interligne)
 
 
-def _dessiner_lignes(d, lignes, x, y, police, espace, pas, couleur, surlignes, mode, accent, largeur_zone=None,
+def _dessiner_lignes(d, lignes, x, y, police, espace, pas, couleur, surlignes, mode, palette, largeur_zone=None,
                      centre=False, ombre=True):
-    """Dessine le titre mot a mot : les mots choisis prennent la couleur d'accent (ou un fond « marqueur »)."""
+    """
+    Dessine le titre mot a mot : les mots choisis prennent une couleur de la palette (ou un fond « marqueur »),
+    chacun la suivante dans l'ordre du texte - une seule couleur dans la palette = tous le meme accent, comme
+    avant ; plusieurs = ca tourne, pour varier plutot que repeter.
+    """
+    rang = 0
     for ligne in lignes:
         total = sum(w for _, _, w in ligne) + espace * (len(ligne) - 1)
         cx = x + ((largeur_zone - total) / 2 if centre and largeur_zone else 0)
         for i, mot, w in ligne:
             en_avant = i in surlignes
             couleur_mot = couleur
+            if en_avant:
+                accent_mot = palette[rang % len(palette)]
+                rang += 1
             if en_avant and mode == "marqueur":
-                d.rectangle((cx - 12, y + pas * 0.10, cx + w + 12, y + pas * 0.96), fill=accent + (255,))
-                couleur_mot = _texte_sur(accent)
+                d.rectangle((cx - 12, y + pas * 0.10, cx + w + 12, y + pas * 0.96), fill=accent_mot + (255,))
+                couleur_mot = _texte_sur(accent_mot)
             elif en_avant:
-                couleur_mot = accent
+                couleur_mot = accent_mot
             if ombre and not (en_avant and mode == "marqueur"):
                 d.text((cx + 3, y + 4), mot, font=police, fill=(0, 0, 0, 110))
             d.text((cx, y), mot, font=police, fill=couleur_mot + (255,))
@@ -237,6 +263,7 @@ def dessiner(
     hauteur = HAUTEUR_PORTRAIT if r["format"] == "portrait" else HAUTEUR_CARRE
     marque = cv._rgb(couleur)
     accent = _couleur_accent(marque, secondaires)
+    palette = _palette_accent(marque, secondaires)
     style, position = r["style"], r["position"]
     opacite = r["voile"] / 100
 
@@ -294,7 +321,7 @@ def dessiner(
         police, lignes, espace, pas = _ajuster(d, mots, cle_police, taille_max, zone, 560, 5)
         h_eti = 92 if sous else 0
         y = bloc_y(len(lignes) * pas + (h_eti + 18 if sous else 0))
-        y = _dessiner_lignes(d, lignes, MARGE, y, police, espace, pas, blanc, surlignes, r["surlignage"], accent)
+        y = _dessiner_lignes(d, lignes, MARGE, y, police, espace, pas, blanc, surlignes, r["surlignage"], palette)
         if sous:
             police_s = _police("italique", 58)
             fond_eti = accent if secondaires else marque
@@ -311,7 +338,7 @@ def dessiner(
         h_sous = 84 if sous else 0
         y = bloc_y(len(lignes) * pas + h_sous + 34)
         d.rectangle((MARGE, y, MARGE + 130, y + 9), fill=accent + (255,))
-        y = _dessiner_lignes(d, lignes, MARGE, y + 30, police, espace, pas, blanc, surlignes, r["surlignage"], accent)
+        y = _dessiner_lignes(d, lignes, MARGE, y + 30, police, espace, pas, blanc, surlignes, r["surlignage"], palette)
         if sous:
             d.text((MARGE, y + 8), sous, font=_police("sobre", 52), fill=accent + (255,))
 
@@ -330,9 +357,11 @@ def dessiner(
             fond_eti = accent
             d.rectangle((MARGE, y_bande - 58, MARGE + largeur_eti, y_bande), fill=fond_eti + (255,))
             d.text((MARGE + 28, y_bande - 51), sous, font=police_s, fill=_texte_sur(fond_eti) + (255,))
-        accent_bande = accent if abs(cv._luminance(accent) - cv._luminance(marque)) > 0.3 else _texte_sur(marque)
+        # Chaque couleur de la palette doit rester distincte du fond (la marque, ici en bande pleine) : meme
+        # correction de contraste que l'ancien accent_bande, appliquee a chaque couleur individuellement.
+        palette_bande = [c if abs(cv._luminance(c) - cv._luminance(marque)) > 0.3 else _texte_sur(marque) for c in palette]
         _dessiner_lignes(d, lignes, MARGE + 10, y_bande + 45, police, espace, pas, couleur_texte, surlignes,
-                         "marqueur" if r["surlignage"] == "marqueur" else "couleur", accent_bande, ombre=False)
+                         "marqueur" if r["surlignage"] == "marqueur" else "couleur", palette_bande, ombre=False)
 
     elif style == "verre":
         voile_uniforme(0.35)
@@ -356,7 +385,7 @@ def dessiner(
             d.rounded_rectangle((MARGE + 40, yy, MARGE + 40 + largeur_eti, yy + 56), radius=28, fill=accent + (255,))
             d.text((MARGE + 64, yy + 8), sous, font=police_s, fill=_texte_sur(accent) + (255,))
             yy += 76
-        _dessiner_lignes(d, lignes, MARGE + 40, yy, police, espace, pas, blanc, surlignes, r["surlignage"], accent, ombre=False)
+        _dessiner_lignes(d, lignes, MARGE + 40, yy, police, espace, pas, blanc, surlignes, r["surlignage"], palette, ombre=False)
 
     else:  # encadre
         voile_uniforme(0.6)
@@ -368,7 +397,7 @@ def dessiner(
         ImageDraw.Draw(calque).rectangle(boite, fill=(8, 8, 12, 105))
         d = ImageDraw.Draw(calque)
         d.rectangle(boite, outline=blanc + (255,), width=7)
-        _dessiner_lignes(d, lignes, 190, y + 55, police, espace, pas, blanc, surlignes, r["surlignage"], accent,
+        _dessiner_lignes(d, lignes, 190, y + 55, police, espace, pas, blanc, surlignes, r["surlignage"], palette,
                          largeur_zone=zone, centre=True, ombre=False)
         if sous:
             police_s = _police("sobre", 40)
