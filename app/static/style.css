@@ -3179,6 +3179,14 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .onglet-etape:hover { color: var(--texte, #1f2937); }
 .onglet-etape.actif { color: var(--accent); border-bottom-color: var(--accent); }
 .onglet-etape.onglet-avec-erreur::after { content: " ⚠"; }
+
+.nav-etapes { display: flex; justify-content: space-between; gap: 0.6rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--carte-bordure); }
+.nav-etapes button:only-child { margin-left: auto; }
+
+.recap-publication { display: flex; flex-direction: column; gap: 0.9rem; margin: 1rem 0; }
+.recap-ligne { display: grid; grid-template-columns: 7rem 1fr; gap: 0.8rem; align-items: start; }
+.recap-etiquette { font-weight: 600; color: var(--texte-discret); font-size: 0.85rem; }
+.recap-ligne p { margin: 0; }
 .images-choisies { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0; }
 .image-choisie { position: relative; flex-shrink: 0; }
 .image-choisie img { height: 72px; width: auto; border-radius: 6px; display: block; }

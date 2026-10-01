@@ -90,12 +90,15 @@
   </div>
 
   <label for="texte-base">Texte de base</label>
-  <textarea id="texte-base" name="texte_base" rows="4">{{ texte_base }}</textarea>
+  <textarea id="texte-base" name="texte_base" rows="10">{{ texte_base }}</textarea>
   <div class="ligne-champs">
     <button type="button" id="bouton-micro-texte" class="bouton-micro" title="Dicter à la voix" hidden>🎤</button>
     <span class="texte-discret">Dicter à la voix</span>
   </div>
 
+  <div class="nav-etapes">
+    <button type="button" class="bouton" data-cible-onglet="visuel">Suivant : Visuel →</button>
+  </div>
   </div>
 
   <div class="onglet-panneau" data-onglet="reseaux" hidden>
@@ -498,6 +501,11 @@
     </button>
     <p id="texte-statut-montage" class="texte-vide" hidden></p>
   </details>
+
+  <div class="nav-etapes">
+    <button type="button" class="bouton-secondaire" data-cible-onglet="texte">← Texte</button>
+    <button type="button" class="bouton" data-cible-onglet="reseaux">Suivant : Réseaux &amp; réglages →</button>
+  </div>
   </div>
 
   <div class="onglet-panneau" data-onglet="reseaux" hidden>
@@ -598,10 +606,19 @@
     <p class="texte-discret">Laissez un champ vide pour reprendre l'horaire commun ci-dessus (ou une publication immédiate s'il est vide aussi).</p>
     <div id="lignes-horaires-reseau"></div>
   </div>
+
+  <div class="nav-etapes">
+    <button type="button" class="bouton-secondaire" data-cible-onglet="visuel">← Visuel</button>
+    <button type="button" class="bouton" data-cible-onglet="publier">Suivant : Publier →</button>
+  </div>
   </div>
 
   <div class="onglet-panneau" data-onglet="publier" hidden>
-  <p class="texte-discret">Vérifiez le texte, le visuel et les réseaux sélectionnés dans les étapes précédentes, puis publiez.</p>
+  <p class="texte-discret">Dernière vérification avant publication :</p>
+  <div id="recap-publication" class="recap-publication"></div>
+  <div class="nav-etapes">
+    <button type="button" class="bouton-secondaire" data-cible-onglet="reseaux">← Réseaux &amp; réglages</button>
+  </div>
   <button type="submit" class="bouton">Publier / programmer sur les réseaux sélectionnés</button>
   </div>
 </form>
@@ -756,11 +773,16 @@
   (function () {
     const onglets = Array.from(document.querySelectorAll(".onglet-etape"));
     const panneaux = Array.from(document.querySelectorAll(".onglet-panneau"));
+    const barre = document.querySelector(".barre-onglets-etapes");
     function activerOnglet(cle) {
       onglets.forEach((b) => b.classList.toggle("actif", b.dataset.cibleOnglet === cle));
       panneaux.forEach((p) => { p.hidden = p.dataset.onglet !== cle; });
+      if (cle === "publier") mettreAJourRecap();
+      if (barre) barre.scrollIntoView({ block: "start" });
     }
-    onglets.forEach((b) => b.addEventListener("click", () => activerOnglet(b.dataset.cibleOnglet)));
+    // Un seul attribut data-cible-onglet pour la barre d'onglets ET les boutons Suivant/Precedent en bas de
+    // chaque etape : meme mecanisme de bascule partout.
+    document.querySelectorAll("[data-cible-onglet]").forEach((b) => b.addEventListener("click", () => activerOnglet(b.dataset.cibleOnglet)));
 
     // Un champ requis (ex. texte de base) reste valide pour la soumission meme cache dans un onglet inactif,
     // mais le navigateur ne peut pas lui rendre le focus ni afficher son infobulle native - sans ca, cliquer sur
@@ -770,6 +792,48 @@
       const panneau = evenement.target.closest(".onglet-panneau");
       if (panneau) activerOnglet(panneau.dataset.onglet);
     }, true);
+
+    // Recap final (onglet Publier) : relu a chaque fois qu'on y arrive, pour refleter l'etat actuel du
+    // formulaire sans dupliquer son state ailleurs en JS - juste une lecture des champs deja remplis.
+    function echapperHtml(texte) {
+      const div = document.createElement("div");
+      div.textContent = texte;
+      return div.innerHTML;
+    }
+    function mettreAJourRecap() {
+      const zone = document.getElementById("recap-publication");
+      if (!zone) return;
+      const texteBase = (document.getElementById("texte-base").value || "").trim();
+      const nomsReseaux = Array.from(document.querySelectorAll(".case-reseau-input:checked"))
+        .map((c) => c.closest(".carte-reseau").querySelector(".nom-carte-reseau").textContent.trim());
+      const champImagePartagee = document.getElementById("image-partagee");
+      const champVideoPartagee = document.getElementById("video-partagee");
+      const urlsImageIA = (document.getElementById("champ-image-url-ia").value || "").split("|").filter(Boolean);
+      const urlVideoIA = document.getElementById("champ-video-url-ia").value || "";
+      const dateCommune = document.getElementById("date-publication").value;
+      const heureCommune = document.getElementById("heure-publication").value;
+      const horairesParReseau = document.getElementById("case-horaires-par-reseau").checked;
+
+      let visuel = "Aucun visuel ajouté.";
+      if (champVideoPartagee.files.length || urlVideoIA) visuel = "1 vidéo prête.";
+      else if (champImagePartagee.files.length) visuel = champImagePartagee.files.length + " image(s) téléversée(s).";
+      else if (urlsImageIA.length) visuel = urlsImageIA.length + " image(s) prête(s).";
+
+      let quand = "Publication immédiate.";
+      if (horairesParReseau) quand = "Horaire différent selon le réseau (voir étape précédente).";
+      else if (dateCommune) quand = "Programmée pour le " + dateCommune.split("-").reverse().join("/") + (heureCommune ? " à " + heureCommune : "");
+
+      zone.innerHTML = `
+        <div class="recap-ligne"><span class="recap-etiquette">Texte</span>
+          <p>${texteBase ? echapperHtml(texteBase).slice(0, 400).replace(/\n/g, "<br>") : "<em>Aucun texte de base écrit — étape 1.</em>"}</p>
+        </div>
+        <div class="recap-ligne"><span class="recap-etiquette">Réseaux</span>
+          <p>${nomsReseaux.length ? echapperHtml(nomsReseaux.join(", ")) : "<em>Aucun réseau sélectionné — étape 3.</em>"}</p>
+        </div>
+        <div class="recap-ligne"><span class="recap-etiquette">Visuel</span><p>${visuel}</p></div>
+        <div class="recap-ligne"><span class="recap-etiquette">Quand</span><p>${quand}</p></div>
+      `;
+    }
   })();
 </script>
 
