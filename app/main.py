@@ -393,6 +393,7 @@ templates.env.globals["version_calendrier_multi_js"] = int(
 templates.env.globals["solde_dataforseo"] = soldes_api.solde_dataforseo
 templates.env.globals["options_visuel"] = claude_generation.OPTIONS_VISUEL
 templates.env.globals["libelles_groupes_visuel"] = claude_generation.LIBELLES_GROUPES_VISUEL
+templates.env.globals["styles_carrousel_ia"] = claude_generation.STYLES_CARROUSEL_IA
 templates.env.globals["liens_plateformes_paiement"] = soldes_api.LIENS_PLATEFORMES_PAIEMENT
 
 
@@ -7927,10 +7928,11 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
 @app.post("/publication-multi/{client_id}/generer_carrousel_images_ia")
 async def publication_multi_generer_carrousel_images_ia(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
-    Carrousel d'images generees par IA (style BD, voir claude_generation.storyboard_images_depuis_texte) a partir
-    du texte du post - plusieurs scenes qui racontent une seule histoire, au lieu d'une image isolee. Avec
-    reaction : chaque scene inclut en coin un petit cameo de la personne des photos de reference. Peut prendre
-    une a plusieurs minutes (un appel IA par plan) : execute hors du thread principal.
+    Carrousel d'images generees par IA (plusieurs styles possibles, voir claude_generation.STYLES_CARROUSEL_IA et
+    storyboard_images_depuis_texte) a partir du texte du post - plusieurs scenes qui racontent une seule histoire,
+    au lieu d'une image isolee. Avec reaction : chaque scene inclut en coin un petit cameo de la personne des
+    photos de reference, quel que soit le style choisi. Peut prendre une a plusieurs minutes (un appel IA par
+    plan) : execute hors du thread principal.
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -7943,6 +7945,7 @@ async def publication_multi_generer_carrousel_images_ia(client_id: int, request:
     donnees = await request.json()
     texte_post = (donnees.get("texte_post") or "").strip()
     avec_reaction = bool(donnees.get("avec_reaction")) and bool(client.photos_reference)
+    style_consigne = claude_generation.STYLES_CARROUSEL_IA_PAR_ID.get(donnees.get("style") or "", "")
     try:
         nb_slides = max(3, min(int(donnees.get("nb_slides") or 4), 5))
     except (TypeError, ValueError):
@@ -7953,7 +7956,7 @@ async def publication_multi_generer_carrousel_images_ia(client_id: int, request:
 
     try:
         prompts = await run_in_threadpool(
-            claude_generation.storyboard_images_depuis_texte, texte_post, nb_slides, avec_reaction,
+            claude_generation.storyboard_images_depuis_texte, texte_post, nb_slides, avec_reaction, style_consigne,
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Impossible de preparer les plans : {e}"}, status_code=500)

@@ -1539,20 +1539,22 @@ def storyboard_video_depuis_texte(texte_post: str, nb_scenes: int = 3) -> list:
     return lignes
 
 
-STYLE_BD = (
-    "a comic-book (bande dessinee) illustration in the franco-belgian clear-line style: confident ink outlines, "
-    "flat colors, expressive characters with natural proportions"
-)
+# Styles proposes pour le carrousel d'images IA (voir storyboard_images_depuis_texte) : le style "photo" plus
+# l'ensemble des styles d'illustration deja proposes pour une image isolee (OPTIONS_VISUEL["illustration"],
+# defini plus bas dans ce fichier) - meme vocabulaire partout, et la reaction (avec_reaction) fonctionne avec
+# n'importe lequel d'entre eux, pas seulement la BD.
+STYLES_CARROUSEL_IA = [("", "Laisser l'IA choisir", ""), ("photo", "Photo realiste", "a realistic photograph, natural and well-balanced light, no illustration effect")]
 
 
-def storyboard_images_depuis_texte(texte_post: str, nb_slides: int = 4, avec_reaction: bool = False) -> list:
+def storyboard_images_depuis_texte(texte_post: str, nb_slides: int = 4, avec_reaction: bool = False, style_consigne: str = "") -> list:
     """
-    Decoupe le texte d'un post en plusieurs scenes illustrees (prompts anglais, meme style BD - voir STYLE_BD -
-    repete a l'identique sur chaque plan pour que la serie reste coherente) qui se suivent logiquement pour
-    raconter une seule histoire, pour un carrousel d'images generees par IA (voir gemini_images.py). avec_reaction :
-    ajoute a chaque scene un petit cameo de "la personne des photos de reference" qui reagit a ce qui s'y passe,
-    en coin, pose/position differente a chaque plan - jamais decrit physiquement (meme regle que
-    prompt_image_avec_options : le visage vient des photos, pas du texte).
+    Decoupe le texte d'un post en plusieurs scenes illustrees (prompts anglais) qui se suivent logiquement pour
+    raconter une seule histoire, pour un carrousel d'images generees par IA (voir gemini_images.py). style_consigne :
+    description en anglais du style visuel a repeter a l'identique sur chaque plan (voir STYLES_CARROUSEL_IA) - si
+    vide, l'IA choisit elle-meme un style coherent. avec_reaction : ajoute a chaque scene un petit cameo de "la
+    personne des photos de reference" qui reagit a ce qui s'y passe, en coin, pose/position differente a chaque
+    plan - jamais decrit physiquement (meme regle que prompt_image_avec_options : le visage vient des photos, pas
+    du texte) - fonctionne avec n'importe quel style_consigne.
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
@@ -1569,6 +1571,18 @@ def storyboard_images_depuis_texte(texte_post: str, nb_slides: int = 4, avec_rea
         if avec_reaction else ""
     )
 
+    if style_consigne.strip():
+        consigne_style = (
+            f"Precise systematiquement ce style visuel, dans ces termes exacts : \"{style_consigne.strip()}\" - le "
+            f"meme style sur les {nb_slides} plans, pour que la serie reste coherente visuellement."
+        )
+    else:
+        consigne_style = (
+            f"Choisis librement un style visuel adapte au sujet (photo realiste ou illustration), et precise-le "
+            f"dans chacun des {nb_slides} prompts, dans les memes termes exacts a chaque fois, pour que la serie "
+            f"reste coherente visuellement."
+        )
+
     prompt = (
         "Voici le texte d'un post pour les reseaux sociaux :\n\n"
         f"{texte_post.strip()[:2500]}\n\n"
@@ -1576,9 +1590,8 @@ def storyboard_images_depuis_texte(texte_post: str, nb_slides: int = 4, avec_rea
         "coherente autour de ce sujet (par exemple : une scene d'ouverture qui plante le decor, un ou deux plans "
         "de detail ou d'action qui developpent le propos, puis une scene de conclusion) - jamais des scenes sans "
         "rapport entre elles. Pour chaque plan, ecris un prompt en anglais pour un generateur d'images : une scene "
-        f"concrete et specifique liee au sujet (pas une metaphore abstraite). Precise systematiquement ce style "
-        f"visuel, dans ces termes exacts : \"{STYLE_BD}\" - le meme style sur les {nb_slides} plans, pour que la "
-        f"serie reste coherente visuellement. Aucun texte lisible nulle part (bulles, affiches, ecrans)."
+        f"concrete et specifique liee au sujet (pas une metaphore abstraite). {consigne_style} Aucun texte lisible "
+        f"nulle part (bulles, affiches, ecrans)."
         f"{consigne_reaction}\n"
         f"Reponds uniquement par les {nb_slides} prompts, un par ligne, numerotes (1. ... 2. ... etc), sans autre texte."
     )
@@ -1843,6 +1856,10 @@ OPTIONS_VISUEL = {
         ("equipe", "Une équipe", "a small team of two to four people working together, faces not the focus"),
     ],
 }
+# Complete apres coup : les styles d'illustration sont definis juste au-dessus, STYLES_CARROUSEL_IA est declare
+# plus haut dans le fichier (avec storyboard_images_depuis_texte) pour rester a cote de la fonction qui l'utilise.
+STYLES_CARROUSEL_IA += OPTIONS_VISUEL["illustration"]
+STYLES_CARROUSEL_IA_PAR_ID = {identifiant: consigne for identifiant, _libelle, consigne in STYLES_CARROUSEL_IA}
 LIBELLES_GROUPES_VISUEL = {
     "type": "Type de visuel", "illustration": "Style d'illustration", "cadrage": "Cadrage", "decor": "Décor", "lumiere": "Lumière et ambiance",
     "personnes": "Qui ou quoi apparaît",
