@@ -430,7 +430,8 @@
             <label>Majuscules
               <select id="tp-majuscules"><option value="auto">Automatique</option><option value="oui">Oui</option><option value="non">Non</option></select>
             </label>
-            <label>Taille du titre <input type="range" id="tp-taille" min="70" max="130" value="100"></label>
+            <label>Taille du titre <input type="range" id="tp-taille" min="50" max="150" value="100"></label>
+            <label>Taille du sous-titre (étiquette) <input type="range" id="tp-taille-sous" min="60" max="160" value="100"></label>
             <label>Assombrissement de la photo <input type="range" id="tp-voile" min="20" max="90" value="55"></label>
             <label>Cadre
               <select id="tp-cadre">{% for cle, libelle in titre_cadres.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}</select>
@@ -2077,7 +2078,7 @@
       const base = "/publication-multi/{{ client.id }}/titre-photo";
       const $ = (id) => document.getElementById(id);
       const DEFAUTS = {
-        style: "italique", position: "bas", format: "portrait", voile: 55, police: "auto", taille: 100, majuscules: "auto",
+        style: "italique", position: "bas", format: "portrait", voile: 55, police: "auto", taille: 100, taille_sous: 100, majuscules: "auto",
         mots: [], surlignage: "couleur", cadre: "aucun", pastille: "", bouton: "", picto: "aucun", fleche: false, signature: false, numeroter: false,
       };
       const LIBELLES_STYLES = { italique: "Italique + étiquette", bandeau: "Bandeau plein", verre: "Verre dépoli", sobre: "Sobre", encadre: "Encadré" };
@@ -2109,7 +2110,7 @@
       function lireReglages() {
         return {
           style, position: document.querySelector('input[name="tp-position"]:checked').value, format: document.querySelector('input[name="tp-format"]:checked').value,
-          voile: parseInt($("tp-voile").value, 10), police: $("tp-police").value, taille: parseInt($("tp-taille").value, 10), majuscules: $("tp-majuscules").value,
+          voile: parseInt($("tp-voile").value, 10), police: $("tp-police").value, taille: parseInt($("tp-taille").value, 10), taille_sous: parseInt($("tp-taille-sous").value, 10), majuscules: $("tp-majuscules").value,
           mots: Array.from(mots).sort((a, b) => a - b), surlignage: document.querySelector('input[name="tp-surlignage"]:checked').value, cadre: $("tp-cadre").value,
           pastille: $("tp-pastille").value, bouton: $("tp-bouton").value, picto: $("tp-picto").value,
           fleche: $("tp-fleche").checked, signature: $("tp-signature").checked, numeroter: $("tp-numeroter").checked,
@@ -2121,7 +2122,7 @@
         document.querySelector('input[name="tp-position"][value="' + v.position + '"]').checked = true;
         document.querySelector('input[name="tp-format"][value="' + v.format + '"]').checked = true;
         document.querySelector('input[name="tp-surlignage"][value="' + v.surlignage + '"]').checked = true;
-        $("tp-voile").value = v.voile; $("tp-taille").value = v.taille; $("tp-police").value = v.police; $("tp-majuscules").value = v.majuscules;
+        $("tp-voile").value = v.voile; $("tp-taille").value = v.taille; $("tp-taille-sous").value = v.taille_sous; $("tp-police").value = v.police; $("tp-majuscules").value = v.majuscules;
         $("tp-cadre").value = v.cadre; $("tp-picto").value = v.picto; $("tp-bouton").value = v.bouton; $("tp-pastille").value = v.pastille;
         $("tp-fleche").checked = !!v.fleche; $("tp-signature").checked = !!v.signature; $("tp-numeroter").checked = !!v.numeroter;
         mots = new Set(v.mots || []);
@@ -2135,7 +2136,7 @@
         const titre = $("tp-titre").value.trim();
         $("tp-resume-texte").textContent = titre ? "« " + (titre.length > 28 ? titre.slice(0, 28) + "…" : titre) + " »" : "vide";
         $("tp-resume-style").textContent = LIBELLES_STYLES[r.style] + " · " + { bas: "en bas", centre: "au centre", haut: "en haut" }[r.position] + " · " + (r.format === "carre" ? "carré" : "portrait");
-        $("tp-resume-reglages").textContent = (r.police === "auto" ? "police auto" : $("tp-police").selectedOptions[0].textContent.toLowerCase()) + " · taille " + r.taille + " %" + (r.cadre !== "aucun" ? " · cadre" : "");
+        $("tp-resume-reglages").textContent = (r.police === "auto" ? "police auto" : $("tp-police").selectedOptions[0].textContent.toLowerCase()) + " · titre " + r.taille + " %" + (r.taille_sous !== 100 ? " · sous-titre " + r.taille_sous + " %" : "") + (r.cadre !== "aucun" ? " · cadre" : "");
         const ajouts = [];
         if (r.pastille || (r.numeroter && photos.length > 1)) ajouts.push("pastille");
         if (r.bouton) ajouts.push("bouton");
@@ -2308,7 +2309,7 @@
       panneau.querySelectorAll(".tp-style").forEach((b) => b.addEventListener("click", () => { style = b.dataset.style; marquerStyle(); modifie(true); }));
       panneau.querySelectorAll('input[name="tp-position"], input[name="tp-format"], input[name="tp-surlignage"], #tp-police, #tp-majuscules, #tp-cadre, #tp-picto, #tp-fleche, #tp-signature, #tp-numeroter')
         .forEach((e) => e.addEventListener("change", () => modifie(true)));
-      panneau.querySelectorAll("#tp-taille, #tp-voile, #tp-pastille, #tp-bouton").forEach((e) => e.addEventListener("input", () => modifie()));
+      panneau.querySelectorAll("#tp-taille, #tp-taille-sous, #tp-voile, #tp-pastille, #tp-bouton").forEach((e) => e.addEventListener("input", () => modifie()));
       $("tp-etape-style").addEventListener("toggle", () => { if ($("tp-etape-style").open) demanderStyles(); });
       document.addEventListener("identite-modifiee", () => modifie());
 

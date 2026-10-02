@@ -42,7 +42,7 @@ PICTOS = {
 CADRES = {"aucun": "Aucun", "fin": "Fin", "epais": "Épais"}
 
 DEFAUTS = {
-    "style": "italique", "position": "bas", "format": "portrait", "voile": 55, "police": "auto", "taille": 100,
+    "style": "italique", "position": "bas", "format": "portrait", "voile": 55, "police": "auto", "taille": 100, "taille_sous": 100,
     "majuscules": "auto", "mots": [], "surlignage": "couleur", "cadre": "aucun", "pastille": "", "bouton": "",
     "picto": "aucun", "fleche": False, "signature": False, "numeroter": False,
 }
@@ -65,7 +65,7 @@ def normaliser_reglages(brut: dict) -> dict:
     choix("surlignage", ("couleur", "marqueur"))
     choix("cadre", CADRES)
     choix("picto", PICTOS)
-    for cle, mini, maxi in (("voile", 20, 90), ("taille", 70, 130)):
+    for cle, mini, maxi in (("voile", 20, 90), ("taille", 50, 150), ("taille_sous", 60, 160)):
         try:
             r[cle] = max(mini, min(maxi, int(brut.get(cle, r[cle]))))
         except (TypeError, ValueError):
@@ -186,6 +186,35 @@ def _ajuster(d, mots, cle_police, taille_max, largeur_max, hauteur_max, max_lign
     police = _police(cle_police, 52)
     lignes, espace = _lignes_mots(d, mots, police, largeur_max)
     return police, lignes[:max_lignes], espace, int(52 * interligne)
+
+
+def _ajuster_reglable(d, mots, cle_police, taille_max, largeur_max, hauteur_max, max_lignes, pourcent):
+    """
+    Comme _ajuster, puis applique le reglage « taille du titre » (pourcent) par rapport a la taille obtenue
+    automatiquement : sans ca, le curseur n'avait aucun effet vers le haut des que le titre etait un peu long
+    (deja plafonne par la hauteur de sa zone). 100 % = comportement automatique inchange ; au-dessus, la zone
+    est elargie (hauteur et nombre de lignes) au lieu de bloquer le curseur.
+    """
+    police, lignes, espace, pas = _ajuster(d, mots, cle_police, taille_max, largeur_max, hauteur_max, max_lignes)
+    if pourcent == 100:
+        return police, lignes, espace, pas
+    interligne = INTERLIGNE[cle_police]
+    base = police.size
+    cible = max(30, int(base * pourcent / 100))
+    if pourcent < 100:
+        police = _police(cle_police, cible)
+        lignes, espace = _lignes_mots(d, mots, police, largeur_max)
+        return police, lignes, espace, int(cible * interligne)
+    for taille in range(cible, base - 1, -4):
+        police_t = _police(cle_police, taille)
+        lignes_t, espace_t = _lignes_mots(d, mots, police_t, largeur_max)
+        pas_t = int(taille * interligne)
+        if (
+            len(lignes_t) <= max_lignes + 3 and len(lignes_t) * pas_t <= hauteur_max * 1.6
+            and all(_largeur_ligne(ligne, espace_t) <= largeur_max for ligne in lignes_t)
+        ):
+            return police_t, lignes_t, espace_t, pas_t
+    return police, lignes, espace, pas
 
 
 def _dessiner_lignes(d, lignes, x, y, police, espace, pas, couleur, surlignes, mode, palette, largeur_zone=None,
@@ -324,51 +353,56 @@ def dessiner(
 
     calque = Image.new("RGBA", (largeur, hauteur), (0, 0, 0, 0))
     d = ImageDraw.Draw(calque)
-    taille_max = int(132 * r["taille"] / 100 * FACTEUR_TAILLE[cle_police])
+    taille_max = int(132 * FACTEUR_TAILLE[cle_police])
+    pct = r["taille"]
+    fs = r["taille_sous"] / 100
+
+    def ts(n):
+        return max(1, int(n * fs))
     blanc = (255, 255, 255)
 
     if style == "italique":
         voile(0, 1)
         zone = largeur - 2 * MARGE
-        police, lignes, espace, pas = _ajuster(d, mots, cle_police, taille_max, zone, 560, 5)
-        h_eti = 92 if sous else 0
+        police, lignes, espace, pas = _ajuster_reglable(d, mots, cle_police, taille_max, zone, 560, 5, pct)
+        h_eti = ts(92) if sous else 0
         y = bloc_y(len(lignes) * pas + (h_eti + 18 if sous else 0))
         y = _dessiner_lignes(d, lignes, MARGE, y, police, espace, pas, blanc, surlignes, r["surlignage"], palette)
         if sous:
-            police_s = _police("italique", 58)
+            police_s = _police("italique", ts(58))
             fond_eti = accent if secondaires else marque
             fond_eti = fond_eti if abs(cv._luminance(fond_eti) - cv._luminance(marque)) > 0 else marque
             y += 18
             largeur_eti = min(zone, int(d.textlength(sous, font=police_s)) + 64)
             d.rectangle((MARGE, y, MARGE + largeur_eti, y + h_eti), fill=fond_eti + (255,))
-            d.text((MARGE + 32, y + 12), sous, font=police_s, fill=_texte_sur(fond_eti) + (255,))
+            d.text((MARGE + 32, y + ts(12)), sous, font=police_s, fill=_texte_sur(fond_eti) + (255,))
 
     elif style == "sobre":
         voile(0, 1)
         zone = largeur - 2 * MARGE
-        police, lignes, espace, pas = _ajuster(d, mots, cle_police, taille_max, zone, 560, 5)
-        h_sous = 84 if sous else 0
+        police, lignes, espace, pas = _ajuster_reglable(d, mots, cle_police, taille_max, zone, 560, 5, pct)
+        h_sous = ts(84) if sous else 0
         y = bloc_y(len(lignes) * pas + h_sous + 34)
         d.rectangle((MARGE, y, MARGE + 130, y + 9), fill=accent + (255,))
         y = _dessiner_lignes(d, lignes, MARGE, y + 30, police, espace, pas, blanc, surlignes, r["surlignage"], palette)
         if sous:
-            d.text((MARGE, y + 8), sous, font=_police("sobre", 52), fill=accent + (255,))
+            d.text((MARGE, y + 8), sous, font=_police("sobre", ts(52)), fill=accent + (255,))
 
     elif style == "bandeau":
         voile_uniforme(0.45)
         zone = largeur - 2 * MARGE - 20
-        police, lignes, espace, pas = _ajuster(d, mots, cle_police, int(taille_max * 0.92), zone, 480, 4)
+        police, lignes, espace, pas = _ajuster_reglable(d, mots, cle_police, int(taille_max * 0.92), zone, 480, 4, pct)
         h_bande = len(lignes) * pas + 90
-        y0 = bloc_y(h_bande + (0 if not sous else 46))
-        y_bande = y0 + (46 if sous else 0)
+        y0 = bloc_y(h_bande + (0 if not sous else ts(46)))
+        y_bande = y0 + (ts(46) if sous else 0)
         couleur_texte = _texte_sur(marque)
         d.rectangle((0, y_bande, largeur, y_bande + h_bande), fill=marque + (238,))
         if sous:
-            police_s = _police("sobre", 40)
+            police_s = _police("sobre", ts(40))
             largeur_eti = int(d.textlength(sous, font=police_s)) + 56
             fond_eti = accent
-            d.rectangle((MARGE, y_bande - 58, MARGE + largeur_eti, y_bande), fill=fond_eti + (255,))
-            d.text((MARGE + 28, y_bande - 51), sous, font=police_s, fill=_texte_sur(fond_eti) + (255,))
+            d.rectangle((MARGE, y_bande - ts(58), MARGE + largeur_eti, y_bande), fill=fond_eti + (255,))
+            d.text((MARGE + 28, y_bande - ts(51)), sous, font=police_s, fill=_texte_sur(fond_eti) + (255,))
         # Chaque couleur de la palette doit rester distincte du fond (la marque, ici en bande pleine) : meme
         # correction de contraste que l'ancien accent_bande, appliquee a chaque couleur individuellement.
         palette_bande = [c if abs(cv._luminance(c) - cv._luminance(marque)) > 0.3 else _texte_sur(marque) for c in palette]
@@ -378,8 +412,8 @@ def dessiner(
     elif style == "verre":
         voile_uniforme(0.35)
         zone = largeur - 2 * (MARGE + 60)
-        police, lignes, espace, pas = _ajuster(d, mots, cle_police, int(taille_max * 0.95), zone, 470, 4)
-        h_sous = 76 if sous else 0
+        police, lignes, espace, pas = _ajuster_reglable(d, mots, cle_police, int(taille_max * 0.95), zone, 470, 4, pct)
+        h_sous = ts(76) if sous else 0
         h_panneau = len(lignes) * pas + 100 + h_sous
         y = bloc_y(h_panneau)
         boite = (MARGE - 10, y, largeur - MARGE + 10, y + h_panneau)
@@ -392,19 +426,19 @@ def dessiner(
         ImageDraw.Draw(calque).rounded_rectangle(boite, radius=44, outline=(255, 255, 255, 70), width=3)
         yy = y + 42
         if sous:
-            police_s = _police("sobre", 38)
+            police_s = _police("sobre", ts(38))
             largeur_eti = int(d.textlength(sous, font=police_s)) + 48
-            d.rounded_rectangle((MARGE + 40, yy, MARGE + 40 + largeur_eti, yy + 56), radius=28, fill=accent + (255,))
-            d.text((MARGE + 64, yy + 8), sous, font=police_s, fill=_texte_sur(accent) + (255,))
-            yy += 76
+            d.rounded_rectangle((MARGE + 40, yy, MARGE + 40 + largeur_eti, yy + ts(56)), radius=ts(28), fill=accent + (255,))
+            d.text((MARGE + 64, yy + ts(8)), sous, font=police_s, fill=_texte_sur(accent) + (255,))
+            yy += ts(76)
         _dessiner_lignes(d, lignes, MARGE + 40, yy, police, espace, pas, blanc, surlignes, r["surlignage"], palette, ombre=False)
 
     else:  # encadre
         voile_uniforme(0.6)
         zone = largeur - 2 * 190
-        police, lignes, espace, pas = _ajuster(d, mots, cle_police, int(taille_max * 0.95), zone, 440, 4)
+        police, lignes, espace, pas = _ajuster_reglable(d, mots, cle_police, int(taille_max * 0.95), zone, 440, 4, pct)
         h_boite = len(lignes) * pas + 110
-        y = bloc_y(h_boite + (30 if sous else 0))
+        y = bloc_y(h_boite + (ts(30) if sous else 0))
         boite = (110, y, largeur - 110, y + h_boite)
         ImageDraw.Draw(calque).rectangle(boite, fill=(8, 8, 12, 105))
         d = ImageDraw.Draw(calque)
@@ -412,11 +446,11 @@ def dessiner(
         _dessiner_lignes(d, lignes, 190, y + 55, police, espace, pas, blanc, surlignes, r["surlignage"], palette,
                          largeur_zone=zone, centre=True, ombre=False)
         if sous:
-            police_s = _police("sobre", 40)
+            police_s = _police("sobre", ts(40))
             largeur_eti = int(d.textlength(sous, font=police_s)) + 56
             x0 = (largeur - largeur_eti) // 2
-            d.rectangle((x0, y + h_boite - 30, x0 + largeur_eti, y + h_boite + 34), fill=marque + (255,))
-            d.text((x0 + 28, y + h_boite - 22), sous, font=police_s, fill=_texte_sur(marque) + (255,))
+            d.rectangle((x0, y + h_boite - ts(30), x0 + largeur_eti, y + h_boite + ts(34)), fill=marque + (255,))
+            d.text((x0 + 28, y + h_boite - ts(22)), sous, font=police_s, fill=_texte_sur(marque) + (255,))
 
     # ---------------------------------------------------------------- ajouts
     d = ImageDraw.Draw(calque)
