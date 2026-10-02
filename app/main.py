@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
@@ -3009,7 +3010,7 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
         )
         elements += [(p.cree_le, p.texte[:190].strip()) for p in lignes if (p.texte or "").strip()]
 
-    if client and client.nom == "Jonathan Hauet Marketing":
+    if client and _est_marque_personnelle(client.nom):
         scripts = db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(limite).all()
         elements += [(v.cree_le, f"Vidéo YouTube : {v.sujet}") for v in scripts if (v.sujet or "").strip()]
 
@@ -6252,13 +6253,22 @@ def supprimer_musique(piste_id: int, request: Request, db: Session = Depends(obt
     return RedirectResponse("/musiques", status_code=303)
 
 
+def _est_marque_personnelle(nom: str) -> bool:
+    """Nom de la fiche de Jonathan lui-meme, sans tenir compte des accents ni de la casse (« Jonathan Hauët Marketing »...)."""
+    normalise = "".join(c for c in unicodedata.normalize("NFKD", nom or "") if not unicodedata.combining(c)).lower()
+    return "jonathan" in normalise and "hauet" in normalise
+
+
 def _client_marque_personnelle(db: Session):
     """
-    Fiche « Jonathan Hauet Marketing » : utilisee comme ancrage de contenu pour la marque personnelle de Jonathan
-    (deja le cas pour la veille SEO, voir _determiner_veille_client) - reutilisee ici pour les sujets tendance et
-    idees evergreen proposes sur la page Scripts video, qui ne sont pas rattaches a un client precis.
+    Fiche de Jonathan lui-meme (« Jonathan Hauet Marketing »), utilisee comme ancrage de contenu pour sa marque
+    personnelle - reutilisee pour les miniatures (photos de reference) de la page Scripts video. Reconnue de facon
+    tolerante (accents, casse), la fiche de la production pouvant etre ecrite differemment ; la variante contenant
+    « marketing » est preferee. None si aucune ne correspond.
     """
-    return db.query(models.Client).filter_by(nom="Jonathan Hauet Marketing").first()
+    candidats = [c for c in db.query(models.Client).all() if _est_marque_personnelle(c.nom)]
+    candidats.sort(key=lambda c: ("marketing" not in (c.nom or "").lower(), not c.photos_reference, c.id))
+    return candidats[0] if candidats else None
 
 
 def _sujets_videos_deja_traites(db: Session, limite: int = 40) -> list:
@@ -6337,19 +6347,37 @@ async def generer_script_video(request: Request, db: Session = Depends(obtenir_s
 @app.post("/scripts-video/sujets_tendance")
 def scripts_video_sujets_tendance(request: Request, db: Session = Depends(obtenir_session)):
     """Reutilise /publication-multi/{client_id}/sujets_tendance sur la fiche de marque personnelle (voir _client_marque_personnelle)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
     client = _client_marque_personnelle(db)
-    if not client:
-        return JSONResponse({"erreur": "Fiche de référence introuvable (« Jonathan Hauet Marketing »)."}, status_code=404)
-    return publication_multi_sujets_tendance(client.id, request, db)
+    if client:
+        return publication_multi_sujets_tendance(client.id, request, db)
+    # Pas de fiche de reference : meme veille SEO local, sans historique de posts (seulement les videos deja traitees).
+    try:
+        articles = veille_actualite.rechercher_actualites()
+        suggestions = claude_generation.suggerer_sujets_actualite(
+            articles, nombre=5, sujets_deja_traites=_sujets_videos_deja_traites(db, 15),
+        )
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la veille : {e}"}, status_code=500)
+    return JSONResponse({"suggestions": suggestions})
 
 
 @app.post("/scripts-video/sujets_evergreen")
 def scripts_video_sujets_evergreen(request: Request, db: Session = Depends(obtenir_session)):
     """Reutilise /publication-multi/{client_id}/sujets_evergreen sur la fiche de marque personnelle (voir _client_marque_personnelle)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
     client = _client_marque_personnelle(db)
-    if not client:
-        return JSONResponse({"erreur": "Fiche de référence introuvable (« Jonathan Hauet Marketing »)."}, status_code=404)
-    return publication_multi_sujets_evergreen(client.id, request, db)
+    if client:
+        return publication_multi_sujets_evergreen(client.id, request, db)
+    try:
+        suggestions = claude_generation.suggerer_sujets_evergreen(
+            "", _sujets_videos_deja_traites(db, 15), nombre=5, nom_client="Jonathan Hauët",
+        )
+    except Exception as e:
+        return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
+    return JSONResponse({"suggestions": suggestions})
 
 
 @app.post("/scripts-video/kit")
