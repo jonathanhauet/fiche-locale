@@ -6,7 +6,7 @@ par l'IA dans l'image, qui y met des fautes (surtout en francais).
 
 import io
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from app import carrousel_visuel as cv
 from app import titre_photo as tp
@@ -32,7 +32,9 @@ def _lignes(d, mots, police, largeur_max):
 def composer(image_octets: bytes, texte: str, couleur: str = "#1f4e8c", secondaires: list = None) -> bytes:
     """Miniature finale (JPEG) : scene recadree en 16:9, degrade sombre a gauche, titre en majuscules."""
     marque = cv._rgb(couleur)
-    accent = tp._couleur_accent(marque, secondaires or [])
+    # Pastille : premiere couleur secondaire de la marque si elle existe, sinon un jaune vif (une miniature doit
+    # claquer : l'eclaircie de la couleur principale donnait un bleu-gris terne).
+    accent = tp._couleur_accent(marque, secondaires) if secondaires else (255, 214, 10)
     image = cv._recadrer(Image.open(io.BytesIO(image_octets)), LARGEUR, HAUTEUR).convert("RGB")
 
     degrade = Image.linear_gradient("L").rotate(-90, expand=True).resize((int(LARGEUR * 0.72), HAUTEUR))
@@ -46,20 +48,37 @@ def composer(image_octets: bytes, texte: str, couleur: str = "#1f4e8c", secondai
     if not mots:
         return _jpeg(image)
 
-    taille, lignes, police = 220, [], None
-    while taille >= 70:
-        police = tp._police("condensee", taille)
-        lignes = _lignes(d, mots, police, ZONE_TEXTE_LARGEUR)
-        pas = int(taille * 1.0)
-        if len(lignes) <= 4 and len(lignes) * pas <= HAUTEUR - 120 and all(d.textlength(l, font=police) <= ZONE_TEXTE_LARGEUR for l in lignes):
+    # Poppins tres gras (epaissi par un contour de sa propre couleur), ombre douce plutot qu'un gros contour noir,
+    # et la derniere ligne sur une pastille de la couleur d'accent de la marque : rendu actuel, lisible en petit.
+    taille, lignes, police = 170, [], None
+    while taille >= 60:
+        police = tp._police("sobre", taille)
+        lignes = _lignes(d, mots, police, ZONE_TEXTE_LARGEUR - 30)
+        if len(lignes) <= 4 and len(lignes) * taille * 1.08 <= HAUTEUR - 140:
             break
-        taille -= 8
-    pas = int(taille * 1.0)
-    y = (HAUTEUR - len(lignes) * pas) / 2 - taille * 0.08
+        taille -= 6
+    pas = int(taille * 1.08)
+    epaisseur = max(2, taille // 48)
+    y0 = (HAUTEUR - len(lignes) * pas) / 2
+
+    ombre = Image.new("RGBA", (LARGEUR, HAUTEUR), (0, 0, 0, 0))
+    calque = Image.new("RGBA", (LARGEUR, HAUTEUR), (0, 0, 0, 0))
+    do, dc = ImageDraw.Draw(ombre), ImageDraw.Draw(calque)
     for i, ligne in enumerate(lignes):
-        couleur_ligne = accent if (i == len(lignes) - 1 and len(lignes) > 1) else (255, 255, 255)
-        d.text((ZONE_TEXTE_X, y), ligne, font=police, fill=couleur_ligne, stroke_width=max(6, taille // 22), stroke_fill=(0, 0, 0))
-        y += pas
+        y = y0 + i * pas
+        if i == len(lignes) - 1 and len(lignes) > 1:
+            largeur_ligne = d.textlength(ligne, font=police)
+            dc.rounded_rectangle(
+                (ZONE_TEXTE_X - 12, y + taille * 0.05, ZONE_TEXTE_X + largeur_ligne + 20, y + pas),
+                radius=int(taille * 0.22), fill=accent + (255,),
+            )
+            couleur_texte = tp._texte_sur(accent)
+            dc.text((ZONE_TEXTE_X, y), ligne, font=police, fill=couleur_texte, stroke_width=epaisseur, stroke_fill=couleur_texte)
+        else:
+            do.text((ZONE_TEXTE_X + 6, y + 8), ligne, font=police, fill=(0, 0, 0, 200), stroke_width=epaisseur)
+            dc.text((ZONE_TEXTE_X, y), ligne, font=police, fill=(255, 255, 255), stroke_width=epaisseur, stroke_fill=(255, 255, 255))
+    ombre = ombre.filter(ImageFilter.GaussianBlur(8))
+    image = Image.alpha_composite(Image.alpha_composite(image.convert("RGBA"), ombre), calque).convert("RGB")
     return _jpeg(image)
 
 
