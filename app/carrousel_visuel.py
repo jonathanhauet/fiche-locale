@@ -9,7 +9,7 @@ import math
 import os
 import random
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 LARGEUR, HAUTEUR = 1080, 1350
 MARGE = 90
@@ -213,8 +213,12 @@ def _decor(dessin, layout, p, marque, decor="auto", graine=0):
     # "aucun" : rien
 
 
-def _pied(dessin, p, nom_client, numero, total):
+def _pied(dessin, p, nom_client, numero, total, numero_a_gauche=False):
     petite = _police("normal", 30)
+    if numero_a_gauche and total:
+        # Une personne occupe le coin en bas a droite : le numero suit le nom au lieu de se cacher derriere.
+        dessin.text((MARGE, HAUTEUR - 110), f"{nom_client}  ·  {numero}/{total}", font=petite, fill=p["doux"])
+        return
     dessin.text((MARGE, HAUTEUR - 110), nom_client, font=petite, fill=p["doux"])
     if total:
         t = f"{numero}/{total}"
@@ -299,10 +303,32 @@ def _coller_logo(
     image.paste(logo, (x + decalage_x, y + decalage_y), logo)
 
 
+HAUTEUR_CAMEO = 470
+RESERVE_TEXTE_CAMEO = 200  # hauteur retiree au texte d'une slide « point » pour ne pas passer sous la personne
+
+
+def _coller_cameo(image: Image.Image, cameo: Image.Image) -> None:
+    """
+    Personne detouree (RGBA, voir detourage.py) posee en bas a droite, collee au bord inferieur de la slide
+    (le buste est « coupe » par le bord, comme sur les visuels de reaction des medias), avec une ombre douce.
+    """
+    cameo = cameo.convert("RGBA")
+    largeur = max(1, round(cameo.width * HAUTEUR_CAMEO / cameo.height))
+    cameo = cameo.resize((largeur, HAUTEUR_CAMEO), Image.LANCZOS)
+    x, y = LARGEUR - largeur - 12, HAUTEUR - HAUTEUR_CAMEO
+
+    ombre = Image.new("RGBA", cameo.size, (0, 0, 0, 0))
+    ombre.putalpha(cameo.getchannel("A").point(lambda v: int(v * 0.35)))
+    ombre = ombre.filter(ImageFilter.GaussianBlur(9))
+    image.paste(Image.new("RGB", cameo.size, (0, 0, 0)), (x - 6, y + 4), ombre.getchannel("A"))
+    image.paste(cameo, (x, y), cameo)
+
+
 def dessiner_slide(
     kind: str, contenu: dict, layout: str, couleur: str, nom_client: str, numero: int, total: int,
     logo: Image.Image = None, photo: Image.Image = None, secondaires: list = None, decor: str = "auto", graine: int = 0,
     logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "",
+    cameo: Image.Image = None,
 ) -> Image.Image:
     """
     kind : "couverture" {titre, sous_titre}, "point" {numero, titre, texte}, "cta" {titre, texte, bouton}.
@@ -322,6 +348,8 @@ def dessiner_slide(
         image = Image.new("RGB", (LARGEUR, HAUTEUR), p["fond"])
         d = ImageDraw.Draw(image)
         _decor(d, layout, p, marque, decor, graine)
+    if cameo is not None and logo_position == "bas_droite":
+        logo_position = "haut_droite"  # le coin du bas a droite est occupe par la personne
     if logo is not None and kind in ("couverture", "cta"):
         _coller_logo(image, logo, 90, logo_position, logo_style, logo_couleur_fond)
     zone = LARGEUR - 2 * MARGE
@@ -357,7 +385,9 @@ def dessiner_slide(
         for ligne in lignes:
             d.text((MARGE, y), ligne, font=police, fill=p["texte"])
             y += pas
-        police2, lignes2, pas2 = _texte_ajuste(d, contenu["texte"], "normal", 48, 32, zone, HAUTEUR - y - 260, 1.35)
+        police2, lignes2, pas2 = _texte_ajuste(
+            d, contenu["texte"], "normal", 48, 32, zone, HAUTEUR - y - 260 - (RESERVE_TEXTE_CAMEO if cameo is not None else 0), 1.35,
+        )
         y += 30
         for ligne in lignes2:
             d.text((MARGE, y), ligne, font=police2, fill=p["doux"] if layout != "clair" else (70, 72, 80))
@@ -379,7 +409,9 @@ def dessiner_slide(
         y_b = max(y + 60, 900)
         d.rounded_rectangle((MARGE, y_b, MARGE + largeur_b, y_b + 120), radius=60, fill=p["accent2"])
         d.text((MARGE + 50, y_b + 30), bouton, font=pb, fill=p["sur_accent2"])
-    _pied(d, p, nom_client, numero, total)
+    _pied(d, p, nom_client, numero, total, numero_a_gauche=cameo is not None)
+    if cameo is not None:
+        _coller_cameo(image, cameo)
     return image
 
 
@@ -387,20 +419,30 @@ def construire_carrousel(
     donnees: dict, layout: str, couleur: str, nom_client: str, logo: Image.Image = None, photo: Image.Image = None,
     secondaires: list = None, decor: str = "auto", graine: int = 0,
     logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "",
+    cameos: list = None,
 ) -> list[Image.Image]:
-    """donnees : {"couverture": {...}, "points": [{titre, texte}, ...], "cta": {...}}."""
+    """
+    donnees : {"couverture": {...}, "points": [{titre, texte}, ...], "cta": {...}}. cameos : un portrait (ou None)
+    par slide, dans l'ordre : personne detouree en bas a droite, qui reagit a ce que dit la slide.
+    """
+    cameos = list(cameos or [])
+    cameo_de = lambda i: cameos[i] if i < len(cameos) else None
     layout = layout if layout in LAYOUTS else "plein"
     points = donnees["points"]
     total = len(points) + 2
     slides = [dessiner_slide(
         "couverture", donnees["couverture"], layout, couleur, nom_client, 1, total, logo, photo, secondaires,
-        decor, graine, logo_position, logo_style, logo_couleur_fond,
+        decor, graine, logo_position, logo_style, logo_couleur_fond, cameo_de(0),
     )]
     for i, pt in enumerate(points, start=1):
-        slides.append(dessiner_slide("point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total, secondaires=secondaires, decor=decor, graine=graine))
+        slides.append(dessiner_slide(
+            "point", {**pt, "numero": i}, layout, couleur, nom_client, i + 1, total, secondaires=secondaires, decor=decor,
+            graine=graine, cameo=cameo_de(i),
+        ))
     slides.append(dessiner_slide(
         "cta", donnees["cta"], layout, couleur, nom_client, total, total, logo, secondaires=secondaires, decor=decor,
         graine=graine, logo_position=logo_position, logo_style=logo_style, logo_couleur_fond=logo_couleur_fond,
+        cameo=cameo_de(total - 1),
     ))
     return slides
 

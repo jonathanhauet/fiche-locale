@@ -52,6 +52,7 @@ from . import (
     documents,
     export_acces_excel,
     export_clients_excel,
+    detourage,
     gemini_images,
     geocodage,
     google_admins,
@@ -7050,6 +7051,79 @@ async def publication_multi_carrousel_media(
     return JSONResponse({"ok": True, "url": url})
 
 
+def _image_depuis_data_url_jpeg(valeur):
+    """Personne detouree de reaction renvoyee par la page (data URL WebP/PNG, 800 Ko maximum) ; None si absente ou invalide."""
+    if not isinstance(valeur, str) or len(valeur) > 1_100_000:
+        return None
+    for prefixe in ("data:image/webp;base64,", "data:image/png;base64,"):
+        if valeur.startswith(prefixe):
+            try:
+                image = Image.open(io.BytesIO(base64.b64decode(valeur[len(prefixe):])))
+                image.load()
+                return image.convert("RGBA")
+            except Exception:
+                return None
+    return None
+
+
+INSTRUCTION_CAMEO = (
+    "The attached photos show one real person (the author) from several angles. Create a photorealistic waist-up shot of "
+    "THIS SAME PERSON, with a recognizable face faithful to the reference photos (facial features, hair, skin tone, age, "
+    "build, glasses if any), turned slightly toward the left of the frame, ON A FLAT PURE BRIGHT GREEN (#00FF00) "
+    "BACKGROUND with uniform lighting, no shadows, no floor, nothing else in the frame, and no green on the person. The body "
+    "fills the lower part of the frame and is cut by the bottom edge of the image. No text anywhere. Reaction to depict: "
+)
+
+
+@app.post("/publication-multi/{client_id}/carrousel/reactions")
+async def publication_multi_carrousel_reactions(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Cameos « reaction » d'un carrousel : la personne des photos de reference, detouree, une fois par slide, avec une
+    expression adaptee a ce que dit la slide (voir claude_generation.generer_reactions_carrousel), detouree (detourage.py).
+    Renvoie des data URL WebP avec transparence (une par slide, null si une image a echoue), que la page retransmet au rendu : l'aperçu ne regenere jamais d'image.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    if not client.photos_reference:
+        return JSONResponse({"erreur": "Aucune photo de référence enregistrée sur cette fiche."}, status_code=400)
+    donnees = await request.json()
+    textes = [" ".join(str(t or "").split())[:300] for t in (donnees.get("textes") or [])][:10]
+    if not textes:
+        return JSONResponse({"erreur": "Rédigez d'abord les slides."}, status_code=400)
+
+    images_reference = []
+    for photo in client.photos_reference:
+        try:
+            images_reference.append(_jpeg_normalise(requests.get(photo.image_url, timeout=20).content, 1536))
+        except Exception:
+            continue
+    if not images_reference:
+        return JSONResponse({"erreur": "Impossible de récupérer les photos de référence."}, status_code=500)
+
+    try:
+        reactions = await run_in_threadpool(claude_generation.generer_reactions_carrousel, textes)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Impossible de préparer les réactions : {erreur}"}, status_code=500)
+
+    def fabriquer(reaction):
+        octets = gemini_images.generer_image(reaction, "4:5", images_reference, False, instruction_personne=INSTRUCTION_CAMEO)
+        personne = detourage.detourer_fond_vert(Image.open(io.BytesIO(octets)))
+        hauteur = 640  # un peu plus grand que l'affichage final (470 px) : reste net une fois colle sur la slide
+        personne = personne.resize((max(1, round(personne.width * hauteur / personne.height)), hauteur), Image.LANCZOS)
+        tampon = io.BytesIO()
+        personne.save(tampon, format="WEBP", quality=88, method=4)
+        return "data:image/webp;base64," + base64.b64encode(tampon.getvalue()).decode()
+
+    resultats = await asyncio.gather(*(run_in_threadpool(fabriquer, r) for r in reactions), return_exceptions=True)
+    cameos = [None if isinstance(r, Exception) else r for r in resultats]
+    if not any(cameos):
+        return JSONResponse({"erreur": f"Échec de la génération : {resultats[0]}"}, status_code=500)
+    return JSONResponse({"cameos": cameos})
+
+
 @app.post("/publication-multi/{client_id}/carrousel/rendu")
 async def publication_multi_carrousel_rendu(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -7088,7 +7162,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
         photo = _image_depuis_url_autorisee(photo_url)
         images = carrousel_visuel.construire_carrousel(
             slides, layout, couleur, nom_client, logo, photo, secondaires, decor, graine_decor, logo_position, logo_style,
-            logo_couleur_fond,
+            logo_couleur_fond, [_image_depuis_data_url_jpeg(c) for c in (donnees.get("cameos") if isinstance(donnees.get("cameos"), list) else [])[:10]],
         )
         sorties = []
         for image in images:

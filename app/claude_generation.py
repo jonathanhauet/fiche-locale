@@ -2593,3 +2593,48 @@ def generer_concepts_miniatures(script: str, deja_proposes: list = None, avec_pe
     except (json.JSONDecodeError, KeyError) as erreur:
         raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
     return [{"texte": _nettoyer_texte_genere(m["texte"]), "scene": m["scene"].strip()} for m in concepts][:2]
+
+
+SCHEMA_REACTIONS = {
+    "type": "object",
+    "properties": {"reactions": {"type": "array", "items": {"type": "string"}}},
+    "required": ["reactions"], "additionalProperties": False,
+}
+
+
+def generer_reactions_carrousel(textes: list) -> list:
+    """
+    Une reaction (expression + geste, en anglais, pour Gemini) par slide d'un carrousel : la personne des photos de
+    reference reagit a ce que dit la slide, avec une expression differente d'une slide a l'autre. Jamais de description
+    physique (le visage vient des photos). Renvoie autant d'elements que de textes.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not textes:
+        raise RuntimeError("Aucune slide.")
+    liste = "\n".join(f"{i}. {t or '(slide sans texte)'}" for i, t in enumerate(textes, start=1))
+    prompt = (
+        "Voici les textes des slides d'un carrousel :\n\n" + liste + "\n\n"
+        f"Pour chacune des {len(textes)} slides, dans l'ordre, décris en ANGLAIS, en une phrase courte, la réaction d'une "
+        "personne qui commente ce que dit la slide : expression du visage et geste des épaules/mains (surprised with raised "
+        "eyebrows, nodding with a confident smile, thumbs up, pointing at the viewer, thoughtful hand on chin, index finger "
+        "raised, impressed, laughing...). Varie nettement l'expression d'une slide à l'autre, en cohérence avec le sens de "
+        "chaque slide (une mise en garde donne un air sérieux ou inquiet, un conseil un sourire ou un pouce levé, la slide "
+        "finale un sourire engageant). Ne décris JAMAIS le physique (visage, cheveux, âge, vêtements). "
+        f"Réponds par exactement {len(textes)} réactions."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=1200, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_REACTIONS}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        reactions = [str(r).strip() for r in json.loads(bloc)["reactions"]]
+    except (json.JSONDecodeError, KeyError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+    defaut = "a friendly confident smile looking at the viewer"
+    return [(reactions[i] if i < len(reactions) and reactions[i] else defaut) for i in range(len(textes))]

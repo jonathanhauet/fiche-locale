@@ -269,6 +269,19 @@
       <label class="etiquette-chip-case"><input type="radio" name="carrousel-layout" value="clair"> Clair</label>
       <label class="etiquette-chip-case"><input type="radio" name="carrousel-layout" value="sombre"> Sombre</label>
     </fieldset>
+    {% if client.photos_reference %}
+    <div class="groupe-options-visuel">
+      <label class="etiquette-chip-case">
+        <input type="checkbox" id="carrousel-cameo">
+        M'inclure en réaction (ma silhouette détourée en bas à droite, une expression différente selon chaque slide)
+      </label>
+      <button type="button" id="carrousel-cameo-creer" class="bouton-secondaire" hidden>
+        <span class="spinner" id="carrousel-cameo-spinner" hidden></span>
+        🎭 Créer mes réactions
+      </button>
+      <span id="carrousel-cameo-statut" class="texte-discret"></span>
+    </div>
+    {% endif %}
     <div class="groupe-options-visuel">
       <label class="etiquette-chip-case">Photo de fond de la couverture (facultatif)
         <input type="file" id="carrousel-photo" accept="image/*" style="width:auto;">
@@ -1783,6 +1796,47 @@
           logo_style: document.getElementById("identite-logo-style").value,
           logo_couleur_fond: document.getElementById("identite-logo-couleur-fond-hex").value,
           photo_url: photoUrl, nom_affiche: document.getElementById("carrousel-nom-affiche").value, mode,
+          cameos: (caseCameo && caseCameo.checked) ? cameos : [],
+        });
+      }
+
+      // ----- Cameos « reaction » : generes une fois (cout d'une image par slide), reutilises par l'aperçu et le rendu final -----
+      const caseCameo = document.getElementById("carrousel-cameo");
+      const boutonCameo = document.getElementById("carrousel-cameo-creer");
+      const statutCameo = document.getElementById("carrousel-cameo-statut");
+      let cameos = [];
+      function textesDesSlides() {
+        const s = lireSlides();
+        return [s.couverture.titre + ". " + s.couverture.sous_titre]
+          .concat(s.points.map((p) => p.titre + ". " + p.texte)).concat([s.cta.titre + ". " + s.cta.texte]);
+      }
+      async function creerCameos() {
+        statutCameo.textContent = "Création de vos réactions (environ une minute)...";
+        boutonCameo.disabled = true; document.getElementById("carrousel-cameo-spinner").hidden = false;
+        try {
+          const donnees = await appeler(base + "/reactions", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ textes: textesDesSlides() }),
+          });
+          cameos = donnees.cameos;
+          boutonCameo.lastChild.textContent = " 🔄 Recréer mes réactions";
+          statutCameo.textContent = cameos.filter(Boolean).length + " réaction(s) prête(s). Elles suivent l'ordre des slides : recréez-les si vous changez les textes.";
+          return true;
+        } catch (e) {
+          statutCameo.textContent = e.message;
+          return false;
+        } finally {
+          boutonCameo.disabled = false; document.getElementById("carrousel-cameo-spinner").hidden = true;
+        }
+      }
+      if (caseCameo) {
+        caseCameo.addEventListener("change", async () => {
+          boutonCameo.hidden = !caseCameo.checked;
+          statutCameo.textContent = caseCameo.checked && !cameos.length ? "Rédigez les slides, puis créez vos réactions." : "";
+          if (!zoneEdition.hidden) await actualiser();
+        });
+        boutonCameo.addEventListener("click", async () => {
+          if (zoneEdition.hidden) { statutCameo.textContent = "Rédigez d'abord les slides."; return; }
+          if (await creerCameos()) await actualiser();
         });
       }
       async function appeler(url, options) {
@@ -1842,6 +1896,7 @@
 
       document.getElementById("carrousel-utiliser").addEventListener("click", async () => {
         if (occupe) return;
+        if (caseCameo && caseCameo.checked && !cameos.length && !(await creerCameos())) return;
         occupe = true; message("Création des images du carrousel (quelques secondes)...");
         try {
           const donnees = await appeler(base + "/rendu", { method: "POST", headers: { "Content-Type": "application/json" }, body: corpsRendu("final") });
