@@ -68,6 +68,20 @@
   </div>
 </div>
 
+<div class="formulaire kit-bloc" id="historique-scripts">
+  <div class="kit-entete"><strong>🕘 Historique des scripts <span class="texte-discret" id="historique-compteur">({{ historique|length }})</span></strong></div>
+  <p class="texte-discret">Les scripts générés sont enregistrés ici (avec leur kit de publication s'il a été préparé). L'IA évite de reproposer ces sujets.</p>
+  <ul class="liste-historique-scripts" id="liste-historique-scripts">
+    {% for v in historique %}
+    <li data-id="{{ v.id }}">
+      <button type="button" class="historique-ouvrir"><span class="historique-date">{{ v.cree_le | heure_locale("%d/%m/%Y") }}</span> {{ v.sujet }}{% if v.kit_json %} <span class="texte-discret">· kit</span>{% endif %}</button>
+      <button type="button" class="bouton-secondaire historique-supprimer" title="Supprimer ce script">✕</button>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="texte-vide" id="historique-vide" {% if historique %}hidden{% endif %}>Aucun script enregistré pour l'instant.</p>
+</div>
+
 <script>
   (function () {
     const champSujet = document.getElementById("script-sujet");
@@ -115,6 +129,9 @@
         champTexte.value = donnees.script;
         resultat.hidden = false;
         ajusterHauteur(champTexte);
+        scriptIdCourant = donnees.id;
+        zoneKit.hidden = true; zoneKit.innerHTML = ""; statutKit.hidden = true;
+        ajouterOuMarquerHistorique(donnees.id, donnees.sujet, false);
         statut.textContent = donnees.sujet_utilise
           ? `Sujet choisi par l'IA : « ${donnees.sujet_utilise} » — relisez le script avant de tourner.`
           : "Script généré — relisez-le avant de tourner.";
@@ -206,6 +223,39 @@
       }
     }
 
+    let scriptIdCourant = null;
+
+    function afficherKit(kit, miniaturesPretes) {
+      zoneKit.innerHTML = "";
+      zoneKit.hidden = false;
+      const blocMiniatures = document.createElement("div");
+      blocMiniatures.className = "kit-bloc";
+      blocMiniatures.innerHTML = "<strong>Miniatures YouTube</strong>";
+      const statutMiniatures = document.createElement("p");
+      statutMiniatures.className = "texte-vide";
+      const grille = document.createElement("div");
+      grille.className = "kit-miniatures";
+      blocMiniatures.appendChild(statutMiniatures); blocMiniatures.appendChild(grille);
+      zoneKit.appendChild(blocMiniatures);
+      zoneKit.appendChild(blocKit("Titres proposés", kit.titres.map((t, i) => (i + 1) + ". " + t).join("\n")));
+      zoneKit.appendChild(blocKit("Description (avec chapitres, minutages estimés à ajuster après montage)", kit.description));
+      zoneKit.appendChild(blocKit("Tags", kit.tags.join(", ")));
+      zoneKit.appendChild(blocKit("Version courte (YouTube Short)", kit.script_short));
+      zoneKit.appendChild(blocKit("Post LinkedIn", kit.post_linkedin, { composeur: true }));
+      zoneKit.appendChild(blocKit("Post Google Business", kit.post_google, { composeur: true }));
+      if (miniaturesPretes) {
+        return genererMiniatures(kit.miniatures, grille, statutMiniatures);
+      }
+      const creer = document.createElement("button");
+      creer.type = "button"; creer.className = "bouton-secondaire"; creer.textContent = "🖼️ Créer les 2 miniatures";
+      creer.addEventListener("click", async () => {
+        creer.disabled = true;
+        await genererMiniatures(kit.miniatures, grille, statutMiniatures);
+        creer.disabled = false;
+      });
+      blocMiniatures.insertBefore(creer, statutMiniatures);
+    }
+
     boutonKit.addEventListener("click", async () => {
       const script = champTexte.value.trim();
       statutKit.hidden = false;
@@ -216,32 +266,75 @@
       try {
         const reponse = await fetch("/scripts-video/kit", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ script: script }),
+          body: JSON.stringify({ script: script, script_id: scriptIdCourant, sujet: champSujet.value.trim() }),
         });
         const kit = await reponse.json();
         if (!reponse.ok) { statutKit.textContent = kit.erreur || "Échec de la préparation du kit."; return; }
-        zoneKit.hidden = false;
-        const blocMiniatures = document.createElement("div");
-        blocMiniatures.className = "kit-bloc";
-        blocMiniatures.innerHTML = "<strong>Miniatures YouTube</strong>";
-        const statutMiniatures = document.createElement("p");
-        statutMiniatures.className = "texte-vide";
-        const grille = document.createElement("div");
-        grille.className = "kit-miniatures";
-        blocMiniatures.appendChild(statutMiniatures); blocMiniatures.appendChild(grille);
-        zoneKit.appendChild(blocMiniatures);
-        zoneKit.appendChild(blocKit("Titres proposés", kit.titres.map((t, i) => (i + 1) + ". " + t).join("\n")));
-        zoneKit.appendChild(blocKit("Description (avec chapitres, minutages estimés à ajuster après montage)", kit.description));
-        zoneKit.appendChild(blocKit("Tags", kit.tags.join(", ")));
-        zoneKit.appendChild(blocKit("Version courte (YouTube Short)", kit.script_short));
-        zoneKit.appendChild(blocKit("Post LinkedIn", kit.post_linkedin, { composeur: true }));
-        zoneKit.appendChild(blocKit("Post Google Business", kit.post_google, { composeur: true }));
-        statutKit.textContent = "Kit prêt — relisez avant de publier.";
-        await genererMiniatures(kit.miniatures, grille, statutMiniatures);
+        if (kit.script_id) { scriptIdCourant = kit.script_id; ajouterOuMarquerHistorique(kit.script_id, champSujet.value.trim() || kit.titres[0], true); }
+        statutKit.textContent = "Kit prêt et enregistré dans l'historique — relisez avant de publier.";
+        await afficherKit(kit, true);
       } catch (erreur) {
         statutKit.textContent = "Erreur réseau lors de la préparation du kit.";
       } finally {
         boutonKit.disabled = false; spinnerKit.hidden = true;
+      }
+    });
+
+    // ----- Historique des scripts -----
+    const listeHistorique = document.getElementById("liste-historique-scripts");
+    const videHistorique = document.getElementById("historique-vide");
+    const compteurHistorique = document.getElementById("historique-compteur");
+
+    function majCompteurHistorique() {
+      const n = listeHistorique.children.length;
+      compteurHistorique.textContent = "(" + n + ")";
+      videHistorique.hidden = n > 0;
+    }
+
+    function ajouterOuMarquerHistorique(id, sujet, avecKit) {
+      let li = listeHistorique.querySelector(`li[data-id="${id}"]`);
+      if (!li) {
+        li = document.createElement("li");
+        li.dataset.id = id;
+        li.innerHTML = '<button type="button" class="historique-ouvrir"></button><button type="button" class="bouton-secondaire historique-supprimer" title="Supprimer ce script">✕</button>';
+        listeHistorique.insertBefore(li, listeHistorique.firstChild);
+      }
+      const ouvrir = li.querySelector(".historique-ouvrir");
+      const aujourdhui = new Date().toLocaleDateString("fr-FR");
+      ouvrir.innerHTML = `<span class="historique-date">${aujourdhui}</span> ${echapperHtml(sujet)}` + (avecKit ? ' <span class="texte-discret">· kit</span>' : "");
+      majCompteurHistorique();
+    }
+
+    listeHistorique.addEventListener("click", async (evenement) => {
+      const li = evenement.target.closest("li[data-id]");
+      if (!li) return;
+      const id = li.dataset.id;
+      if (evenement.target.closest(".historique-supprimer")) {
+        if (!confirm("Supprimer ce script de l'historique ?")) return;
+        const reponse = await fetch(`/scripts-video/${id}/supprimer`, { method: "POST" });
+        if (reponse.ok) {
+          li.remove(); majCompteurHistorique();
+          if (String(scriptIdCourant) === id) scriptIdCourant = null;
+        }
+        return;
+      }
+      if (!evenement.target.closest(".historique-ouvrir")) return;
+      statut.hidden = false; statut.textContent = "Chargement du script...";
+      try {
+        const reponse = await fetch(`/scripts-video/${id}`);
+        const v = await reponse.json();
+        if (!reponse.ok) { statut.textContent = v.erreur || "Script introuvable."; return; }
+        scriptIdCourant = v.id;
+        champSujet.value = v.sujet;
+        champTexte.value = v.script;
+        resultat.hidden = false;
+        ajusterHauteur(champTexte);
+        statut.textContent = "Script rechargé depuis l'historique.";
+        zoneKit.hidden = true; zoneKit.innerHTML = ""; statutKit.hidden = true;
+        if (v.kit) { statutKit.hidden = false; statutKit.textContent = "Kit enregistré rechargé (les miniatures se recréent à la demande)."; afficherKit(v.kit, false); }
+        resultat.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (erreur) {
+        statut.textContent = "Erreur réseau lors du chargement.";
       }
     });
 

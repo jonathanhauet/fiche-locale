@@ -2336,14 +2336,15 @@ EXEMPLES_SCRIPT_VIDEO = [
 ]
 
 
-def generer_script_video_youtube(sujet: str = "", angle: str = "") -> dict:
+def generer_script_video_youtube(sujet: str = "", angle: str = "", sujets_deja_traites: list = None) -> dict:
     """
     Script à lire face caméra pour une vidéo YouTube, dans le ton de Jonathan Hauët (voir STYLE_SCRIPT_VIDEO et
     EXEMPLES_SCRIPT_VIDEO, deux de ses scripts réels servant de modèle de style). sujet : le thème de la vidéo,
     optionnel - si vide, l'IA choisit elle-même un sujet dans son domaine d'expertise (Google Business Profile,
     SEO local), comme pour generer_post_expert. angle : précision facultative (ex. un angle particulier, un
     public cible, une longueur souhaitée). Renvoie {"script", "sujet_utilise"} - sujet_utilise n'est rempli que
-    lorsque le sujet a été choisi par l'IA (vide sinon), pour l'afficher à l'utilisateur.
+    lorsque le sujet a été choisi par l'IA (vide sinon), pour l'afficher à l'utilisateur. sujets_deja_traites :
+    sujets des vidéos précédentes (voir models.ScriptVideo), pour ne pas reproposer le même sujet ni un angle trop proche.
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
@@ -2367,12 +2368,20 @@ def generer_script_video_youtube(sujet: str = "", angle: str = "") -> dict:
             "6 à 12 mots>\", puis une ligne vide, puis le script, prêt à être lu, sans autre titre ni note."
         )
 
+    bloc_deja = ""
+    if sujets_deja_traites:
+        liste = "\n".join(f"- {t[:120]}" for t in sujets_deja_traites[:40])
+        precision = " (même si le sujet demandé y ressemble : trouve un angle nouveau)" if sujet else ""
+        bloc_deja = (
+            "\nVidéos que Jonathan a déjà faites ou préparées (ne reprends pas un de ces sujets, ni un angle trop "
+            f"proche){precision} :\n{liste}\n"
+        )
     prompt = (
         f"{STYLE_SCRIPT_VIDEO}\n\n"
         f"Voici deux exemples réels de scripts déjà écrits par Jonathan, à prendre comme modèle de ton et de "
         f"structure (pas de contenu, le sujet du jour est différent) :\n\n{exemples}\n\n---\n\n"
         f"Écris maintenant, dans ce même ton, un nouveau script vidéo face caméra {consigne_sujet}.{bloc_angle}\n"
-        f"{consigne_format}"
+        f"{bloc_deja}{consigne_format}"
     )
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(

@@ -1020,3 +1020,19 @@ class PhotoReferenceClient(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="photos_reference")
+
+
+class ScriptVideo(Base):
+    """
+    Script video YouTube genere depuis la page Scripts video (voir main.py) : garde l'historique pour pouvoir y
+    revenir et pour que l'IA evite de reproposer un sujet deja traite (voir claude_generation.generer_script_video_youtube
+    et _sujets_deja_traites_client). kit_json : kit de publication prepare ensuite (titres, description, posts...), s'il existe.
+    """
+
+    __tablename__ = "scripts_video"
+
+    id = Column(Integer, primary_key=True)
+    sujet = Column(String, nullable=False, default="")
+    script = Column(Text, nullable=False, default="")
+    kit_json = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)

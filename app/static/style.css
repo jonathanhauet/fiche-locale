@@ -3275,3 +3275,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .kit-miniatures { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
 .kit-miniature { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
 .kit-miniature img { width: 100%; border-radius: 10px; display: block; }
+
+.liste-historique-scripts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; max-height: 22rem; overflow-y: auto; }
+.liste-historique-scripts li { display: flex; gap: 0.5rem; align-items: stretch; }
+.historique-ouvrir { flex: 1; text-align: left; padding: 0.55rem 0.8rem; border-radius: 10px; border: 1px solid rgba(128, 128, 140, 0.35); background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.historique-ouvrir:hover { border-color: #5b7cff; }
+.historique-date { opacity: 0.6; margin-right: 0.5rem; font-size: 0.85em; }

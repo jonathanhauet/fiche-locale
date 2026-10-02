@@ -3009,6 +3009,10 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
         )
         elements += [(p.cree_le, p.texte[:190].strip()) for p in lignes if (p.texte or "").strip()]
 
+    if client and client.nom == "Jonathan Hauet Marketing":
+        scripts = db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(limite).all()
+        elements += [(v.cree_le, f"Vidéo YouTube : {v.sujet}") for v in scripts if (v.sujet or "").strip()]
+
     elements.sort(key=lambda e: e[0] or datetime.min, reverse=True)
     resultat, vus = [], set()
     for _, texte in elements:
@@ -6257,21 +6261,56 @@ def _client_marque_personnelle(db: Session):
     return db.query(models.Client).filter_by(nom="Jonathan Hauet Marketing").first()
 
 
+def _sujets_videos_deja_traites(db: Session, limite: int = 40) -> list:
+    return [v.sujet for v in db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(limite).all() if (v.sujet or "").strip()]
+
+
 @app.get("/scripts-video", response_class=HTMLResponse)
 def page_scripts_video(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
     client = _client_marque_personnelle(db)
+    historique = db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(60).all()
     return templates.TemplateResponse(request, "scripts_video.html", {
         "page_actuelle": "scripts_video",
         "client_marque_id": client.id if client else None,
+        "historique": historique,
     })
 
 
+@app.get("/scripts-video/{script_id}")
+def scripts_video_ouvrir(script_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Un script enregistre (et son kit de publication s'il a ete prepare), pour le recharger dans la page."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    v = db.get(models.ScriptVideo, script_id)
+    if not v:
+        return JSONResponse({"erreur": "Script introuvable."}, status_code=404)
+    try:
+        kit = json.loads(v.kit_json) if (v.kit_json or "").strip() else None
+    except ValueError:
+        kit = None
+    return JSONResponse({"id": v.id, "sujet": v.sujet, "script": v.script, "kit": kit})
+
+
+@app.post("/scripts-video/{script_id}/supprimer")
+def scripts_video_supprimer(script_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    v = db.get(models.ScriptVideo, script_id)
+    if v:
+        db.delete(v)
+        db.commit()
+    return JSONResponse({"ok": True})
+
+
 @app.post("/scripts-video/generer")
-async def generer_script_video(request: Request):
-    """Script face camera pour YouTube dans le ton de Jonathan (voir claude_generation.generer_script_video_youtube)."""
+async def generer_script_video(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Script face camera pour YouTube dans le ton de Jonathan (voir claude_generation.generer_script_video_youtube),
+    enregistre dans l'historique (models.ScriptVideo) ; les sujets deja traites sont transmis a l'IA pour eviter les redites.
+    """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
@@ -6281,10 +6320,17 @@ async def generer_script_video(request: Request):
     angle = (donnees.get("angle") or "").strip()
 
     try:
-        resultat = await run_in_threadpool(claude_generation.generer_script_video_youtube, sujet, angle)
+        resultat = await run_in_threadpool(
+            claude_generation.generer_script_video_youtube, sujet, angle, _sujets_videos_deja_traites(db),
+        )
     except Exception as e:
         return JSONResponse({"erreur": f"Impossible de générer le script : {e}"}, status_code=500)
 
+    enregistrement = models.ScriptVideo(sujet=(sujet or resultat.get("sujet_utilise") or "(sujet libre)")[:300], script=resultat["script"])
+    db.add(enregistrement)
+    db.commit()
+    resultat["id"] = enregistrement.id
+    resultat["sujet"] = enregistrement.sujet
     return JSONResponse(resultat)
 
 
@@ -6322,6 +6368,20 @@ async def scripts_video_kit(request: Request, db: Session = Depends(obtenir_sess
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Impossible de préparer le kit : {e}"}, status_code=500)
+
+    # Le kit est rattache au script enregistre (id transmis par la page) ; un script colle a la main est enregistre aussi.
+    try:
+        enregistrement = db.get(models.ScriptVideo, int(donnees.get("script_id") or 0))
+    except (TypeError, ValueError):
+        enregistrement = None
+    if enregistrement:
+        enregistrement.script = script
+    else:
+        enregistrement = models.ScriptVideo(sujet=(donnees.get("sujet") or (kit["titres"][0] if kit["titres"] else "(script collé)"))[:300], script=script)
+        db.add(enregistrement)
+    enregistrement.kit_json = json.dumps(kit, ensure_ascii=False)
+    db.commit()
+    kit["script_id"] = enregistrement.id
     return JSONResponse(kit)
 
 
