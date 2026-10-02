@@ -55,6 +55,7 @@
     <textarea id="script-texte" rows="20"></textarea>
     <div class="ligne-champs">
       <button type="button" id="script-copier" class="bouton-secondaire">📋 Copier</button>
+      <button type="button" id="script-prompteur" class="bouton-secondaire">📜 Prompteur</button>
     </div>
 
     <div class="ligne-champs">
@@ -81,6 +82,45 @@
   </ul>
   <p class="texte-vide" id="historique-vide" {% if historique %}hidden{% endif %}>Aucun script enregistré pour l'instant.</p>
 </div>
+
+<div id="prompteur" class="prompteur" hidden>
+  <div class="prompteur-barre" id="prompteur-barre">
+    <button type="button" id="pr-lecture" class="bouton">▶ Lecture</button>
+    <button type="button" id="pr-recommencer" class="bouton-secondaire">⏮ Début</button>
+    <label>Vitesse <input type="range" id="pr-vitesse" min="1" max="12" step="0.5" value="6"> <span id="pr-vitesse-val">6</span></label>
+    <label>Taille <input type="range" id="pr-taille" min="28" max="110" step="2" value="52"></label>
+    <label class="pr-case"><input type="checkbox" id="pr-miroir"> Miroir</label>
+    <button type="button" id="pr-plein-ecran" class="bouton-secondaire">⛶ Plein écran</button>
+    <button type="button" id="pr-fermer" class="bouton-secondaire">✕ Fermer</button>
+    <span class="prompteur-aide texte-discret">Espace : lecture/pause · ↑ ↓ : vitesse · + − : taille · R : début · Échap : fermer</span>
+  </div>
+  <div class="prompteur-progression"><div id="pr-progression"></div></div>
+  <div class="prompteur-ligne"></div>
+  <div class="prompteur-zone" id="pr-zone">
+    <div class="prompteur-defile" id="pr-defile"><div class="prompteur-texte" id="pr-texte"></div></div>
+  </div>
+  <div class="prompteur-compte" id="pr-compte" hidden></div>
+</div>
+<style>
+  .prompteur { position: fixed; inset: 0; z-index: 9999; background: #000; color: #fff; display: flex; flex-direction: column; }
+  .prompteur[hidden] { display: none; }
+  .prompteur-barre { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem 1rem; padding: 0.6rem 1rem; background: #14161c; font-size: 0.9rem; transition: opacity .3s; }
+  .prompteur-barre label { display: flex; align-items: center; gap: 0.4rem; }
+  .prompteur-barre input[type=range] { width: 8rem; }
+  .prompteur-barre .bouton, .prompteur-barre .bouton-secondaire { width: auto; }
+  .prompteur-aide { flex: 1 1 100%; opacity: .6; }
+  .prompteur.immersif .prompteur-barre { opacity: 0; pointer-events: none; }
+  .prompteur-progression { height: 4px; background: #222; }
+  .prompteur-progression > div { height: 100%; width: 0; background: #5b7cff; }
+  .prompteur-ligne { position: absolute; left: 0; right: 0; top: 36%; height: 0; border-top: 2px solid rgba(255, 80, 80, .55); pointer-events: none; z-index: 2; }
+  .prompteur-ligne::before { content: "▶"; position: absolute; left: 6px; top: -14px; color: #ff5050; font-size: 22px; }
+  .prompteur-zone { position: relative; flex: 1; overflow: hidden; }
+  .prompteur-defile { padding: 36vh 8vw 70vh; will-change: transform; }
+  .prompteur-texte { max-width: 1100px; margin: 0 auto; line-height: 1.45; font-weight: 600; }
+  .prompteur-texte p { margin: 0 0 0.9em; }
+  .prompteur.miroir .prompteur-defile { transform-origin: center; }
+  .prompteur-compte { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22vw; font-weight: 800; background: rgba(0,0,0,.65); z-index: 3; }
+</style>
 
 <script>
   (function () {
@@ -155,6 +195,120 @@
       }
     });
 
+
+
+    // ----- Prompteur : texte qui defile pour lire le script face camera -----
+    (function () {
+      const racine = document.getElementById("prompteur");
+      const zone = document.getElementById("pr-zone");
+      const defile = document.getElementById("pr-defile");
+      const texteEl = document.getElementById("pr-texte");
+      const boutonLecture = document.getElementById("pr-lecture");
+      const curseurVitesse = document.getElementById("pr-vitesse");
+      const affichageVitesse = document.getElementById("pr-vitesse-val");
+      const curseurTaille = document.getElementById("pr-taille");
+      const caseMiroir = document.getElementById("pr-miroir");
+      const progression = document.getElementById("pr-progression");
+      const compte = document.getElementById("pr-compte");
+      const CLE = "fiche-locale-prompteur";
+      let decalage = 0, lecture = false, dernier = 0, minuteurCompte = null, minuteurImmersif = null;
+
+      try {
+        const pref = JSON.parse(localStorage.getItem(CLE) || "{}");
+        if (pref.vitesse) curseurVitesse.value = pref.vitesse;
+        if (pref.taille) curseurTaille.value = pref.taille;
+        if (pref.miroir) caseMiroir.checked = true;
+      } catch (e) { /* stockage indisponible : valeurs par defaut */ }
+
+      function enregistrerPreferences() {
+        try { localStorage.setItem(CLE, JSON.stringify({ vitesse: curseurVitesse.value, taille: curseurTaille.value, miroir: caseMiroir.checked })); } catch (e) { /* ignore */ }
+      }
+      function maximum() { return Math.max(0, texteEl.offsetHeight - zone.clientHeight * 0.05); }
+      function appliquer() {
+        defile.style.transform = `translateY(${-decalage}px)` + (caseMiroir.checked ? " scaleX(-1)" : "");
+        const max = maximum();
+        progression.style.width = (max ? Math.min(100, decalage / max * 100) : 0) + "%";
+      }
+      function majTaille() { texteEl.style.fontSize = curseurTaille.value + "px"; appliquer(); }
+      function majVitesse() { affichageVitesse.textContent = curseurVitesse.value; }
+      function definirLecture(etat) {
+        lecture = etat;
+        boutonLecture.textContent = lecture ? "⏸ Pause" : "▶ Lecture";
+        racine.classList.toggle("immersif", lecture);
+        if (lecture) dernier = performance.now();
+      }
+      function image(maintenant) {
+        if (!racine.hidden) {
+          if (lecture) {
+            const dt = Math.min(0.1, (maintenant - dernier) / 1000);
+            dernier = maintenant;
+            decalage += parseFloat(curseurVitesse.value) * parseFloat(curseurTaille.value) * 0.08 * dt;
+            if (decalage >= maximum()) { decalage = maximum(); definirLecture(false); }
+            appliquer();
+          }
+          requestAnimationFrame(image);
+        }
+      }
+      function demarrerAvecCompteARebours() {
+        if (lecture) { definirLecture(false); return; }
+        if (minuteurCompte) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; return; }
+        let n = 3;
+        compte.hidden = false; compte.textContent = n;
+        minuteurCompte = setInterval(() => {
+          n -= 1;
+          if (n <= 0) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; definirLecture(true); }
+          else compte.textContent = n;
+        }, 1000);
+      }
+      function ouvrir() {
+        const script = champTexte.value.trim();
+        if (!script) { statut.hidden = false; statut.textContent = "Générez ou collez d'abord un script."; return; }
+        texteEl.innerHTML = "";
+        script.split(/\n+/).filter((l) => l.trim()).forEach((ligne) => {
+          const p = document.createElement("p"); p.textContent = ligne.trim(); texteEl.appendChild(p);
+        });
+        racine.hidden = false;
+        document.body.style.overflow = "hidden";
+        decalage = 0; definirLecture(false); majTaille(); majVitesse(); appliquer();
+        requestAnimationFrame(image);
+      }
+      function fermer() {
+        definirLecture(false);
+        if (minuteurCompte) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; }
+        racine.hidden = true;
+        document.body.style.overflow = "";
+        if (document.fullscreenElement) document.exitFullscreen();
+      }
+      function reveillerBarre() {
+        racine.classList.remove("immersif");
+        clearTimeout(minuteurImmersif);
+        if (lecture) minuteurImmersif = setTimeout(() => racine.classList.add("immersif"), 2500);
+      }
+
+      document.getElementById("script-prompteur").addEventListener("click", ouvrir);
+      document.getElementById("pr-fermer").addEventListener("click", fermer);
+      document.getElementById("pr-recommencer").addEventListener("click", () => { decalage = 0; appliquer(); });
+      boutonLecture.addEventListener("click", demarrerAvecCompteARebours);
+      curseurVitesse.addEventListener("input", () => { majVitesse(); enregistrerPreferences(); });
+      curseurTaille.addEventListener("input", () => { majTaille(); enregistrerPreferences(); });
+      caseMiroir.addEventListener("change", () => { appliquer(); enregistrerPreferences(); });
+      document.getElementById("pr-plein-ecran").addEventListener("click", () => {
+        if (document.fullscreenElement) document.exitFullscreen(); else racine.requestFullscreen && racine.requestFullscreen();
+      });
+      zone.addEventListener("click", demarrerAvecCompteARebours);
+      zone.addEventListener("wheel", (e) => { e.preventDefault(); decalage = Math.max(0, Math.min(maximum(), decalage + e.deltaY)); appliquer(); }, { passive: false });
+      racine.addEventListener("mousemove", reveillerBarre);
+      document.addEventListener("keydown", (e) => {
+        if (racine.hidden) return;
+        if (e.key === "Escape") { fermer(); return; }
+        if (e.key === " ") { e.preventDefault(); demarrerAvecCompteARebours(); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); curseurVitesse.value = Math.min(12, parseFloat(curseurVitesse.value) + 0.5); majVitesse(); enregistrerPreferences(); }
+        else if (e.key === "ArrowDown") { e.preventDefault(); curseurVitesse.value = Math.max(1, parseFloat(curseurVitesse.value) - 0.5); majVitesse(); enregistrerPreferences(); }
+        else if (e.key === "+" || e.key === "=") { curseurTaille.value = Math.min(110, parseInt(curseurTaille.value, 10) + 4); majTaille(); enregistrerPreferences(); }
+        else if (e.key === "-") { curseurTaille.value = Math.max(28, parseInt(curseurTaille.value, 10) - 4); majTaille(); enregistrerPreferences(); }
+        else if (e.key === "r" || e.key === "R") { decalage = 0; appliquer(); }
+      });
+    })();
 
     // ----- Kit de publication : declinaisons du script + 2 miniatures -----
     const boutonKit = document.getElementById("kit-generer");
