@@ -2391,3 +2391,135 @@ def generer_script_video_youtube(sujet: str = "", angle: str = "") -> dict:
             texte = texte[len(texte.splitlines()[0]):].lstrip("\n")
 
     return {"script": _nettoyer_texte_genere(texte.strip()), "sujet_utilise": sujet_utilise}
+
+
+SCHEMA_KIT_VIDEO = {
+    "type": "object",
+    "properties": {
+        "titres": {"type": "array", "items": {"type": "string"}},
+        "description": {"type": "string"},
+        "chapitres": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"titre": {"type": "string"}, "paragraphe": {"type": "integer"}},
+                "required": ["titre", "paragraphe"], "additionalProperties": False,
+            },
+        },
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "script_short": {"type": "string"},
+        "post_linkedin": {"type": "string"},
+        "post_google": {"type": "string"},
+        "miniatures": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"texte": {"type": "string"}, "scene": {"type": "string"}},
+                "required": ["texte", "scene"], "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["titres", "description", "chapitres", "tags", "script_short", "post_linkedin", "post_google", "miniatures"],
+    "additionalProperties": False,
+}
+
+MOTS_PAR_SECONDE_SCRIPT = 2.5  # ~150 mots/minute, rythme de lecture face camera
+
+
+def _horodatage(secondes: int) -> str:
+    return f"{secondes // 60}:{secondes % 60:02d}"
+
+
+def formater_chapitres(paragraphes: list, chapitres: list) -> str:
+    """
+    Chapitres YouTube (« 0:00 Titre ») a partir des paragraphes du script et du paragraphe ou commence chaque
+    chapitre : minutage estime d'apres le nombre de mots lus avant (voir MOTS_PAR_SECONDE_SCRIPT). YouTube exige
+    un premier chapitre a 0:00, au moins 3 chapitres et 10 secondes minimum entre deux - sinon on n'en renvoie aucun.
+    """
+    mots_avant, cumul = [], 0
+    for paragraphe in paragraphes:
+        mots_avant.append(cumul)
+        cumul += len(paragraphe.split())
+    lignes, dernier = [], -100
+    for chapitre in sorted(chapitres, key=lambda c: c["paragraphe"]):
+        indice = max(0, min(int(chapitre["paragraphe"]) - 1, len(paragraphes) - 1))
+        secondes = 0 if not lignes else int(mots_avant[indice] / MOTS_PAR_SECONDE_SCRIPT)
+        if lignes and secondes - dernier < 10:
+            continue
+        lignes.append(f"{_horodatage(secondes)} {_nettoyer_texte_genere(chapitre['titre'])}")
+        dernier = secondes
+    return "\n".join(lignes) if len(lignes) >= 3 else ""
+
+
+def generer_kit_publication_video(script: str, avec_personne: bool = True) -> dict:
+    """
+    Declinaisons d'un script video face camera, dans le ton de Jonathan : 3 titres YouTube, description (avec
+    chapitres minutes), tags, version courte pour les Shorts, posts LinkedIn et Google, et 2 concepts de
+    miniature (texte court + scene en anglais pour Gemini). avec_personne : la scene met en avant la personne des
+    photos de reference (jamais decrite physiquement : le visage vient des photos).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    paragraphes = [p.strip() for p in (script or "").splitlines() if p.strip()]
+    if not paragraphes:
+        raise RuntimeError("Aucun script fourni.")
+
+    script_numerote = "\n".join(f"[{i}] {p}" for i, p in enumerate(paragraphes, start=1))[:9000]
+    consigne_scene = (
+        "the person from the reference photos, never described physically (the face comes from the photos), placed in "
+        "the right third of the frame, large, face fully visible, with an expressive reaction that matches the topic "
+        "(surprised, pointing, thinking, thumbs up...)"
+        if avec_personne else "a striking symbolic object or scene related to the topic, placed in the right third"
+    )
+    prompt = (
+        f"{STYLE_SCRIPT_VIDEO}\n\n"
+        "Voici le script d'une vidéo YouTube de Jonathan (paragraphes numérotés entre crochets) :\n\n"
+        f"{script_numerote}\n\n"
+        "Prépare son kit de publication, en français, avec les champs suivants :\n"
+        "- titres : 3 titres YouTube différents (60 caractères maximum chacun), accrocheurs et honnêtes, avec le mot-clé principal "
+        "tôt dans le titre.\n"
+        "- description : 700 à 1100 caractères, première phrase très accrocheuse (elle s'affiche avant « Afficher plus »), "
+        "puis ce que la vidéo apporte, puis une invitation à s'abonner. Sans chapitres (ajoutés à part) ni hashtags.\n"
+        "- chapitres : 4 à 7 chapitres dans l'ordre ; pour chacun, un titre court et le numéro du paragraphe où il commence "
+        "(le premier chapitre commence au paragraphe 1).\n"
+        "- tags : 8 à 12 mots-clés de recherche YouTube.\n"
+        "- script_short : version à lire pour un YouTube Short, 90 à 120 mots, première phrase qui accroche, un seul conseil "
+        "clé, termine par une invitation à s'abonner.\n"
+        "- post_linkedin : post LinkedIn à la première personne, 900 à 1300 caractères, première ligne accroche, paragraphes "
+        "courts, une question finale, 3 hashtags maximum.\n"
+        "- post_google : post Google Business Profile de 600 à 900 caractères, conseil concret tiré de la vidéo, sans hashtags.\n"
+        f"- miniatures : exactement 2 concepts de miniature différents. Pour chacun, texte : 2 à 4 mots en français qui "
+        f"donnent envie de cliquer (sans ponctuation compliquée), et scene : une description en ANGLAIS de la scène à "
+        f"générer, sans aucun texte dans l'image, avec {consigne_scene}, laissant la moitié gauche de l'image dégagée et "
+        "contrastée pour y superposer le texte, couleurs saturées et lisibles en petit format.\n"
+        "Aucun emoji ni tiret cadratin, aucun chiffre ou fait absent du script."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=5000, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_KIT_VIDEO}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        kit = json.loads(bloc)
+    except json.JSONDecodeError as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+
+    chapitres = formater_chapitres(paragraphes, kit["chapitres"])
+    description = _nettoyer_texte_genere(kit["description"])
+    if chapitres:
+        description += "\n\n" + chapitres
+    return {
+        "titres": [_nettoyer_texte_genere(t) for t in kit["titres"]][:3],
+        "description": description,
+        "tags": [_nettoyer_texte_genere(t) for t in kit["tags"]][:15],
+        "script_short": _nettoyer_texte_genere(kit["script_short"]),
+        "post_linkedin": _nettoyer_texte_genere(kit["post_linkedin"]),
+        "post_google": _nettoyer_texte_genere(kit["post_google"]),
+        "miniatures": [
+            {"texte": _nettoyer_texte_genere(m["texte"]), "scene": m["scene"].strip()} for m in kit["miniatures"]
+        ][:2],
+    }

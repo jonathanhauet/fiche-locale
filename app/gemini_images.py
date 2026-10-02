@@ -33,10 +33,10 @@ _INTERDICTIONS_VISAGE = re.compile(
 )
 
 
-def _prompt_avec_personne(prompt_image: str) -> str:
+def _prompt_avec_personne(prompt_image: str, instruction: str = INSTRUCTION_PERSONNE) -> str:
     """Prefixe le prompt d'une consigne explicite sur les photos de reference et en retire les interdictions de visage."""
     nettoye = re.sub(r"\s*,(?:\s*,)+", ",", _INTERDICTIONS_VISAGE.sub("", prompt_image)).strip(" ,.")
-    return f"{INSTRUCTION_PERSONNE}{nettoye}"
+    return f"{instruction}{nettoye}"
 
 
 CONSIGNE_SANS_TEXTE = (
@@ -47,6 +47,7 @@ CONSIGNE_SANS_TEXTE = (
 
 def generer_image(
     prompt_image: str, aspect_ratio: str = None, images_reference: list[bytes] = None, texte_autorise: bool = False,
+    instruction_personne: str = INSTRUCTION_PERSONNE,
 ) -> bytes:
     """
     Genere une image via Gemini a partir d'un prompt et renvoie les octets
@@ -73,7 +74,7 @@ def generer_image(
     if not texte_autorise:
         prompt_image = prompt_image + CONSIGNE_SANS_TEXTE
     if images_reference:
-        entree = [{"type": "text", "text": _prompt_avec_personne(prompt_image)}] + [
+        entree = [{"type": "text", "text": _prompt_avec_personne(prompt_image, instruction_personne)}] + [
             {"type": "image", "data": base64.b64encode(octets).decode("utf-8"), "mime_type": "image/jpeg"}
             for octets in images_reference
         ]

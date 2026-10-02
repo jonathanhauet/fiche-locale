@@ -6,6 +6,7 @@ Lancement en local : depuis le dossier plateforme_web/,
 puis ouvrir http://localhost:8000
 """
 
+import asyncio
 import base64
 import calendar
 import io
@@ -73,6 +74,7 @@ from . import (
     meta_oauth,
     meta_publish,
     models,
+    miniature_youtube,
     montage_video,
     notifications,
     ovh_upload,
@@ -6302,6 +6304,88 @@ def scripts_video_sujets_evergreen(request: Request, db: Session = Depends(obten
     if not client:
         return JSONResponse({"erreur": "Fiche de référence introuvable (« Jonathan Hauet Marketing »)."}, status_code=404)
     return publication_multi_sujets_evergreen(client.id, request, db)
+
+
+@app.post("/scripts-video/kit")
+async def scripts_video_kit(request: Request, db: Session = Depends(obtenir_session)):
+    """Declinaisons d'un script (titres, description, tags, Short, posts, concepts de miniature) - voir generer_kit_publication_video."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    donnees = await request.json()
+    script = (donnees.get("script") or "").strip()
+    if not script:
+        return JSONResponse({"erreur": "Générez ou collez d'abord un script."}, status_code=400)
+    client = _client_marque_personnelle(db)
+    try:
+        kit = await run_in_threadpool(
+            claude_generation.generer_kit_publication_video, script, bool(client and client.photos_reference),
+        )
+    except Exception as e:
+        return JSONResponse({"erreur": f"Impossible de préparer le kit : {e}"}, status_code=500)
+    return JSONResponse(kit)
+
+
+@app.post("/scripts-video/miniatures")
+async def scripts_video_miniatures(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Genere les miniatures YouTube (1280x720) des concepts fournis : scene par Gemini avec les photos de reference de
+    la fiche de marque personnelle, titre ajoute par la plateforme (voir miniature_youtube.py). Renvoie des data URL
+    (pas d'hebergement : on les telecharge depuis la page).
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    donnees = await request.json()
+    concepts = [c for c in (donnees.get("miniatures") or []) if isinstance(c, dict) and (c.get("scene") or "").strip()][:2]
+    if not concepts:
+        return JSONResponse({"erreur": "Aucun concept de miniature."}, status_code=400)
+
+    client = _client_marque_personnelle(db)
+    images_reference = None
+    if client and client.photos_reference:
+        images_reference = []
+        for photo in client.photos_reference:
+            try:
+                images_reference.append(_jpeg_normalise(requests.get(photo.image_url, timeout=20).content, 1536))
+            except Exception:
+                continue
+        images_reference = images_reference or None
+    couleur = couleur_marque_client(client) if client else ""
+    secondaires = couleurs_secondaires_client(client) if client else []
+
+    def fabriquer(concept):
+        octets = gemini_images.generer_image(
+            concept["scene"].strip(), "16:9", images_reference, False, instruction_personne=INSTRUCTION_MINIATURE,
+        )
+        final = miniature_youtube.composer(octets, concept.get("texte") or "", couleur or "#1f4e8c", secondaires)
+        return {"texte": concept.get("texte") or "", "image": "data:image/jpeg;base64," + base64.b64encode(final).decode()}
+
+    resultats = await asyncio.gather(*(run_in_threadpool(fabriquer, c) for c in concepts), return_exceptions=True)
+    miniatures = [r for r in resultats if not isinstance(r, Exception)]
+    if not miniatures:
+        return JSONResponse({"erreur": f"Échec de la génération : {resultats[0]}"}, status_code=500)
+    return JSONResponse({"miniatures": miniatures, "avec_personne": bool(images_reference)})
+
+
+@app.post("/scripts-video/vers-composeur")
+async def scripts_video_vers_composeur(request: Request, db: Session = Depends(obtenir_session)):
+    """Envoie un texte (post LinkedIn, Google...) dans le composeur multi-reseaux de la fiche de marque personnelle."""
+    if not utilisateur_connecte(request):
+        return RedirectResponse("/connexion", status_code=303)
+    formulaire = await request.form()
+    texte = (formulaire.get("texte") or "").strip()[:2500]
+    client = _client_marque_personnelle(db)
+    if not client or not texte:
+        return RedirectResponse("/scripts-video", status_code=303)
+    request.session["brouillon_vocal"] = {"client_id": client.id, "texte": texte, "prompt_image": ""}
+    return RedirectResponse(f"/publication-multi?client_id={client.id}", status_code=303)
+
+
+INSTRUCTION_MINIATURE = (
+    "The attached photos show one real person (the author) from several angles. Create a bold, eye-catching YouTube "
+    "thumbnail background in which THIS SAME PERSON is the main subject, with a recognizable face faithful to the "
+    "reference photos (facial features, hair, skin tone, age, build), large, well lit and fully visible, with an "
+    "expressive reaction. Photorealistic, high contrast, saturated colors, no legible text anywhere. Scene to depict: "
+)
 
 
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---

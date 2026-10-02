@@ -56,6 +56,15 @@
     <div class="ligne-champs">
       <button type="button" id="script-copier" class="bouton-secondaire">📋 Copier</button>
     </div>
+
+    <div class="ligne-champs">
+      <button type="button" id="kit-generer" class="bouton">
+        <span class="spinner" id="kit-spinner" hidden></span>
+        📦 Préparer le kit de publication (titres, description, Short, posts, 2 miniatures)
+      </button>
+    </div>
+    <p id="kit-statut" class="texte-vide" hidden></p>
+    <div id="kit-resultat" hidden></div>
   </div>
 </div>
 
@@ -126,6 +135,113 @@
       } catch (erreur) {
         champTexte.select();
         document.execCommand("copy");
+      }
+    });
+
+
+    // ----- Kit de publication : declinaisons du script + 2 miniatures -----
+    const boutonKit = document.getElementById("kit-generer");
+    const spinnerKit = document.getElementById("kit-spinner");
+    const statutKit = document.getElementById("kit-statut");
+    const zoneKit = document.getElementById("kit-resultat");
+
+    function blocKit(titre, texte, options) {
+      const bloc = document.createElement("div");
+      bloc.className = "kit-bloc";
+      const entete = document.createElement("div");
+      entete.className = "kit-entete";
+      entete.innerHTML = `<strong>${echapperHtml(titre)}</strong>`;
+      const copier = document.createElement("button");
+      copier.type = "button"; copier.className = "bouton-secondaire"; copier.textContent = "📋 Copier";
+      copier.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(texte); copier.textContent = "✅ Copié"; }
+        catch (e) { copier.textContent = "Sélectionnez puis Ctrl+C"; }
+        setTimeout(() => { copier.textContent = "📋 Copier"; }, 2000);
+      });
+      entete.appendChild(copier);
+      if (options && options.composeur) {
+        const formulaire = document.createElement("form");
+        formulaire.method = "post"; formulaire.action = "/scripts-video/vers-composeur";
+        formulaire.innerHTML = '<input type="hidden" name="texte"><button type="submit" class="bouton-secondaire">🌐 Ouvrir dans le composeur</button>';
+        formulaire.elements.texte.value = texte;
+        entete.appendChild(formulaire);
+      }
+      const corps = document.createElement("pre");
+      corps.className = "kit-texte";
+      corps.textContent = texte;
+      bloc.appendChild(entete); bloc.appendChild(corps);
+      return bloc;
+    }
+
+    function afficherMiniatures(donnees, conteneur) {
+      conteneur.innerHTML = "";
+      donnees.miniatures.forEach((miniature, i) => {
+        const carte = document.createElement("div");
+        carte.className = "kit-miniature";
+        carte.innerHTML = `<img alt="Miniature ${i + 1}" src="${miniature.image}">`;
+        const telecharger = document.createElement("a");
+        telecharger.className = "bouton-secondaire"; telecharger.textContent = "⬇ Télécharger";
+        telecharger.href = miniature.image; telecharger.download = `miniature-${i + 1}.jpg`;
+        carte.appendChild(telecharger);
+        conteneur.appendChild(carte);
+      });
+    }
+
+    async function genererMiniatures(concepts, conteneur, statutMiniatures) {
+      statutMiniatures.hidden = false;
+      statutMiniatures.textContent = "Création des 2 miniatures avec vos photos de référence (environ une minute)...";
+      try {
+        const reponse = await fetch("/scripts-video/miniatures", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ miniatures: concepts }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { statutMiniatures.textContent = donnees.erreur || "Échec des miniatures."; return; }
+        afficherMiniatures(donnees, conteneur);
+        statutMiniatures.textContent = donnees.avec_personne
+          ? "Miniatures prêtes (1280×720). Relancez « Préparer le kit » pour en obtenir d'autres."
+          : "Miniatures prêtes, sans votre visage : aucune photo de référence n'est enregistrée sur la fiche « Jonathan Hauet Marketing ».";
+      } catch (erreur) {
+        statutMiniatures.textContent = "Erreur réseau lors de la création des miniatures.";
+      }
+    }
+
+    boutonKit.addEventListener("click", async () => {
+      const script = champTexte.value.trim();
+      statutKit.hidden = false;
+      if (!script) { statutKit.textContent = "Générez ou collez d'abord un script."; return; }
+      boutonKit.disabled = true; spinnerKit.hidden = false;
+      zoneKit.hidden = true; zoneKit.innerHTML = "";
+      statutKit.textContent = "Préparation du kit en cours (environ 30 secondes)...";
+      try {
+        const reponse = await fetch("/scripts-video/kit", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ script: script }),
+        });
+        const kit = await reponse.json();
+        if (!reponse.ok) { statutKit.textContent = kit.erreur || "Échec de la préparation du kit."; return; }
+        zoneKit.hidden = false;
+        const blocMiniatures = document.createElement("div");
+        blocMiniatures.className = "kit-bloc";
+        blocMiniatures.innerHTML = "<strong>Miniatures YouTube</strong>";
+        const statutMiniatures = document.createElement("p");
+        statutMiniatures.className = "texte-vide";
+        const grille = document.createElement("div");
+        grille.className = "kit-miniatures";
+        blocMiniatures.appendChild(statutMiniatures); blocMiniatures.appendChild(grille);
+        zoneKit.appendChild(blocMiniatures);
+        zoneKit.appendChild(blocKit("Titres proposés", kit.titres.map((t, i) => (i + 1) + ". " + t).join("\n")));
+        zoneKit.appendChild(blocKit("Description (avec chapitres, minutages estimés à ajuster après montage)", kit.description));
+        zoneKit.appendChild(blocKit("Tags", kit.tags.join(", ")));
+        zoneKit.appendChild(blocKit("Version courte (YouTube Short)", kit.script_short));
+        zoneKit.appendChild(blocKit("Post LinkedIn", kit.post_linkedin, { composeur: true }));
+        zoneKit.appendChild(blocKit("Post Google Business", kit.post_google, { composeur: true }));
+        statutKit.textContent = "Kit prêt — relisez avant de publier.";
+        await genererMiniatures(kit.miniatures, grille, statutMiniatures);
+      } catch (erreur) {
+        statutKit.textContent = "Erreur réseau lors de la préparation du kit.";
+      } finally {
+        boutonKit.disabled = false; spinnerKit.hidden = true;
       }
     });
 

@@ -3267,3 +3267,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .ligne-horaire-reseau:first-child { border-top: 0; }
 .nom-horaire-reseau { font-weight: 600; min-width: 70px; }
 .note-horaire-reseau { flex-basis: 100%; }
+
+.kit-bloc { margin-top: 1rem; padding: 0.9rem 1rem; border: 1px solid rgba(128, 128, 140, 0.35); border-radius: 12px; }
+.kit-entete { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+.kit-entete strong { flex: 1 1 14rem; }
+.kit-texte { white-space: pre-wrap; word-break: break-word; font-family: inherit; margin: 0; font-size: 0.92rem; }
+.kit-miniatures { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+.kit-miniature { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+.kit-miniature img { width: 100%; border-radius: 10px; display: block; }
