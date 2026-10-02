@@ -20,7 +20,7 @@ MARGE = 70
 
 STYLES = {
     "italique": "Italique + étiquette", "bandeau": "Bandeau plein", "verre": "Verre dépoli", "sobre": "Sobre",
-    "encadre": "Encadré",
+    "encadre": "Encadré", "citation": "Citation (guillemets + source)",
 }
 POLICES = {
     "italique": "Italique épais", "sobre": "Sobre", "condensee": "Condensée", "elegante": "Élégante", "manuscrite": "Manuscrite",
@@ -34,7 +34,10 @@ FICHIERS_POLICES = {
 }
 FACTEUR_TAILLE = {"italique": 1.0, "sobre": 0.92, "condensee": 1.45, "elegante": 1.0, "manuscrite": 1.0}
 INTERLIGNE = {"italique": 1.06, "sobre": 1.12, "condensee": 0.98, "elegante": 1.08, "manuscrite": 1.12}
-POLICE_PAR_STYLE = {"italique": "italique", "bandeau": "sobre", "verre": "elegante", "sobre": "sobre", "encadre": "condensee"}
+POLICE_PAR_STYLE = {
+    "italique": "italique", "bandeau": "sobre", "verre": "elegante", "sobre": "sobre", "encadre": "condensee",
+    "citation": "condensee",
+}
 MAJUSCULES_PAR_POLICE = {"italique": True, "sobre": False, "condensee": True, "elegante": False, "manuscrite": False}
 PICTOS = {
     "aucun": "Aucun", "etoile": "Étoile", "coche": "Coche", "coeur": "Cœur", "eclair": "Éclair", "fleche": "Flèche",
@@ -432,6 +435,45 @@ def dessiner(
             d.text((MARGE + 64, yy + ts(8)), sous, font=police_s, fill=_texte_sur(accent) + (255,))
             yy += ts(76)
         _dessiner_lignes(d, lignes, MARGE + 40, yy, police, espace, pas, blanc, surlignes, r["surlignage"], palette, ombre=False)
+
+    elif style == "citation":
+        # Citation façon média : pastille de guillemets, texte centré (mots clés en couleur), source sur une pastille blanche.
+        # Le sous-titre est la source ; « Nom / YouTube » met la partie après le « / » en couleur de marque.
+        voile(0, 1)
+        zone = largeur - 2 * (MARGE + 20)
+        police, lignes, espace, pas = _ajuster_reglable(
+            d, mots, cle_police, int(taille_max * 0.9), zone, 460 if r["format"] == "portrait" else 340, 5, pct,
+        )
+        cote = 124
+        h_pastille = ts(68) if sous else 0
+        y = bloc_y(cote + 44 + len(lignes) * pas + (44 + h_pastille if sous else 0))
+        x_icone = (largeur - cote) // 2
+        d.rounded_rectangle((x_icone, y, x_icone + cote, y + cote), radius=30, fill=accent + (255,))
+        police_g = _police("elegante", 170)
+        # textbbox() surestime la hauteur de ce glyphe : l'encre est mesuree sur un dessin de controle pour bien centrer.
+        controle = Image.new("L", (400, 500), 0)
+        ImageDraw.Draw(controle).text((60, 60), "\u201c", font=police_g, fill=255)
+        ix0, iy0, ix1, iy1 = (v - 60 for v in controle.getbbox())
+        d.text(
+            (x_icone + (cote - (ix1 - ix0)) / 2 - ix0, y + (cote - (iy1 - iy0)) / 2 - iy0),
+            "\u201c", font=police_g, fill=_texte_sur(accent) + (255,),
+        )
+        y = _dessiner_lignes(d, lignes, MARGE + 20, y + cote + 44, police, espace, pas, blanc, surlignes, r["surlignage"], palette,
+                             largeur_zone=zone, centre=True)
+        if sous:
+            y += 44
+            police_s = _police("italique", ts(34))
+            gauche, _, droite = sous.partition(" / ")
+            gauche, droite = gauche.strip(), (" / " + droite.strip().upper()) if droite.strip() else ""
+            largeur_texte = d.textlength(gauche, font=police_s) + d.textlength(droite, font=police_s)
+            x0 = (largeur - largeur_texte) / 2
+            d.rounded_rectangle((x0 - 44, y, x0 + largeur_texte + 44, y + h_pastille), radius=h_pastille // 2, fill=(255, 255, 255, 255))
+            boite_s = d.textbbox((0, 0), "Hg", font=police_s)
+            ty = y + (h_pastille - (boite_s[3] - boite_s[1])) / 2 - boite_s[1]
+            d.text((x0, ty), gauche, font=police_s, fill=(18, 18, 24, 255))
+            if droite:
+                couleur_droite = marque if cv._luminance(marque) < 0.6 else (18, 18, 24)
+                d.text((x0 + d.textlength(gauche, font=police_s), ty), droite, font=police_s, fill=couleur_droite + (255,))
 
     else:  # encadre
         voile_uniforme(0.6)
