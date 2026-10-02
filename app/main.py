@@ -6413,20 +6413,8 @@ async def scripts_video_kit(request: Request, db: Session = Depends(obtenir_sess
     return JSONResponse(kit)
 
 
-@app.post("/scripts-video/miniatures")
-async def scripts_video_miniatures(request: Request, db: Session = Depends(obtenir_session)):
-    """
-    Genere les miniatures YouTube (1280x720) des concepts fournis : scene par Gemini avec les photos de reference de
-    la fiche de marque personnelle, titre ajoute par la plateforme (voir miniature_youtube.py). Renvoie des data URL
-    (pas d'hebergement : on les telecharge depuis la page).
-    """
-    if not utilisateur_connecte(request):
-        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
-    donnees = await request.json()
-    concepts = [c for c in (donnees.get("miniatures") or []) if isinstance(c, dict) and (c.get("scene") or "").strip()][:2]
-    if not concepts:
-        return JSONResponse({"erreur": "Aucun concept de miniature."}, status_code=400)
-
+async def _fabriquer_miniatures(db: Session, concepts: list) -> dict:
+    """Miniatures YouTube des concepts fournis : scene par Gemini avec les photos de reference de la fiche de Jonathan, titre ajoute par la plateforme (voir miniature_youtube.py)."""
     client = _client_marque_personnelle(db)
     images_reference = None
     if client and client.photos_reference:
@@ -6450,8 +6438,48 @@ async def scripts_video_miniatures(request: Request, db: Session = Depends(obten
     resultats = await asyncio.gather(*(run_in_threadpool(fabriquer, c) for c in concepts), return_exceptions=True)
     miniatures = [r for r in resultats if not isinstance(r, Exception)]
     if not miniatures:
-        return JSONResponse({"erreur": f"Échec de la génération : {resultats[0]}"}, status_code=500)
-    return JSONResponse({"miniatures": miniatures, "avec_personne": bool(images_reference)})
+        raise RuntimeError(str(resultats[0]))
+    return {"miniatures": miniatures, "avec_personne": bool(images_reference)}
+
+
+@app.post("/scripts-video/miniatures")
+async def scripts_video_miniatures(request: Request, db: Session = Depends(obtenir_session)):
+    """Genere les miniatures YouTube (1280x720) des concepts fournis. Renvoie des data URL (pas d'hebergement : on les telecharge depuis la page)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    donnees = await request.json()
+    concepts = [c for c in (donnees.get("miniatures") or []) if isinstance(c, dict) and (c.get("scene") or "").strip()][:2]
+    if not concepts:
+        return JSONResponse({"erreur": "Aucun concept de miniature."}, status_code=400)
+    try:
+        return JSONResponse(await _fabriquer_miniatures(db, concepts))
+    except Exception as e:
+        return JSONResponse({"erreur": f"Échec de la génération : {e}"}, status_code=500)
+
+
+@app.post("/scripts-video/nouvelles-miniatures")
+async def scripts_video_nouvelles_miniatures(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    « Regenerer » : 2 nouveaux concepts, differents de ceux deja proposes (voir claude_generation.generer_concepts_miniatures),
+    puis les miniatures correspondantes. Renvoie aussi les concepts, que la page retransmet la fois suivante.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    donnees = await request.json()
+    script = (donnees.get("script") or "").strip()
+    if not script:
+        return JSONResponse({"erreur": "Générez ou collez d'abord un script."}, status_code=400)
+    deja = [c for c in (donnees.get("deja") or []) if isinstance(c, dict)][-8:]
+    client = _client_marque_personnelle(db)
+    try:
+        concepts = await run_in_threadpool(
+            claude_generation.generer_concepts_miniatures, script, deja, bool(client and client.photos_reference),
+        )
+        resultat = await _fabriquer_miniatures(db, concepts)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Échec de la génération : {e}"}, status_code=500)
+    resultat["concepts"] = concepts
+    return JSONResponse(resultat)
 
 
 @app.post("/scripts-video/vers-composeur")

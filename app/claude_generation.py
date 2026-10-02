@@ -2460,6 +2460,15 @@ def formater_chapitres(paragraphes: list, chapitres: list) -> str:
     return "\n".join(lignes) if len(lignes) >= 3 else ""
 
 
+def _consigne_scene_miniature(avec_personne: bool) -> str:
+    return (
+        "the person from the reference photos, never described physically (the face comes from the photos), placed in "
+        "the right third of the frame, large, face fully visible, with an expressive reaction that matches the topic "
+        "(surprised, pointing, thinking, thumbs up...)"
+        if avec_personne else "a striking symbolic object or scene related to the topic, placed in the right third"
+    )
+
+
 def generer_kit_publication_video(script: str, avec_personne: bool = True) -> dict:
     """
     Declinaisons d'un script video face camera, dans le ton de Jonathan : 3 titres YouTube, description (avec
@@ -2474,12 +2483,7 @@ def generer_kit_publication_video(script: str, avec_personne: bool = True) -> di
         raise RuntimeError("Aucun script fourni.")
 
     script_numerote = "\n".join(f"[{i}] {p}" for i, p in enumerate(paragraphes, start=1))[:9000]
-    consigne_scene = (
-        "the person from the reference photos, never described physically (the face comes from the photos), placed in "
-        "the right third of the frame, large, face fully visible, with an expressive reaction that matches the topic "
-        "(surprised, pointing, thinking, thumbs up...)"
-        if avec_personne else "a striking symbolic object or scene related to the topic, placed in the right third"
-    )
+    consigne_scene = _consigne_scene_miniature(avec_personne)
     prompt = (
         f"{STYLE_SCRIPT_VIDEO}\n\n"
         "Voici le script d'une vidéo YouTube de Jonathan (paragraphes numérotés entre crochets) :\n\n"
@@ -2532,3 +2536,60 @@ def generer_kit_publication_video(script: str, avec_personne: bool = True) -> di
             {"texte": _nettoyer_texte_genere(m["texte"]), "scene": m["scene"].strip()} for m in kit["miniatures"]
         ][:2],
     }
+
+
+SCHEMA_CONCEPTS_MINIATURES = {
+    "type": "object",
+    "properties": {
+        "miniatures": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"texte": {"type": "string"}, "scene": {"type": "string"}},
+                "required": ["texte", "scene"], "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["miniatures"], "additionalProperties": False,
+}
+
+
+def generer_concepts_miniatures(script: str, deja_proposes: list = None, avec_personne: bool = True) -> list:
+    """
+    2 NOUVEAUX concepts de miniature pour ce script (texte court en francais + scene en anglais pour Gemini),
+    differents de ceux deja proposes (deja_proposes : [{"texte", "scene"}, ...]) - pour « regenerer » quand les
+    premieres propositions ne plaisent pas : autre accroche, autre composition, autre expression.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not (script or "").strip():
+        raise RuntimeError("Aucun script fourni.")
+    deja = ""
+    if deja_proposes:
+        liste = "\n".join(f"- « {m.get('texte', '')} » : {str(m.get('scene', ''))[:220]}" for m in deja_proposes[-8:])
+        deja = (
+            "\nMiniatures déjà proposées et refusées (propose des accroches, des compositions, des décors, des couleurs "
+            f"et des expressions CLAIREMENT différents) :\n{liste}\n"
+        )
+    prompt = (
+        f"{STYLE_SCRIPT_VIDEO}\n\nVoici le script d'une vidéo YouTube de Jonathan :\n\n{script.strip()[:7000]}\n{deja}\n"
+        "Propose exactement 2 nouveaux concepts de miniature YouTube différents l'un de l'autre. Pour chacun, texte : 2 à "
+        "4 mots en français qui donnent envie de cliquer (sans ponctuation compliquée), et scene : une description en "
+        f"ANGLAIS de la scène à générer, sans aucun texte dans l'image, avec {_consigne_scene_miniature(avec_personne)}, "
+        "laissant la moitié gauche de l'image dégagée et contrastée pour y superposer le texte, couleurs saturées et "
+        "lisibles en petit format. Aucun emoji ni tiret cadratin."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=1500, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_CONCEPTS_MINIATURES}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        concepts = json.loads(bloc)["miniatures"]
+    except (json.JSONDecodeError, KeyError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+    return [{"texte": _nettoyer_texte_genere(m["texte"]), "scene": m["scene"].strip()} for m in concepts][:2]

@@ -358,7 +358,39 @@
       });
     }
 
+    let conceptsDeja = [];
+
+    function ajouterBoutonAutres(conteneur, statutMiniatures) {
+      let bouton = conteneur.parentElement.querySelector(".kit-autres");
+      if (bouton) return;
+      bouton = document.createElement("button");
+      bouton.type = "button"; bouton.className = "bouton-secondaire kit-autres";
+      bouton.textContent = "🔄 Générer 2 autres miniatures";
+      bouton.addEventListener("click", async () => {
+        bouton.disabled = true;
+        statutMiniatures.hidden = false;
+        statutMiniatures.textContent = "Nouvelles idées de miniatures puis création (environ une minute)...";
+        try {
+          const reponse = await fetch("/scripts-video/nouvelles-miniatures", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ script: champTexte.value.trim(), deja: conceptsDeja }),
+          });
+          const donnees = await reponse.json();
+          if (!reponse.ok) { statutMiniatures.textContent = donnees.erreur || "Échec de la génération."; return; }
+          conceptsDeja = conceptsDeja.concat(donnees.concepts || []);
+          afficherMiniatures(donnees, conteneur);
+          statutMiniatures.textContent = "Nouvelles miniatures prêtes. Elles remplacent les précédentes : téléchargez celles que vous gardez avant de relancer.";
+        } catch (erreur) {
+          statutMiniatures.textContent = "Erreur réseau lors de la génération.";
+        } finally {
+          bouton.disabled = false;
+        }
+      });
+      conteneur.parentElement.appendChild(bouton);
+    }
+
     async function genererMiniatures(concepts, conteneur, statutMiniatures) {
+      conceptsDeja = concepts.slice();
       statutMiniatures.hidden = false;
       statutMiniatures.textContent = "Création des 2 miniatures avec vos photos de référence (environ une minute)...";
       try {
@@ -369,8 +401,9 @@
         const donnees = await reponse.json();
         if (!reponse.ok) { statutMiniatures.textContent = donnees.erreur || "Échec des miniatures."; return; }
         afficherMiniatures(donnees, conteneur);
+        ajouterBoutonAutres(conteneur, statutMiniatures);
         statutMiniatures.textContent = donnees.avec_personne
-          ? "Miniatures prêtes (1280×720). Relancez « Préparer le kit » pour en obtenir d'autres."
+          ? "Miniatures prêtes (1280×720)."
           : "Miniatures prêtes, sans votre visage : aucune photo de référence n'est enregistrée sur la fiche « Jonathan Hauet Marketing ».";
       } catch (erreur) {
         statutMiniatures.textContent = "Erreur réseau lors de la création des miniatures.";
