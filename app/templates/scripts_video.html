@@ -525,112 +525,73 @@
       }
     });
 
-    const boutonSujetsTendance = document.getElementById("bouton-sujets-tendance");
-    const spinnerSujetsTendance = document.getElementById("spinner-sujets-tendance");
-    const zoneSujetsTendance = document.getElementById("zone-sujets-tendance");
-    const listeSujetsTendance = document.getElementById("liste-sujets-tendance");
-    const texteStatutSujets = document.getElementById("texte-statut-sujets");
+    // ----- Suggestions de sujets (tendance / evergreen) : 12 d'un coup, puis « voir d'autres sujets » complete la liste -----
+    function activerSuggestions(config) {
+      const bouton = document.getElementById(config.bouton);
+      const spinnerEl = document.getElementById(config.spinner);
+      const zone = document.getElementById(config.zone);
+      const liste = document.getElementById(config.liste);
+      const statutEl = document.getElementById(config.statut);
+      const plus = document.createElement("button");
+      plus.type = "button"; plus.className = "bouton-secondaire"; plus.textContent = "➕ Voir d'autres sujets"; plus.hidden = true;
+      zone.appendChild(plus);
+      let affiches = [];
 
-    function afficherSuggestions(suggestions) {
-      listeSujetsTendance.innerHTML = "";
-      if (!suggestions.length) {
-        texteStatutSujets.hidden = false;
-        texteStatutSujets.textContent = "Aucun sujet trouvé pour le moment.";
-        return;
+      function ajouter(suggestions) {
+        suggestions.forEach((suggestion) => {
+          affiches.push(suggestion.sujet);
+          const li = document.createElement("li");
+          const boutonSujet = document.createElement("button");
+          boutonSujet.type = "button";
+          boutonSujet.className = "carte-sujet-tendance";
+          boutonSujet.innerHTML =
+            `<span class="texte-sujet-tendance">${echapperHtml(suggestion.sujet)}</span>`
+            + `<span class="source-sujet-tendance">${config.legende(suggestion)}</span>`;
+          boutonSujet.addEventListener("click", () => { champSujet.value = suggestion.sujet; champSujet.scrollIntoView({ block: "center", behavior: "smooth" }); });
+          li.appendChild(boutonSujet);
+          liste.appendChild(li);
+        });
       }
-      texteStatutSujets.hidden = true;
-      suggestions.forEach((suggestion) => {
-        const li = document.createElement("li");
-        const boutonSujet = document.createElement("button");
-        boutonSujet.type = "button";
-        boutonSujet.className = "carte-sujet-tendance";
-        boutonSujet.innerHTML =
-          `<span class="texte-sujet-tendance">${echapperHtml(suggestion.sujet)}</span>`
-          + `<span class="source-sujet-tendance">${echapperHtml(suggestion.source || "Source")} — ${echapperHtml(suggestion.titre_article)}</span>`;
-        boutonSujet.addEventListener("click", () => { champSujet.value = suggestion.sujet; });
-        li.appendChild(boutonSujet);
-        listeSujetsTendance.appendChild(li);
-      });
+
+      async function charger(ajout) {
+        zone.hidden = false;
+        statutEl.hidden = false;
+        statutEl.textContent = ajout ? "Recherche d'autres sujets..." : config.messageAttente;
+        if (!ajout) { liste.innerHTML = ""; affiches = []; }
+        bouton.disabled = true; plus.disabled = true; spinnerEl.hidden = false;
+        try {
+          const reponse = await fetch(config.url, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nombre: ajout ? 10 : 12, deja: affiches }),
+          });
+          const donnees = await reponse.json();
+          if (!reponse.ok) { statutEl.textContent = donnees.erreur || "Échec de la recherche."; return; }
+          if (!donnees.suggestions.length) { statutEl.textContent = ajout ? "Pas d'autre sujet trouvé pour le moment." : "Aucun sujet trouvé pour le moment."; return; }
+          statutEl.hidden = true;
+          ajouter(donnees.suggestions);
+          plus.hidden = false;
+          zone.appendChild(plus);
+        } catch (erreur) {
+          statutEl.textContent = "Erreur réseau lors de la recherche.";
+        } finally {
+          bouton.disabled = false; plus.disabled = false; spinnerEl.hidden = true;
+        }
+      }
+      bouton.addEventListener("click", () => charger(false));
+      plus.addEventListener("click", () => charger(true));
     }
 
-    boutonSujetsTendance.addEventListener("click", async () => {
-      zoneSujetsTendance.hidden = false;
-      texteStatutSujets.hidden = false;
-      texteStatutSujets.textContent = "Recherche des sujets du moment...";
-      listeSujetsTendance.innerHTML = "";
-      boutonSujetsTendance.disabled = true;
-      spinnerSujetsTendance.hidden = false;
-
-      try {
-        const reponse = await fetch("/scripts-video/sujets_tendance", { method: "POST" });
-        const donnees = await reponse.json();
-        if (!reponse.ok) {
-          texteStatutSujets.hidden = false;
-          texteStatutSujets.textContent = donnees.erreur || "Échec de la recherche.";
-          return;
-        }
-        afficherSuggestions(donnees.suggestions);
-      } catch (erreur) {
-        texteStatutSujets.hidden = false;
-        texteStatutSujets.textContent = "Erreur réseau lors de la recherche.";
-      } finally {
-        boutonSujetsTendance.disabled = false;
-        spinnerSujetsTendance.hidden = true;
-      }
+    activerSuggestions({
+      bouton: "bouton-sujets-tendance", spinner: "spinner-sujets-tendance", zone: "zone-sujets-tendance",
+      liste: "liste-sujets-tendance", statut: "texte-statut-sujets", url: "/scripts-video/sujets_tendance",
+      messageAttente: "Recherche des sujets du moment (environ 20 secondes)...",
+      legende: (s) => `${echapperHtml(s.source || "Source")} — ${echapperHtml(s.titre_article)}`,
     });
-
-    const boutonSujetsEvergreen = document.getElementById("bouton-sujets-evergreen");
-    const spinnerSujetsEvergreen = document.getElementById("spinner-sujets-evergreen");
-    const zoneSujetsEvergreen = document.getElementById("zone-sujets-evergreen");
-    const listeSujetsEvergreen = document.getElementById("liste-sujets-evergreen");
-    const texteStatutSujetsEvergreen = document.getElementById("texte-statut-sujets-evergreen");
-
-    function afficherSuggestionsEvergreen(suggestions) {
-      listeSujetsEvergreen.innerHTML = "";
-      if (!suggestions.length) {
-        texteStatutSujetsEvergreen.hidden = false;
-        texteStatutSujetsEvergreen.textContent = "Aucune idée trouvée pour le moment.";
-        return;
-      }
-      texteStatutSujetsEvergreen.hidden = true;
-      suggestions.forEach((suggestion) => {
-        const li = document.createElement("li");
-        const boutonSujet = document.createElement("button");
-        boutonSujet.type = "button";
-        boutonSujet.className = "carte-sujet-tendance";
-        boutonSujet.innerHTML =
-          `<span class="texte-sujet-tendance">${echapperHtml(suggestion.sujet)}</span>`
-          + `<span class="source-sujet-tendance">${echapperHtml(suggestion.categorie || "Idée evergreen")}</span>`;
-        boutonSujet.addEventListener("click", () => { champSujet.value = suggestion.sujet; });
-        li.appendChild(boutonSujet);
-        listeSujetsEvergreen.appendChild(li);
-      });
-    }
-
-    boutonSujetsEvergreen.addEventListener("click", async () => {
-      zoneSujetsEvergreen.hidden = false;
-      texteStatutSujetsEvergreen.hidden = false;
-      texteStatutSujetsEvergreen.textContent = "Recherche d'idées en cours...";
-      listeSujetsEvergreen.innerHTML = "";
-      boutonSujetsEvergreen.disabled = true;
-      spinnerSujetsEvergreen.hidden = false;
-
-      try {
-        const reponse = await fetch("/scripts-video/sujets_evergreen", { method: "POST" });
-        const donnees = await reponse.json();
-        if (!reponse.ok) {
-          texteStatutSujetsEvergreen.hidden = false;
-          texteStatutSujetsEvergreen.textContent = donnees.erreur || "Échec de la recherche.";
-          return;
-        }
-        afficherSuggestionsEvergreen(donnees.suggestions);
-      } catch (erreur) {
-        texteStatutSujetsEvergreen.hidden = false;
-        texteStatutSujetsEvergreen.textContent = "Erreur réseau lors de la recherche.";
-      } finally {
-        boutonSujetsEvergreen.disabled = false;
-        spinnerSujetsEvergreen.hidden = true;
-      }
+    activerSuggestions({
+      bouton: "bouton-sujets-evergreen", spinner: "spinner-sujets-evergreen", zone: "zone-sujets-evergreen",
+      liste: "liste-sujets-evergreen", statut: "texte-statut-sujets-evergreen", url: "/scripts-video/sujets_evergreen",
+      messageAttente: "Recherche d'idées en cours...",
+      legende: (s) => echapperHtml(s.categorie || "Idée evergreen"),
     });
   })();
 </script>

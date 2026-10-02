@@ -890,7 +890,7 @@ def suggerer_sujets_actualite(
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
         model=MODELE_CLAUDE,
-        max_tokens=1536,
+        max_tokens=max(1536, 220 * nombre + 700),
         thinking={"type": "disabled"},
         output_config={"format": {"type": "json_schema", "schema": SCHEMA_SUGGESTIONS_SUJETS}},
         messages=[{"role": "user", "content": prompt}],
@@ -985,7 +985,7 @@ def suggerer_sujets_evergreen(
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
         model=MODELE_CLAUDE,
-        max_tokens=1536,
+        max_tokens=max(1536, 220 * nombre + 700),
         thinking={"type": "disabled"},
         output_config={"format": {"type": "json_schema", "schema": SCHEMA_SUGGESTIONS_EVERGREEN}},
         messages=[{"role": "user", "content": prompt}],

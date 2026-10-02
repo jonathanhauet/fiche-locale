@@ -6344,19 +6344,35 @@ async def generer_script_video(request: Request, db: Session = Depends(obtenir_s
     return JSONResponse(resultat)
 
 
+async def _parametres_suggestions(request: Request):
+    """Corps JSON des boutons de suggestions : nombre voulu (4 a 15, 12 par defaut) et sujets deja affiches a ne pas repeter."""
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    try:
+        nombre = max(4, min(int(donnees.get("nombre") or 12), 15))
+    except (TypeError, ValueError):
+        nombre = 12
+    deja = [str(x)[:200] for x in (donnees.get("deja") or []) if str(x).strip()][:40]
+    return nombre, deja
+
+
 @app.post("/scripts-video/sujets_tendance")
-def scripts_video_sujets_tendance(request: Request, db: Session = Depends(obtenir_session)):
-    """Reutilise /publication-multi/{client_id}/sujets_tendance sur la fiche de marque personnelle (voir _client_marque_personnelle)."""
+async def scripts_video_sujets_tendance(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Sujets tendance pour une video : toujours la veille SEO local / Google Business (c'est le sujet de la chaine de
+    Jonathan), sur un plus grand nombre d'articles que le composeur, sans les sujets deja traites ni deja affiches.
+    """
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    nombre, deja_affiches = await _parametres_suggestions(request)
     client = _client_marque_personnelle(db)
-    if client:
-        return publication_multi_sujets_tendance(client.id, request, db)
-    # Pas de fiche de reference : meme veille SEO local, sans historique de posts (seulement les videos deja traitees).
+    deja_traites = (_sujets_deja_traites_client(db, client.id, limite=15) if client else _sujets_videos_deja_traites(db, 15)) + deja_affiches
     try:
-        articles = veille_actualite.rechercher_actualites()
-        suggestions = claude_generation.suggerer_sujets_actualite(
-            articles, nombre=5, sujets_deja_traites=_sujets_videos_deja_traites(db, 15),
+        articles = await run_in_threadpool(veille_actualite.rechercher_actualites, 15, 45)
+        suggestions = await run_in_threadpool(
+            claude_generation.suggerer_sujets_actualite, articles, nombre, deja_traites,
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la veille : {e}"}, status_code=500)
@@ -6364,16 +6380,17 @@ def scripts_video_sujets_tendance(request: Request, db: Session = Depends(obteni
 
 
 @app.post("/scripts-video/sujets_evergreen")
-def scripts_video_sujets_evergreen(request: Request, db: Session = Depends(obtenir_session)):
-    """Reutilise /publication-multi/{client_id}/sujets_evergreen sur la fiche de marque personnelle (voir _client_marque_personnelle)."""
+async def scripts_video_sujets_evergreen(request: Request, db: Session = Depends(obtenir_session)):
+    """Idees evergreen pour une video, ancrees dans le contenu de la fiche de Jonathan si elle existe ; sans les sujets deja traites ni deja affiches."""
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    nombre, deja_affiches = await _parametres_suggestions(request)
     client = _client_marque_personnelle(db)
-    if client:
-        return publication_multi_sujets_evergreen(client.id, request, db)
+    deja_traites = (_sujets_deja_traites_client(db, client.id, limite=15) if client else _sujets_videos_deja_traites(db, 15)) + deja_affiches
     try:
-        suggestions = claude_generation.suggerer_sujets_evergreen(
-            "", _sujets_videos_deja_traites(db, 15), nombre=5, nom_client="Jonathan Hauët",
+        suggestions = await run_in_threadpool(
+            claude_generation.suggerer_sujets_evergreen,
+            _contexte_ia_client(client) if client else "", deja_traites, nombre, client.nom if client else "Jonathan Hauët",
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
