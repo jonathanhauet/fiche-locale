@@ -182,12 +182,41 @@ def generer_posts_pour_client(
     localisation : {"ville": str, "latitude": float, "longitude": float, "rayon_km": int}
     optionnel (voir Client.localisation_active) - restreint les localites que
     l'IA peut citer a ce rayon, au lieu de se fier uniquement au contenu_site.
+
+    Il arrive (rarement, sur de gros lots) que la reponse JSON arrive coupee en plein milieu d'un texte
+    (« Unterminated string ») : on retente alors une fois le lot entier, puis, si ca persiste, on genere par
+    petits lots de 4 en passant les titres deja produits comme sujets a eviter, plutot que d'echouer.
     """
     if not CLE_API:
         raise RuntimeError(
             "ANTHROPIC_API_KEY manquant dans plateforme_web/.env."
         )
 
+    try:
+        return _generer_lot_posts(contenu_site, nombre_posts, sujets_deja_traites, localisation)
+    except Exception as premiere_erreur:
+        if nombre_posts <= 1:
+            raise
+        try:
+            return _generer_lot_posts(contenu_site, nombre_posts, sujets_deja_traites, localisation)
+        except Exception:
+            pass
+
+    posts, deja = [], list(sujets_deja_traites or [])
+    while len(posts) < nombre_posts:
+        lot = min(4, nombre_posts - len(posts))
+        try:
+            nouveaux = _generer_lot_posts(contenu_site, lot, deja, localisation)
+        except Exception:
+            nouveaux = _generer_lot_posts(contenu_site, lot, deja, localisation)
+        posts.extend(nouveaux)
+        deja.extend(f"{p['titre']} - {p['texte'][:150]}" for p in nouveaux)
+    return posts[:nombre_posts]
+
+
+def _generer_lot_posts(
+    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None
+) -> list[dict]:
     prompt_complet = _construire_prompt(contenu_site, nombre_posts, sujets_deja_traites, localisation)
 
     client = Anthropic(api_key=CLE_API)
@@ -215,7 +244,10 @@ def generer_posts_pour_client(
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
-    donnees = json.loads(bloc_texte)
+    try:
+        donnees = json.loads(bloc_texte)
+    except json.JSONDecodeError as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete ({erreur}, arret : {reponse.stop_reason}).") from erreur
     posts = donnees["posts"]
     for post in posts:
         # Filet de securite : il est arrive que l'IA inverse les deux champs
