@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% set page_actuelle = "montage_video" %}
+{% block titre %}Montage vidéo (IA) — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Montage vidéo (IA)</h1>
+</div>
+
+<p class="texte-vide">
+  Envoyez votre vidéo face caméra (la prise brute) : la plateforme la transcrit, coupe les silences et les « euh »,
+  ajoute des sous-titres à votre couleur et, si vous voulez, une musique discrète. Elle peut aussi tirer plusieurs Shorts
+  d'une longue vidéo, ou appliquer vos consignes (« enlève la partie sur le prix »). Comptez environ la moitié de la durée
+  de la vidéo pour le montage, plus la transcription.
+</p>
+
+<div class="formulaire" id="montage-formulaire">
+  <label for="montage-fichier">Vidéo (MP4, MOV, M4V, WEBM ou MKV, 900 Mo maximum, 75 minutes maximum)</label>
+  <input type="file" id="montage-fichier" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv">
+
+  <fieldset class="groupe-options-visuel">
+    <legend>Ce que je veux obtenir</legend>
+    <label class="etiquette-chip-case"><input type="radio" name="montage-mode" value="montage" checked> Un montage complet de ma vidéo</label>
+    <label class="etiquette-chip-case"><input type="radio" name="montage-mode" value="shorts"> Plusieurs Shorts tirés d'une longue vidéo</label>
+  </fieldset>
+  <div class="ligne-champs" id="montage-reglages-shorts" hidden>
+    <label for="montage-nb-shorts" class="texte-discret">Nombre de Shorts</label>
+    <select id="montage-nb-shorts" style="width:auto;">
+      <option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option>
+    </select>
+    <label for="montage-duree-short" class="texte-discret">Durée maximale</label>
+    <select id="montage-duree-short" style="width:auto;">
+      <option value="45">45 secondes</option><option value="60">1 minute</option><option value="90" selected>1 min 30</option>
+      <option value="120">2 minutes</option><option value="180">3 minutes</option>
+    </select>
+  </div>
+
+  <fieldset class="groupe-options-visuel">
+    <legend>Format</legend>
+    <label class="etiquette-chip-case"><input type="radio" name="montage-format" value="horizontal" checked> Horizontal 16:9 (YouTube)</label>
+    <label class="etiquette-chip-case"><input type="radio" name="montage-format" value="vertical"> Vertical 9:16 (Shorts, Reels, TikTok : recadré au centre)</label>
+  </fieldset>
+
+  <fieldset class="groupe-options-visuel">
+    <legend>Montage</legend>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-silences" checked> Couper les silences</label>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-hesitations" checked> Couper les « euh » et faux départs</label>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-sous-titres" checked> Sous-titres</label>
+  </fieldset>
+
+  <label for="montage-musique">Musique de fond (baisse automatiquement quand vous parlez)</label>
+  <select id="montage-musique">
+    <option value="">Aucune</option>
+    {% for piste in pistes %}<option value="{{ piste.id }}">{{ piste.nom }}</option>{% endfor %}
+  </select>
+  {% if not pistes %}<p class="texte-discret">Aucune musique enregistrée : ajoutez-en dans <a href="/musiques">Musiques</a>.</p>{% endif %}
+
+  <label for="montage-consignes">Consignes de montage (facultatif)</label>
+  <textarea id="montage-consignes" rows="3" placeholder="Ex : enlève la partie où je parle du prix, et coupe l'introduction"></textarea>
+
+  <div class="ligne-champs">
+    <button type="button" id="montage-lancer" class="bouton">🎞️ Lancer le montage</button>
+    <button type="button" id="montage-relancer" class="bouton-secondaire" hidden>↻ Refaire avec ces réglages (sans renvoyer la vidéo)</button>
+  </div>
+  <p id="montage-statut" class="texte-vide" hidden></p>
+  <div id="montage-progression" hidden>
+    <div class="montage-barre"><div id="montage-barre-remplissage"></div></div>
+    <p id="montage-etape" class="texte-discret"></p>
+  </div>
+
+  <div id="montage-resultats" class="montage-resultats"></div>
+  <p class="texte-discret" id="montage-note" hidden>
+    Les montages sont supprimés du serveur au bout de quelques heures (ou lors d'une mise à jour) : téléchargez ceux que vous gardez.
+    Relisez toujours le résultat avant de publier : les coupes automatiques ne sont pas toujours parfaites.
+  </p>
+</div>
+
+<style>
+  .montage-barre { height: 10px; border-radius: 6px; background: rgba(128,128,140,.3); overflow: hidden; margin: .6rem 0 .3rem; }
+  .montage-barre > div { height: 100%; width: 0; background: #5b7cff; transition: width .4s; }
+  .montage-resultats { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 1rem; }
+  .montage-carte { border: 1px solid rgba(128,128,140,.35); border-radius: 12px; padding: .8rem; display: flex; flex-direction: column; gap: .5rem; }
+  .montage-carte video { width: 100%; border-radius: 8px; background: #000; max-height: 480px; }
+</style>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const boutonLancer = $("montage-lancer"), boutonRelancer = $("montage-relancer");
+    const statut = $("montage-statut"), zoneProgression = $("montage-progression");
+    let identifiant = null, minuteur = null;
+
+    function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
+
+    function options() {
+      return {
+        mode: document.querySelector('input[name="montage-mode"]:checked').value,
+        format: document.querySelector('input[name="montage-format"]:checked').value,
+        nb_shorts: parseInt($("montage-nb-shorts").value, 10), duree_max_short: parseInt($("montage-duree-short").value, 10),
+        silences: $("montage-silences").checked, hesitations: $("montage-hesitations").checked, sous_titres: $("montage-sous-titres").checked,
+        musique_id: $("montage-musique").value, consignes: $("montage-consignes").value.trim(),
+      };
+    }
+
+    // Shorts = vertical par defaut, montage complet = horizontal : l'utilisateur peut toujours changer ensuite.
+    document.querySelectorAll('input[name="montage-mode"]').forEach((r) => r.addEventListener("change", () => {
+      const shorts = r.value === "shorts" && r.checked;
+      if (!r.checked) return;
+      $("montage-reglages-shorts").hidden = !shorts;
+      document.querySelector('input[name="montage-format"][value="' + (shorts ? "vertical" : "horizontal") + '"]').checked = true;
+    }));
+
+    function afficherEtat(etat) {
+      zoneProgression.hidden = false;
+      $("montage-barre-remplissage").style.width = Math.round((etat.progression || 0) * 100) + "%";
+      $("montage-etape").textContent = etat.etat === "erreur" ? "" : etat.etape + " (" + Math.round((etat.progression || 0) * 100) + " %)";
+    }
+
+    function afficherResultats(etat) {
+      const zone = $("montage-resultats");
+      zone.innerHTML = "";
+      etat.sorties.forEach((sortie, i) => {
+        const carte = document.createElement("div");
+        carte.className = "montage-carte";
+        const titre = document.createElement("strong");
+        titre.textContent = sortie.titre + " · " + Math.floor(sortie.duree / 60) + " min " + String(Math.round(sortie.duree % 60)).padStart(2, "0") + " s";
+        const video = document.createElement("video");
+        video.controls = true; video.preload = "metadata";
+        video.src = "/montage-video/" + identifiant + "/fichier/" + i + "?v=" + Date.now();
+        const lien = document.createElement("a");
+        lien.className = "bouton-secondaire"; lien.textContent = "⬇ Télécharger";
+        lien.href = "/montage-video/" + identifiant + "/fichier/" + i + "?telecharger=1";
+        carte.appendChild(titre); carte.appendChild(video); carte.appendChild(lien);
+        zone.appendChild(carte);
+      });
+      $("montage-note").hidden = false;
+    }
+
+    async function suivre() {
+      try {
+        const reponse = await fetch("/montage-video/" + identifiant + "/etat");
+        const etat = await reponse.json();
+        if (!reponse.ok) { message(etat.erreur || "Montage introuvable."); terminer(); return; }
+        afficherEtat(etat);
+        if (etat.avertissement) message(etat.avertissement);
+        if (etat.etat === "termine") { message(etat.avertissement || "Montage terminé — relisez-le avant de publier."); afficherResultats(etat); terminer(); }
+        else if (etat.etat === "erreur") { message(etat.erreur || "Échec du montage."); zoneProgression.hidden = true; terminer(); }
+        else minuteur = setTimeout(suivre, 2000);
+      } catch (erreur) {
+        minuteur = setTimeout(suivre, 4000);
+      }
+    }
+
+    function terminer() {
+      clearTimeout(minuteur);
+      boutonLancer.disabled = false; boutonRelancer.disabled = false;
+      boutonRelancer.hidden = !identifiant;
+    }
+
+    function demarrer() {
+      boutonLancer.disabled = true; boutonRelancer.disabled = true;
+      $("montage-resultats").innerHTML = ""; $("montage-note").hidden = true;
+      suivre();
+    }
+
+    boutonLancer.addEventListener("click", () => {
+      const fichier = $("montage-fichier").files[0];
+      if (!fichier) { message("Choisissez d'abord une vidéo."); return; }
+      boutonLancer.disabled = true; boutonRelancer.disabled = true;
+      const formulaire = new FormData();
+      formulaire.append("fichier", fichier);
+      formulaire.append("options", JSON.stringify(options()));
+      const requete = new XMLHttpRequest();
+      requete.open("POST", "/montage-video/lancer");
+      zoneProgression.hidden = false;
+      requete.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        const pourcent = Math.round(e.loaded / e.total * 100);
+        $("montage-barre-remplissage").style.width = pourcent + "%";
+        $("montage-etape").textContent = "Envoi de la vidéo : " + pourcent + " %";
+      };
+      requete.onload = () => {
+        let donnees = {};
+        try { donnees = JSON.parse(requete.responseText); } catch (e) { /* reponse non JSON */ }
+        if (requete.status !== 200) { message(donnees.erreur || "Échec de l'envoi (code " + requete.status + ")."); zoneProgression.hidden = true; terminer(); return; }
+        identifiant = donnees.id; message("");
+        demarrer();
+      };
+      requete.onerror = () => { message("Erreur réseau pendant l'envoi de la vidéo."); zoneProgression.hidden = true; terminer(); };
+      message("");
+      requete.send(formulaire);
+    });
+
+    boutonRelancer.addEventListener("click", async () => {
+      boutonRelancer.disabled = true;
+      try {
+        const reponse = await fetch("/montage-video/" + identifiant + "/relancer", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(options()),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { message(donnees.erreur || "Impossible de relancer le montage."); boutonRelancer.disabled = false; return; }
+        message(""); demarrer();
+      } catch (erreur) { message("Erreur réseau."); boutonRelancer.disabled = false; }
+    });
+  })();
+</script>
+{% endblock %}

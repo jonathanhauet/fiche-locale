@@ -2638,3 +2638,133 @@ def generer_reactions_carrousel(textes: list) -> list:
         raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
     defaut = "a friendly confident smile looking at the viewer"
     return [(reactions[i] if i < len(reactions) and reactions[i] else defaut) for i in range(len(textes))]
+
+
+# --------------------------------------------------------------------------- montage video (voir montage_parole.py)
+
+def _transcription_pour_prompt(phrases: list, limite: int = 60000) -> str:
+    return "\n".join(f"[{p['debut']:.1f}-{p['fin']:.1f}] {p['texte']}" for p in phrases)[:limite]
+
+
+SCHEMA_RETOUCHES = {
+    "type": "object",
+    "properties": {
+        "retirer": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"debut": {"type": "number"}, "fin": {"type": "number"}, "raison": {"type": "string"}},
+                "required": ["debut", "fin", "raison"], "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["retirer"], "additionalProperties": False,
+}
+
+
+def retouches_depuis_consignes(phrases: list, consignes: str) -> list:
+    """
+    Parties de la video a RETIRER pour respecter des consignes de montage en langage naturel (« coupe la partie ou je parle
+    du prix », « enleve l'introduction »...), a partir de la transcription horodatee. Renvoie [(debut, fin), ...] en secondes,
+    calees sur des debuts/fins de phrases. Ne retire rien qui n'est pas demande.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not phrases or not (consignes or "").strip():
+        return []
+    prompt = (
+        "Voici la transcription horodatée (en secondes) d'une vidéo face caméra :\n\n"
+        f"{_transcription_pour_prompt(phrases)}\n\n"
+        f"Consignes de montage de Jonathan : « {consignes.strip()[:1000]} »\n\n"
+        "Donne les intervalles à RETIRER du montage pour respecter ces consignes, et uniquement ce qu'elles demandent "
+        "(si elles ne demandent aucune coupe, par exemple une simple remarque de style, renvoie une liste vide). "
+        "Chaque intervalle commence au début d'une phrase et se termine à la fin d'une phrase de la transcription, "
+        "sans couper une phrase en deux. Précise brièvement la raison."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=2000, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_RETOUCHES}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        retirer = json.loads(bloc)["retirer"]
+    except (json.JSONDecodeError, KeyError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+    resultat = []
+    for element in retirer:
+        debut, fin = float(element["debut"]), float(element["fin"])
+        if fin > debut:
+            resultat.append((max(0.0, debut - 0.05), fin + 0.05))
+    return resultat
+
+
+SCHEMA_EXTRAITS = {
+    "type": "object",
+    "properties": {
+        "extraits": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"debut": {"type": "number"}, "fin": {"type": "number"}, "titre": {"type": "string"}},
+                "required": ["debut", "fin", "titre"], "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["extraits"], "additionalProperties": False,
+}
+
+
+def choisir_extraits_shorts(phrases: list, nombre: int, duree_min: float = 25.0, duree_max: float = 90.0) -> list:
+    """
+    Les `nombre` meilleurs moments d'une longue video pour en faire des Shorts verticaux : autonomes (compris sans le
+    reste), accroche forte des les premieres secondes, sans chevauchement. Renvoie [{"debut", "fin", "titre"}, ...]
+    classes dans l'ordre de la video, bornes recalees sur des phrases entieres et duree comprise entre duree_min et duree_max.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not phrases:
+        return []
+    prompt = (
+        f"Voici la transcription horodatée (en secondes) d'une vidéo face caméra de Jonathan, expert Google Business :\n\n"
+        f"{_transcription_pour_prompt(phrases)}\n\n"
+        f"Choisis les {nombre} meilleurs moments pour en faire des Shorts verticaux. Chaque moment : autonome (compréhensible "
+        f"sans le reste de la vidéo), une idée complète, une accroche forte dès la première phrase, durée entre "
+        f"{int(duree_min)} et {int(duree_max)} secondes (silences compris), commence au début d'une phrase et se termine à "
+        "la fin d'une phrase. Les moments ne se chevauchent pas. Pour chacun, donne un titre court et accrocheur en français "
+        "(8 mots maximum, sans emoji ni tiret cadratin). Si la vidéo est trop courte pour autant de moments, en proposer moins."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=2000, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_EXTRAITS}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)["extraits"]
+    except (json.JSONDecodeError, KeyError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+
+    # Bornes recalees sur la phrase la plus proche (l'IA se trompe parfois d'une seconde) et duree verifiee.
+    extraits = []
+    for element in brut:
+        debut = min(phrases, key=lambda p: abs(p["debut"] - float(element["debut"])))["debut"]
+        fin = min(phrases, key=lambda p: abs(p["fin"] - float(element["fin"])))["fin"]
+        if fin - debut > duree_max:
+            candidates = [p["fin"] for p in phrases if debut + duree_min <= p["fin"] <= debut + duree_max]
+            fin = max(candidates) if candidates else debut + duree_max
+        if fin - debut < duree_min * 0.6:
+            continue
+        extraits.append({"debut": debut, "fin": fin, "titre": _nettoyer_texte_genere(element["titre"])})
+    extraits.sort(key=lambda e: e["debut"])
+    sans_chevauchement = []
+    for e in extraits:
+        if not sans_chevauchement or e["debut"] >= sans_chevauchement[-1]["fin"]:
+            sans_chevauchement.append(e)
+    return sans_chevauchement[:nombre]

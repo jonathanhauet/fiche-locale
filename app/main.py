@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import shutil
 import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +26,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import requests
@@ -77,6 +78,7 @@ from . import (
     meta_publish,
     models,
     miniature_youtube,
+    montage_parole,
     montage_video,
     notifications,
     ovh_upload,
@@ -6520,6 +6522,146 @@ INSTRUCTION_MINIATURE = (
     "reference photos (facial features, hair, skin tone, age, build), large, well lit and fully visible, with an "
     "expressive reaction. Photorealistic, high contrast, saturated colors, no legible text anywhere. Scene to depict: "
 )
+
+
+# --- Montage automatique d'une video face camera (voir montage_parole.py) ---
+
+EXTENSIONS_VIDEO_MONTAGE = {"mp4", "mov", "m4v", "webm", "mkv"}
+
+
+@app.get("/montage-video", response_class=HTMLResponse)
+def page_montage_video(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
+    return templates.TemplateResponse(request, "montage_video.html", {"page_actuelle": "montage_video", "pistes": pistes})
+
+
+def _options_montage(brut, dossier: str, db: Session) -> dict:
+    """Options saisies sur la page, nettoyees ; telecharge la piste musicale choisie dans le dossier du montage."""
+    brut = brut if isinstance(brut, dict) else {}
+    options = {
+        "silences": bool(brut.get("silences", True)),
+        "hesitations": bool(brut.get("hesitations", True)),
+        "sous_titres": bool(brut.get("sous_titres", True)),
+        "format": brut.get("format") if brut.get("format") in ("vertical", "horizontal") else "vertical",
+        "mode": brut.get("mode") if brut.get("mode") in ("montage", "shorts") else "montage",
+        "consignes": " ".join(str(brut.get("consignes") or "").split())[:1000],
+        "musique": None,
+    }
+    try:
+        options["nb_shorts"] = max(1, min(int(brut.get("nb_shorts") or 3), 6))
+        options["duree_max_short"] = max(30, min(int(brut.get("duree_max_short") or 90), 180))
+    except (TypeError, ValueError):
+        options["nb_shorts"], options["duree_max_short"] = 3, 90
+    client = _client_marque_personnelle(db)
+    secondaires = couleurs_secondaires_client(client) if client else []
+    if secondaires:
+        options["accent"] = titre_photo._couleur_accent((0, 0, 0), secondaires)
+    try:
+        piste = db.get(models.PisteMusicale, int(brut.get("musique_id") or 0))
+    except (TypeError, ValueError):
+        piste = None
+    if piste and piste.fichier_url:
+        extension = piste.fichier_url.rsplit(".", 1)[-1].lower()[:4]
+        chemin = os.path.join(dossier, f"musique.{extension if extension.isalnum() else 'mp3'}")
+        try:
+            reponse = requests.get(piste.fichier_url, timeout=60)
+            reponse.raise_for_status()
+            with open(chemin, "wb") as fichier:
+                fichier.write(reponse.content)
+            options["musique"] = chemin
+        except Exception:
+            options["musique"] = None
+    return options
+
+
+def _choisir_retouches(phrases, consignes):
+    return claude_generation.retouches_depuis_consignes(phrases, consignes)
+
+
+def _choisir_extraits(phrases, nombre, duree_min, duree_max):
+    return claude_generation.choisir_extraits_shorts(phrases, nombre, duree_min, duree_max)
+
+
+@app.post("/montage-video/lancer")
+async def montage_video_lancer(
+    request: Request, fichier: UploadFile = File(...), options: str = Form("{}"), db: Session = Depends(obtenir_session),
+):
+    """Recoit la video (ecrite par morceaux sur le disque, jamais entiere en memoire) et demarre le montage en tache de fond."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    extension = fichier.filename.rsplit(".", 1)[-1].lower() if fichier.filename and "." in fichier.filename else ""
+    if extension not in EXTENSIONS_VIDEO_MONTAGE:
+        return JSONResponse({"erreur": "Format non pris en charge (MP4, MOV, M4V, WEBM ou MKV)."}, status_code=400)
+    try:
+        brut = json.loads(options)
+    except ValueError:
+        brut = {}
+
+    identifiant, dossier = montage_parole.nouveau_dossier_montage()
+    source = os.path.join(dossier, f"source.{extension}")
+    taille = 0
+    with open(source, "wb") as sortie:
+        while True:
+            morceau = await fichier.read(1024 * 1024)
+            if not morceau:
+                break
+            taille += len(morceau)
+            if taille > montage_parole.TAILLE_MAX_SOURCE:
+                sortie.close()
+                shutil.rmtree(dossier, ignore_errors=True)
+                return JSONResponse({"erreur": f"Vidéo trop lourde ({montage_parole.TAILLE_MAX_SOURCE // (1024 * 1024)} Mo maximum) : compressez-la avant l'envoi."}, status_code=400)
+            sortie.write(morceau)
+    try:
+        await run_in_threadpool(montage_parole.sonde, source)
+    except montage_parole.ErreurMontage as erreur:
+        shutil.rmtree(dossier, ignore_errors=True)
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+
+    opts = await run_in_threadpool(_options_montage, brut, dossier, db)
+    montage_parole.lancer_montage(identifiant, dossier, source, opts, _choisir_retouches, _choisir_extraits)
+    return JSONResponse({"id": identifiant})
+
+
+@app.post("/montage-video/{identifiant}/relancer")
+async def montage_video_relancer(identifiant: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Nouveau montage de la meme video avec d'autres reglages ou consignes : sans renvoyer la video ni la retranscrire."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage = montage_parole.MONTAGES.get(identifiant)
+    if not montage or not os.path.exists(montage["source"]):
+        return JSONResponse({"erreur": "Cette vidéo n'est plus disponible : renvoyez-la."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un montage est déjà en cours pour cette vidéo."}, status_code=409)
+    try:
+        brut = await request.json()
+    except ValueError:
+        brut = {}
+    opts = await run_in_threadpool(_options_montage, brut, montage["dossier"], db)
+    montage_parole.lancer_montage(identifiant, montage["dossier"], montage["source"], opts, _choisir_retouches, _choisir_extraits)
+    return JSONResponse({"id": identifiant})
+
+
+@app.get("/montage-video/{identifiant}/etat")
+def montage_video_etat(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    etat = montage_parole.etat_montage(identifiant)
+    if etat is None:
+        return JSONResponse({"erreur": "Montage introuvable (le serveur a peut-être redémarré) : relancez-le."}, status_code=404)
+    return JSONResponse(etat)
+
+
+@app.get("/montage-video/{identifiant}/fichier/{numero}")
+def montage_video_fichier(identifiant: str, numero: int, request: Request, telecharger: int = 0):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    chemin = montage_parole.fichier_sortie(identifiant, numero)
+    if not chemin:
+        return JSONResponse({"erreur": "Fichier introuvable."}, status_code=404)
+    return FileResponse(chemin, media_type="video/mp4", filename=f"montage-{numero + 1}.mp4" if telecharger else None)
 
 
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---
