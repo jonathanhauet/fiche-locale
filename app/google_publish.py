@@ -133,14 +133,16 @@ def publier_et_verifier(db, identifiants, post: "models.Post") -> str:
             offre_url=post.offre_url or "",
             offre_conditions=post.offre_conditions or "",
         )
-    except Exception:
+    except Exception as erreur:
         post.statut = "ECHEC_PUBLICATION"
+        post.erreur_publication = str(erreur)[:1500]
         db.add(models.EvenementPublication(post_id=post.id, etat="ECHEC_PUBLICATION"))
         db.commit()
         raise
 
     nom_post = reponse_publication.get("name")
     post.id_post_google = nom_post
+    post.erreur_publication = ""
     db.commit()
 
     time.sleep(ATTENTE_VERIFICATION_SECONDES)

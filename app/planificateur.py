@@ -75,6 +75,10 @@ def verifier_et_publier_posts_programmes():
             if post.client.dernier_statut_validation in ("non_valide", "inaccessible"):
                 if (maintenant.date() - post.date_prevue).days > JOURS_ATTENTE_FICHE_NON_VALIDEE:
                     post.statut = "ECHEC_PUBLICATION"
+                    post.erreur_publication = (
+                        f"La fiche Google n'était pas validée depuis plus de {JOURS_ATTENTE_FICHE_NON_VALIDEE} jours : "
+                        "le post a été abandonné plutôt que publié très en retard."
+                    )
                     db.add(models.EvenementPublication(post_id=post.id, etat="FICHE_NON_VALIDEE"))
                     db.commit()
                 continue

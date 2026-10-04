@@ -289,6 +289,8 @@ def _migrer_vers_multi_comptes():
             colonnes_posts = [c["name"] for c in inspecteur.get_columns("posts")]
             if "lot_id" not in colonnes_posts:
                 connexion.execute(text("ALTER TABLE posts ADD COLUMN lot_id TEXT"))
+            if "erreur_publication" not in colonnes_posts:
+                connexion.execute(text("ALTER TABLE posts ADD COLUMN erreur_publication TEXT DEFAULT ''"))
             if "heure_prevue" not in colonnes_posts:
                 connexion.execute(text("ALTER TABLE posts ADD COLUMN heure_prevue TEXT"))
             if "type_appel_action" not in colonnes_posts:
@@ -400,6 +402,7 @@ templates.env.globals["solde_dataforseo"] = soldes_api.solde_dataforseo
 templates.env.globals["options_visuel"] = claude_generation.OPTIONS_VISUEL
 templates.env.globals["libelles_groupes_visuel"] = claude_generation.LIBELLES_GROUPES_VISUEL
 templates.env.globals["styles_carrousel_ia"] = claude_generation.STYLES_CARROUSEL_IA
+templates.env.filters["explication_echec"] = lambda erreur: explication_echec_publication(erreur)
 templates.env.globals["liens_plateformes_paiement"] = soldes_api.LIENS_PLATEFORMES_PAIEMENT
 
 
@@ -1224,6 +1227,28 @@ def _apercu_image_linkedin(octets: bytes, cote_max: int = 240) -> str:
         return ""
 
 
+def explication_echec_publication(erreur: str) -> str:
+    """Raison d'un echec de publication, en clair : la reponse brute de Google/Meta/LinkedIn reste visible au survol."""
+    brut = (erreur or "").strip()
+    if not brut:
+        return ""
+    minuscule = brut.lower()
+    if "code 429" in minuscule or "resource_exhausted" in minuscule or "quota" in minuscule:
+        return "Google a limité le nombre de publications envoyées d'un coup : réessayez dans quelques minutes."
+    if "code 401" in minuscule or "unauthenticated" in minuscule or "invalid_grant" in minuscule or "expir" in minuscule:
+        return "La connexion au compte a expiré : reconnectez-le (Comptes connectés), puis réessayez."
+    if "code 403" in minuscule or "permission" in minuscule:
+        return "Accès refusé : droits insuffisants sur la fiche, ou fiche suspendue ou non validée."
+    if "code 404" in minuscule or "not_found" in minuscule:
+        return "Fiche introuvable côté Google : vérifiez l'identifiant de la fiche du client."
+    if "pas connecte" in minuscule or "n'est pas connecte" in minuscule:
+        return "Le compte n'est pas connecté pour ce client."
+    if "code 400" in minuscule or "invalid_argument" in minuscule:
+        return ("Google a refusé le contenu du post : texte trop long (1 500 caractères maximum), numéro de téléphone ou lien "
+                "dans le texte, ou image non conforme. Modifiez le post puis réessayez.")
+    return "Échec de la publication : " + _extrait_court(brut)
+
+
 def _publications_multi_reseaux(
     db: Session, client: "models.Client", limite: int = 30, posts_google_en_ligne: list = None, avec_externes: bool = True,
 ) -> list:
@@ -1254,6 +1279,7 @@ def _publications_multi_reseaux(
             "a_venir": post.statut == "A_PUBLIER",
             "statut_brut": post.statut,
             "statut_libelle": STATUTS_POST_GOOGLE_RESUME[post.statut],
+            "erreur": post.erreur_publication or "" if post.statut == "ECHEC_PUBLICATION" else "",
         })
 
     for reseau, modele, filtre in [
@@ -1274,6 +1300,7 @@ def _publications_multi_reseaux(
                 "a_venir": post.etat == "EN_ATTENTE",
                 "statut_brut": post.etat,
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
+                "erreur": (post.erreur or "") if post.etat == "ECHEC" else "",
             })
 
     if client.compte_linkedin_id:
@@ -1293,6 +1320,7 @@ def _publications_multi_reseaux(
                 "a_venir": post.etat == "EN_ATTENTE",
                 "statut_brut": post.etat,
                 "statut_libelle": LIBELLES_ETAT_RESEAU_RESUME.get(post.etat, post.etat),
+                "erreur": (post.erreur or "") if post.etat == "ECHEC" else "",
             })
 
     # Articles WordPress : programmes par WordPress lui-meme, donc presentes comme publies une fois la date passee.

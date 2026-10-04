@@ -38,7 +38,11 @@
           </div>
         </td>
         <td class="cellule-date-publication">{{ ligne.date.strftime("%d/%m/%Y") }}{% if ligne.heure %} à {{ ligne.heure }}{% endif %}</td>
-        <td><span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span></td>
+        <td>
+          <span class="etiquette-statut etiquette-{{ ligne.statut_brut|lower }}">{{ ligne.statut_libelle }}</span>
+          {% if ligne.erreur %}<div class="raison-echec" title="{{ ligne.erreur }}">{{ ligne.erreur|explication_echec }}</div>
+          {% elif ligne.statut_brut in ('ECHEC_PUBLICATION', 'ECHEC') %}<div class="raison-echec">Raison non enregistrée pour cette publication (elle avait été affichée à l'écran au moment de l'envoi).</div>{% endif %}
+        </td>
         <td>
           {% if ligne.reseau == 'wordpress' %}
           {% if ligne.lien_edition %}
@@ -48,6 +52,8 @@
           {% if ligne.url %}
           <div class="actions-resume"><a class="bouton-secondaire bouton-mini" href="{{ ligne.url }}" target="_blank" rel="noopener" title="Modifier, reprogrammer ou supprimer la vidéo depuis YouTube">Ouvrir sur YouTube</a></div>
           {% endif %}
+          {% elif ligne.reseau == 'google' and ligne.statut_brut == 'ECHEC_PUBLICATION' %}
+          <div class="actions-resume"><a class="bouton-secondaire bouton-mini" href="/posts/{{ ligne.id }}" title="Corriger le post puis le republier">Corriger et republier</a></div>
           {% elif ligne.a_venir %}
           <div class="actions-resume">
             <button type="button" class="bouton-secondaire bouton-mini bouton-reprogrammer" title="Changer la date et l'heure">📅 Reprogrammer</button>

@@ -243,6 +243,8 @@ class Post(Base):
     id_post_google = Column(String, default="")
     # Regroupe les posts crees ensemble pour un envoi sur plusieurs fiches (voir /posts).
     lot_id = Column(String, nullable=True, index=True)
+    # Raison du dernier echec de publication (reponse de Google), affichee dans l'historique des publications.
+    erreur_publication = Column(Text, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
     maj_le = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
