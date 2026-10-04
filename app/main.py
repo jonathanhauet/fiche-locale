@@ -106,6 +106,7 @@ from .planificateur import (
     notifier_expirations_linkedin,
     publier_posts_instagram_programmes,
     publier_posts_linkedin_programmes,
+    publier_articles_wordpress_programmes,
     publier_posts_meta_programmes,
     purger_messages_whatsapp_traites,
     rafraichir_tokens_instagram,
@@ -247,6 +248,10 @@ def _migrer_vers_multi_comptes():
         ):
             if colonne_wordpress not in colonnes_clients:
                 connexion.execute(text(f"ALTER TABLE clients ADD COLUMN {colonne_wordpress} TEXT DEFAULT ''"))
+        if inspecteur.has_table("posts_wordpress"):
+            colonnes_posts_wordpress = {c["name"] for c in inspecteur.get_columns("posts_wordpress")}
+            if "verifie" not in colonnes_posts_wordpress:
+                connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
         colonnes_posts_meta = {c["name"] for c in inspecteur.get_columns("posts_meta_programmes")}
         if "video_url" not in colonnes_posts_meta:
             connexion.execute(text("ALTER TABLE posts_meta_programmes ADD COLUMN video_url TEXT"))
@@ -586,6 +591,14 @@ planificateur.add_job(
     "interval",
     minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
     id="publication_instagram_programmee",
+)
+# Filet de securite WordPress : publie lui-meme les articles programmes restes « planification manquee » (voir
+# planificateur.publier_articles_wordpress_programmes).
+planificateur.add_job(
+    publier_articles_wordpress_programmes,
+    "interval",
+    minutes=min(INTERVALLE_PLANIFICATEUR_MINUTES, 10),
+    id="publication_wordpress_programmee",
 )
 planificateur.start()
 

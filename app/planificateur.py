@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from . import (
     claude_generation, google_business, google_location, google_oauth, google_publish,
     google_reviews, instagram_oauth, instagram_publish, linkedin_publish, meta_publish, models,
-    notifications, rapport_donnees, veille_actualite, whatsapp_business,
+    notifications, rapport_donnees, veille_actualite, whatsapp_business, wordpress_publish,
 )
 from .database import SessionLocal
 
@@ -780,6 +780,54 @@ def publier_posts_meta_programmes():
             except Exception as erreur:
                 post.etat = "ECHEC"
                 post.erreur = str(erreur)
+            db.commit()
+    finally:
+        db.close()
+
+
+DELAI_TOLERANCE_WORDPRESS_MINUTES = 3
+JOURS_RECHERCHE_WORDPRESS = 30
+
+
+def publier_articles_wordpress_programmes():
+    """
+    Filet de securite pour les articles WordPress programmes : WordPress les publie lui-meme a l'heure prevue, mais
+    seulement si son planificateur interne (WP-Cron) a ete declenche par une visite du site - sinon l'article reste
+    « Planifie » avec la mention « Planification manquee ». Apres leur date, chaque article est controle chez WordPress
+    et publie sans attendre s'il est reste en attente. Un article remis en brouillon ou a la corbeille, ou deplace a une
+    date ulterieure dans WordPress, n'est pas touche.
+    """
+    db = SessionLocal()
+    try:
+        maintenant = _maintenant_local()
+        a_controler = (
+            db.query(models.PostWordPress)
+            .filter(models.PostWordPress.programme == True, models.PostWordPress.wp_id.isnot(None))  # noqa: E712
+            .filter((models.PostWordPress.verifie == False) | (models.PostWordPress.verifie.is_(None)))  # noqa: E712
+            .filter(models.PostWordPress.publier_le <= maintenant - timedelta(minutes=DELAI_TOLERANCE_WORDPRESS_MINUTES))
+            .filter(models.PostWordPress.publier_le >= maintenant - timedelta(days=JOURS_RECHERCHE_WORDPRESS))
+            .all()
+        )
+        maintenant_utc = datetime.utcnow()
+        for article in a_controler:
+            client = db.get(models.Client, article.client_id)
+            if not (client and client.wordpress_url and client.wordpress_utilisateur and client.wordpress_mot_de_passe):
+                continue
+            try:
+                etat = wordpress_publish.lire_etat_article(
+                    client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe, article.wp_id,
+                )
+                if etat is None or etat["statut"] != "future":
+                    article.verifie = True  # publie, brouillon, corbeille ou supprime : rien a faire
+                elif etat["date_gmt"] and etat["date_gmt"] > maintenant_utc - timedelta(minutes=DELAI_TOLERANCE_WORDPRESS_MINUTES):
+                    continue  # reporte a une date ulterieure dans WordPress : on reverra plus tard
+                else:
+                    wordpress_publish.publier_article_maintenant(
+                        client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe, article.wp_id,
+                    )
+                    article.verifie = True
+            except Exception:
+                continue  # site injoignable ou identifiants refuses : nouvel essai au prochain passage
             db.commit()
     finally:
         db.close()

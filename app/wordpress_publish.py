@@ -322,3 +322,25 @@ def creer_article(
         raise RuntimeError(f"Échec de la création de l'article (code {reponse.status_code}) : {reponse.text[:300]}")
     donnees = reponse.json()
     return {"id": donnees.get("id"), "lien": donnees.get("link", ""), "statut": donnees.get("status", "")}
+
+
+def lire_etat_article(url_site: str, utilisateur: str, mot_de_passe: str, wp_id: int) -> dict:
+    """{"statut": "publish"/"future"/"draft"/..., "date_gmt": datetime naive UTC} d'un article (None si introuvable)."""
+    reponse = _appeler("GET", url_site, f"posts/{int(wp_id)}", utilisateur, mot_de_passe, params={"context": "edit", "_fields": "status,date_gmt"})
+    if reponse.status_code == 404:
+        return None
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Lecture de l'article impossible (code {reponse.status_code}) : {reponse.text[:200]}")
+    donnees = reponse.json()
+    try:
+        date_gmt = datetime.strptime((donnees.get("date_gmt") or "")[:19], "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        date_gmt = None
+    return {"statut": donnees.get("status", ""), "date_gmt": date_gmt}
+
+
+def publier_article_maintenant(url_site: str, utilisateur: str, mot_de_passe: str, wp_id: int) -> None:
+    """Passe un article programme en « publie » (sa date, deja passee, est conservee)."""
+    reponse = _appeler("POST", url_site, f"posts/{int(wp_id)}", utilisateur, mot_de_passe, json={"status": "publish"})
+    if reponse.status_code not in (200, 201):
+        raise RuntimeError(f"Publication de l'article impossible (code {reponse.status_code}) : {reponse.text[:200]}")

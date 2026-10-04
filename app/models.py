@@ -861,6 +861,10 @@ class PostWordPress(Base):
     lien = Column(String, default="")
     lien_edition = Column(String, default="")
     programme = Column(Boolean, default=False)
+    # Vrai une fois l'etat reel de l'article controle chez WordPress apres sa date (voir
+    # planificateur.publier_articles_wordpress_programmes) : WordPress ne publie un article programme que si son
+    # « WP-Cron » tourne (declenche par les visites du site), sinon « planification manquee ».
+    verifie = Column(Boolean, default=False)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
