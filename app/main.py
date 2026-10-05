@@ -67,6 +67,7 @@ from . import (
     google_publish,
     google_reviews,
     horaires_publication,
+    geo_prospect,
     geo_score,
     geo_technique,
     ia_visibilite,
@@ -5507,6 +5508,67 @@ def prospection_formulaire(request: Request, nom_entreprise: str = "", ville: st
         request, "prospection.html",
         {"erreur": None, "nom_entreprise": nom_entreprise, "ville": ville, "lead_id": lead_id},
     )
+
+
+@app.get("/prospection/test-geo", response_class=HTMLResponse)
+def prospection_test_geo(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    modeles = {m: ia_visibilite.MODELES_DISPONIBLES[m] for m in geo_score.modeles_actifs()}
+    return templates.TemplateResponse(request, "prospection_geo.html", {"modeles": modeles, "modeles_json": json.dumps(modeles).replace("</", "<\\/")})
+
+
+@app.post("/prospection/test-geo/questions")
+def prospection_test_geo_questions(
+    request: Request, nom: str = Form(...), ville: str = Form(...), activite: str = Form(...),
+):
+    """Cinq questions locales plausibles pour l'activite et la ville du prospect."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    try:
+        questions = claude_generation.suggerer_questions_visibilite_ia(f"{nom.strip()} - {activite.strip()}", activite.strip(), ville.strip(), [], nombre=5)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Echec de la génération des questions : {erreur}"}, status_code=500)
+    if not questions:
+        return JSONResponse({"erreur": "Aucune question générée."}, status_code=500)
+    return JSONResponse({"questions": questions})
+
+
+@app.post("/prospection/test-geo/verifier")
+def prospection_test_geo_verifier(
+    request: Request, nom: str = Form(...), modele: str = Form(...), question: str = Form(...),
+):
+    """Pose UNE question a UN assistant (rien n'est enregistre) - appelee en boucle par la page pour la barre de progression."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    if modele not in geo_score.modeles_actifs() or not question.strip() or not nom.strip():
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    resultat = ia_visibilite.verifier_une_requete(nom.strip(), modele, question.strip())
+    resultat.pop("reponse_brute", None)
+    return JSONResponse({"resultat": dict(resultat, requete_texte=question.strip(), modele=modele)})
+
+
+@app.post("/prospection/test-geo/rapport")
+async def prospection_test_geo_rapport(request: Request):
+    """Controle le site puis construit le rapport interne (fragment HTML) a partir des reponses collectees par la page."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    try:
+        corps = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    nom, ville, site = str(corps.get("nom", "")).strip()[:200], str(corps.get("ville", "")).strip()[:100], str(corps.get("site", "")).strip()[:300]
+    if not nom or not isinstance(corps.get("resultats"), list):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    controle, erreur_site = None, ""
+    if site:
+        try:
+            controle = await asyncio.to_thread(geo_technique.controler_site, site)
+        except geo_technique.ErreurControle as erreur:
+            erreur_site = str(erreur)
+    rapport = geo_prospect.construire_rapport(nom, corps["resultats"][:40], site, controle)
+    return templates.TemplateResponse(request, "_rapport_geo_prospect.html", dict(rapport, nom=nom, ville=ville, erreur_site=erreur_site))
 
 
 @app.post("/prospection/rechercher")

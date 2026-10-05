@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% set page_actuelle = "prospection_geo" %}
+{% block titre %}Test GEO d'un prospect{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Test GEO d'un prospect</h1>
+</div>
+<p class="texte-discret">
+  Pose cinq questions locales à {{ modeles.values()|join(" et ") }} (avec leur recherche web), contrôle le site de l'entreprise, puis
+  donne un rapport interne avec les trois actions prioritaires. Rien n'est enregistré. Compter environ une à deux minutes.
+  À utiliser en rendez-vous ou pour préparer un démarchage : ce rapport est destiné à votre usage, pas à être envoyé tel quel.
+</p>
+
+<form class="formulaire" id="formulaire-test-geo" onsubmit="return false;">
+  <div class="ligne-champs">
+    <label>Nom de l'entreprise <input type="text" id="geo-nom" required placeholder="Ex : Bâti'Net"></label>
+    <label>Ville <input type="text" id="geo-ville" required placeholder="Ex : Mérignac"></label>
+  </div>
+  <div class="ligne-champs">
+    <label>Activité <input type="text" id="geo-activite" required placeholder="Ex : serrurier"></label>
+    <label>Site web (facultatif) <input type="text" id="geo-site" placeholder="https://www.exemple.be"></label>
+  </div>
+  <button type="button" id="bouton-test-geo" class="bouton">🤖 Lancer le test</button>
+</form>
+
+<div id="conteneur-progression-geo" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-geo" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-geo" class="texte-progression-avis"></span>
+</div>
+<p id="erreur-geo" class="message-erreur" hidden></p>
+<div id="rapport-geo"></div>
+
+<script id="donnees-modeles-geo" type="application/json">{{ modeles_json|safe }}</script>
+<script>
+(function () {
+  const modeles = Object.keys(JSON.parse(document.getElementById("donnees-modeles-geo").textContent));
+  const bouton = document.getElementById("bouton-test-geo");
+  const conteneur = document.getElementById("conteneur-progression-geo");
+  const barre = document.getElementById("barre-progression-geo");
+  const texte = document.getElementById("texte-progression-geo");
+  const erreur = document.getElementById("erreur-geo");
+  const rapport = document.getElementById("rapport-geo");
+
+  async function post(url, corps, json) {
+    const options = { method: "POST" };
+    if (json) { options.headers = { "Content-Type": "application/json" }; options.body = JSON.stringify(corps); }
+    else { options.body = new URLSearchParams(corps); }
+    return fetch(url, options);
+  }
+  function montrerErreur(message) { erreur.textContent = message; erreur.hidden = false; }
+
+  bouton.addEventListener("click", async () => {
+    const nom = document.getElementById("geo-nom").value.trim();
+    const ville = document.getElementById("geo-ville").value.trim();
+    const activite = document.getElementById("geo-activite").value.trim();
+    const site = document.getElementById("geo-site").value.trim();
+    if (!nom || !ville || !activite) { montrerErreur("Renseignez le nom, la ville et l'activité."); return; }
+
+    bouton.disabled = true; erreur.hidden = true; rapport.innerHTML = ""; conteneur.hidden = false;
+    barre.style.width = "0%"; texte.textContent = "Préparation des questions...";
+    try {
+      const rq = await post("/prospection/test-geo/questions", { nom, ville, activite });
+      const dq = await rq.json();
+      if (!rq.ok) { montrerErreur(dq.erreur || "Impossible de préparer les questions."); return; }
+
+      const taches = [];
+      dq.questions.forEach((q) => modeles.forEach((m) => taches.push([q, m])));
+      const resultats = [];
+      let termines = 0, curseur = 0;
+      async function suivant() {
+        while (curseur < taches.length) {
+          const [question, modele] = taches[curseur++];
+          try {
+            const r = await post("/prospection/test-geo/verifier", { nom, modele, question });
+            const d = await r.json();
+            if (d.resultat) resultats.push(d.resultat);
+          } catch (e) { /* on continue avec les autres */ }
+          termines++;
+          barre.style.width = Math.round((termines / taches.length) * 90) + "%";
+          texte.textContent = `Questions posées aux IA : ${termines} / ${taches.length}`;
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(2, taches.length) }, suivant));
+
+      texte.textContent = "Contrôle du site et rédaction du rapport...";
+      const rr = await post("/prospection/test-geo/rapport", { nom, ville, site, resultats }, true);
+      if (!rr.ok) { montrerErreur("Impossible de construire le rapport."); return; }
+      rapport.innerHTML = await rr.text();
+      barre.style.width = "100%";
+    } catch (e) {
+      montrerErreur("Erreur réseau pendant le test.");
+    } finally {
+      bouton.disabled = false; conteneur.hidden = true;
+    }
+  });
+})();
+</script>
+{% endblock %}

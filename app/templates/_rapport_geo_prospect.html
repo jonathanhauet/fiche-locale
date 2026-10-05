@@ -1,0 +1,81 @@
+{% set etiquettes_categorie = {"votre_site": "Son site", "reseau_social": "Réseau social", "avis": "Avis", "annuaire": "Annuaire", "autre": "Autre site"} %}
+{% set etiquettes = {"ok": ["etiquette-statut etiquette-a_publier", "OK"], "avertissement": ["etiquette-avertissement", "À améliorer"], "probleme": ["etiquette-avertissement etiquette-danger", "Problème"]} %}
+<h2>Résultat pour {{ nom }}{% if ville %} ({{ ville }}){% endif %}</h2>
+{% if synthese.nb_reponses %}
+<div class="grille-insights">
+  <div class="carte-insight {% if synthese.score >= 50 %}carte-insight-positive{% else %}carte-insight-attention{% endif %}">
+    <span class="insight-icone">🎯</span>
+    <div><span class="insight-titre">Score GEO</span><span class="insight-detail">{{ synthese.score }} / 100</span></div>
+  </div>
+  <div class="carte-insight">
+    <span class="insight-icone">💬</span>
+    <div><span class="insight-titre">Cité dans</span><span class="insight-detail">{{ synthese.nb_cites }} réponse{{ "s" if synthese.nb_cites > 1 }} sur {{ synthese.nb_reponses }}</span></div>
+  </div>
+  <div class="carte-insight">
+    <span class="insight-icone">📣</span>
+    <div><span class="insight-titre">Part de voix</span><span class="insight-detail">{% if synthese.part_de_voix is not none %}{{ synthese.part_de_voix }} %{% else %}—{% endif %}</span></div>
+  </div>
+  {% if controle %}
+  <div class="carte-insight {% if controle.score >= 70 %}carte-insight-positive{% else %}carte-insight-attention{% endif %}">
+    <span class="insight-icone">🛠</span>
+    <div><span class="insight-titre">Site prêt pour les IA</span><span class="insight-detail">{{ controle.score }} / 100</span></div>
+  </div>
+  {% endif %}
+</div>
+
+{% if actions %}
+<div class="bloc-section">
+  <strong>Les 3 actions prioritaires</strong>
+  <ol>{% for a in actions %}<li>{{ a }}</li>{% endfor %}</ol>
+</div>
+{% endif %}
+
+<div class="bloc-section">
+  <strong>Ce que répondent les IA</strong>
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead><tr><th>Question</th><th>Cité ?</th><th>Cités à la place</th></tr></thead>
+      <tbody>
+        {% for q in questions %}
+        <tr>
+          <td>{{ q.texte }}</td>
+          <td>{% if q.cite_sur %}<span class="etiquette-statut etiquette-a_publier">Oui ({{ q.cite_sur|join(", ") }})</span>{% else %}<span class="etiquette-avertissement etiquette-danger">Non</span>{% endif %}</td>
+          <td>{{ q.concurrents|join(", ") or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if synthese.sources_top %}
+<div class="bloc-section">
+  <strong>Sites sur lesquels les IA s'appuient</strong>
+  <p>
+    {% for s in synthese.sources_top[:8] %}{{ s.domaine }} <span class="texte-discret">({{ etiquettes_categorie[s.categorie] }})</span>{% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+</div>
+{% endif %}
+{% else %}
+<p class="message-erreur">Aucune réponse exploitable des assistants IA ({{ synthese.nb_erreurs }} en erreur). Réessayez dans un instant.</p>
+{% endif %}
+
+{% if controle %}
+<div class="bloc-section">
+  <strong>Contrôle technique du site</strong> <span class="texte-discret">{{ controle.url }}</span>
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead><tr><th>Contrôle</th><th>Statut</th><th>Détail</th></tr></thead>
+      <tbody>
+        {% for statut in ["probleme", "avertissement", "ok"] %}
+        {% for c in controle.controles if c.statut == statut %}
+        <tr><td>{{ c.titre }}</td><td><span class="{{ etiquettes[c.statut][0] }}">{{ etiquettes[c.statut][1] }}</span></td><td>{{ c.detail }}</td></tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% elif erreur_site %}
+<p class="texte-discret">Contrôle du site non effectué : {{ erreur_site }}</p>
+{% endif %}
