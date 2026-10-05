@@ -1294,6 +1294,60 @@ def suggerer_questions_visibilite_ia(
     return [q.strip() for q in json.loads(bloc_texte)["questions"] if q.strip()][:nombre]
 
 
+SCHEMA_CONTENU_QUESTION_IA = {
+    "type": "object",
+    "properties": {
+        "post": {"type": "string", "description": "Publication complete qui repond a la question"},
+        "reponse_faq": {"type": "string", "description": "Reponse courte (2 a 3 phrases) pour la FAQ du site"},
+    },
+    "required": ["post", "reponse_faq"],
+    "additionalProperties": False,
+}
+
+
+def generer_contenu_pour_question_ia(
+    nom_client: str, contenu_site: str, ville: str, question: str, concurrents_cites: list = None,
+) -> dict:
+    """
+    Contenu qui repond precisement a une question ou les assistants IA ne citent pas le client (voir geo_score) :
+    une publication (a envoyer dans le composeur) et une reponse courte pour la FAQ du site. Les assistants reprennent
+    les pages qui repondent directement a la question avec des faits verifiables, d'ou la consigne de n'utiliser que le
+    contenu fourni.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+
+    bloc_concurrents = ""
+    if concurrents_cites:
+        bloc_concurrents = f"Les assistants citent actuellement a la place : {', '.join(concurrents_cites[:4])} (ne les mentionne jamais).\n"
+    prompt = (
+        f"Une personne demande a un assistant IA : « {question} »\n"
+        f"{bloc_concurrents}"
+        f"L'entreprise {nom_client}{(' (' + ville + ')') if ville else ''} n'est pas citee dans la reponse. Redige du contenu qui repond "
+        "precisement a cette question, au nom de l'entreprise, pour que les assistants puissent la reprendre.\n\n"
+        f"Contenu de son site web (seule source de faits autorisee) :\n{(contenu_site or '(aucun contenu fourni)').strip()[:6000]}\n\n"
+        "Fournis :\n"
+        "1. « post » : une publication de 120 a 170 mots. Premiere phrase : la reponse directe a la question, en reprenant ses mots-cles "
+        "(activite + ville). Ensuite 2 a 4 faits concrets issus du site (services, zone desservie, specificites, delais si indiques). "
+        "Nom de l'entreprise et ville cites naturellement. Une phrase d'appel a l'action simple a la fin.\n"
+        "2. « reponse_faq » : la meme reponse en 2 a 3 phrases autonomes, a coller dans la FAQ du site (commence par le nom de l'entreprise).\n\n"
+        "Regles : francais naturel, tutoiement interdit, pas d'emoji, pas de hashtag, pas de tiret cadratin. N'invente AUCUN fait (prix, annees "
+        "d'experience, certifications, avis, chiffres) : si le site ne donne pas l'information, ne l'ecris pas. Pas de superlatifs non prouves "
+        "(« le meilleur », « numero 1 »). Reponds uniquement avec le JSON demande."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=1500, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_CONTENU_QUESTION_IA}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc_texte = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    donnees = json.loads(bloc_texte)
+    return {"post": _nettoyer_texte_genere(donnees["post"]), "reponse_faq": _nettoyer_texte_genere(donnees["reponse_faq"])}
+
+
 SCHEMA_PLAN_ACTION = {
     "type": "object",
     "properties": {

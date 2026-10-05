@@ -4740,6 +4740,45 @@ def generer_llms_txt_geo(client_id: int, request: Request, db: Session = Depends
     return JSONResponse({"texte": texte})
 
 
+@app.post("/clients/{client_id}/visibilite-ia/contenu-question")
+def contenu_pour_question_visibilite_ia(
+    client_id: int, request: Request, question: str = Form(...), db: Session = Depends(obtenir_session),
+):
+    """Genere une publication + une reponse FAQ pour une question ou le client n'est pas cite par les assistants IA."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    question = question.strip()
+    if not client or not question:
+        return JSONResponse({"erreur": "Question invalide."}, status_code=400)
+
+    concurrents = []
+    for resultat in geo_score.derniers_resultats(db, client_id):
+        if resultat.requete_texte == question:
+            concurrents += [c for c in json.loads(resultat.concurrents_cites or "[]") if c not in concurrents]
+    ville = client.localisation_ville or ""
+    if not ville:
+        ville = (_infos_google_client(db, client)[0].get("storefrontAddress") or {}).get("locality", "")
+    try:
+        contenu = claude_generation.generer_contenu_pour_question_ia(client.nom, _contexte_ia_client(client), ville, question, concurrents)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Echec de la génération : {erreur}"}, status_code=500)
+    return JSONResponse(contenu)
+
+
+@app.post("/clients/{client_id}/visibilite-ia/vers-composeur")
+def visibilite_ia_vers_composeur(client_id: int, request: Request, texte: str = Form(...), db: Session = Depends(obtenir_session)):
+    """Envoie un texte dans le composeur multi-reseaux de la fiche (meme mecanisme que les scripts video)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    texte = texte.strip()[:2500]
+    if not client or not texte:
+        return JSONResponse({"erreur": "Texte invalide."}, status_code=400)
+    request.session["brouillon_vocal"] = {"client_id": client.id, "texte": texte, "prompt_image": ""}
+    return JSONResponse({"url": f"/publication-multi?client_id={client.id}"})
+
+
 @app.post("/clients/{client_id}/visibilite-ia/instantane")
 def enregistrer_instantane_visibilite_ia(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Enregistre le score GEO du mois a partir des derniers releves (appele par la page apres une verification)."""

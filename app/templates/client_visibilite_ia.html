@@ -20,6 +20,13 @@
 {% endif %}
 
 {% set etiquettes_categorie = {"votre_site": "Votre site", "reseau_social": "Réseau social", "avis": "Avis", "annuaire": "Annuaire", "autre": "Autre site"} %}
+{% set actions_categorie = {
+  "votre_site": "Bon signe : les IA lisent déjà votre site. Gardez-le à jour.",
+  "reseau_social": "Publier régulièrement sur ce réseau avec le nom et la ville.",
+  "avis": "Obtenir davantage d'avis récents sur cette plateforme.",
+  "annuaire": "Vérifier ou créer la fiche sur ce site avec les mêmes nom, adresse et téléphone.",
+  "autre": "Voir si un article ou une page de ce site peut citer l'entreprise (contact, partenariat, article invité)."
+} %}
 {% if synthese.nb_reponses %}
 <h2>Synthèse</h2>
 <div class="grille-insights">
@@ -49,21 +56,60 @@
 <div class="bloc-section">
   <div class="conteneur-tableau">
     <table class="tableau-historique">
-      <thead><tr><th>Concurrents les plus cités</th><th>Sites consultés par les IA</th></tr></thead>
+      <thead><tr><th>Concurrents les plus cités</th></tr></thead>
       <tbody><tr>
         <td>
           {% for c in synthese.concurrents_top %}{{ c.nom }} <span class="texte-discret">({{ c.mentions }})</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}
-        </td>
-        <td>
-          {% for s in synthese.sources_top %}
-            {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.domaine }}</a>{% else %}{{ s.domaine }}{% endif %}
-            <span class="texte-discret">({{ etiquettes_categorie[s.categorie] }}, {{ s.nb }})</span>{% if not loop.last %}<br>{% endif %}
-          {% else %}—{% endfor %}
         </td>
       </tr></tbody>
     </table>
   </div>
 </div>
+
+{% if synthese.sources_top %}
+<div class="bloc-section">
+  <strong>Sites sur lesquels les IA s'appuient (où agir)</strong>
+  <p class="texte-discret">Ce sont les pages que les assistants ont consultées pour répondre. Être présent et cohérent sur ces sites augmente les chances d'être cité.</p>
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead><tr><th>Site</th><th>Type</th><th>Réponses</th><th>Action conseillée</th></tr></thead>
+      <tbody>
+        {% for s in synthese.sources_top %}
+        <tr>
+          <td>{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.domaine }}</a>{% else %}{{ s.domaine }}{% endif %}</td>
+          <td>{{ etiquettes_categorie[s.categorie] }}</td>
+          <td>{{ s.nb }}</td>
+          <td>{{ actions_categorie[s.categorie] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if synthese.questions_perdues %}
+<div class="bloc-section">
+  <strong>Questions où {{ client.nom }} n'est pas cité</strong>
+  <p class="texte-discret">Pour chaque question, l'IA prépare une publication et une réponse de FAQ qui répondent précisément, à partir du contenu du site (sans rien inventer). À relire avant de publier.</p>
+  {% for q in synthese.questions_perdues %}
+  <div class="bloc-question-perdue" data-question="{{ q.texte }}" style="border-top:1px solid var(--carte-bordure);padding:0.7rem 0">
+    <div><strong>{{ q.texte }}</strong></div>
+    <div class="texte-discret">{% if q.concurrents %}Cités à la place : {{ q.concurrents|join(", ") }}{% else %}Aucun concurrent identifié dans la réponse{% endif %}</div>
+    <div class="actions-avis"><button type="button" class="bouton-secondaire bouton-contenu-question"><span class="spinner" hidden></span> ✍️ Créer le contenu</button></div>
+    <div class="sortie-contenu-question" hidden>
+      <label class="texte-discret">Publication</label>
+      <textarea class="champ-post" rows="7" style="width:100%"></textarea>
+      <div class="actions-avis"><button type="button" class="bouton bouton-vers-composeur">Envoyer dans le composeur</button></div>
+      <label class="texte-discret">Réponse pour la FAQ du site</label>
+      <textarea class="champ-faq" rows="3" style="width:100%"></textarea>
+      <div class="actions-avis"><button type="button" class="bouton-secondaire bouton-copier-faq">Copier la réponse</button></div>
+    </div>
+    <p class="message-erreur message-contenu-question" hidden></p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if historique_geo|length > 0 %}
 <div class="bloc-section">
@@ -254,6 +300,39 @@
   }
 
   afficherResultats();
+
+  document.querySelectorAll(".bloc-question-perdue").forEach((bloc) => {
+    const question = bloc.dataset.question;
+    const bouton = bloc.querySelector(".bouton-contenu-question");
+    const spinner = bloc.querySelector(".spinner");
+    const sortie = bloc.querySelector(".sortie-contenu-question");
+    const message = bloc.querySelector(".message-contenu-question");
+    bouton.addEventListener("click", async () => {
+      bouton.disabled = true; spinner.hidden = false; message.hidden = true;
+      try {
+        const reponse = await fetch("/clients/{{ client.id }}/visibilite-ia/contenu-question", { method: "POST", body: new URLSearchParams({ question }) });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { message.textContent = donnees.erreur || "Échec."; message.hidden = false; return; }
+        bloc.querySelector(".champ-post").value = donnees.post;
+        bloc.querySelector(".champ-faq").value = donnees.reponse_faq;
+        sortie.hidden = false;
+      } catch (e) {
+        message.textContent = "Erreur réseau."; message.hidden = false;
+      } finally { bouton.disabled = false; spinner.hidden = true; }
+    });
+    bloc.querySelector(".bouton-vers-composeur").addEventListener("click", async () => {
+      const reponse = await fetch("/clients/{{ client.id }}/visibilite-ia/vers-composeur", { method: "POST", body: new URLSearchParams({ texte: bloc.querySelector(".champ-post").value }) });
+      const donnees = await reponse.json();
+      if (donnees.url) window.location.href = donnees.url;
+    });
+    const boutonCopier = bloc.querySelector(".bouton-copier-faq");
+    boutonCopier.addEventListener("click", () => {
+      navigator.clipboard.writeText(bloc.querySelector(".champ-faq").value).then(() => {
+        const ancien = boutonCopier.textContent; boutonCopier.textContent = "Copié";
+        setTimeout(() => { boutonCopier.textContent = ancien; }, 1500);
+      });
+    });
+  });
 
   const boutonSuggerer = document.getElementById("bouton-suggerer-questions-ia");
   const spinnerSuggerer = document.getElementById("spinner-suggerer-questions");
