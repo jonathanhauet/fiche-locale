@@ -9348,10 +9348,10 @@ NOMS_RESEAUX_PROGRAMMES = {"facebook": "Facebook", "instagram": "Instagram", "li
 
 
 def _post_programme_modifiable(db: Session, reseau: str, post_id: int):
-    """Renvoie (post, client) d'un post programme encore en attente, sinon (None, None)."""
+    """Renvoie (post, client) d'un post programme en attente ou en echec (reprogrammable), sinon (None, None)."""
     modele = MODELES_POSTS_PROGRAMMES.get(reseau)
     post = db.get(modele, post_id) if modele else None
-    if not post or post.etat != "EN_ATTENTE":
+    if not post or post.etat not in ("EN_ATTENTE", "ECHEC"):
         return None, None
     if reseau == "linkedin":
         client = db.query(models.Client).filter_by(compte_linkedin_id=post.compte_linkedin_id).first()
@@ -9430,6 +9430,8 @@ async def publication_multi_reprogrammer(reseau: str, post_id: int, request: Req
             p.date_prevue, p.heure_prevue = nouveau.date(), nouveau.strftime("%H:%M")
         else:
             p.publier_le = nouveau
+            if getattr(p, "etat", "") == "ECHEC":
+                p.etat, p.erreur = "EN_ATTENTE", None      # un post en echec reprogramme repart a la file de publication
     db.commit()
     return JSONResponse({
         "ok": True, "deplaces": [{"reseau": r, "id": p.id} for r, p in a_deplacer],
@@ -9536,6 +9538,8 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
 
     post.texte = texte
     post.publier_le = publier_le
+    if post.etat == "ECHEC":
+        post.etat, post.erreur = "EN_ATTENTE", None        # modifie apres un echec : il sera republie a la date choisie
     if images_finales is not None:
         post.image_url = meta_publish.champ_depuis_urls(images_finales)
     if nouvelle_image_linkedin != "inchangee":

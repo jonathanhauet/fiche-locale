@@ -54,6 +54,11 @@
           {% endif %}
           {% elif ligne.reseau == 'google' and ligne.statut_brut == 'ECHEC_PUBLICATION' %}
           <div class="actions-resume"><a class="bouton-secondaire bouton-mini" href="/posts/{{ ligne.id }}" title="Corriger le post puis le republier">Corriger et republier</a></div>
+          {% elif ligne.reseau in ('facebook', 'instagram', 'linkedin') and ligne.statut_brut == 'ECHEC' %}
+          <div class="actions-resume">
+            <button type="button" class="bouton-secondaire bouton-mini bouton-reprogrammer" title="Choisir une nouvelle date : la publication repartira en file d'attente">📅 Reprogrammer</button>
+            <a class="bouton-secondaire bouton-mini" href="/publication-multi/{{ ligne.reseau }}/{{ ligne.id }}/modifier" title="Modifier le texte ou les images avant de republier">Modifier</a>
+          </div>
           {% elif ligne.a_venir %}
           <div class="actions-resume">
             <button type="button" class="bouton-secondaire bouton-mini bouton-reprogrammer" title="Changer la date et l'heure">📅 Reprogrammer</button>
@@ -116,6 +121,7 @@
 <div id="reprogrammation-flottante" class="reprogrammation-flottante" hidden>
   <div class="reprogrammation-titre">Reprogrammer</div>
   <div class="reprogrammation-raccourcis">
+    <button type="button" class="bouton-secondaire bouton-mini" id="reprogrammation-bientot" hidden>Dans 5 min</button>
     <button type="button" class="bouton-secondaire bouton-mini" data-decalage="1">+ 1 jour</button>
     <button type="button" class="bouton-secondaire bouton-mini" data-decalage="2">+ 2 jours</button>
     <button type="button" class="bouton-secondaire bouton-mini" data-decalage="7">+ 1 semaine</button>
@@ -153,9 +159,20 @@
       return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
     }
     function fermer() { panneau.hidden = true; ligneCourante = null; }
+    const boutonBientot = document.getElementById("reprogrammation-bientot");
+    function maintenantPlus(minutes) {
+      const d = new Date(Date.now() + minutes * 60000);
+      return { date: ajouterJours(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"), 0),
+               heure: String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") };
+    }
+    // Une publication en echec a une date deja passee : on part d'aujourd'hui, pas de la date d'origine.
+    function baseDe(ligne) { return ligne.dataset.aVenir === "1" ? ligne.dataset.date : maintenantPlus(0).date; }
     function ouvrir(ligne, bouton) {
       ligneCourante = ligne;
-      champDate.value = ligne.dataset.date; champHeure.value = ligne.dataset.heure || "08:30";
+      const enEchec = ligne.dataset.aVenir !== "1";
+      boutonBientot.hidden = !enEchec;
+      champDate.value = enEchec ? maintenantPlus(30).date : ligne.dataset.date;
+      champHeure.value = enEchec ? maintenantPlus(30).heure : (ligne.dataset.heure || "08:30");
       const autres = jumellesDe(ligne);
       jumellesLabel.hidden = !autres.length;
       document.getElementById("reprogrammation-jumelles-texte").textContent = "Déplacer aussi les " + autres.length + " autre(s) publication(s) prévue(s) au même moment";
@@ -175,6 +192,7 @@
         });
         const donnees = await reponse.json();
         if (!reponse.ok) { erreur.textContent = donnees.erreur || "Échec."; erreur.hidden = false; return; }
+        if (ligneCourante.dataset.aVenir !== "1") { window.location.reload(); return; }   // l'etat « Échec » change : on rafraichit
         const [jour, mois, annee] = [donnees.date_iso.slice(8), donnees.date_iso.slice(5, 7), donnees.date_iso.slice(0, 4)];
         donnees.deplaces.forEach((d) => {
           const l = lignes.find((x) => x.dataset.reseau === d.reseau && x.dataset.id === String(d.id));
@@ -195,8 +213,9 @@
       if (bouton) bouton.addEventListener("click", (e) => { e.stopPropagation(); ouvrir(ligne, bouton); });
     });
     panneau.querySelectorAll("[data-decalage]").forEach((b) => b.addEventListener("click", () => {
-      if (ligneCourante) appliquer(ajouterJours(ligneCourante.dataset.date, parseInt(b.dataset.decalage, 10)), ligneCourante.dataset.heure || "08:30");
+      if (ligneCourante) appliquer(ajouterJours(baseDe(ligneCourante), parseInt(b.dataset.decalage, 10)), ligneCourante.dataset.heure || "08:30");
     }));
+    boutonBientot.addEventListener("click", () => { const m = maintenantPlus(5); appliquer(m.date, m.heure); });
     document.getElementById("reprogrammation-valider").addEventListener("click", () => appliquer(champDate.value, champHeure.value));
     document.getElementById("reprogrammation-fermer").addEventListener("click", fermer);
     document.addEventListener("click", (e) => { if (!panneau.hidden && !panneau.contains(e.target)) fermer(); });
