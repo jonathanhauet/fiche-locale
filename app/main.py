@@ -68,6 +68,7 @@ from . import (
     google_reviews,
     horaires_publication,
     geo_score,
+    geo_technique,
     ia_visibilite,
     instagram_engagement,
     instagram_oauth,
@@ -4629,6 +4630,114 @@ def visibilite_ia_client(client_id: int, request: Request, db: Session = Depends
             "historique_geo": geo_score.historique(db, client_id),
         },
     )
+
+
+def _infos_google_client(db: Session, client) -> tuple:
+    """(infos de la fiche Google ou {}, nom de la categorie principale) - jamais d'exception : le controle marche aussi sans Google."""
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.compte_google_id else None
+    if identifiants and client.location_id:
+        try:
+            infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+            return infos, google_location.valeurs_protegees(infos).get("categorie_nom", "")
+        except Exception:
+            pass
+    return {}, ""
+
+
+def _controle_geo_recent(db: Session, client_id: int):
+    ligne = (
+        db.query(models.ControleTechniqueGEO).filter_by(client_id=client_id)
+        .order_by(models.ControleTechniqueGEO.cree_le.desc(), models.ControleTechniqueGEO.id.desc()).first()
+    )
+    if not ligne:
+        return None
+    return {"url": ligne.url, "score": ligne.score, "controles": json.loads(ligne.resultats or "[]"), "date": ligne.cree_le.strftime("%d/%m/%Y %H:%M")}
+
+
+@app.get("/clients/{client_id}/geo-technique", response_class=HTMLResponse)
+def geo_technique_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+    return templates.TemplateResponse(request, "client_geo_technique.html", {
+        "client": client, "controle": _controle_geo_recent(db, client_id),
+        "site_propose": client.site_web or client.wordpress_url or "",
+    })
+
+
+@app.post("/clients/{client_id}/geo-technique/site")
+def enregistrer_site_geo(client_id: int, request: Request, site_web: str = Form(""), db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if client:
+        client.site_web = site_web.strip()
+        db.commit()
+    return RedirectResponse(f"/clients/{client_id}/geo-technique", status_code=303)
+
+
+@app.post("/clients/{client_id}/geo-technique/controler")
+def controler_site_geo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Lance le controle technique du site (une trentaine de secondes) et enregistre le resultat."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    site = client.site_web or client.wordpress_url
+    if not site:
+        infos, _ = _infos_google_client(db, client)
+        site = infos.get("websiteUri", "")
+        if site:
+            client.site_web = site
+            db.commit()
+    try:
+        resultat = geo_technique.controler_site(site)
+    except geo_technique.ErreurControle as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    db.add(models.ControleTechniqueGEO(
+        client_id=client_id, url=resultat["url"], score=resultat["score"], resultats=json.dumps(resultat["controles"], ensure_ascii=False),
+    ))
+    db.commit()
+    return JSONResponse({"score": resultat["score"]})
+
+
+@app.post("/clients/{client_id}/geo-technique/json-ld")
+def generer_json_ld_geo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    infos, categorie = _infos_google_client(db, client)
+    site = client.site_web or client.wordpress_url or infos.get("websiteUri", "")
+    return JSONResponse({"code": geo_technique.construire_json_ld(client, infos, site, categorie), "depuis_google": bool(infos)})
+
+
+@app.post("/clients/{client_id}/geo-technique/llms-txt")
+def generer_llms_txt_geo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    infos, categorie = _infos_google_client(db, client)
+    site = client.site_web or client.wordpress_url or infos.get("websiteUri", "")
+    urls = []
+    if site:
+        try:
+            urls = geo_technique.controler_site(site)["sitemap_urls"]
+        except geo_technique.ErreurControle:
+            pass
+    try:
+        texte = geo_technique.generer_llms_txt(client, infos, site, urls, categorie)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Echec de la génération : {erreur}"}, status_code=500)
+    return JSONResponse({"texte": texte})
 
 
 @app.post("/clients/{client_id}/visibilite-ia/instantane")

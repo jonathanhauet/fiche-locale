@@ -202,6 +202,7 @@ class Client(Base):
     requetes_visibilite_ia = relationship("RequeteVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
     resultats_visibilite_ia = relationship("ResultatVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
     scores_geo = relationship("ScoreGEO", back_populates="client", cascade="all, delete-orphan")
+    controles_techniques_geo = relationship("ControleTechniqueGEO", back_populates="client", cascade="all, delete-orphan")
     avis_connus = relationship("AvisConnu", back_populates="client", cascade="all, delete-orphan")
     alertes_protection = relationship("AlerteProtectionFiche", back_populates="client", cascade="all, delete-orphan")
     alertes_statut = relationship("AlerteStatutFiche", back_populates="client", cascade="all, delete-orphan")
@@ -1071,3 +1072,18 @@ class ScoreGEO(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="scores_geo")
+
+
+class ControleTechniqueGEO(Base):
+    """Resultat d'un controle technique GEO du site d'un client (voir geo_technique.py) ; le plus recent est affiche."""
+
+    __tablename__ = "controles_techniques_geo"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    url = Column(String, default="")
+    score = Column(Integer, nullable=True)       # 0 a 100
+    resultats = Column(Text, default="")         # JSON : liste des controles {code, titre, statut, detail, correctif}
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="controles_techniques_geo")

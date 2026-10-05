@@ -4,6 +4,7 @@
 {% block contenu %}
 <p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
 <h1>Visibilité IA — {{ client.nom }}</h1>
+<p><a class="bouton bouton-secondaire" href="/clients/{{ client.id }}/geo-technique">🛠 Contrôle technique du site pour les IA</a></p>
 <p class="texte-discret">
   Vérifie si {{ client.nom }} est cité par les assistants IA ({{ modeles_disponibles.values()|join(", ") }}) en réponse à des questions
   de recherche locale ("GEO" — visibilité dans les réponses IA — en complément du suivi de positions Google classique).

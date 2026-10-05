@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Contrôle technique IA — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}/visibilite-ia">&larr; Retour à la visibilité IA de {{ client.nom }}</a></p>
+<h1>Contrôle technique pour les IA — {{ client.nom }}</h1>
+<p class="texte-discret">
+  Vérifie que le site de {{ client.nom }} peut être lu par ChatGPT, Perplexity, Gemini et Claude : accès des robots, plan du site, données
+  structurées, texte lisible. Un site mal préparé peut être bien noté ailleurs et pourtant ignoré par les assistants.
+</p>
+
+<form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/geo-technique/site">
+  <input type="text" name="site_web" value="{{ site_propose }}" placeholder="https://www.exemple.be">
+  <button type="submit" class="bouton-secondaire">Enregistrer l'adresse du site</button>
+</form>
+
+<div class="actions-avis">
+  <button type="button" id="bouton-controler" class="bouton">
+    <span class="spinner" id="spinner-controler" hidden></span> 🔎 Lancer le contrôle
+  </button>
+</div>
+<p id="message-controle" class="message-erreur" hidden></p>
+
+{% set etiquettes = {"ok": ["etiquette-statut etiquette-a_publier", "OK"], "avertissement": ["etiquette-avertissement", "À améliorer"], "probleme": ["etiquette-avertissement etiquette-danger", "Problème"]} %}
+{% if controle %}
+<h2>Résultat du {{ controle.date }}</h2>
+<p class="texte-discret">{{ controle.url }}</p>
+<div class="grille-insights">
+  <div class="carte-insight {% if controle.score >= 70 %}carte-insight-positive{% else %}carte-insight-attention{% endif %}">
+    <span class="insight-icone">🛠</span>
+    <div><span class="insight-titre">Préparation technique</span><span class="insight-detail">{{ controle.score }} / 100</span></div>
+  </div>
+</div>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Contrôle</th><th>Statut</th><th>Détail</th><th>Comment corriger</th></tr></thead>
+    <tbody>
+      {% for statut in ["probleme", "avertissement", "ok"] %}
+      {% for c in controle.controles if c.statut == statut %}
+      <tr>
+        <td>{{ c.titre }}</td>
+        <td><span class="{{ etiquettes[c.statut][0] }}">{{ etiquettes[c.statut][1] }}</span></td>
+        <td>{{ c.detail }}</td>
+        <td>{{ c.correctif or "—" }}</td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2>Fichiers prêts à installer</h2>
+<div class="bloc-section">
+  <strong>Données structurées LocalBusiness</strong>
+  <p class="texte-discret">Un bloc à coller dans la page d'accueil du site. Construit uniquement à partir des informations de la fiche Google (adresse, téléphone, horaires), rien n'est inventé.</p>
+  <div class="actions-avis">
+    <button type="button" class="bouton-secondaire" id="bouton-json-ld"><span class="spinner" id="spinner-json-ld" hidden></span> Générer le bloc</button>
+    <button type="button" class="bouton-secondaire" id="copier-json-ld" hidden>Copier</button>
+  </div>
+  <p id="note-json-ld" class="texte-discret" hidden></p>
+  <textarea id="sortie-json-ld" rows="14" readonly hidden style="width:100%;font-family:monospace;font-size:0.8rem"></textarea>
+</div>
+<div class="bloc-section">
+  <strong>Fichier llms.txt</strong>
+  <p class="texte-discret">Un résumé de l'activité et des pages importantes, à déposer à la racine du site (adresse /llms.txt). À relire avant de le publier.</p>
+  <div class="actions-avis">
+    <button type="button" class="bouton-secondaire" id="bouton-llms"><span class="spinner" id="spinner-llms" hidden></span> Générer le fichier</button>
+    <button type="button" class="bouton-secondaire" id="copier-llms" hidden>Copier</button>
+  </div>
+  <p id="note-llms" class="message-erreur" hidden></p>
+  <textarea id="sortie-llms" rows="16" hidden style="width:100%;font-family:monospace;font-size:0.8rem"></textarea>
+</div>
+
+<script>
+(function () {
+  const base = "/clients/{{ client.id }}/geo-technique";
+
+  async function appeler(chemin) {
+    const reponse = await fetch(base + chemin, { method: "POST" });
+    return { ok: reponse.ok, donnees: await reponse.json() };
+  }
+  function copier(zone, bouton) {
+    zone.select();
+    navigator.clipboard.writeText(zone.value).then(() => {
+      const ancien = bouton.textContent; bouton.textContent = "Copié";
+      setTimeout(() => { bouton.textContent = ancien; }, 1500);
+    });
+  }
+
+  const boutonControler = document.getElementById("bouton-controler");
+  boutonControler.addEventListener("click", async () => {
+    const message = document.getElementById("message-controle");
+    boutonControler.disabled = true; document.getElementById("spinner-controler").hidden = false; message.hidden = true;
+    try {
+      const { ok, donnees } = await appeler("/controler");
+      if (!ok) { message.textContent = donnees.erreur || "Échec du contrôle."; message.hidden = false; return; }
+      window.location.reload();
+    } catch (e) {
+      message.textContent = "Erreur réseau pendant le contrôle."; message.hidden = false;
+    } finally {
+      boutonControler.disabled = false; document.getElementById("spinner-controler").hidden = true;
+    }
+  });
+
+  function brancher(prefixe, chemin, champ, notePourSucces) {
+    const bouton = document.getElementById("bouton-" + prefixe), spinner = document.getElementById("spinner-" + prefixe);
+    const sortie = document.getElementById("sortie-" + prefixe), copierBtn = document.getElementById("copier-" + prefixe), note = document.getElementById("note-" + prefixe);
+    bouton.addEventListener("click", async () => {
+      bouton.disabled = true; spinner.hidden = false; note.hidden = true;
+      try {
+        const { ok, donnees } = await appeler(chemin);
+        if (!ok) { note.textContent = donnees.erreur || "Échec."; note.hidden = false; return; }
+        sortie.value = donnees[champ]; sortie.hidden = false; copierBtn.hidden = false;
+        const texteNote = notePourSucces ? notePourSucces(donnees) : "";
+        if (texteNote) { note.textContent = texteNote; note.hidden = false; }
+      } catch (e) {
+        note.textContent = "Erreur réseau."; note.hidden = false;
+      } finally { bouton.disabled = false; spinner.hidden = true; }
+    });
+    copierBtn.addEventListener("click", () => copier(sortie, copierBtn));
+  }
+  brancher("json-ld", "/json-ld", "code", (d) => d.depuis_google ? "" : "La fiche Google n'a pas pu être lue : le bloc ne contient que le nom et le site. Reconnectez le compte Google pour ajouter adresse, téléphone et horaires.");
+  brancher("llms", "/llms-txt", "texte");
+})();
+</script>
+{% endblock %}
