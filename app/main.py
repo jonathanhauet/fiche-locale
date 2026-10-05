@@ -99,6 +99,7 @@ from . import (
 )
 from .database import Base, SessionLocal, engine, obtenir_session
 from .planificateur import (
+    _heure_prevue_atteinte,
     envoyer_questions_whatsapp_pour_client,
     envoyer_questions_whatsapp_si_prevu,
     envoyer_recaps_mensuels,
@@ -3198,6 +3199,7 @@ def _reponse_detail_client(
             "erreur_post_manuel": erreur_post_manuel,
             "toutes_etiquettes_json": toutes_etiquettes_json,
             "jours_occupes_json": _jours_occupes_client(db, client.id, posts_en_ligne=tous_posts_en_ligne),
+            "fiches_sources_copie": db.query(models.Client.id, models.Client.nom).filter(models.Client.id != client.id).order_by(models.Client.nom).all(),
             "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
             "annuaires_citations": citations.ANNUAIRES,
             "resultats_citations": resultats_citations,
@@ -6703,6 +6705,140 @@ def montage_video_fichier(identifiant: str, numero: int, request: Request, telec
     if not chemin:
         return JSONResponse({"erreur": "Fichier introuvable."}, status_code=404)
     return FileResponse(chemin, media_type="video/mp4", filename=f"montage-{numero + 1}.mp4" if telecharger else None)
+
+
+# --- Copie des posts d'une fiche vers une autre (fiche ajoutee en cours de mois) ---
+
+STATUTS_POSTS_COPIABLES = ("BROUILLON", "A_PUBLIER")
+
+
+def _condition_post_copiable():
+    """Brouillons, programmes et publies ; jamais un post rejete par Google ni supprime."""
+    return (models.Post.statut.in_(STATUTS_POSTS_COPIABLES)) | (
+        models.Post.statut.like("PUBLIE\\_%", escape="\\") & (models.Post.statut != "PUBLIE_REJECTED")
+    )
+
+
+def _posts_copiables_du_mois(db: Session, source_id: int, annee: int, mois: int) -> list:
+    """Posts d'une fiche rattaches a un mois (date prevue, sinon date de creation) : brouillons, programmes et publies (pas les rejetes)."""
+    debut = date(annee, mois, 1)
+    fin = date(annee + (mois == 12), mois % 12 + 1, 1)
+    posts = (
+        db.query(models.Post)
+        .filter(models.Post.client_id == source_id)
+        .filter(_condition_post_copiable())
+        .all()
+    )
+    retenus = []
+    for post in posts:
+        jour = post.date_prevue or (post.cree_le.date() if post.cree_le else None)
+        if jour and debut <= jour < fin:
+            retenus.append((jour, post))
+    retenus.sort(key=lambda element: (element[0], element[1].heure_prevue or "", element[1].id))
+    return [post for _, post in retenus]
+
+
+@app.get("/clients/{client_id}/posts-a-copier")
+def posts_a_copier(client_id: int, request: Request, source: int, mois: str = "", db: Session = Depends(obtenir_session)):
+    """Liste des posts de la fiche `source` pour un mois (AAAA-MM, mois en cours par defaut), avec le repere « date passee » et « deja present »."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    cible, origine = db.get(models.Client, client_id), db.get(models.Client, source)
+    if not cible or not origine or origine.id == cible.id:
+        return JSONResponse({"erreur": "Choisissez une autre fiche."}, status_code=400)
+    maintenant = datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None)
+    try:
+        annee, numero_mois = (int(x) for x in mois.split("-")) if mois else (maintenant.year, maintenant.month)
+        date(annee, numero_mois, 1)
+    except ValueError:
+        return JSONResponse({"erreur": "Mois invalide."}, status_code=400)
+    textes_existants = {
+        (t or "").strip()
+        for (t,) in db.query(models.Post.texte).filter(models.Post.client_id == cible.id, models.Post.statut != "SUPPRIME").all()
+    }
+    libelles = {"BROUILLON": "Brouillon", "A_PUBLIER": "Programmé"}
+    posts = []
+    for post in _posts_copiables_du_mois(db, origine.id, annee, numero_mois):
+        passe = bool(post.date_prevue) and _heure_prevue_atteinte(post.date_prevue, post.heure_prevue, maintenant)
+        posts.append({
+            "id": post.id, "titre": post.titre or "", "texte": post.texte or "", "image_url": post.image_url or "",
+            "date": post.date_prevue.isoformat() if post.date_prevue else "", "heure": post.heure_prevue or "",
+            "statut": libelles.get(post.statut, "Publié"), "passe": passe or post.statut.startswith("PUBLIE_"),
+            "deja_present": (post.texte or "").strip() in textes_existants,
+        })
+    return JSONResponse({"posts": posts, "source": origine.nom})
+
+
+def _remplacements_saisis(brut: str) -> list:
+    """Lignes « ancien => nouveau » (ou → / ->) : 10 remplacements au plus ; une ligne sans separateur est ignoree."""
+    paires = []
+    for ligne in (brut or "").splitlines()[:10]:
+        for separateur in ("=>", "\u2192", "->"):
+            if separateur in ligne:
+                ancien, nouveau = (x.strip() for x in ligne.split(separateur, 1))
+                if ancien:
+                    paires.append((ancien, nouveau))
+                break
+    return paires
+
+
+@app.post("/clients/{client_id}/posts/copier")
+async def copier_posts_depuis_une_fiche(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Copie des posts d'une autre fiche vers celle-ci, sans rien reecrire : memes textes, images, boutons et dates (une date
+    deja passee est retiree : le post arrive en brouillon a reprogrammer). Brouillons a valider par defaut ; avec
+    programmer_direct, les posts qui etaient programmes (date a venir) le sont aussi ici. remplacements : « ancien => nouveau »
+    applique aux titres et textes (nom de ville, d'agence...).
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    cible = db.get(models.Client, client_id)
+    donnees = await request.json()
+    try:
+        origine = db.get(models.Client, int(donnees.get("source_id") or 0))
+        identifiants = [int(i) for i in (donnees.get("post_ids") or [])][:60]
+    except (TypeError, ValueError):
+        origine, identifiants = None, []
+    if not cible or not origine or origine.id == cible.id:
+        return JSONResponse({"erreur": "Choisissez une autre fiche."}, status_code=400)
+    if not identifiants:
+        return JSONResponse({"erreur": "Cochez au moins un post."}, status_code=400)
+    remplacements = _remplacements_saisis(donnees.get("remplacements"))
+    programmer_direct = bool(donnees.get("programmer_direct"))
+    maintenant = datetime.now(ZoneInfo("Europe/Brussels")).replace(tzinfo=None)
+
+    def adapter(texte):
+        for ancien, nouveau in remplacements:
+            texte = (texte or "").replace(ancien, nouveau)
+        return texte
+
+    sources = {
+        p.id: p for p in db.query(models.Post)
+        .filter(models.Post.id.in_(identifiants), models.Post.client_id == origine.id, _condition_post_copiable()).all()
+    }
+    copies = programmes = sans_date = 0
+    for identifiant in identifiants:
+        post = sources.get(identifiant)
+        if not post:
+            continue
+        passee = bool(post.date_prevue) and _heure_prevue_atteinte(post.date_prevue, post.heure_prevue, maintenant)
+        garder_date = bool(post.date_prevue) and not passee
+        direct = programmer_direct and garder_date
+        db.add(models.Post(
+            client_id=cible.id, titre=adapter(post.titre), texte=adapter(post.texte), image_url=post.image_url,
+            prompt_image=post.prompt_image, type_appel_action=post.type_appel_action, url_appel_action=post.url_appel_action,
+            type_post=post.type_post, evenement_titre=adapter(post.evenement_titre),
+            evenement_date_debut=post.evenement_date_debut, evenement_heure_debut=post.evenement_heure_debut,
+            evenement_date_fin=post.evenement_date_fin, evenement_heure_fin=post.evenement_heure_fin,
+            offre_code=post.offre_code, offre_url=post.offre_url, offre_conditions=adapter(post.offre_conditions),
+            statut="A_PUBLIER" if direct else "BROUILLON",
+            date_prevue=post.date_prevue if garder_date else None, heure_prevue=post.heure_prevue if garder_date else None,
+        ))
+        copies += 1
+        programmes += direct
+        sans_date += not garder_date
+    db.commit()
+    return JSONResponse({"copies": copies, "programmes": programmes, "sans_date": sans_date})
 
 
 # --- Publication multi-reseaux (Google + Facebook + Instagram) ---

@@ -915,6 +915,106 @@
   </div>
 </details>
 
+<div class="carte-ia" id="carte-copie-posts">
+  <div class="carte-ia-entete">
+    <span class="carte-ia-icone">📋</span>
+    <span class="carte-ia-libelles">
+      <span class="carte-ia-titre">Copier les posts d'une autre fiche</span>
+      <span class="carte-ia-sous-titre">Pour une fiche ajoutée en cours de mois : reprenez les posts d'une autre fiche, sans rien réécrire</span>
+    </span>
+  </div>
+  <div class="carte-ia-corps">
+    <div class="formulaire-ligne">
+      <label>
+        Copier depuis
+        <select id="copie-source">
+          <option value="">Choisir une fiche…</option>
+          {% for fiche_id, fiche_nom in fiches_sources_copie %}<option value="{{ fiche_id }}">{{ fiche_nom }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>
+        Mois
+        <input type="month" id="copie-mois">
+      </label>
+      <button type="button" class="bouton-secondaire" id="copie-voir">Voir les posts</button>
+    </div>
+    <p id="copie-statut" class="texte-discret" hidden></p>
+    <div id="copie-liste" hidden>
+      <div class="ligne-champs">
+        <label class="filtre-case"><input type="checkbox" id="copie-tout" checked> Tout cocher</label>
+      </div>
+      <ul class="liste-copie-posts" id="copie-posts"></ul>
+      <label>
+        Remplacer dans les textes (facultatif, un par ligne : ancien =&gt; nouveau)
+        <textarea id="copie-remplacements" rows="2" placeholder="Bordeaux =&gt; Mérignac"></textarea>
+      </label>
+      <label class="filtre-case"><input type="checkbox" id="copie-direct"> Programmer directement ceux qui avaient une date à venir (sinon : brouillons à valider)</label>
+      <p class="texte-discret">Les posts dont la date est déjà passée arrivent en brouillons sans date, à reprogrammer. Les posts déjà présents sur cette fiche sont décochés.</p>
+      <button type="button" class="bouton" id="copie-lancer">📋 Copier les posts cochés</button>
+    </div>
+  </div>
+</div>
+<style>
+  .liste-copie-posts { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .liste-copie-posts li { display: flex; gap: .7rem; align-items: flex-start; padding: .6rem .8rem; border: 1px solid rgba(128,128,140,.35); border-radius: 10px; }
+  .liste-copie-posts li.deja { opacity: .55; }
+  .liste-copie-posts img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; flex: none; }
+  .liste-copie-posts .copie-meta { font-size: .8rem; opacity: .75; }
+  .liste-copie-posts .copie-texte { font-size: .9rem; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const statut = $("copie-statut");
+  const maintenant = new Date();
+  $("copie-mois").value = maintenant.getFullYear() + "-" + String(maintenant.getMonth() + 1).padStart(2, "0");
+  function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
+  function echapper(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  function jolieDate(iso, heure) { if (!iso) return "sans date"; const [a, m, j] = iso.split("-"); return j + "/" + m + "/" + a + (heure ? " à " + heure : ""); }
+
+  $("copie-voir").addEventListener("click", async () => {
+    if (!$("copie-source").value) { message("Choisissez d'abord la fiche à copier."); return; }
+    message("Chargement des posts…"); $("copie-liste").hidden = true;
+    try {
+      const reponse = await fetch("/clients/{{ client.id }}/posts-a-copier?source=" + $("copie-source").value + "&mois=" + $("copie-mois").value);
+      const donnees = await reponse.json();
+      if (!reponse.ok) { message(donnees.erreur || "Échec du chargement."); return; }
+      const liste = $("copie-posts"); liste.innerHTML = "";
+      donnees.posts.forEach((p) => {
+        const li = document.createElement("li");
+        if (p.deja_present) li.className = "deja";
+        li.innerHTML = '<input type="checkbox" class="copie-case" value="' + p.id + '"' + (p.deja_present ? "" : " checked") + '>'
+          + (p.image_url ? '<img src="' + echapper(p.image_url) + '" alt="">' : "")
+          + '<div><div class="copie-meta">' + echapper(p.statut) + " · " + jolieDate(p.date, p.heure) + (p.passe ? " (date passée : arrivera sans date)" : "") + (p.deja_present ? " · déjà présent sur cette fiche" : "") + "</div>"
+          + "<strong>" + echapper(p.titre) + '</strong><div class="copie-texte">' + echapper(p.texte) + "</div></div>";
+        liste.appendChild(li);
+      });
+      if (!donnees.posts.length) { message("Aucun post pour ce mois sur « " + donnees.source + " »."); return; }
+      message(donnees.posts.length + " post(s) sur « " + donnees.source + " » pour ce mois.");
+      $("copie-liste").hidden = false;
+    } catch (e) { message("Erreur réseau."); }
+  });
+  $("copie-tout").addEventListener("change", (e) => document.querySelectorAll(".copie-case").forEach((c) => { c.checked = e.target.checked; }));
+
+  $("copie-lancer").addEventListener("click", async () => {
+    const ids = Array.from(document.querySelectorAll(".copie-case:checked")).map((c) => parseInt(c.value, 10));
+    if (!ids.length) { message("Cochez au moins un post."); return; }
+    $("copie-lancer").disabled = true; message("Copie en cours…");
+    try {
+      const reponse = await fetch("/clients/{{ client.id }}/posts/copier", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: parseInt($("copie-source").value, 10), post_ids: ids, programmer_direct: $("copie-direct").checked, remplacements: $("copie-remplacements").value }),
+      });
+      const donnees = await reponse.json();
+      if (!reponse.ok) { message(donnees.erreur || "Échec de la copie."); $("copie-lancer").disabled = false; return; }
+      message(donnees.copies + " post(s) copié(s) : " + donnees.programmes + " programmé(s), " + (donnees.copies - donnees.programmes) + " en brouillon"
+        + (donnees.sans_date ? " (dont " + donnees.sans_date + " sans date à reprogrammer)" : "") + ". Rechargement…");
+      setTimeout(() => { location.href = "/clients/{{ client.id }}#post-brouillons"; location.reload(); }, 1200);
+    } catch (e) { message("Erreur réseau."); $("copie-lancer").disabled = false; }
+  });
+})();
+</script>
+
 <div class="barre-titre">
   <h2>Résumé multi-réseaux</h2>
   <a class="bouton-secondaire" href="/clients/{{ client.id }}/historique">Voir tout l'historique</a>
