@@ -499,6 +499,8 @@ class ResultatVisibiliteIA(Base):
     concurrents_cites = Column(Text, default="")  # JSON: liste de noms
     suggestion = Column(Text, default="")
     reponse_brute = Column(Text, default="")
+    # JSON : sites consultes par l'assistant pour repondre ([{"domaine", "url", "titre"}]) - voir ia_visibilite.py.
+    sources = Column(Text, default="")
     erreur = Column(Text, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
 

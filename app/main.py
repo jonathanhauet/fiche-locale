@@ -253,6 +253,10 @@ def _migrer_vers_multi_comptes():
             colonnes_posts_wordpress = {c["name"] for c in inspecteur.get_columns("posts_wordpress")}
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
+        if inspecteur.has_table("resultats_visibilite_ia"):
+            colonnes_resultats_ia = {c["name"] for c in inspecteur.get_columns("resultats_visibilite_ia")}
+            if "sources" not in colonnes_resultats_ia:
+                connexion.execute(text("ALTER TABLE resultats_visibilite_ia ADD COLUMN sources TEXT DEFAULT ''"))
         colonnes_posts_meta = {c["name"] for c in inspecteur.get_columns("posts_meta_programmes")}
         if "video_url" not in colonnes_posts_meta:
             connexion.execute(text("ALTER TABLE posts_meta_programmes ADD COLUMN video_url TEXT"))
@@ -4567,6 +4571,13 @@ def _derniers_resultats_visibilite_ia(db: Session, client_id: int) -> list:
     return list(derniers_par_cle.values())
 
 
+def _sources_resultat(resultat) -> list:
+    try:
+        return json.loads(resultat.sources or "[]")
+    except ValueError:
+        return []
+
+
 @app.get("/clients/{client_id}/visibilite-ia", response_class=HTMLResponse)
 def visibilite_ia_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -4585,6 +4596,7 @@ def visibilite_ia_client(client_id: int, request: Request, db: Session = Depends
             "client_cite": resultat.client_cite,
             "position": resultat.position,
             "concurrents_cites": json.loads(resultat.concurrents_cites or "[]"),
+            "sources": _sources_resultat(resultat),
             "suggestion": resultat.suggestion,
             "erreur": resultat.erreur,
             "cree_le": resultat.cree_le.strftime("%d/%m/%Y %H:%M"),
@@ -4714,6 +4726,7 @@ def verifier_une_visibilite_ia(
         concurrents_cites=json.dumps(resultat["concurrents_cites"]),
         suggestion=resultat["suggestion"],
         reponse_brute=resultat["reponse_brute"],
+        sources=json.dumps(resultat.get("sources", []), ensure_ascii=False),
         erreur=resultat["erreur"],
     )
     db.add(ligne)
@@ -4725,6 +4738,7 @@ def verifier_une_visibilite_ia(
             "modele": ligne.modele,
             "client_cite": ligne.client_cite,
             "position": ligne.position,
+            "sources": resultat.get("sources", []),
             "concurrents_cites": resultat["concurrents_cites"],
             "suggestion": ligne.suggestion,
             "erreur": ligne.erreur,

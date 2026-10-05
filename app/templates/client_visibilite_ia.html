@@ -5,9 +5,10 @@
 <p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
 <h1>Visibilité IA — {{ client.nom }}</h1>
 <p class="texte-discret">
-  Vérifie si {{ client.nom }} est cité par ChatGPT et Gemini en réponse à des questions de recherche locale
-  ("GEO" — visibilité dans les réponses IA — en complément du suivi de positions Google classique).
-  Les suggestions d'amélioration sont une estimation plausible de l'IA, pas une certitude sur son fonctionnement interne.
+  Vérifie si {{ client.nom }} est cité par les assistants IA ({{ modeles_disponibles.values()|join(", ") }}) en réponse à des questions
+  de recherche locale ("GEO" — visibilité dans les réponses IA — en complément du suivi de positions Google classique).
+  Les assistants sont interrogés avec leur recherche web, comme pour un acheteur. Les sources indiquées sont les sites qu'ils ont
+  consultés pour répondre. Les suggestions d'amélioration sont une estimation plausible de l'IA, pas une certitude sur son fonctionnement interne.
 </p>
 
 {% if not openai_configure or not gemini_configure %}
@@ -74,6 +75,7 @@
           <th>Modèle</th>
           <th>Cité ?</th>
           <th>Concurrents cités</th>
+          <th>Sources consultées</th>
           <th>Suggestion</th>
           <th>Vérifié le</th>
         </tr>
@@ -121,6 +123,7 @@
         <td>${modeles[r.modele] || echapper(r.modele)}</td>
         <td>${cite}</td>
         <td>${(r.concurrents_cites || []).map(echapper).join(", ") || "—"}</td>
+        <td>${(r.sources || []).slice(0, 5).map((x) => x.url ? `<a href="${echapper(x.url)}" target="_blank" rel="noopener">${echapper(x.domaine)}</a>` : echapper(x.domaine)).join(", ") || "—"}</td>
         <td>${echapper(r.suggestion) || "—"}</td>
         <td>${echapper(r.cree_le)}</td>
       </tr>`;
