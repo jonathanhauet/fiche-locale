@@ -5304,6 +5304,10 @@ def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_sessio
             # Fiche en erreur (token expire, etc.) : on l'ignore plutot que
             # de faire echouer tout le bilan pour les autres fiches valides.
             continue
+        try:
+            donnees["geo"] = geo_score.donnees_recap_periode(db, client.id, debut, fin)
+        except Exception:
+            donnees["geo"] = None
 
         avis_positifs = google_reviews.avis_positifs_periode(
             identifiants, client.account_id, client.location_id, debut, fin

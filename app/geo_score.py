@@ -166,6 +166,7 @@ def enregistrer_instantane(db, client, auto: bool = False):
     ligne.part_de_voix = donnees["part_de_voix"]
     ligne.details = json.dumps({
         "concurrents_top": donnees["concurrents_top"], "sources_top": donnees["sources_top"], "par_modele": donnees["par_modele"],
+        "questions_gagnees": donnees["questions_gagnees"][:5],
     }, ensure_ascii=False)
     ligne.auto = auto or ligne.auto
     ligne.cree_le = datetime.utcnow()
@@ -218,3 +219,41 @@ def relancer_suivi(db, client, auto: bool = True):
         for modele in modeles_actifs():
             verifier_et_enregistrer(db, client, requete.texte, modele)
     return enregistrer_instantane(db, client, auto=auto)
+
+
+SEUIL_TAUX_RECAP = 0.2
+
+
+def donnees_recap(db, client_id: int, mois: int, annee: int):
+    """
+    Bloc GEO du recap mensuel envoye au client : uniquement de bonnes nouvelles. None (bloc absent) si le client n'a pas de
+    releve ce mois-la, s'il n'a jamais ete cite, ou si sa presence est faible ET ne progresse pas.
+    """
+    ligne = db.query(models.ScoreGEO).filter_by(client_id=client_id, mois=f"{annee}-{mois:02d}").first()
+    if not ligne or not ligne.nb_cites or not ligne.nb_reponses:
+        return None
+    mois_prec, annee_prec = (mois - 1, annee) if mois > 1 else (12, annee - 1)
+    precedent = db.query(models.ScoreGEO).filter_by(client_id=client_id, mois=f"{annee_prec}-{mois_prec:02d}").first()
+    evolution = None
+    if precedent and precedent.score is not None and ligne.score is not None and ligne.score > precedent.score:
+        evolution = ligne.score - precedent.score
+    if ligne.nb_cites / ligne.nb_reponses < SEUIL_TAUX_RECAP and evolution is None:
+        return None
+    try:
+        questions = json.loads(ligne.details or "{}").get("questions_gagnees", [])
+    except ValueError:
+        questions = []
+    return {"nb_cites": ligne.nb_cites, "nb_reponses": ligne.nb_reponses, "score": ligne.score, "evolution": evolution, "questions": questions[:3]}
+
+
+def donnees_recap_periode(db, client_id: int, debut, fin):
+    """Comme donnees_recap, pour une periode libre (bilan PDF) : on prend le releve le plus recent des mois couverts."""
+    ligne = (
+        db.query(models.ScoreGEO)
+        .filter(models.ScoreGEO.client_id == client_id, models.ScoreGEO.mois >= debut.strftime("%Y-%m"), models.ScoreGEO.mois <= fin.strftime("%Y-%m"))
+        .order_by(models.ScoreGEO.mois.desc()).first()
+    )
+    if not ligne:
+        return None
+    annee, mois = (int(x) for x in ligne.mois.split("-"))
+    return donnees_recap(db, client_id, mois, annee)

@@ -203,6 +203,33 @@ def construire_email(
         <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">🌐 Ton site sur Google</h2>
         <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_sc)}</table>{bloc_requetes}""")
 
+    # --- Visibilite dans les reponses des assistants IA (ChatGPT, Gemini) : uniquement si elle est reelle (voir
+    # geo_score.donnees_recap) ; l'evolution n'apparait que si elle est positive. ---
+    geo = donnees.get("geo")
+    if geo:
+        lignes_geo = [_ligne_stat(
+            "Réponses d'IA qui te citent", f"{geo['nb_cites']} sur {geo['nb_reponses']}", None,
+        )]
+        if geo.get("evolution"):
+            lignes_geo.append(f"""
+    <tr>
+      <td style="padding:8px 0;color:{COULEUR_TEXTE};font-size:15px;">Ton score de visibilité IA</td>
+      <td style="padding:8px 0;text-align:right;white-space:nowrap;">
+        <strong style="font-size:16px;color:{COULEUR_TEXTE};">{geo['score']}/100</strong>
+        <span style="color:#16a34a;font-weight:600;font-size:13px;margin-left:8px;">▲ +{geo['evolution']} points vs le mois dernier</span>
+      </td>
+    </tr>""")
+        questions_geo = "".join(
+            f'<li style="margin-bottom:4px;color:{COULEUR_TEXTE};font-size:14px;">« {html.escape(q)} »</li>' for q in geo.get("questions", [])
+        )
+        bloc_questions_geo = (
+            f'<p style="margin:10px 0 2px;color:{COULEUR_DISCRET};font-size:13px;">Par exemple pour des questions comme :</p>'
+            f'<ul style="margin:4px 0;padding-left:20px;">{questions_geo}</ul>' if questions_geo else ""
+        )
+        sections.append(f"""
+        <h2 style="font-size:17px;color:{COULEUR_TEXTE};margin:28px 0 4px;">🤖 Ta présence dans les réponses de ChatGPT et Gemini</h2>
+        <table role="presentation" width="100%" style="border-collapse:collapse;">{"".join(lignes_geo)}</table>{bloc_questions_geo}""")
+
     # --- Posts publies : avec leur date, pour montrer tout le travail fait
     # dans le mois (pas de plafond - un mois normal en compte peu). ---
     if posts_publies:

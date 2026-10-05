@@ -105,6 +105,22 @@ def _section_fiche(pdf: RapportPDF, section: dict) -> None:
             if evolution is not None and evolution > 0:
                 _ligne_evolution_positive(pdf, evolution)
 
+    # --- Presence dans les reponses des assistants IA (uniquement si elle est reelle : voir geo_score.donnees_recap) ---
+    geo = donnees.get("geo")
+    if geo:
+        _titre_section(pdf, "Présence dans les réponses de ChatGPT et Gemini")
+        _ligne_valeur(pdf, "Réponses d'IA qui citent l'entreprise", f"{geo['nb_cites']} sur {geo['nb_reponses']}")
+        if geo.get("evolution"):
+            _ligne_valeur(pdf, "Score de visibilité IA", f"{geo['score']}/100")
+            pdf.set_font("Helvetica", "I", 9)
+            pdf.set_text_color(0, 140, 60)
+            pdf.cell(0, 6, f"   +{geo['evolution']} points vs le mois précédent", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(*COULEUR_TEXTE)
+        for question in geo.get("questions", []):
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_x(pdf.l_margin)
+            pdf.multi_cell(0, 6, _nettoyer(f"- {question}"))
+
     # --- Mots-cles de recherche ---
     if mots_cles:
         _titre_section(pdf, "Mots-clés de recherche")

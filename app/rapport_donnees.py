@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from . import (
     brevo_email,
     claude_generation,
+    geo_score,
     google_business,
     google_location,
     google_oauth,
@@ -342,6 +343,12 @@ def construire_contenu_recap(
             qr_code_avis = None
 
     groupes_etiquette = resume_groupes_etiquette(db, client, debut, fin, cache_groupes)
+
+    # Visibilite dans les reponses des assistants IA (voir geo_score.donnees_recap) : facultatif, jamais bloquant.
+    try:
+        donnees["geo"] = geo_score.donnees_recap(db, client.id, mois, annee)
+    except Exception:
+        donnees["geo"] = None
 
     sujet = recap_mensuel.construire_sujet(client, mois, annee)
     html = recap_mensuel.construire_email(
