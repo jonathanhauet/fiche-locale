@@ -92,6 +92,16 @@ def _inline(texte: str) -> str:
     return texte
 
 
+TITRE_MAX = 58  # au-dela, l'extension SEO du site le signale « trop long » une fois le nom du site ajoute dans l'onglet
+
+
+def _couper_titre(titre: str) -> str:
+    """Titre ramene a TITRE_MAX caracteres au plus, coupe entre deux mots (jamais en plein mot)."""
+    if len(titre) <= TITRE_MAX:
+        return titre
+    return titre[:TITRE_MAX].rsplit(" ", 1)[0].rstrip(" ,;:-")
+
+
 def decouper_titre(texte: str) -> tuple[str, str]:
     """
     Separe le titre du corps : la premiere ligne "# Titre" (markdown) devient le
@@ -104,7 +114,7 @@ def decouper_titre(texte: str) -> tuple[str, str]:
             continue
         if re.match(r"^#\s+\S", ligne):
             return re.sub(r"^#\s+", "", ligne).strip(), "\n".join(lignes[indice + 1:]).strip()
-        return ligne.strip()[:80], "\n".join(lignes).strip()
+        return _couper_titre(ligne.strip()), "\n".join(lignes).strip()
     return "", ""
 
 
@@ -270,21 +280,33 @@ def assurer_bouton(article: str, lien: str, texte_impose: str = "") -> str:
     return "\n".join(lignes).rstrip() + f"\n\n[[{texte}|{lien}]]"
 
 
-def extrait_depuis_corps(texte: str, longueur: int = 155) -> str:
-    """Resume automatique (champ "extrait" de WordPress) : debut du premier vrai paragraphe, coupe proprement."""
+def extrait_depuis_corps(texte: str, longueur: int = 158, minimum: int = 120) -> str:
+    """
+    Resume automatique (champ « extrait » de WordPress, repris comme description par les extensions SEO) : phrases
+    completes prises dans les premiers paragraphes, entre `minimum` et `longueur` caracteres - une description trop courte
+    est signalee par ces extensions, trop longue elle est tronquee par Google.
+    """
+    paragraphes = []
     for bloc in re.split(r"\n\s*\n", (texte or "").strip()):
         bloc = bloc.strip()
         if not bloc or re.match(r"^(#{1,4}\s|[-*>]\s?|\d+[.)]\s|\[\[)", bloc):
             continue
-        clair = re.sub(r"\*\*?|\[([^\]]+)\]\([^)]*\)", r"\1", " ".join(bloc.split()))
-        if len(clair) <= longueur:
-            return clair
-        coupe = clair[:longueur]
-        fin_phrase = max(coupe.rfind(". "), coupe.rfind("? "), coupe.rfind("! "))
-        if fin_phrase >= longueur // 2:
-            return coupe[:fin_phrase + 1]
-        return coupe.rsplit(" ", 1)[0].rstrip(",;:") + "…"
-    return ""
+        paragraphes.append(re.sub(r"\*\*?|\[([^\]]+)\]\([^)]*\)", r"\1", " ".join(bloc.split())))
+        if len(paragraphes) == 3:
+            break
+    clair = " ".join(paragraphes)
+    if len(clair) <= longueur:
+        return clair
+    retenu = ""
+    for phrase in re.split(r"(?<=[.!?])\s+", clair):
+        candidat = f"{retenu} {phrase}".strip()
+        if len(candidat) > longueur:
+            break
+        retenu = candidat
+        if len(retenu) >= minimum:
+            return retenu
+    coupe = clair[:longueur]
+    return coupe.rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
 def envoyer_image(url_site: str, utilisateur: str, mot_de_passe: str, octets: bytes, nom_fichier: str = "article.jpg") -> int:

@@ -1787,9 +1787,11 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
         f"\"{sujet.strip()}\"\n"
         f"{bloc_contexte}\n"
         "Consignes :\n"
-        "- Format markdown : la toute premiere ligne est le titre, sous la forme « # Titre » (accrocheur, "
-        "60 caracteres environ, avec le sujet principal et si pertinent la zone d'intervention). Ensuite une "
-        "introduction (sans titre), puis 3 a 5 sections avec des sous-titres « ## ». Termine par une courte "
+        "- Format markdown : la toute premiere ligne est le titre, sous la forme « # Titre » : accrocheur, "
+        "50 caracteres MAXIMUM (espaces compris, jamais plus de 55 : il s'affiche dans Google avec le nom du site), avec le "
+        "mot-cle principal en premier. Ensuite une introduction (sans titre) dont les deux premieres phrases forment a "
+        "elles seules un resume de 130 a 155 caracteres, car elles servent de description dans les resultats Google, puis "
+        "3 a 5 sections avec des sous-titres « ## ». Termine par une courte "
         "conclusion avec un appel a l'action (contacter l'entreprise), sans numero de telephone invente.\n"
         "- Longueur : 800 a 1200 mots. Paragraphes courts (2 a 4 phrases), listes a puces quand elles aident. "
         "Gras (**mot**) avec moderation.\n"
@@ -1828,7 +1830,40 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
     bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
-    return _nettoyer_texte_genere(bloc_texte)
+    return _titre_court_si_besoin(_nettoyer_texte_genere(bloc_texte))
+
+
+TITRE_ARTICLE_MAX = 58
+
+
+def _titre_court_si_besoin(article: str) -> str:
+    """Si le titre « # ... » depasse TITRE_ARTICLE_MAX caracteres, il est raccourci par l'IA ; en cas d'echec, l'article reste tel quel."""
+    lignes = article.split("\n")
+    for indice, ligne in enumerate(lignes):
+        if not ligne.strip():
+            continue
+        correspondance = re.match(r"^#\s+(\S.*)$", ligne)
+        if not correspondance or len(correspondance.group(1)) <= TITRE_ARTICLE_MAX:
+            return article
+        try:
+            client = Anthropic(api_key=CLE_API)
+            reponse = client.messages.create(
+                model=MODELE_CLAUDE, max_tokens=120, thinking={"type": "disabled"},
+                messages=[{"role": "user", "content": (
+                    f"Raccourcis ce titre d'article à 50 caractères maximum (espaces compris), en gardant le mot-clé principal "
+                    f"en premier et le même sens, sans tiret cadratin ni emoji. Réponds uniquement par le nouveau titre.\n\n"
+                    f"{correspondance.group(1)}"
+                )}],
+            )
+            nouveau = next((b.text for b in reponse.content if b.type == "text"), "").strip().strip("«»\"#").strip()
+            nouveau = _nettoyer_texte_genere(nouveau).replace("\n", " ")
+            if nouveau and len(nouveau) <= TITRE_ARTICLE_MAX:
+                lignes[indice] = f"# {nouveau}"
+                return "\n".join(lignes)
+        except Exception:
+            pass
+        return article
+    return article
 
 
 # ---------------------------------------------------------------------------
