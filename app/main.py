@@ -1264,6 +1264,9 @@ def explication_echec_publication(erreur: str) -> str:
     if not brut:
         return ""
     minuscule = brut.lower()
+    if "2207027" in minuscule or "not ready for publishing" in minuscule:
+        return "Instagram n'avait pas fini de préparer les images au moment de publier. Réessayez : la plateforme patiente désormais plus longtemps."
+    est_meta_ou_linkedin = any(m in minuscule for m in ("instagram", "oauthexception", "facebook", "graph.", "linkedin"))
     if "code 429" in minuscule or "resource_exhausted" in minuscule or "quota" in minuscule:
         return "Google a limité le nombre de publications envoyées d'un coup : réessayez dans quelques minutes."
     if "code 401" in minuscule or "unauthenticated" in minuscule or "invalid_grant" in minuscule or "expir" in minuscule:
@@ -1274,7 +1277,7 @@ def explication_echec_publication(erreur: str) -> str:
         return "Fiche introuvable côté Google : vérifiez l'identifiant de la fiche du client."
     if "pas connecte" in minuscule or "n'est pas connecte" in minuscule:
         return "Le compte n'est pas connecté pour ce client."
-    if "code 400" in minuscule or "invalid_argument" in minuscule:
+    if ("code 400" in minuscule or "invalid_argument" in minuscule) and not est_meta_ou_linkedin:
         return ("Google a refusé le contenu du post : texte trop long (1 500 caractères maximum), numéro de téléphone ou lien "
                 "dans le texte, ou image non conforme. Modifiez le post puis réessayez.")
     return "Échec de la publication : " + _extrait_court(brut)

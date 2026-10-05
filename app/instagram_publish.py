@@ -17,6 +17,10 @@ TENTATIVES_MAX_CONTENEUR = 15
 # (encodage) : jusqu'a plusieurs minutes contre 2-4 secondes pour une image.
 ATTENTE_CONTENEUR_VIDEO_SECONDES = 5
 TENTATIVES_MAX_CONTENEUR_VIDEO = 72  # jusqu'a 6 minutes
+# Meme quand le conteneur annonce FINISHED, media_publish peut repondre « media pas pret » (code 9007, sous-code 2207027),
+# surtout pour un carrousel : on reessaie quelques secondes plus tard plutot que d'echouer.
+TENTATIVES_PUBLICATION = 8
+ATTENTE_PUBLICATION_SECONDES = 5
 
 
 def _attendre_conteneur_pret(
@@ -40,20 +44,37 @@ def _attendre_conteneur_pret(
                 return
             if statut == "ERROR":
                 raise RuntimeError("Echec du traitement du conteneur media Instagram (statut ERROR).")
+            if statut == "EXPIRED":
+                raise RuntimeError("Le conteneur media Instagram a expire avant d'etre publie.")
         time.sleep(attente_secondes)
     raise RuntimeError("Le conteneur media Instagram n'est pas devenu pret a temps.")
 
 
+def _media_pas_pret(reponse) -> bool:
+    texte = reponse.text.replace(" ", "").lower()
+    return reponse.status_code == 400 and ("2207027" in texte or '"code":9007' in texte or "notreadyforpublishing" in texte)
+
+
+def _media_publish(token_instagram: str, instagram_id: str, conteneur_id: str, libelle: str) -> dict:
+    """Publie un conteneur deja traite, en reessayant si Instagram repond que le media n'est pas encore pret."""
+    for tentative in range(1, TENTATIVES_PUBLICATION + 1):
+        reponse = requests.post(
+            f"{URL_GRAPH}/{instagram_id}/media_publish",
+            data={"creation_id": conteneur_id, "access_token": token_instagram},
+            timeout=30,
+        )
+        if reponse.status_code == 200:
+            return reponse.json()
+        if tentative < TENTATIVES_PUBLICATION and _media_pas_pret(reponse):
+            time.sleep(ATTENTE_PUBLICATION_SECONDES)
+            continue
+        raise RuntimeError(f"Echec de la publication {libelle} (code {reponse.status_code}) : {reponse.text}")
+    raise RuntimeError(f"Echec de la publication {libelle} : media jamais pret.")
+
+
 def _publier_conteneur(token_instagram: str, instagram_id: str, conteneur_id: str) -> dict:
     _attendre_conteneur_pret(instagram_id, conteneur_id, token_instagram)
-    reponse = requests.post(
-        f"{URL_GRAPH}/{instagram_id}/media_publish",
-        data={"creation_id": conteneur_id, "access_token": token_instagram},
-        timeout=30,
-    )
-    if reponse.status_code != 200:
-        raise RuntimeError(f"Echec de la publication du conteneur Instagram (code {reponse.status_code}) : {reponse.text}")
-    return reponse.json()
+    return _media_publish(token_instagram, instagram_id, conteneur_id, "du conteneur Instagram")
 
 
 def publier_carrousel(token_instagram: str, instagram_id: str, image_urls: list[str], caption: str = "") -> dict:
@@ -123,14 +144,7 @@ def publier_reel(token_instagram: str, instagram_id: str, video_url: str, captio
     # Deja attendu ci-dessus (avec le delai video) : publie directement plutot
     # que de passer par _publier_conteneur, qui rattendrait inutilement avec
     # le delai court prevu pour une image.
-    reponse = requests.post(
-        f"{URL_GRAPH}/{instagram_id}/media_publish",
-        data={"creation_id": conteneur_id, "access_token": token_instagram},
-        timeout=30,
-    )
-    if reponse.status_code != 200:
-        raise RuntimeError(f"Echec de la publication du Reel Instagram (code {reponse.status_code}) : {reponse.text}")
-    return reponse.json()
+    return _media_publish(token_instagram, instagram_id, conteneur_id, "du Reel Instagram")
 
 
 def publier_photo(token_instagram: str, instagram_id: str, image_url: str, caption: str = "") -> dict:
@@ -153,13 +167,4 @@ def publier_photo(token_instagram: str, instagram_id: str, image_url: str, capti
 
     _attendre_conteneur_pret(instagram_id, conteneur_id, token_instagram)
 
-    reponse_publication = requests.post(
-        f"{URL_GRAPH}/{instagram_id}/media_publish",
-        data={"creation_id": conteneur_id, "access_token": token_instagram},
-        timeout=30,
-    )
-    if reponse_publication.status_code != 200:
-        raise RuntimeError(
-            f"Echec de la publication du conteneur Instagram (code {reponse_publication.status_code}) : {reponse_publication.text}"
-        )
-    return reponse_publication.json()
+    return _media_publish(token_instagram, instagram_id, conteneur_id, "du conteneur Instagram")
