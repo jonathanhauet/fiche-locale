@@ -18,6 +18,76 @@
 </div>
 {% endif %}
 
+{% set etiquettes_categorie = {"votre_site": "Votre site", "reseau_social": "Réseau social", "avis": "Avis", "annuaire": "Annuaire", "autre": "Autre site"} %}
+{% if synthese.nb_reponses %}
+<h2>Synthèse</h2>
+<div class="grille-insights">
+  <div class="carte-insight {% if synthese.score >= 50 %}carte-insight-positive{% else %}carte-insight-attention{% endif %}">
+    <span class="insight-icone">🎯</span>
+    <div><span class="insight-titre">Score GEO</span><span class="insight-detail">{{ synthese.score }} / 100</span></div>
+  </div>
+  <div class="carte-insight">
+    <span class="insight-icone">💬</span>
+    <div><span class="insight-titre">Cité dans</span><span class="insight-detail">{{ synthese.nb_cites }} réponse{{ "s" if synthese.nb_cites > 1 }} sur {{ synthese.nb_reponses }} ({{ synthese.taux_citation }} %)</span></div>
+  </div>
+  <div class="carte-insight">
+    <span class="insight-icone">🥇</span>
+    <div><span class="insight-titre">Position moyenne</span><span class="insight-detail">{% if synthese.position_moyenne %}{{ synthese.position_moyenne|string|replace(".", ",") }}{% else %}—{% endif %}</span></div>
+  </div>
+  <div class="carte-insight">
+    <span class="insight-icone">📣</span>
+    <div><span class="insight-titre">Part de voix</span><span class="insight-detail">{% if synthese.part_de_voix is not none %}{{ synthese.part_de_voix }} %{% else %}—{% endif %}</span></div>
+  </div>
+</div>
+<p class="texte-discret">
+  Le score GEO va de 0 à 100 : 100 si l'entreprise est citée en premier à chaque question, 0 si elle n'est jamais citée. La part de voix est la proportion
+  des mentions qui concernent {{ client.nom }} par rapport aux concurrents cités.
+  {% if synthese.nb_erreurs %}({{ synthese.nb_erreurs }} réponse{{ "s" if synthese.nb_erreurs > 1 }} en erreur ignorée{{ "s" if synthese.nb_erreurs > 1 }}.){% endif %}
+</p>
+
+<div class="bloc-section">
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead><tr><th>Concurrents les plus cités</th><th>Sites consultés par les IA</th></tr></thead>
+      <tbody><tr>
+        <td>
+          {% for c in synthese.concurrents_top %}{{ c.nom }} <span class="texte-discret">({{ c.mentions }})</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}
+        </td>
+        <td>
+          {% for s in synthese.sources_top %}
+            {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.domaine }}</a>{% else %}{{ s.domaine }}{% endif %}
+            <span class="texte-discret">({{ etiquettes_categorie[s.categorie] }}, {{ s.nb }})</span>{% if not loop.last %}<br>{% endif %}
+          {% else %}—{% endfor %}
+        </td>
+      </tr></tbody>
+    </table>
+  </div>
+</div>
+
+{% if historique_geo|length > 0 %}
+<div class="bloc-section">
+  <strong>Évolution mois par mois</strong>
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead><tr><th>Mois</th><th>Score</th><th>Évolution</th><th>Cité dans</th><th>Part de voix</th></tr></thead>
+      <tbody>
+        {% for h in historique_geo|reverse %}
+        <tr>
+          <td>{{ h.mois }}</td>
+          <td>{{ h.score }} / 100</td>
+          <td>{% if h.evolution is none %}—{% elif h.evolution > 0 %}+{{ h.evolution }}{% else %}{{ h.evolution }}{% endif %}</td>
+          <td>{{ h.nb_cites }} / {{ h.nb_reponses }}</td>
+          <td>{% if h.part_de_voix is not none %}{{ h.part_de_voix }} %{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="texte-discret">Un relevé est enregistré chaque mois, automatiquement la nuit pour les fiches qui ont des questions suivies, ou à chaque vérification manuelle.</p>
+</div>
+{% endif %}
+{% endif %}
+
 <div class="choix-image-bloc">
   <span class="choix-image-titre">Questions suivies</span>
   {% if requetes %}
@@ -175,7 +245,10 @@
       await Promise.all(Array.from({ length: Math.min(CONCURRENCE, taches.length) }, traiterSuivant));
 
       conteneurProgression.hidden = true;
-      bouton.disabled = false;
+      try {
+        await fetch("/clients/{{ client.id }}/visibilite-ia/instantane", { method: "POST" });
+      } catch (erreur) { /* l'instantane sera enregistre a la prochaine verification */ }
+      window.location.reload();
     });
   }
 

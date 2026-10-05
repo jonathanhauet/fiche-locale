@@ -425,6 +425,46 @@ def generer_suggestions_quotidiennes():
         db.close()
 
 
+_tentatives_suivi_geo = {}
+MAX_SUIVIS_GEO_PAR_NUIT = 15
+
+
+def suivi_geo_mensuel():
+    """
+    Releve automatique de la visibilite IA (voir geo_score.py) : une fois par mois et par fiche qui a des questions
+    suivies, la nuit, une fiche par passage (chaque fiche = une vingtaine d'appels IA) et au plus MAX_SUIVIS_GEO_PAR_NUIT
+    fiches par nuit pour garder le cout et la charge maitrises. Une fiche dont le releve echoue est retentee au plus 2 fois.
+    """
+    maintenant = _maintenant_local()
+    if not 2 <= maintenant.hour < 7:
+        return
+    from . import geo_score
+
+    db = SessionLocal()
+    try:
+        mois = geo_score.mois_courant()
+        debut_nuit = datetime.utcnow() - timedelta(hours=8)
+        deja_ce_mois = {l.client_id for l in db.query(models.ScoreGEO).filter_by(mois=mois).all()}
+        faits_cette_nuit = db.query(models.ScoreGEO).filter(models.ScoreGEO.auto, models.ScoreGEO.cree_le >= debut_nuit).count()
+        if faits_cette_nuit >= MAX_SUIVIS_GEO_PAR_NUIT or not geo_score.modeles_actifs():
+            return
+
+        ids_avec_questions = {r.client_id for r in db.query(models.RequeteVisibiliteIA).all()}
+        for client_id in sorted(ids_avec_questions - deja_ce_mois):
+            if _tentatives_suivi_geo.get((client_id, mois), 0) >= 2:
+                continue
+            _tentatives_suivi_geo[(client_id, mois)] = _tentatives_suivi_geo.get((client_id, mois), 0) + 1
+            client = db.get(models.Client, client_id)
+            if client:
+                try:
+                    geo_score.relancer_suivi(db, client, auto=True)
+                except Exception:
+                    db.rollback()
+            break
+    finally:
+        db.close()
+
+
 def verifier_avis_supprimes():
     """
     Compare les avis actuellement presents sur chaque fiche a ceux deja connus

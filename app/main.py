@@ -67,6 +67,7 @@ from . import (
     google_publish,
     google_reviews,
     horaires_publication,
+    geo_score,
     ia_visibilite,
     instagram_engagement,
     instagram_oauth,
@@ -111,6 +112,7 @@ from .planificateur import (
     publier_posts_meta_programmes,
     purger_messages_whatsapp_traites,
     rafraichir_tokens_instagram,
+    suivi_geo_mensuel,
     verifier_avis_supprimes,
     verifier_et_publier_photos_programmees,
     verifier_et_publier_posts_programmes,
@@ -253,6 +255,8 @@ def _migrer_vers_multi_comptes():
             colonnes_posts_wordpress = {c["name"] for c in inspecteur.get_columns("posts_wordpress")}
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
+        if "site_web" not in {c["name"] for c in inspecteur.get_columns("clients")}:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN site_web VARCHAR DEFAULT ''"))
         if inspecteur.has_table("resultats_visibilite_ia"):
             colonnes_resultats_ia = {c["name"] for c in inspecteur.get_columns("resultats_visibilite_ia")}
             if "sources" not in colonnes_resultats_ia:
@@ -604,6 +608,13 @@ planificateur.add_job(
     "interval",
     minutes=min(INTERVALLE_PLANIFICATEUR_MINUTES, 10),
     id="publication_wordpress_programmee",
+)
+# Releve GEO mensuel automatique (voir planificateur.suivi_geo_mensuel) : se declenche la nuit, une fiche par passage.
+planificateur.add_job(
+    suivi_geo_mensuel,
+    "interval",
+    minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
+    id="suivi_geo_mensuel",
 )
 planificateur.start()
 
@@ -4614,8 +4625,22 @@ def visibilite_ia_client(client_id: int, request: Request, db: Session = Depends
             "modeles_disponibles_json": json.dumps(ia_visibilite.MODELES_DISPONIBLES).replace("</", "<\\/"),
             "openai_configure": bool(ia_visibilite.CLE_OPENAI),
             "gemini_configure": bool(ia_visibilite.CLE_GEMINI),
+            "synthese": geo_score.synthese_client(db, client),
+            "historique_geo": geo_score.historique(db, client_id),
         },
     )
+
+
+@app.post("/clients/{client_id}/visibilite-ia/instantane")
+def enregistrer_instantane_visibilite_ia(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Enregistre le score GEO du mois a partir des derniers releves (appele par la page apres une verification)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    ligne = geo_score.enregistrer_instantane(db, client)
+    return JSONResponse({"score": ligne.score if ligne else None, "mois": ligne.mois if ligne else None})
 
 
 @app.post("/clients/{client_id}/visibilite-ia/requetes")
@@ -4715,22 +4740,7 @@ def verifier_une_visibilite_ia(
     if not client or not requete or requete.client_id != client_id or modele not in ia_visibilite.MODELES_DISPONIBLES:
         return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
 
-    resultat = ia_visibilite.verifier_une_requete(client.nom, modele, requete.texte)
-
-    ligne = models.ResultatVisibiliteIA(
-        client_id=client_id,
-        requete_texte=requete.texte,
-        modele=modele,
-        client_cite=resultat["client_cite"],
-        position=resultat["position"],
-        concurrents_cites=json.dumps(resultat["concurrents_cites"]),
-        suggestion=resultat["suggestion"],
-        reponse_brute=resultat["reponse_brute"],
-        sources=json.dumps(resultat.get("sources", []), ensure_ascii=False),
-        erreur=resultat["erreur"],
-    )
-    db.add(ligne)
-    db.commit()
+    ligne, resultat = geo_score.verifier_et_enregistrer(db, client, requete.texte, modele)
 
     return JSONResponse({
         "resultat": {

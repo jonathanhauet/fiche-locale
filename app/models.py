@@ -60,6 +60,8 @@ class Client(Base):
     id = Column(Integer, primary_key=True)
     nom = Column(String, nullable=False)
     contenu_site = Column(Text, default="")
+    # Adresse du site web du client (pour le controle technique GEO et pour reperer les sources qui sont son propre site).
+    site_web = Column(String, default="")
     account_id = Column(String, default="")
     location_id = Column(String, default="")
     compte_google_id = Column(Integer, ForeignKey("comptes_google.id"), nullable=True)
@@ -199,6 +201,7 @@ class Client(Base):
     envois_recap = relationship("EnvoiRecap", back_populates="client", cascade="all, delete-orphan")
     requetes_visibilite_ia = relationship("RequeteVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
     resultats_visibilite_ia = relationship("ResultatVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
+    scores_geo = relationship("ScoreGEO", back_populates="client", cascade="all, delete-orphan")
     avis_connus = relationship("AvisConnu", back_populates="client", cascade="all, delete-orphan")
     alertes_protection = relationship("AlerteProtectionFiche", back_populates="client", cascade="all, delete-orphan")
     alertes_statut = relationship("AlerteStatutFiche", back_populates="client", cascade="all, delete-orphan")
@@ -1044,3 +1047,27 @@ class ScriptVideo(Base):
     script = Column(Text, nullable=False, default="")
     kit_json = Column(Text, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class ScoreGEO(Base):
+    """
+    Instantane mensuel de la visibilite d'un client dans les reponses des assistants IA (voir geo_score.py) :
+    une ligne par client et par mois ("AAAA-MM"), remplacee si on reverifie dans le mois.
+    """
+
+    __tablename__ = "scores_geo"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    mois = Column(String, nullable=False)
+    score = Column(Integer, nullable=True)           # 0 a 100
+    nb_questions = Column(Integer, default=0)
+    nb_reponses = Column(Integer, default=0)
+    nb_cites = Column(Integer, default=0)
+    position_moyenne = Column(Float, nullable=True)
+    part_de_voix = Column(Integer, nullable=True)    # % des mentions (client + concurrents) qui concernent le client
+    details = Column(Text, default="")               # JSON : concurrents_top, sources_top, par_modele
+    auto = Column(Boolean, default=False)            # lance par le suivi mensuel automatique
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="scores_geo")
