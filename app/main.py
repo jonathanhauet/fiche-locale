@@ -8710,7 +8710,8 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
                 try:
                     whatsapp_business.envoyer_message_texte(
                         numero,
-                        "Noté ! Envoyez votre réponse vocale (et une photo si vous voulez) quand vous êtes prêt.",
+                        f"Parfait, tu as choisi la question {index + 1} 👇\n\n« {questions[index]} »\n\n"
+                        "Envoie-moi maintenant ton message vocal 🎙️ (1 à 2 minutes), et une photo si tu veux 📸",
                     )
                 except Exception:
                     pass
