@@ -105,6 +105,41 @@ def lister_fiches_multi_comptes(comptes_avec_identifiants) -> list[dict]:
     return resultats
 
 
+def _photo_depuis_item(item: dict):
+    url_photo = item.get("googleUrl")
+    if not url_photo:
+        return None
+    return {
+        "url": url_photo,
+        # Une photo tres recemment ajoutee peut ne pas encore etre disponible a
+        # l'URL pleine resolution (delai de traitement cote Google) ; la miniature
+        # est generalement disponible plus vite et sert de repli a l'affichage.
+        "miniature": item.get("thumbnailUrl", ""),
+        "categorie": item.get("locationAssociation", {}).get("category", ""),
+        # "accounts/{a}/locations/{l}/media/{m}" - identifiant complet requis
+        # pour la suppression (voir supprimer_photo_fiche_google).
+        "nom_media": item.get("name", ""),
+        "date_publication": item.get("createTime", ""),
+    }
+
+
+def lister_photos_page(identifiants, account_id: str, location_id: str, page_token: str = None, taille: int = 24):
+    """
+    UNE page de photos de la fiche (affichage progressif, « afficher plus ») : (photos, jeton de la page suivante ou None).
+    Leve RuntimeError si Google refuse la lecture.
+    """
+    url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/media"
+    params = {"pageSize": taille}
+    if page_token:
+        params["pageToken"] = page_token
+    reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params=params, timeout=20)
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Lecture des photos impossible (code {reponse.status_code}).")
+    donnees = reponse.json()
+    photos = [photo for photo in (_photo_depuis_item(i) for i in donnees.get("mediaItems", [])) if photo]
+    return photos, donnees.get("nextPageToken") or None
+
+
 def lister_photos(identifiants, account_id: str, location_id: str):
     """
     Renvoie TOUTES les photos deja presentes sur une fiche (suit nextPageToken - une fiche active peut largement
@@ -126,20 +161,9 @@ def lister_photos(identifiants, account_id: str, location_id: str):
         donnees = reponse.json()
 
         for item in donnees.get("mediaItems", []):
-            url_photo = item.get("googleUrl")
-            if url_photo:
-                resultats.append({
-                    "url": url_photo,
-                    # Une photo tres recemment ajoutee peut ne pas encore etre disponible a
-                    # l'URL pleine resolution (delai de traitement cote Google) ; la miniature
-                    # est generalement disponible plus vite et sert de repli a l'affichage.
-                    "miniature": item.get("thumbnailUrl", ""),
-                    "categorie": item.get("locationAssociation", {}).get("category", ""),
-                    # "accounts/{a}/locations/{l}/media/{m}" - identifiant complet requis
-                    # pour la suppression (voir supprimer_photo_fiche_google).
-                    "nom_media": item.get("name", ""),
-                    "date_publication": item.get("createTime", ""),
-                })
+            photo = _photo_depuis_item(item)
+            if photo:
+                resultats.append(photo)
 
         page_token = donnees.get("nextPageToken")
         if not page_token:

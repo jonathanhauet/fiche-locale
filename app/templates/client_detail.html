@@ -665,170 +665,6 @@
   </div>
 </details>
 
-<h2 id="photos-fiche">Photos de la fiche Google</h2>
-{% if erreur_photo %}
-<p class="message-erreur">{{ erreur_photo }}</p>
-{% endif %}
-
-{% if not client.account_id or not client.location_id %}
-<p class="texte-vide">Ce client n'a pas de fiche Google associée.</p>
-{% else %}
-
-{% if photos_en_preparation %}
-<h3>En préparation ({{ photos_en_preparation|length }})</h3>
-
-<div class="carte-ia" id="carte-application-masse-photos">
-  <div class="carte-ia-entete">
-    <span class="carte-ia-icone">🏷️</span>
-    <span class="carte-ia-libelles">
-      <span class="carte-ia-titre">Appliquer à toutes les photos en préparation</span>
-      <span class="carte-ia-sous-titre">Même légende et/ou même géotag pour les {{ photos_en_preparation|length }} photos d'un coup, plutôt que photo par photo</span>
-    </span>
-  </div>
-  <div class="carte-ia-corps">
-    <form class="formulaire" method="post" action="/clients/{{ client.id }}/photos/appliquer_masse"
-          onsubmit="return confirm('Appliquer ces informations aux {{ photos_en_preparation|length }} photos en préparation ? (un champ laissé vide n\'écrase rien)');">
-      <input type="text" name="legende" placeholder="Légende à appliquer à toutes (laisser vide pour ne pas y toucher)">
-      <div class="bloc-geotag-masse">
-        <div class="recherche-ville">
-          <input type="text" id="champ-recherche-ville-masse" autocomplete="off" placeholder="Géotag à appliquer à toutes : rechercher une ville (optionnel)">
-          <button type="button" class="bouton-secondaire" id="bouton-rechercher-ville-masse">Rechercher</button>
-        </div>
-        <ul id="resultats-recherche-ville-masse" class="resultats-recherche-ville" hidden></ul>
-        <p id="ville-selectionnee-masse" class="ville-selectionnee" hidden>
-          📍 <span id="texte-ville-selectionnee-masse"></span>
-          <button type="button" id="lien-retirer-geotag-masse">Retirer</button>
-        </p>
-        <input type="hidden" name="latitude" id="latitude-masse">
-        <input type="hidden" name="longitude" id="longitude-masse">
-      </div>
-      <button type="submit" class="bouton">Appliquer à toutes les photos en préparation</button>
-    </form>
-  </div>
-</div>
-
-<div class="grille-photos grille-photos-preparation" id="grille-photos-preparation">
-  {% for photo in photos_en_preparation %}
-  <figure class="carte-photo carte-photo-preparation" data-photo-id="{{ photo.id }}" data-statut="{{ photo.statut }}">
-    <img src="{{ photo.url_image }}" alt="{{ photo.categorie }}">
-    <figcaption>
-      <span class="etiquette-statut etiquette-{{ photo.statut|lower }}">
-        {% if photo.statut == "A_PUBLIER" and photo.date_prevue %}Programmée {{ photo.date_prevue.strftime("%d/%m/%Y") }}{% if photo.heure_prevue %} à {{ photo.heure_prevue }}{% endif %}
-        {% elif photo.statut == "ECHEC_PUBLICATION" %}Échec
-        {% else %}Brouillon{% endif %}
-      </span>
-    </figcaption>
-    <form class="formulaire-photo-details" method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/modifier">
-      <input type="text" name="legende" value="{{ photo.legende }}" placeholder="Légende (optionnel)" class="champ-enregistrement-auto">
-      <select name="categorie" class="champ-enregistrement-auto">
-        {% for valeur, libelle in categories_photo %}
-        <option value="{{ valeur }}" {% if valeur == photo.categorie %}selected{% endif %}>{{ libelle }}</option>
-        {% endfor %}
-      </select>
-      <div class="bloc-geotag">
-        <div class="recherche-ville">
-          <input type="text" class="champ-recherche-ville" placeholder="Géotag : rechercher une ville (optionnel)">
-          <button type="button" class="bouton-secondaire bouton-rechercher-ville">Rechercher</button>
-        </div>
-        <ul class="resultats-recherche-ville" hidden></ul>
-        <p class="ville-selectionnee" {% if photo.latitude is none %}hidden{% endif %}>
-          📍 <span class="texte-ville-selectionnee">
-            {%- if photo.latitude is not none %}{{ "%.4f"|format(photo.latitude) }}, {{ "%.4f"|format(photo.longitude) }}{% endif -%}
-          </span>
-          <button type="button" class="lien-retirer-geotag">Retirer</button>
-        </p>
-        <input type="hidden" name="latitude" value="{{ photo.latitude if photo.latitude is not none else '' }}">
-        <input type="hidden" name="longitude" value="{{ photo.longitude if photo.longitude is not none else '' }}">
-      </div>
-      <span class="texte-discret texte-enregistrement-photo" hidden></span>
-    </form>
-    <form method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/supprimer"
-          onsubmit="return confirm('Retirer cette photo de la préparation ?');">
-      <button type="submit" class="bouton-danger bouton-supprimer-photo">Retirer</button>
-    </form>
-  </figure>
-  {% endfor %}
-</div>
-
-<div class="actions-avis">
-  <button type="button" id="bouton-publier-photos" class="bouton-publier">Publier maintenant sur la fiche</button>
-  <form class="formulaire-ligne formulaire-programmer-photos" method="post" action="/clients/{{ client.id }}/photos/programmer"
-        data-intervalle-min-minutes="{{ intervalle_planificateur_minutes }}">
-    <label>
-      Première date
-      <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
-        <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
-        <input type="hidden" class="champ-date-valeur" name="date_prevue">
-      </div>
-    </label>
-    <div class="choix-heure choix-heure-compact">
-      <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
-      <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
-      <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
-    </div>
-    <label>
-      Par lot de
-      <input type="number" name="taille_lot" value="{{ [photos_en_preparation|length, 10] | min }}" min="1" style="width:4.5rem;">
-    </label>
-    <label>
-      Tous les
-      <input type="number" name="intervalle_valeur" id="champ-intervalle-valeur-photos" value="3" min="1" style="width:4.5rem;">
-    </label>
-    <label>
-      <select name="intervalle_unite" id="champ-intervalle-unite-photos">
-        <option value="minutes">minutes</option>
-        <option value="heures">heures</option>
-        <option value="jours" selected>jours</option>
-      </select>
-    </label>
-    <button type="submit" class="bouton-secondaire">Programmer l'envoi</button>
-  </form>
-</div>
-<div id="conteneur-progression-photos" class="conteneur-progression-avis" hidden>
-  <div class="barre-progression-fond"><div id="barre-progression-photos" class="barre-progression-remplissage"></div></div>
-  <span id="texte-progression-photos" class="texte-progression-avis"></span>
-</div>
-{% endif %}
-
-<div class="barre-titre">
-  <h3>Déjà sur la fiche</h3>
-  <button type="button" class="bouton-secondaire" onclick="window.location.reload()">⟳ Rafraîchir</button>
-</div>
-{% if photos %}
-<div class="grille-photos">
-  {% for photo in photos %}
-  <figure class="carte-photo carte-photo-en-ligne">
-    <img src="{{ photo.miniature or photo.url }}" data-secours="{{ photo.url }}" class="image-fiche-photo" alt="{{ photo.categorie or 'Photo' }}">
-    <figcaption>
-      {{ photo.categorie or "—" }}
-      {% if photo.date_publication_affichee %}<span class="texte-discret">· {{ photo.date_publication_affichee }}</span>{% endif %}
-    </figcaption>
-    {% if photo.nom_media %}
-    <button type="button" class="bouton-supprimer-photo-google" data-nom-media="{{ photo.nom_media }}" title="Supprimer cette photo de la fiche Google">✕</button>
-    {% endif %}
-  </figure>
-  {% endfor %}
-</div>
-{% else %}
-<p class="texte-vide">Aucune photo trouvée sur cette fiche pour l'instant.</p>
-{% endif %}
-
-<form class="formulaire formulaire-ligne" method="post" action="/clients/{{ client.id }}/photos/importer" enctype="multipart/form-data">
-  <label>
-    Importer des photos
-    <input type="file" name="fichiers" accept="image/*" multiple required>
-  </label>
-  <label>
-    Catégorie
-    <select name="categorie">
-      {% for valeur, libelle in categories_photo %}
-      <option value="{{ valeur }}" {% if valeur == "ADDITIONAL" %}selected{% endif %}>{{ libelle }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <button type="submit">Importer</button>
-</form>
-{% endif %}
 
 <div class="carte-ia" id="carte-ia-generation">
   <div class="carte-ia-entete">
@@ -1099,24 +935,12 @@
         <button type="submit" class="bouton-secondaire">Téléverser</button>
       </form>
     </div>
-    {% if photos %}
-    <details class="bloc-repliable">
-      <summary>Ou choisir une photo déjà présente sur la fiche ({{ photos|length }})</summary>
-      <div class="grille-photos grille-photos-choix">
-        {% for photo in photos %}
-        <form method="post" action="/posts/{{ post.id }}/choisir_image_fiche">
-          <input type="hidden" name="retour" value="client">
-          <input type="hidden" name="image_url" value="{{ photo.url }}">
-          <button type="submit" class="carte-photo-choix" {% if photo.url in image_urls_deja_utilisees %}title="Déjà utilisée dans un des 15 derniers posts Google : évitez de répéter la même photo."{% endif %}>
-            <img src="{{ photo.miniature or photo.url }}" data-secours="{{ photo.url }}" class="image-fiche-photo" alt="{{ photo.categorie or 'Photo' }}">
-            <span class="etiquette-categorie-photo">{{ photo.categorie or "Photo" }}</span>
-            {% if photo.url in image_urls_deja_utilisees %}
-            <span class="etiquette-avertissement etiquette-danger">⚠ déjà utilisée récemment</span>
-            {% endif %}
-          </button>
-        </form>
-        {% endfor %}
-      </div>
+    {% if client.account_id and client.location_id %}
+    <details class="bloc-repliable details-photos-fiche-choix" data-post-id="{{ post.id }}">
+      <summary>Ou choisir une photo déjà présente sur la fiche</summary>
+      <div class="grille-photos grille-photos-choix conteneur-photos-choix"></div>
+      <p class="texte-vide message-photos-choix" hidden></p>
+      <button type="button" class="bouton-secondaire bouton-photos-choix-plus" hidden>Afficher plus de photos</button>
     </details>
     {% endif %}
     {% endif %}
@@ -1174,6 +998,156 @@
   </div>
 </div>
 
+<h2 id="photos-fiche">Photos de la fiche Google</h2>
+{% if erreur_photo %}
+<p class="message-erreur">{{ erreur_photo }}</p>
+{% endif %}
+
+{% if not client.account_id or not client.location_id %}
+<p class="texte-vide">Ce client n'a pas de fiche Google associée.</p>
+{% else %}
+
+{% if photos_en_preparation %}
+<h3>En préparation ({{ photos_en_preparation|length }})</h3>
+
+<div class="carte-ia" id="carte-application-masse-photos">
+  <div class="carte-ia-entete">
+    <span class="carte-ia-icone">🏷️</span>
+    <span class="carte-ia-libelles">
+      <span class="carte-ia-titre">Appliquer à toutes les photos en préparation</span>
+      <span class="carte-ia-sous-titre">Même légende et/ou même géotag pour les {{ photos_en_preparation|length }} photos d'un coup, plutôt que photo par photo</span>
+    </span>
+  </div>
+  <div class="carte-ia-corps">
+    <form class="formulaire" method="post" action="/clients/{{ client.id }}/photos/appliquer_masse"
+          onsubmit="return confirm('Appliquer ces informations aux {{ photos_en_preparation|length }} photos en préparation ? (un champ laissé vide n\'écrase rien)');">
+      <input type="text" name="legende" placeholder="Légende à appliquer à toutes (laisser vide pour ne pas y toucher)">
+      <div class="bloc-geotag-masse">
+        <div class="recherche-ville">
+          <input type="text" id="champ-recherche-ville-masse" autocomplete="off" placeholder="Géotag à appliquer à toutes : rechercher une ville (optionnel)">
+          <button type="button" class="bouton-secondaire" id="bouton-rechercher-ville-masse">Rechercher</button>
+        </div>
+        <ul id="resultats-recherche-ville-masse" class="resultats-recherche-ville" hidden></ul>
+        <p id="ville-selectionnee-masse" class="ville-selectionnee" hidden>
+          📍 <span id="texte-ville-selectionnee-masse"></span>
+          <button type="button" id="lien-retirer-geotag-masse">Retirer</button>
+        </p>
+        <input type="hidden" name="latitude" id="latitude-masse">
+        <input type="hidden" name="longitude" id="longitude-masse">
+      </div>
+      <button type="submit" class="bouton">Appliquer à toutes les photos en préparation</button>
+    </form>
+  </div>
+</div>
+
+<div class="grille-photos grille-photos-preparation" id="grille-photos-preparation">
+  {% for photo in photos_en_preparation %}
+  <figure class="carte-photo carte-photo-preparation" data-photo-id="{{ photo.id }}" data-statut="{{ photo.statut }}">
+    <img src="{{ photo.url_image }}" alt="{{ photo.categorie }}">
+    <figcaption>
+      <span class="etiquette-statut etiquette-{{ photo.statut|lower }}">
+        {% if photo.statut == "A_PUBLIER" and photo.date_prevue %}Programmée {{ photo.date_prevue.strftime("%d/%m/%Y") }}{% if photo.heure_prevue %} à {{ photo.heure_prevue }}{% endif %}
+        {% elif photo.statut == "ECHEC_PUBLICATION" %}Échec
+        {% else %}Brouillon{% endif %}
+      </span>
+    </figcaption>
+    <form class="formulaire-photo-details" method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/modifier">
+      <input type="text" name="legende" value="{{ photo.legende }}" placeholder="Légende (optionnel)" class="champ-enregistrement-auto">
+      <select name="categorie" class="champ-enregistrement-auto">
+        {% for valeur, libelle in categories_photo %}
+        <option value="{{ valeur }}" {% if valeur == photo.categorie %}selected{% endif %}>{{ libelle }}</option>
+        {% endfor %}
+      </select>
+      <div class="bloc-geotag">
+        <div class="recherche-ville">
+          <input type="text" class="champ-recherche-ville" placeholder="Géotag : rechercher une ville (optionnel)">
+          <button type="button" class="bouton-secondaire bouton-rechercher-ville">Rechercher</button>
+        </div>
+        <ul class="resultats-recherche-ville" hidden></ul>
+        <p class="ville-selectionnee" {% if photo.latitude is none %}hidden{% endif %}>
+          📍 <span class="texte-ville-selectionnee">
+            {%- if photo.latitude is not none %}{{ "%.4f"|format(photo.latitude) }}, {{ "%.4f"|format(photo.longitude) }}{% endif -%}
+          </span>
+          <button type="button" class="lien-retirer-geotag">Retirer</button>
+        </p>
+        <input type="hidden" name="latitude" value="{{ photo.latitude if photo.latitude is not none else '' }}">
+        <input type="hidden" name="longitude" value="{{ photo.longitude if photo.longitude is not none else '' }}">
+      </div>
+      <span class="texte-discret texte-enregistrement-photo" hidden></span>
+    </form>
+    <form method="post" action="/clients/{{ client.id }}/photos/{{ photo.id }}/supprimer"
+          onsubmit="return confirm('Retirer cette photo de la préparation ?');">
+      <button type="submit" class="bouton-danger bouton-supprimer-photo">Retirer</button>
+    </form>
+  </figure>
+  {% endfor %}
+</div>
+
+<div class="actions-avis">
+  <button type="button" id="bouton-publier-photos" class="bouton-publier">Publier maintenant sur la fiche</button>
+  <form class="formulaire-ligne formulaire-programmer-photos" method="post" action="/clients/{{ client.id }}/photos/programmer"
+        data-intervalle-min-minutes="{{ intervalle_planificateur_minutes }}">
+    <label>
+      Première date
+      <div class="champ-date-personnalise" data-jours-occupes="{{ jours_occupes_json }}" data-requis="1">
+        <input type="text" class="champ-date-affichage" placeholder="jj/mm/aaaa" readonly>
+        <input type="hidden" class="champ-date-valeur" name="date_prevue">
+      </div>
+    </label>
+    <div class="choix-heure choix-heure-compact">
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="0830" checked> 08h30</label>
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="1230"> 12h30</label>
+      <label class="filtre-case"><input type="radio" name="heure_mode" value="1830"> 18h30</label>
+    </div>
+    <label>
+      Par lot de
+      <input type="number" name="taille_lot" value="{{ [photos_en_preparation|length, 10] | min }}" min="1" style="width:4.5rem;">
+    </label>
+    <label>
+      Tous les
+      <input type="number" name="intervalle_valeur" id="champ-intervalle-valeur-photos" value="3" min="1" style="width:4.5rem;">
+    </label>
+    <label>
+      <select name="intervalle_unite" id="champ-intervalle-unite-photos">
+        <option value="minutes">minutes</option>
+        <option value="heures">heures</option>
+        <option value="jours" selected>jours</option>
+      </select>
+    </label>
+    <button type="submit" class="bouton-secondaire">Programmer l'envoi</button>
+  </form>
+</div>
+<div id="conteneur-progression-photos" class="conteneur-progression-avis" hidden>
+  <div class="barre-progression-fond"><div id="barre-progression-photos" class="barre-progression-remplissage"></div></div>
+  <span id="texte-progression-photos" class="texte-progression-avis"></span>
+</div>
+{% endif %}
+
+<div class="barre-titre">
+  <h3>Déjà sur la fiche</h3>
+  <button type="button" class="bouton-secondaire" onclick="window.location.reload()">⟳ Rafraîchir</button>
+</div>
+<div class="grille-photos" id="grille-photos-fiche"></div>
+<p class="texte-vide" id="message-photos-fiche" hidden></p>
+<div class="actions-avis"><button type="button" class="bouton-secondaire" id="bouton-photos-fiche-plus" hidden>Afficher plus de photos</button></div>
+
+<form class="formulaire formulaire-ligne" method="post" action="/clients/{{ client.id }}/photos/importer" enctype="multipart/form-data">
+  <label>
+    Importer des photos
+    <input type="file" name="fichiers" accept="image/*" multiple required>
+  </label>
+  <label>
+    Catégorie
+    <select name="categorie">
+      {% for valeur, libelle in categories_photo %}
+      <option value="{{ valeur }}" {% if valeur == "ADDITIONAL" %}selected{% endif %}>{{ libelle }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Importer</button>
+</form>
+{% endif %}
+
 <script>
 (function () {
   function echapper(texte) {
@@ -1185,28 +1159,28 @@
   // Suppression d'une photo directement sur la fiche Google (galerie "Deja
   // sur la fiche") - distincte de la suppression d'un brouillon en attente,
   // celle-ci retire vraiment la photo de la fiche publique.
-  document.querySelectorAll(".bouton-supprimer-photo-google").forEach((bouton) => {
-    bouton.addEventListener("click", async () => {
-      if (!confirm("Supprimer definitivement cette photo de la fiche Google ? Cette action est irreversible.")) return;
-      const carte = bouton.closest(".carte-photo");
-      bouton.disabled = true;
-      try {
-        const donnees = new URLSearchParams({ nom_media: bouton.dataset.nomMedia });
-        const reponse = await fetch("/clients/{{ client.id }}/photos_google/supprimer", { method: "POST", body: donnees });
-        const resultat = await reponse.json();
-        if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
-        carte.remove();
-      } catch (erreur) {
-        alert(`Echec de la suppression : ${erreur.message}`);
-        bouton.disabled = false;
-      }
-    });
+  document.addEventListener("click", async (evenement) => {
+    const bouton = evenement.target.closest(".bouton-supprimer-photo-google");
+    if (!bouton) return;
+    if (!confirm("Supprimer definitivement cette photo de la fiche Google ? Cette action est irreversible.")) return;
+    const carte = bouton.closest(".carte-photo");
+    bouton.disabled = true;
+    try {
+      const donnees = new URLSearchParams({ nom_media: bouton.dataset.nomMedia });
+      const reponse = await fetch("/clients/{{ client.id }}/photos_google/supprimer", { method: "POST", body: donnees });
+      const resultat = await reponse.json();
+      if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+      carte.remove();
+    } catch (erreur) {
+      alert(`Echec de la suppression : ${erreur.message}`);
+      bouton.disabled = false;
+    }
   });
 
   // Une photo tres recemment envoyee peut ne pas encore etre disponible cote
   // Google (delai de traitement). On tente la miniature, puis la pleine
   // resolution, puis on affiche un message plutot qu'une image cassee.
-  document.querySelectorAll(".image-fiche-photo").forEach((image) => {
+  function gererErreursImage(image) {
     image.addEventListener("error", function gererErreurImage() {
       const secours = this.dataset.secours;
       if (secours && this.src !== secours) {
@@ -1219,6 +1193,97 @@
       remplacement.textContent = "Photo en cours de traitement par Google…";
       this.replaceWith(remplacement);
     });
+  }
+
+  // Photos de la fiche Google : lues par pages de 24 (« afficher plus »), jamais toutes d'un coup a l'ouverture de la page.
+  function creerImagePhoto(photo) {
+    const image = document.createElement("img");
+    image.src = photo.miniature || photo.url;
+    image.dataset.secours = photo.url;
+    image.className = "image-fiche-photo";
+    image.alt = photo.categorie || "Photo";
+    image.loading = "lazy";
+    gererErreursImage(image);
+    return image;
+  }
+  function carteEnLigne(photo) {
+    const carte = document.createElement("figure");
+    carte.className = "carte-photo carte-photo-en-ligne";
+    carte.appendChild(creerImagePhoto(photo));
+    const legende = document.createElement("figcaption");
+    legende.textContent = (photo.categorie || "—") + (photo.date_publication_affichee ? " · " + photo.date_publication_affichee : "");
+    carte.appendChild(legende);
+    if (photo.nom_media) {
+      const supprimer = document.createElement("button");
+      supprimer.type = "button"; supprimer.className = "bouton-supprimer-photo-google";
+      supprimer.dataset.nomMedia = photo.nom_media; supprimer.title = "Supprimer cette photo de la fiche Google"; supprimer.textContent = "✕";
+      carte.appendChild(supprimer);
+    }
+    return carte;
+  }
+  function carteChoix(photo, postId) {
+    const formulaire = document.createElement("form");
+    formulaire.method = "post"; formulaire.action = "/posts/" + postId + "/choisir_image_fiche";
+    for (const [nom, valeur] of [["retour", "client"], ["image_url", photo.url]]) {
+      const champ = document.createElement("input");
+      champ.type = "hidden"; champ.name = nom; champ.value = valeur; formulaire.appendChild(champ);
+    }
+    const bouton = document.createElement("button");
+    bouton.type = "submit"; bouton.className = "carte-photo-choix";
+    if (photo.deja_utilisee) bouton.title = "Déjà utilisée dans un des 15 derniers posts Google : évitez de répéter la même photo.";
+    bouton.appendChild(creerImagePhoto(photo));
+    const etiquette = document.createElement("span");
+    etiquette.className = "etiquette-categorie-photo"; etiquette.textContent = photo.categorie || "Photo";
+    bouton.appendChild(etiquette);
+    if (photo.deja_utilisee) {
+      const alerte = document.createElement("span");
+      alerte.className = "etiquette-avertissement etiquette-danger"; alerte.textContent = "⚠ déjà utilisée récemment";
+      bouton.appendChild(alerte);
+    }
+    formulaire.appendChild(bouton);
+    return formulaire;
+  }
+  function chargeurPhotos(conteneur, message, boutonPlus, fabrique) {
+    let jeton = "", enCours = false, commence = false;
+    async function charger() {
+      if (enCours) return;
+      enCours = true; commence = true; boutonPlus.disabled = true; message.hidden = true;
+      try {
+        const reponse = await fetch("/clients/{{ client.id }}/photos-fiche" + (jeton ? "?token=" + encodeURIComponent(jeton) : ""));
+        const donnees = await reponse.json();
+        if (!reponse.ok) throw new Error(donnees.erreur || "Lecture des photos impossible.");
+        donnees.photos.forEach((photo) => conteneur.appendChild(fabrique(photo)));
+        jeton = donnees.suivant || "";
+        boutonPlus.hidden = !jeton;
+        if (!conteneur.children.length) { message.textContent = "Aucune photo trouvée sur cette fiche pour l'instant."; message.hidden = false; }
+      } catch (erreur) {
+        message.textContent = erreur.message; message.hidden = false;
+      } finally { enCours = false; boutonPlus.disabled = false; }
+    }
+    boutonPlus.addEventListener("click", charger);
+    return { charger, dejaCommence: () => commence };
+  }
+
+  const grillePhotosFiche = document.getElementById("grille-photos-fiche");
+  if (grillePhotosFiche) {
+    const chargeur = chargeurPhotos(grillePhotosFiche, document.getElementById("message-photos-fiche"), document.getElementById("bouton-photos-fiche-plus"), carteEnLigne);
+    // Chargement seulement quand la section arrive a l'ecran (elle est en bas de page).
+    if ("IntersectionObserver" in window) {
+      const observateur = new IntersectionObserver((entrees) => {
+        if (entrees.some((e) => e.isIntersecting)) { observateur.disconnect(); chargeur.charger(); }
+      }, { rootMargin: "300px" });
+      observateur.observe(grillePhotosFiche);
+    } else {
+      chargeur.charger();
+    }
+  }
+  document.querySelectorAll(".details-photos-fiche-choix").forEach((details) => {
+    const postId = details.dataset.postId;
+    const chargeur = chargeurPhotos(
+      details.querySelector(".conteneur-photos-choix"), details.querySelector(".message-photos-choix"),
+      details.querySelector(".bouton-photos-choix-plus"), (photo) => carteChoix(photo, postId),
+    );
+    details.addEventListener("toggle", () => { if (details.open && !chargeur.dejaCommence()) chargeur.charger(); });
   });
 
   const formulaireProgrammerPhotos = document.querySelector(".formulaire-programmer-photos");

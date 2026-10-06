@@ -3201,7 +3201,8 @@ def _reponse_detail_client(
             "posts": posts,
             "publications_multi_reseaux": _publications_multi_reseaux(db, client, posts_google_en_ligne=tous_posts_en_ligne),
             "erreur_generation": erreur_generation,
-            "photos": _photos_pour_client(db, client),
+            # Les photos de la fiche ne sont plus lues ici (lent avec beaucoup de photos) : la page les charge par pages
+            # de 24 via /clients/{id}/photos-fiche (voir photos_fiche_client).
             # Avertit si une photo de la fiche qu'on s'apprete a reutiliser a
             # deja servi sur un des NB_POSTS_RECENTS_PHOTO derniers posts
             # Google (voir choix d'image dans client_detail.html) - evite une
@@ -3255,6 +3256,43 @@ def detail_client(client_id: int, request: Request, db: Session = Depends(obteni
         return HTMLResponse("Client introuvable.", status_code=404)
 
     return _reponse_detail_client(request, db, client)
+
+
+NB_PHOTOS_PAR_PAGE = 24
+
+
+def _date_photo_affichee(valeur: str) -> str:
+    try:
+        return datetime.fromisoformat(valeur.replace("Z", "+00:00")).strftime("%d/%m/%Y")
+    except (ValueError, AttributeError):
+        return ""
+
+
+@app.get("/clients/{client_id}/photos-fiche")
+def photos_fiche_client(client_id: int, request: Request, token: str = "", db: Session = Depends(obtenir_session)):
+    """Une page (24) des photos deja presentes sur la fiche Google, avec le jeton de la suivante : affichage progressif."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"erreur": "Ce client n'a pas de fiche Google associée."}, status_code=404)
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({"erreur": "Compte Google non valide (à reconnecter depuis Comptes Google)."}, status_code=400)
+    try:
+        photos, suivant = google_business.lister_photos_page(
+            identifiants, client.account_id, client.location_id, token or None, NB_PHOTOS_PAR_PAGE,
+        )
+    except Exception as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=502)
+    recentes = {
+        p.image_url for p in db.query(models.Post).filter(models.Post.client_id == client.id, models.Post.statut != "SUPPRIME")
+        .order_by(models.Post.cree_le.desc()).limit(NB_POSTS_RECENTS_PHOTO).all() if p.image_url
+    }
+    for photo in photos:
+        photo["date_publication_affichee"] = _date_photo_affichee(photo.get("date_publication", ""))
+        photo["deja_utilisee"] = photo["url"] in recentes
+    return JSONResponse({"photos": photos, "suivant": suivant})
 
 
 @app.post("/clients/{client_id}/citations/verifier")
