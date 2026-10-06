@@ -8681,6 +8681,23 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
         db.commit()
         db.refresh(etat)
 
+    if type_message in ("button", "interactive"):
+        # Clic sur un bouton de reponse rapide du modele (type "button") ou d'un message interactif : le chiffre de la
+        # question (1 a 5) vaut une reponse tapee. Un bouton sans chiffre est ignore.
+        if type_message == "button":
+            reponse_bouton = message.get("button", {})
+        else:
+            interactif = message.get("interactive", {})
+            reponse_bouton = interactif.get("button_reply") or interactif.get("list_reply") or {}
+        chiffre = None
+        for champ in ("payload", "id", "text", "title"):
+            chiffre = re.search(r"(?<!\d)[1-5](?!\d)", str(reponse_bouton.get(champ) or ""))
+            if chiffre:
+                break
+        if not chiffre:
+            return
+        type_message, message = "text", {"text": {"body": chiffre.group(0)}}
+
     if type_message == "text":
         texte = (message.get("text", {}).get("body") or "").strip()
         if texte in {"1", "2", "3", "4", "5"}:

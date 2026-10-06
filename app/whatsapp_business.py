@@ -66,7 +66,9 @@ def envoyer_message_texte(numero_destinataire: str, texte: str) -> None:
         raise RuntimeError(f"Echec de l'envoi WhatsApp (code {reponse.status_code}) : {reponse.text}")
 
 
-def envoyer_message_template(numero_destinataire: str, nom_template: str, langue: str, parametres_corps: dict[str, str] = None) -> str:
+def envoyer_message_template(
+    numero_destinataire: str, nom_template: str, langue: str, parametres_corps: dict[str, str] = None, boutons_reponse_rapide: list = None,
+) -> str:
     """
     Message a partir d'un modele approuve par Meta - seul type de message
     autorise pour initier une conversation (le destinataire n'a pas ecrit
@@ -86,6 +88,14 @@ def envoyer_message_template(numero_destinataire: str, nom_template: str, langue
             ],
         })
 
+    # Boutons de reponse rapide du modele (ex. « Question 1 » a « Question 5 ») : leur texte revient dans le webhook quand
+    # le client clique ; la valeur envoyee ici (payload) sert d'identifiant du bouton.
+    for indice, valeur in enumerate(boutons_reponse_rapide or []):
+        composants.append({
+            "type": "button", "sub_type": "quick_reply", "index": str(indice),
+            "parameters": [{"type": "payload", "payload": str(valeur)}],
+        })
+
     reponse = requests.post(
         f"{URL_GRAPH}/{PHONE_NUMBER_ID}/messages",
         headers=_entetes(),
@@ -103,6 +113,28 @@ def envoyer_message_template(numero_destinataire: str, nom_template: str, langue
         return reponse.json()["messages"][0]["id"]      # identifiant du message : sert a suivre son statut (recu, lu...)
     except (ValueError, KeyError, IndexError):
         return ""
+
+
+# Codes d'erreur Meta « les parametres ne correspondent pas au modele » : signe qu'il manque (ou qu'il y a en trop) les
+# parametres des boutons de reponse rapide.
+CODES_PARAMETRES_MODELE = ("132000", "132012", "132005")
+
+
+def envoyer_questions_hebdo(numero_destinataire: str, corps_questions: str) -> str:
+    """
+    Envoie le modele des questions de la semaine. Le modele peut avoir ou non cinq boutons de reponse rapide (1 a 5) : on
+    essaie d'abord sans parametre de bouton (modele sans bouton, ou boutons acceptes tels quels), puis, si Meta signale
+    que les parametres ne correspondent pas, avec les cinq boutons. Aucune reglage a changer cote plateforme.
+    """
+    parametres = {"questions_semaine": corps_questions}
+    try:
+        return envoyer_message_template(numero_destinataire, NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", parametres)
+    except RuntimeError as erreur:
+        if not any(code in str(erreur) for code in CODES_PARAMETRES_MODELE):
+            raise
+    return envoyer_message_template(
+        numero_destinataire, NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", parametres, boutons_reponse_rapide=["1", "2", "3", "4", "5"],
+    )
 
 
 def telecharger_media(media_id: str) -> tuple[bytes, str]:
