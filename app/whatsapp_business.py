@@ -24,12 +24,12 @@ NOM_TEMPLATE_QUESTIONS_HEBDO = os.getenv("WHATSAPP_TEMPLATE_QUESTIONS", "questio
 # le Gestionnaire WhatsApp : un premier message ne peut partir que sous forme de modele). Variable : {{prenom}}.
 NOM_TEMPLATE_TUTO = os.getenv("WHATSAPP_TEMPLATE_TUTO", "tuto_vocal")
 TEXTE_MODELE_TUTO = (
-    "Bonjour {{prenom}}, c'est Jonathan. Je t'explique comment va fonctionner ton assistant de contenu, en 3 étapes :\n\n"
-    "1. Chaque semaine, tu recevras ici 4 questions sur ton métier, plus une cinquième où tu choisis toi-même le sujet.\n"
-    "2. Réponds par le numéro de la question qui t'inspire (1 à 5), puis envoie un message vocal, comme si tu en parlais à un "
-    "collègue. Compte 1 à 2 minutes. Tu peux aussi envoyer une photo.\n"
-    "3. Je transforme ton vocal en publication pour ta fiche Google et tes réseaux, avec tes mots. Je relis tout avant de publier.\n\n"
-    "Tu peux répondre quand tu veux, même quelques jours plus tard. Tes premières questions arrivent très bientôt."
+    "Bonjour {{prenom}} 👋 c'est Jonathan. Je t'explique comment va fonctionner ton assistant de contenu, en 3 étapes :\n\n"
+    "1️⃣ Chaque semaine, tu recevras ici 4 questions sur ton métier, plus une cinquième où tu choisis toi-même le sujet.\n"
+    "2️⃣ Réponds par le numéro de la question qui t'inspire (1 à 5), puis envoie un message vocal 🎙️ comme si tu en parlais à un "
+    "collègue. Compte 1 à 2 minutes. Tu peux aussi envoyer une photo 📸\n"
+    "3️⃣ Je transforme ton vocal en publication pour ta fiche Google et tes réseaux, avec tes mots. Je relis tout avant de publier ✅\n\n"
+    "Tu peux répondre quand tu veux, même quelques jours plus tard. Tes premières questions arrivent très bientôt !"
 )
 
 CLE_OPENAI = os.getenv("OPENAI_API_KEY")
