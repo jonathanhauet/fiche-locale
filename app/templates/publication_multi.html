@@ -158,6 +158,7 @@
   <div id="grille-photos-whatsapp-principal" class="avis-photos-fiche" hidden></div>
   <p id="texte-statut-photos-principal" class="texte-vide" hidden></p>
   <div id="apercu-images-choisies" class="images-choisies" hidden></div>
+  <div id="zoom-image-choisie" class="zoom-image-flottant" hidden><img alt="Image du post en grand"></div>
   <details class="options-visuel" id="options-visuel">
     <summary>Options du visuel IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
     {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
@@ -1066,6 +1067,29 @@
         conteneur.appendChild(bloc);
       });
     }
+
+    // Agrandissement au survol d'une miniature du post (suit la souris, reste dans l'ecran).
+    (function () {
+      const liste = document.getElementById("apercu-images-choisies"), zoom = document.getElementById("zoom-image-choisie");
+      if (!liste || !zoom) return;
+      const grande = zoom.querySelector("img");
+      function placer(x, y) {
+        const l = zoom.offsetWidth, h = zoom.offsetHeight;
+        let gauche = x + 18, haut = y + 14;
+        if (gauche + l > window.innerWidth - 12) gauche = Math.max(12, x - l - 18);
+        if (haut + h > window.innerHeight - 12) haut = Math.max(12, window.innerHeight - h - 12);
+        zoom.style.left = gauche + "px"; zoom.style.top = haut + "px";
+      }
+      liste.addEventListener("mouseover", (e) => {
+        const miniature = e.target.closest(".image-choisie img");
+        if (!miniature) return;
+        grande.src = miniature.src;
+        zoom.hidden = false; placer(e.clientX, e.clientY);
+      });
+      liste.addEventListener("mousemove", (e) => { if (!zoom.hidden) placer(e.clientX, e.clientY); });
+      liste.addEventListener("mouseout", (e) => { if (e.target.closest(".image-choisie img")) zoom.hidden = true; });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") zoom.hidden = true; });
+    })();
 
     // Reprendre une photo deja existante (fiche Google ou WhatsApp) comme image du post, sans re-televerser
     // depuis l'ordinateur - meme mecanisme que l'image generee par IA (champ-image-url-ia, "|" separe).

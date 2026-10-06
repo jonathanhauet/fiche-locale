@@ -3190,6 +3190,10 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .images-choisies { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0; }
 .image-choisie { position: relative; flex-shrink: 0; }
 .image-choisie img { height: 72px; width: auto; border-radius: 6px; display: block; }
+.image-choisie img { cursor: zoom-in; }
+.zoom-image-flottant { position: fixed; z-index: 1000; padding: 8px; border-radius: 12px; background: var(--carte); border: 1px solid var(--carte-bordure); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); pointer-events: none; }
+.zoom-image-flottant[hidden] { display: none; }
+.zoom-image-flottant img { display: block; max-width: min(460px, calc(100vw - 40px)); max-height: 70vh; width: auto; height: auto; border-radius: 8px; }
 .image-choisie-retirer {
   position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
   background: #d92d20; color: #fff; border: 2px solid var(--fond, #fff); cursor: pointer;
