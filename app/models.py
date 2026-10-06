@@ -1087,3 +1087,19 @@ class ControleTechniqueGEO(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="controles_techniques_geo")
+
+
+class IdeeVocale(Base):
+    """
+    Idee dictee a l'oral (vocal WhatsApp envoye a la plateforme, ou enregistrement/fichier depuis la page « Idees vocales »),
+    transcrite et gardee en attente : Jonathan choisit ensuite la fiche et la transforme en post multi-reseaux.
+    """
+
+    __tablename__ = "idees_vocales"
+
+    id = Column(Integer, primary_key=True)
+    texte = Column(Text, default="")                 # transcription (modifiable avant de creer le post)
+    source = Column(String, default="web")           # "web" ou "whatsapp"
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)   # fiche choisie (ou deduite) pour cette idee
+    statut = Column(String, default="NOUVELLE")      # NOUVELLE, UTILISEE
+    cree_le = Column(DateTime, default=datetime.utcnow)

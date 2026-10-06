@@ -129,7 +129,15 @@ def transcrire_audio(octets: bytes, mime_type: str) -> str:
     if not CLE_OPENAI:
         raise RuntimeError("OPENAI_API_KEY manquant dans plateforme_web/.env.")
 
-    extension = "ogg" if "ogg" in mime_type else "mp3"
+    mime = (mime_type or "").lower()
+    extension = "mp3"
+    for fragment, ext in (
+        ("webm", "webm"), ("ogg", "ogg"), ("opus", "ogg"), ("mp4", "m4a"), ("m4a", "m4a"), ("aac", "m4a"),
+        ("x-caf", "m4a"), ("wav", "wav"), ("mpeg", "mp3"), ("mp3", "mp3"),
+    ):
+        if fragment in mime:
+            extension = ext
+            break
     reponse = requests.post(
         "https://api.openai.com/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {CLE_OPENAI}"},

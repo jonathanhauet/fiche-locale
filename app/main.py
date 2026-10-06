@@ -8428,6 +8428,112 @@ def publication_multi_vocal(client_id: int, request: Request, db: Session = Depe
     return templates.TemplateResponse(request, "capture_vocale.html", {"client": client})
 
 
+# --- Idees vocales : dictees a l'oral (telephone), gardees puis transformees en post multi-reseaux ---
+
+EXTENSIONS_VOCAL_IMPORT = {"m4a", "mp3", "wav", "ogg", "oga", "opus", "webm", "mp4", "aac", "caf", "mpeg", "mpga"}
+TAILLE_MAX_VOCAL = 24 * 1024 * 1024    # la transcription (Whisper) refuse au-dela de 25 Mo
+
+
+def _normaliser_nom(texte: str) -> str:
+    sans_accents = "".join(c for c in unicodedata.normalize("NFKD", texte or "") if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]", "", sans_accents.lower())
+
+
+def _client_cite_dans_texte(clients: list, texte: str):
+    """Fiche dont le nom est prononce dans l'idee (accents, ponctuation et casse ignores) ; la plus precise l'emporte."""
+    cible = _normaliser_nom(texte)
+    trouves = []
+    for client in clients:
+        for variante in {client.nom, client.nom.split(" - ")[0]}:
+            nom = _normaliser_nom(variante)
+            if len(nom) >= 4 and nom in cible:
+                trouves.append((len(nom), client))
+    return max(trouves, key=lambda t: t[0])[1] if trouves else None
+
+
+@app.get("/idees-vocales", response_class=HTMLResponse)
+def page_idees_vocales(request: Request, client_id: int = None, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
+    nouvelles = db.query(models.IdeeVocale).filter_by(statut="NOUVELLE").order_by(models.IdeeVocale.cree_le.desc()).all()
+    deja_utilisees = db.query(models.IdeeVocale).filter_by(statut="UTILISEE").order_by(models.IdeeVocale.cree_le.desc()).limit(10).all()
+    noms = {c.id: c.nom for c in clients}
+    idees = [{
+        "id": i.id, "texte": i.texte, "source": i.source, "date": i.cree_le.strftime("%d/%m/%Y à %H:%M"),
+        "client_id": i.client_id or (_client_cite_dans_texte(clients, i.texte).id if _client_cite_dans_texte(clients, i.texte) else None),
+    } for i in nouvelles]
+    return templates.TemplateResponse(request, "idees_vocales.html", {
+        "clients": clients, "idees": idees, "client_choisi": client_id,
+        "deja_utilisees": [{"texte": i.texte, "client": noms.get(i.client_id, ""), "date": i.cree_le.strftime("%d/%m/%Y")} for i in deja_utilisees],
+        "transcription_configuree": bool(whatsapp_business.CLE_OPENAI),
+    })
+
+
+@app.post("/idees-vocales/importer")
+async def importer_idee_vocale(request: Request, fichier: UploadFile = File(...), client_id: str = Form(""), db: Session = Depends(obtenir_session)):
+    """Enregistrement fait dans le navigateur du telephone, ou fichier audio importe : transcrit puis garde comme idee."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, rechargez la page."}, status_code=401)
+    octets = await fichier.read()
+    if not octets:
+        return JSONResponse({"erreur": "Le fichier est vide."}, status_code=400)
+    if len(octets) > TAILLE_MAX_VOCAL:
+        return JSONResponse({"erreur": f"Fichier trop volumineux ({len(octets) // (1024 * 1024)} Mo, 24 Mo maximum)."}, status_code=400)
+    extension = os.path.splitext(fichier.filename or "")[1].lstrip(".").lower()
+    mime = fichier.content_type or ""
+    if extension and extension not in EXTENSIONS_VOCAL_IMPORT and not mime.startswith("audio/") and not mime.startswith("video/"):
+        return JSONResponse({"erreur": "Format non pris en charge (m4a, mp3, wav, ogg, webm, aac)."}, status_code=400)
+    if not mime or mime == "application/octet-stream":
+        mime = {"m4a": "audio/m4a", "mp4": "audio/mp4", "wav": "audio/wav", "ogg": "audio/ogg", "webm": "audio/webm", "aac": "audio/aac"}.get(extension, "audio/mpeg")
+    try:
+        transcription = (await asyncio.to_thread(whatsapp_business.transcrire_audio, octets, mime)).strip()
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Transcription impossible : {erreur}"}, status_code=502)
+    if not transcription:
+        return JSONResponse({"erreur": "Aucune parole détectée dans cet enregistrement."}, status_code=422)
+    choisi = db.get(models.Client, int(client_id)) if client_id.strip().isdigit() else None
+    idee = models.IdeeVocale(texte=transcription, source="web", client_id=choisi.id if choisi else None)
+    db.add(idee)
+    db.commit()
+    return JSONResponse({"id": idee.id, "texte": transcription})
+
+
+@app.post("/idees-vocales/{idee_id}/creer-post")
+def creer_post_depuis_idee_vocale(
+    idee_id: int, request: Request, client_id: int = Form(...), texte: str = Form(...), db: Session = Depends(obtenir_session),
+):
+    """Transforme l'idee en post (voix de l'auteur, rien d'invente) puis ouvre le composeur multi-reseaux de la fiche."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, rechargez la page."}, status_code=401)
+    idee = db.get(models.IdeeVocale, idee_id)
+    client = db.get(models.Client, client_id)
+    texte = texte.strip()
+    if not idee or not client or not texte:
+        return JSONResponse({"erreur": "Idée, fiche ou texte manquant."}, status_code=400)
+    try:
+        post = claude_generation.generer_post_depuis_reponse(claude_generation.QUESTION_SUJET_LIBRE, texte, _contexte_ia_client(client))
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de la génération : {erreur}"}, status_code=500)
+    idee.texte, idee.client_id, idee.statut = texte, client.id, "UTILISEE"
+    db.commit()
+    request.session["brouillon_vocal"] = {"client_id": client.id, "texte": post["texte"], "prompt_image": post.get("prompt_image", "")}
+    return JSONResponse({"url": f"/publication-multi?client_id={client.id}"})
+
+
+@app.post("/idees-vocales/{idee_id}/supprimer")
+def supprimer_idee_vocale(idee_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    idee = db.get(models.IdeeVocale, idee_id)
+    if idee:
+        db.delete(idee)
+        db.commit()
+    return RedirectResponse("/idees-vocales", status_code=303)
+
+
 @app.post("/publication-multi/{client_id}/questions_interview")
 def publication_multi_questions_interview(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Propose 5 questions pensees pour etre repondues a l'oral (voir claude_generation.generer_questions_interview)."""
@@ -8601,6 +8707,25 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
         return
 
     if type_message == "audio":
+        if not etat.question_choisie and _est_marque_personnelle(client.nom):
+            # Idee libre de Jonathan lui-meme (aucune question en cours) : transcrite et gardee dans « Idees vocales ».
+            try:
+                octets, mime = whatsapp_business.telecharger_media(message["audio"]["id"])
+                transcription = whatsapp_business.transcrire_audio(octets, mime).strip()
+                if not transcription:
+                    raise RuntimeError("Transcription vide.")
+                db.add(models.IdeeVocale(texte=transcription, source="whatsapp"))
+                db.commit()
+                whatsapp_business.envoyer_message_texte(numero, "Idée enregistrée ✅ Retrouvez-la dans « Idées vocales » pour en faire un post.")
+                notifications.notifier(
+                    "Nouvelle idée vocale", transcription[:120], url="https://web-production-bf59a.up.railway.app/idees-vocales",
+                )
+            except Exception:
+                try:
+                    whatsapp_business.envoyer_message_texte(numero, "Je n'ai pas pu enregistrer ce vocal, réessayez dans un instant.")
+                except Exception:
+                    pass
+            return
         if not etat.question_choisie:
             try:
                 whatsapp_business.envoyer_message_texte(

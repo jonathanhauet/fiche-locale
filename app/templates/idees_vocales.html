@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% set page_actuelle = "idees_vocales" %}
+{% block titre %}Idées vocales — Fiche Locale{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Idées vocales</h1>
+</div>
+<p class="texte-discret">
+  Une idée vous passe par la tête : dictez-la, elle est transcrite et gardée ici. Choisissez ensuite la fiche et l'IA en fait un post
+  multi-réseaux, avec vos mots et sans rien inventer. Relisez toujours avant de publier.
+</p>
+
+{% if not transcription_configuree %}
+<p class="message-erreur">La transcription n'est pas configurée (OPENAI_API_KEY manquant).</p>
+{% endif %}
+
+<div class="bloc-section">
+  <strong>Ajouter une idée</strong>
+  <div class="formulaire-ligne" style="margin-top:0.6rem">
+    <label>
+      Pour la fiche (facultatif)
+      <select id="client-nouvelle-idee">
+        <option value="">Je choisirai après</option>
+        {% for c in clients %}<option value="{{ c.id }}" {% if c.id == client_choisi %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="actions-avis">
+    <button type="button" class="bouton" id="bouton-enregistrer" style="font-size:1.1rem;padding:0.8rem 1.4rem">🎙️ Enregistrer</button>
+    <span id="minuteur-enregistrement" class="texte-discret" hidden></span>
+  </div>
+  <p class="texte-discret">Ou importez un enregistrement déjà fait (Dictaphone, Notes vocales, vocal WhatsApp enregistré) :</p>
+  <div class="actions-avis">
+    <input type="file" id="fichier-vocal" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.aac,.webm">
+    <button type="button" class="bouton-secondaire" id="bouton-importer">Importer</button>
+  </div>
+  <p id="statut-import" class="texte-discret" hidden></p>
+  <p id="erreur-import" class="message-erreur" hidden></p>
+  <p class="texte-discret">
+    <strong>Le plus rapide depuis le téléphone :</strong> envoyez simplement un message vocal WhatsApp au numéro de la plateforme
+    (depuis le numéro enregistré sur votre fiche). L'idée apparaît ici et vous recevez une notification.
+    Astuce : ouvrez cette page dans le navigateur du téléphone puis « Ajouter à l'écran d'accueil » pour l'avoir en un geste.
+  </p>
+</div>
+
+<h2>À transformer ({{ idees|length }})</h2>
+{% for idee in idees %}
+<div class="bloc-section carte-idee" data-id="{{ idee.id }}">
+  <div class="texte-discret">{{ idee.date }} · {{ "Envoyée par WhatsApp" if idee.source == "whatsapp" else "Enregistrée depuis l'application" }}</div>
+  <textarea class="champ-texte-idee" rows="5" style="width:100%">{{ idee.texte }}</textarea>
+  <div class="formulaire-ligne">
+    <label>
+      Fiche
+      <select class="choix-client-idee">
+        <option value="">Choisir une fiche…</option>
+        {% for c in clients %}<option value="{{ c.id }}" {% if c.id == idee.client_id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="button" class="bouton bouton-creer-post"><span class="spinner" hidden></span> ✨ Créer le post</button>
+  </div>
+  <p class="message-erreur message-idee" hidden></p>
+  <form method="post" action="/idees-vocales/{{ idee.id }}/supprimer" onsubmit="return confirm('Supprimer cette idée ?');">
+    <button type="submit" class="bouton-danger bouton-mini">Supprimer</button>
+  </form>
+</div>
+{% else %}
+<p class="texte-vide">Aucune idée en attente.</p>
+{% endfor %}
+
+{% if deja_utilisees %}
+<details class="bloc-repliable">
+  <summary>Déjà transformées en post ({{ deja_utilisees|length }} dernières)</summary>
+  <ul>
+    {% for i in deja_utilisees %}<li class="texte-discret">{{ i.date }}{% if i.client %} · {{ i.client }}{% endif %} : {{ i.texte[:140] }}{% if i.texte|length > 140 %}…{% endif %}</li>{% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+<script>
+(function () {
+  const boutonEnregistrer = document.getElementById("bouton-enregistrer");
+  const boutonImporter = document.getElementById("bouton-importer");
+  const champFichier = document.getElementById("fichier-vocal");
+  const minuteur = document.getElementById("minuteur-enregistrement");
+  const statut = document.getElementById("statut-import");
+  const erreur = document.getElementById("erreur-import");
+  const choixClient = document.getElementById("client-nouvelle-idee");
+  let enregistreur = null, flux = null, morceaux = [], debut = 0, horloge = null;
+
+  function montrerErreur(message) { erreur.textContent = message; erreur.hidden = false; statut.hidden = true; }
+  async function envoyer(blob, nom) {
+    erreur.hidden = true; statut.textContent = "Transcription en cours… (quelques secondes)"; statut.hidden = false;
+    boutonEnregistrer.disabled = true; boutonImporter.disabled = true;
+    try {
+      const donnees = new FormData();
+      donnees.append("fichier", blob, nom);
+      donnees.append("client_id", choixClient.value);
+      const reponse = await fetch("/idees-vocales/importer", { method: "POST", body: donnees });
+      const resultat = await reponse.json();
+      if (!reponse.ok) { montrerErreur(resultat.erreur || "Échec de l'import."); return; }
+      window.location.reload();
+    } catch (e) {
+      montrerErreur("Erreur réseau pendant l'envoi.");
+    } finally { boutonEnregistrer.disabled = false; boutonImporter.disabled = false; }
+  }
+
+  function formatSupporte() {
+    for (const type of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"]) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return "";
+  }
+  boutonEnregistrer.addEventListener("click", async () => {
+    if (enregistreur) { enregistreur.stop(); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) { montrerErreur("Ce navigateur ne permet pas d'enregistrer : importez plutôt un fichier."); return; }
+    try {
+      flux = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) { montrerErreur("Micro non autorisé : autorisez-le dans le navigateur, ou importez un fichier."); return; }
+    const type = formatSupporte();
+    morceaux = [];
+    enregistreur = type ? new MediaRecorder(flux, { mimeType: type }) : new MediaRecorder(flux);
+    enregistreur.ondataavailable = (e) => { if (e.data.size) morceaux.push(e.data); };
+    enregistreur.onstop = () => {
+      clearInterval(horloge); minuteur.hidden = true; boutonEnregistrer.textContent = "🎙️ Enregistrer";
+      flux.getTracks().forEach((t) => t.stop());
+      const mime = enregistreur.mimeType || type || "audio/webm";
+      enregistreur = null;
+      const extension = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
+      envoyer(new Blob(morceaux, { type: mime }), "idee." + extension);
+    };
+    enregistreur.start();
+    debut = Date.now(); minuteur.hidden = false; minuteur.textContent = "0:00";
+    boutonEnregistrer.textContent = "⏹️ Terminer et envoyer";
+    horloge = setInterval(() => {
+      const s = Math.floor((Date.now() - debut) / 1000);
+      minuteur.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    }, 500);
+  });
+
+  boutonImporter.addEventListener("click", () => {
+    const fichier = champFichier.files[0];
+    if (!fichier) { montrerErreur("Choisissez d'abord un fichier audio."); return; }
+    envoyer(fichier, fichier.name);
+  });
+
+  document.querySelectorAll(".carte-idee").forEach((carte) => {
+    const bouton = carte.querySelector(".bouton-creer-post"), spinner = carte.querySelector(".spinner"), message = carte.querySelector(".message-idee");
+    bouton.addEventListener("click", async () => {
+      const client = carte.querySelector(".choix-client-idee").value;
+      const texte = carte.querySelector(".champ-texte-idee").value.trim();
+      message.hidden = true;
+      if (!client) { message.textContent = "Choisissez la fiche pour laquelle créer le post."; message.hidden = false; return; }
+      if (!texte) { message.textContent = "Le texte de l'idée est vide."; message.hidden = false; return; }
+      bouton.disabled = true; spinner.hidden = false;
+      try {
+        const reponse = await fetch("/idees-vocales/" + carte.dataset.id + "/creer-post", { method: "POST", body: new URLSearchParams({ client_id: client, texte }) });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { message.textContent = donnees.erreur || "Échec."; message.hidden = false; return; }
+        window.location.href = donnees.url;
+      } catch (e) {
+        message.textContent = "Erreur réseau."; message.hidden = false;
+      } finally { bouton.disabled = false; spinner.hidden = true; }
+    });
+  });
+})();
+</script>
+{% endblock %}
