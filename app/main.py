@@ -3128,13 +3128,33 @@ def _mettre_a_jour_profil_voix(db: Session, client: models.Client) -> None:
         db.commit()
 
 
-def _contexte_ia_client(client: models.Client) -> str:
+CONSIGNE_MARQUE_SANS_VILLE = (
+    "CONSIGNE PRIORITAIRE (contenu de marque) : ce texte sera publie sur les comptes de TOUTE la marque, pour toutes ses agences. "
+    "Ne cite AUCUNE ville, adresse, quartier, numero de telephone ni agence en particulier, meme si le contenu ci-dessous en "
+    "mentionne : parle de la marque et de son savoir-faire de facon generale, a l'ensemble de ses clients."
+)
+
+
+def _grouper_clients_par(clients: list, attribut: str) -> dict:
+    """{valeur de l'attribut: [fiches]} : un meme compte (Instagram, LinkedIn...) peut etre lie a plusieurs fiches."""
+    groupes = {}
+    for client in clients:
+        valeur = getattr(client, attribut)
+        if valeur:
+            groupes.setdefault(valeur, []).append(client)
+    return groupes
+
+
+def _contexte_ia_client(client: models.Client, marque: bool = False) -> str:
     """
     Contexte complet fourni a l'IA pour ce client : le champ libre
     Client.contenu_site, complete par le texte extrait de chaque document de
     la base de connaissances (voir app/documents.py).
+    marque=True : contenu publie sur les comptes de toute la marque (plusieurs agences) - consigne de ne citer aucune ville.
     """
     morceaux = []
+    if marque:
+        morceaux.append(CONSIGNE_MARQUE_SANS_VILLE)
     # Voix en tete : certains prompts tronquent le contexte, et c'est ce qui
     # doit survivre a la troncature.
     bloc_voix = _bloc_voix_client(client)
@@ -3144,6 +3164,8 @@ def _contexte_ia_client(client: models.Client) -> str:
         morceaux.append(client.contenu_site.strip())
     for document in client.documents_connaissance:
         morceaux.append(f"--- Document : {document.nom_fichier} ---\n{document.texte_extrait}")
+    if marque:
+        morceaux.append(CONSIGNE_MARQUE_SANS_VILLE)      # rappelee a la fin : le contexte peut etre long
     return "\n\n".join(morceaux)
 
 
@@ -6145,9 +6167,10 @@ def meta_pages(compte_id: int, request: Request, db: Session = Depends(obtenir_s
             request, "meta_pages.html", {**contexte, "pages": [], "clients_par_page_id": {}, "erreur": str(erreur)},
         )
 
-    clients_par_page_id = {
-        c.page_id_meta: c for c in clients if c.page_id_meta
-    }
+    clients_par_page_id = {}
+    for c in clients:
+        if c.page_id_meta:
+            clients_par_page_id.setdefault(c.page_id_meta, []).append(c)
     return templates.TemplateResponse(
         request, "meta_pages.html", {**contexte, "pages": pages, "clients_par_page_id": clients_par_page_id, "erreur": None},
     )
@@ -6293,7 +6316,7 @@ def linkedin_comptes(request: Request, db: Session = Depends(obtenir_session)):
 
     comptes = linkedin_oauth.lister_comptes(db)
     clients = db.query(models.Client).order_by(models.Client.nom).all()
-    clients_par_compte_id = {c.compte_linkedin_id: c for c in clients if c.compte_linkedin_id}
+    clients_par_compte_id = _grouper_clients_par(clients, "compte_linkedin_id")
     return templates.TemplateResponse(
         request, "linkedin_comptes.html",
         {
@@ -6323,6 +6346,20 @@ def linkedin_lier_compte(compte_id: int, request: Request, client_id: int = Form
         client.compte_linkedin_id = compte.id
         db.commit()
 
+    return RedirectResponse("/linkedin/comptes", status_code=303)
+
+
+@app.post("/linkedin/comptes/{compte_id}/delier")
+def linkedin_delier_compte(compte_id: int, request: Request, client_id: int = Form(...), db: Session = Depends(obtenir_session)):
+    """Detache le profil LinkedIn d'UNE fiche (les autres fiches liees au meme profil ne sont pas touchees)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if client and client.compte_linkedin_id == compte_id:
+        client.compte_linkedin_id = None
+        db.commit()
     return RedirectResponse("/linkedin/comptes", status_code=303)
 
 
@@ -6376,7 +6413,7 @@ async def linkedin_publier(
         {
             "comptes": comptes, "erreur": erreur, "resultat_publication": resultat_publication,
             "posts_programmes": _posts_linkedin_programmes(db),
-            "clients": clients, "clients_par_compte_id": {c.compte_linkedin_id: c for c in clients if c.compte_linkedin_id},
+            "clients": clients, "clients_par_compte_id": _grouper_clients_par(clients, "compte_linkedin_id"),
         },
     )
 
@@ -6404,7 +6441,7 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
     compte = db.get(models.CompteLinkedIn, compte_id)
     if compte:
         clients = db.query(models.Client).order_by(models.Client.nom).all()
-        clients_par_compte_id = {c.compte_linkedin_id: c for c in clients if c.compte_linkedin_id}
+        clients_par_compte_id = _grouper_clients_par(clients, "compte_linkedin_id")
         posts_en_attente = (
             db.query(models.PostLinkedInProgramme)
             .filter_by(compte_linkedin_id=compte_id, etat="EN_ATTENTE")
@@ -6420,7 +6457,7 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
                 )
             else:
                 message = (
-                    f"Impossible de deconnecter ce compte : le client {clients_lies.nom} y est encore "
+                    f"Impossible de deconnecter ce compte : {', '.join(c.nom for c in clients_lies)} y est encore "
                     "rattache. Reliez-le a un autre compte d'abord (ou retirez le lien)."
                 )
             return templates.TemplateResponse(
@@ -7385,6 +7422,7 @@ async def publication_multi_adapter(client_id: int, request: Request, db: Sessio
     donnees = await request.json()
     texte_base = (donnees.get("texte_base") or "").strip()
     reseaux = donnees.get("reseaux") or []
+    marque = bool(donnees.get("marque"))
 
     if not texte_base:
         return JSONResponse({"erreur": "Le texte de base est obligatoire."}, status_code=400)
@@ -7392,7 +7430,10 @@ async def publication_multi_adapter(client_id: int, request: Request, db: Sessio
         return JSONResponse({"erreur": "Selectionnez au moins un reseau."}, status_code=400)
 
     try:
-        variantes = claude_generation.adapter_post_multi_reseaux(texte_base, reseaux, _contexte_ia_client(client), client.hashtags_fixes)
+        # Contenu de marque : les hashtags fixes de cette agence (souvent locaux) ne sont pas ajoutes.
+        variantes = claude_generation.adapter_post_multi_reseaux(
+            texte_base, reseaux, _contexte_ia_client(client, marque=marque), "" if marque else client.hashtags_fixes,
+        )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de l'adaptation IA : {e}"}, status_code=500)
 
@@ -8299,10 +8340,11 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
     theme = (donnees.get("theme") or "").strip()
     contenu_article = (donnees.get("contenu_article") or "").strip()
     texte_actuel = (donnees.get("texte_actuel") or "").strip()
+    marque = bool(donnees.get("marque"))
 
     try:
         post_genere = claude_generation.generer_post_expert(
-            theme, _contexte_ia_client(client), contenu_article, client.nom,
+            theme, _contexte_ia_client(client, marque=marque), contenu_article, client.nom,
             _sujets_deja_traites_client(db, client.id, limite=14), texte_actuel,
         )
     except Exception as e:
@@ -9952,7 +9994,7 @@ def instagram_comptes(request: Request, db: Session = Depends(obtenir_session)):
 
     comptes = instagram_oauth.lister_comptes(db)
     clients = db.query(models.Client).order_by(models.Client.nom).all()
-    clients_par_compte_id = {c.compte_instagram_id: c for c in clients if c.compte_instagram_id}
+    clients_par_compte_id = _grouper_clients_par(clients, "compte_instagram_id")
     return templates.TemplateResponse(
         request, "instagram_comptes.html",
         {"comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id, "erreur": None},
@@ -9977,6 +10019,25 @@ def instagram_lier_compte(compte_id: int, request: Request, client_id: int = For
     return RedirectResponse("/instagram/comptes", status_code=303)
 
 
+@app.post("/instagram/comptes/{compte_id}/delier")
+def instagram_delier_compte(compte_id: int, request: Request, client_id: int = Form(...), db: Session = Depends(obtenir_session)):
+    """Detache le compte Instagram d'UNE fiche (les autres fiches liees au meme compte ne sont pas touchees)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    compte = db.get(models.CompteInstagram, compte_id)
+    client = db.get(models.Client, client_id)
+    if compte and client and client.compte_instagram_id == compte_id:
+        client.compte_instagram_id = None
+        client.token_instagram = ""
+        if client.instagram_id_meta == compte.identifiant_instagram:
+            client.instagram_id_meta = ""
+            client.instagram_nom_meta = ""
+        db.commit()
+    return RedirectResponse("/instagram/comptes", status_code=303)
+
+
 @app.post("/instagram/comptes/{compte_id}/deconnecter")
 def instagram_deconnecter_compte(compte_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -9989,7 +10050,7 @@ def instagram_deconnecter_compte(compte_id: int, request: Request, db: Session =
         if clients_lies:
             comptes = instagram_oauth.lister_comptes(db)
             clients = db.query(models.Client).order_by(models.Client.nom).all()
-            clients_par_compte_id = {c.compte_instagram_id: c for c in clients if c.compte_instagram_id}
+            clients_par_compte_id = _grouper_clients_par(clients, "compte_instagram_id")
             return templates.TemplateResponse(
                 request, "instagram_comptes.html",
                 {

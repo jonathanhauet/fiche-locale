@@ -44,6 +44,9 @@
       💡 Générer le texte (IA)
     </button>
   </div>
+  <label class="filtre-case" title="Pour un compte partagé par plusieurs agences : le texte ne cite aucune ville ni agence">
+    <input type="checkbox" id="mode-marque"> Contenu de marque (aucune ville ni agence, pour les comptes partagés par toutes les agences)
+  </label>
   <p id="texte-source-article-ia" class="texte-vide" {% if not origine_vocale %}hidden{% endif %}>
     {% if origine_vocale %}Texte généré à partir de votre réponse vocale — relisez avant de publier.{% endif %}
   </p>
@@ -1365,7 +1368,7 @@
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_texte", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ theme: theme, contenu_article: contenuArticle, texte_actuel: document.getElementById("texte-base").value }),
+          body: JSON.stringify({ theme: theme, contenu_article: contenuArticle, texte_actuel: document.getElementById("texte-base").value, marque: document.getElementById("mode-marque").checked }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {
@@ -2436,7 +2439,7 @@
         const reponse = await fetch("/publication-multi/{{ client.id }}/adapter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texte_base: texteBase, reseaux: listeReseaux }),
+          body: JSON.stringify({ texte_base: texteBase, reseaux: listeReseaux, marque: document.getElementById("mode-marque").checked }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {

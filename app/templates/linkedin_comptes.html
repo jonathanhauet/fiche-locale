@@ -40,7 +40,7 @@
     </thead>
     <tbody>
       {% for compte in comptes %}
-      {% set client_lie = clients_par_compte_id.get(compte.id) %}
+      {% set fiches = clients_par_compte_id.get(compte.id, []) %}
       <tr>
         <td>
           <span class="ligne-compte-reseau">
@@ -52,14 +52,24 @@
         <td>{{ compte.expire_le | heure_locale("%Y-%m-%d") if compte.expire_le else "-" }}</td>
         <td>
           <div class="cellule-actions-compte">
+            {% for client_lie in fiches %}
+            <form method="post" action="/linkedin/comptes/{{ compte.id }}/delier" class="fiche-liee"
+                  onsubmit="return confirm('Détacher cette fiche ? Les autres fiches liées au même compte ne sont pas touchées.');">
+              <input type="hidden" name="client_id" value="{{ client_lie.id }}">
+              
+              <span class="etiquette-chip">{{ client_lie.nom }}</span>
+              <button type="submit" class="lien-retirer-geotag" title="Détacher cette fiche">×</button>
+            </form>
+            {% endfor %}
             <form method="post" action="/linkedin/comptes/{{ compte.id }}/lier">
+              
               <select name="client_id" required>
-                <option value="" disabled {{ "selected" if not client_lie else "" }}>Choisir un client…</option>
-                {% for client in clients %}
-                <option value="{{ client.id }}" {{ "selected" if client_lie and client_lie.id == client.id else "" }}>{{ client.nom }}</option>
+                <option value="" disabled selected>{{ "Ajouter une autre fiche…" if fiches else "Choisir une fiche…" }}</option>
+                {% for client in clients if client not in fiches %}
+                <option value="{{ client.id }}">{{ client.nom }}</option>
                 {% endfor %}
               </select>
-              <button type="submit" class="bouton-secondaire">{{ "Relier" if client_lie else "Lier" }}</button>
+              <button type="submit" class="bouton-secondaire">{{ "Ajouter" if fiches else "Lier" }}</button>
             </form>
             <form method="post" action="/linkedin/comptes/{{ compte.id }}/deconnecter"
                   onsubmit="return confirm('Deconnecter ce profil LinkedIn ?');">
