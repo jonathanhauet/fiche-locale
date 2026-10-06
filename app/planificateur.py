@@ -289,6 +289,26 @@ def envoyer_questions_whatsapp_pour_client(db, client) -> str | None:
     return None
 
 
+def envoyer_tuto_whatsapp_pour_client(db, client) -> str | None:
+    """
+    Envoie au client le message d'explication (tuto) via le modele approuve WHATSAPP_TEMPLATE_TUTO, puis memorise l'envoi
+    pour suivre son statut. Renvoie None si tout s'est bien passe, sinon un message d'erreur (modele non approuve, numero
+    invalide, jeton expire...).
+    """
+    try:
+        identifiant = whatsapp_business.envoyer_message_template(
+            client.numero_whatsapp, whatsapp_business.NOM_TEMPLATE_TUTO, "fr",
+            {"prenom": (client.prenom or client.nom or "").strip() or "bonjour"},
+        )
+    except Exception as erreur:
+        return f"Echec de l'envoi du tuto : {erreur}"
+    client.whatsapp_tuto_envoye_le = datetime.utcnow()
+    client.whatsapp_tuto_message_id = identifiant or ""
+    client.whatsapp_tuto_statut = "sent"
+    db.commit()
+    return None
+
+
 def envoyer_questions_whatsapp_si_prevu():
     """
     Envoie les questions du mode rapide vocal par WhatsApp (voir
@@ -319,7 +339,10 @@ def envoyer_questions_whatsapp_si_prevu():
         for client in clients_eligibles:
             if jour_aujourdhui not in client.whatsapp_jours.split(","):
                 continue
-            envoyer_questions_whatsapp_pour_client(db, client)
+            erreur = envoyer_questions_whatsapp_pour_client(db, client)
+            if erreur:
+                # Seul cas ou Jonathan est prevenu : un envoi automatique reussi n'a pas besoin de notification.
+                notifications.notifier("Echec questions WhatsApp", f"{client.nom} : {erreur[:300]}")
     finally:
         db.close()
 

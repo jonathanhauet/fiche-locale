@@ -147,6 +147,11 @@ class Client(Base):
     # WhatsApp business de l'agence risque d'etre signale/restreint. Non
     # coche par defaut, y compris pour la propre fiche de Jonathan.
     whatsapp_opt_in_confirme = Column(Boolean, default=False)
+    # Message d'explication (tuto) envoye avant les premieres questions : date d'envoi, identifiant du message chez Meta
+    # et dernier statut connu (sent, delivered, read, failed) - voir planificateur.envoyer_tuto_whatsapp_pour_client.
+    whatsapp_tuto_envoye_le = Column(DateTime, nullable=True)
+    whatsapp_tuto_message_id = Column(String, default="")
+    whatsapp_tuto_statut = Column(String, default="")
     # Hashtags "de marque" propres a ce client, toujours inclus en plus des
     # hashtags contextuels generes par l'IA lors de l'adaptation multi-reseaux
     # (voir claude_generation.adapter_post_multi_reseaux) - uniquement pour

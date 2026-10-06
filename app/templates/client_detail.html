@@ -276,6 +276,34 @@
     {% if erreur_whatsapp_test %}
     <p class="message-erreur">Échec de l'envoi WhatsApp : {{ erreur_whatsapp_test }}</p>
     {% endif %}
+    {% if request.query_params.get("whatsapp_tuto_envoye") == "1" %}
+    <p class="message-succes">Tuto envoyé sur WhatsApp. Son statut (envoyé, reçu, lu) s'affiche ci-dessous.</p>
+    {% endif %}
+    <p class="texte-discret">
+      <strong>1. Le tuto</strong> : un premier message qui explique au client comment répondre (numéro de la question, puis vocal).
+      À envoyer avant les premières questions.
+    </p>
+    <form method="post" action="/clients/{{ client.id }}/whatsapp/envoyer-tuto"
+          {% if client.whatsapp_tuto_envoye_le %}onsubmit="return confirm('Le tuto a déjà été envoyé. Le renvoyer ?');"{% endif %}>
+      <button type="submit" class="bouton-secondaire">Envoyer le tuto WhatsApp</button>
+    </form>
+    {% if client.whatsapp_tuto_envoye_le %}
+    {% set libelles_statut = {"sent": "envoyé", "delivered": "bien reçu ✓✓", "read": "lu ✓✓", "failed": "échec de livraison"} %}
+    <p class="texte-discret">
+      Tuto envoyé le {{ client.whatsapp_tuto_envoye_le.strftime("%d/%m/%Y à %H:%M") }}
+      · statut : <strong>{{ libelles_statut.get(client.whatsapp_tuto_statut, client.whatsapp_tuto_statut or "envoyé") }}</strong>
+    </p>
+    {% endif %}
+    <details class="bloc-repliable">
+      <summary>Texte du modèle à créer dans le Gestionnaire WhatsApp (une seule fois)</summary>
+      <p class="texte-discret">
+        Un premier message ne peut partir que sous forme de modèle approuvé par Meta. Dans le Gestionnaire WhatsApp, créez un modèle
+        nommé <strong>{{ nom_template_tuto }}</strong>, catégorie « Utilitaire », langue français, avec une variable nommée
+        <strong>prenom</strong>, puis ce texte. Une fois approuvé, le bouton ci-dessus fonctionne pour tous les clients.
+      </p>
+      <textarea readonly rows="10" style="width:100%" onclick="this.select()">{{ texte_modele_tuto }}</textarea>
+    </details>
+    <p class="texte-discret"><strong>2. Les questions</strong> :</p>
     <form method="post" action="/clients/{{ client.id }}/whatsapp/envoyer-maintenant">
       <button type="submit" class="bouton-secondaire">Envoyer les questions WhatsApp maintenant (test)</button>
     </form>

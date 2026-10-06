@@ -106,6 +106,7 @@ from .planificateur import (
     envoyer_questions_whatsapp_pour_client,
     envoyer_questions_whatsapp_si_prevu,
     envoyer_recaps_mensuels,
+    envoyer_tuto_whatsapp_pour_client,
     generer_suggestions_quotidiennes,
     notifier_expirations_linkedin,
     publier_posts_instagram_programmes,
@@ -210,6 +211,12 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN numero_whatsapp TEXT DEFAULT ''"))
         if "whatsapp_jours" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_jours TEXT DEFAULT ''"))
+        if "whatsapp_tuto_envoye_le" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_tuto_envoye_le TIMESTAMP"))
+        if "whatsapp_tuto_message_id" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_tuto_message_id VARCHAR DEFAULT ''"))
+        if "whatsapp_tuto_statut" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_tuto_statut VARCHAR DEFAULT ''"))
         if "whatsapp_opt_in_confirme" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN whatsapp_opt_in_confirme BOOLEAN DEFAULT FALSE"))
         if "hashtags_fixes" not in colonnes_clients:
@@ -3236,6 +3243,8 @@ def _reponse_detail_client(
                 .all()
             ),
             "erreur_whatsapp_test": request.session.pop("erreur_whatsapp_test", None),
+            "nom_template_tuto": whatsapp_business.NOM_TEMPLATE_TUTO,
+            "texte_modele_tuto": whatsapp_business.TEXTE_MODELE_TUTO,
             "erreur_voix": request.session.pop("erreur_voix", None),
             "message_wordpress": request.session.pop("message_wordpress", None),
             "search_console_connecte": google_oauth.search_console_connecte(db),
@@ -5902,6 +5911,30 @@ def envoyer_questions_whatsapp_maintenant(client_id: int, request: Request, db: 
         request.session["erreur_whatsapp_test"] = erreur
         return RedirectResponse(f"/clients/{client_id}", status_code=303)
     return RedirectResponse(f"/clients/{client_id}?whatsapp_envoye=1", status_code=303)
+
+
+@app.post("/clients/{client_id}/whatsapp/envoyer-tuto")
+def envoyer_tuto_whatsapp_maintenant(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Envoie au client le message d'explication WhatsApp (modele WHATSAPP_TEMPLATE_TUTO) avant ses premieres questions."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+
+    if not (client.numero_whatsapp and client.whatsapp_opt_in_confirme and whatsapp_business.identifiants_configures()):
+        request.session["erreur_whatsapp_test"] = (
+            "Numéro WhatsApp, case d'accord ou identifiants WhatsApp (Railway) manquants."
+        )
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+    erreur = envoyer_tuto_whatsapp_pour_client(db, client)
+    if erreur:
+        request.session["erreur_whatsapp_test"] = erreur
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+    return RedirectResponse(f"/clients/{client_id}?whatsapp_tuto_envoye=1", status_code=303)
 
 
 @app.post("/clients/{client_id}/voix/regenerer")
@@ -8774,23 +8807,28 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
         return
 
 
-def _traiter_statut_whatsapp(statut: dict) -> None:
+RANG_STATUT_WHATSAPP = {"failed": 0, "sent": 1, "delivered": 2, "read": 3}
+
+
+def _traiter_statut_whatsapp(statut: dict, db: Session = None) -> None:
     """
-    Notifie l'evolution de statut d'un message business-initie (envoye,
-    distribue, echec...) - Meta renvoie ces mises a jour sur le meme webhook
-    que les messages recus, mais elles etaient jusque-la ignorees. Utile
-    pour diagnostiquer un envoi qui n'arrive pas sans avoir a se fier a
-    l'historique d'activite du Gestionnaire WhatsApp (qui ne liste que les
-    actions de configuration, pas les statuts de livraison).
+    Suit l'evolution d'un message business-initie (envoye, distribue, lu, echec) : Meta renvoie ces mises a jour sur le
+    meme webhook que les messages recus. Le statut du tuto est memorise sur la fiche du client (visible sans notification),
+    et seul un ECHEC declenche une notification : un envoi qui se passe bien n'a pas a deranger.
     """
     etat = statut.get("status")
     destinataire = statut.get("recipient_id", "")
+    if db is not None and statut.get("id") and etat in RANG_STATUT_WHATSAPP:
+        client = db.query(models.Client).filter(models.Client.whatsapp_tuto_message_id == statut["id"]).first()
+        if client:
+            actuel = RANG_STATUT_WHATSAPP.get(client.whatsapp_tuto_statut or "", 0)
+            if etat == "failed" or RANG_STATUT_WHATSAPP[etat] > actuel:
+                client.whatsapp_tuto_statut = etat
+                db.commit()
     if etat == "failed":
         erreurs = statut.get("errors", [])
         detail = "; ".join(e.get("title", "erreur inconnue") for e in erreurs) or "erreur inconnue"
         notifications.notifier("Echec envoi WhatsApp", f"Message vers {destinataire} : {detail}")
-    elif etat in {"sent", "delivered"}:
-        notifications.notifier("Statut message WhatsApp", f"{etat} - vers {destinataire}")
 
 
 def _traiter_donnees_whatsapp(donnees: dict) -> None:
@@ -8808,7 +8846,7 @@ def _traiter_donnees_whatsapp(donnees: dict) -> None:
                 for message in valeur.get("messages", []):
                     _traiter_message_whatsapp(db, message)
                 for statut in valeur.get("statuses", []):
-                    _traiter_statut_whatsapp(statut)
+                    _traiter_statut_whatsapp(statut, db)
     except Exception:
         pass
     finally:

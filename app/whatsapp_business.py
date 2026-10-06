@@ -20,6 +20,17 @@ TOKEN_ACCES = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
 NOM_TEMPLATE_QUESTIONS_HEBDO = os.getenv("WHATSAPP_TEMPLATE_QUESTIONS", "questions_hebdo")
+# Premier message d'explication envoye a un client avant ses premieres questions (modele a creer et faire approuver dans
+# le Gestionnaire WhatsApp : un premier message ne peut partir que sous forme de modele). Variable : {{prenom}}.
+NOM_TEMPLATE_TUTO = os.getenv("WHATSAPP_TEMPLATE_TUTO", "tuto_vocal")
+TEXTE_MODELE_TUTO = (
+    "Bonjour {{prenom}}, c'est Jonathan. Je t'explique comment va fonctionner ton assistant de contenu, en 3 étapes :\n\n"
+    "1. Chaque semaine, tu recevras ici 5 questions sur ton métier.\n"
+    "2. Réponds par le numéro de la question qui t'inspire (1 à 5), puis envoie un message vocal, comme si tu en parlais à un "
+    "collègue. Une minute suffit. Tu peux aussi envoyer une photo.\n"
+    "3. Je transforme ton vocal en publication pour ta fiche Google et tes réseaux, avec tes mots. Je relis tout avant de publier.\n\n"
+    "Tu peux répondre quand tu veux, même quelques jours plus tard. Tes premières questions arrivent très bientôt."
+)
 
 CLE_OPENAI = os.getenv("OPENAI_API_KEY")
 
@@ -55,7 +66,7 @@ def envoyer_message_texte(numero_destinataire: str, texte: str) -> None:
         raise RuntimeError(f"Echec de l'envoi WhatsApp (code {reponse.status_code}) : {reponse.text}")
 
 
-def envoyer_message_template(numero_destinataire: str, nom_template: str, langue: str, parametres_corps: dict[str, str] = None) -> None:
+def envoyer_message_template(numero_destinataire: str, nom_template: str, langue: str, parametres_corps: dict[str, str] = None) -> str:
     """
     Message a partir d'un modele approuve par Meta - seul type de message
     autorise pour initier une conversation (le destinataire n'a pas ecrit
@@ -88,6 +99,10 @@ def envoyer_message_template(numero_destinataire: str, nom_template: str, langue
     )
     if reponse.status_code != 200:
         raise RuntimeError(f"Echec de l'envoi du modele WhatsApp (code {reponse.status_code}) : {reponse.text}")
+    try:
+        return reponse.json()["messages"][0]["id"]      # identifiant du message : sert a suivre son statut (recu, lu...)
+    except (ValueError, KeyError, IndexError):
+        return ""
 
 
 def telecharger_media(media_id: str) -> tuple[bytes, str]:
