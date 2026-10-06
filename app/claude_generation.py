@@ -1495,8 +1495,10 @@ TONS_RESEAUX = {
     ),
     "facebook": (
         "Ton chaleureux et communautaire, comme si on s'adressait directement aux habitants du quartier "
-        "ou de la ville. Peut etre un peu plus developpe et conversationnel qu'un post Google. Pas de "
-        "hashtag (peu efficaces sur Facebook, contrairement a Instagram)."
+        "ou de la ville. Peut etre un peu plus developpe et conversationnel qu'un post Google. Quelques "
+        "emojis pour donner de la vie (3 a 6 sur tout le post), toujours en lien avec ce qui est dit "
+        "(un objet, un geste, une idee), places en debut de phrase cle ou en fin de paragraphe, jamais "
+        "un par ligne ni en rafale. Pas de hashtag (peu efficaces sur Facebook, contrairement a Instagram)."
     ),
     "instagram": (
         "Ton dynamique et accrocheur des la premiere ligne, phrases courtes, emojis bienvenus "
