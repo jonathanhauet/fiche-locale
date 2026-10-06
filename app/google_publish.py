@@ -8,6 +8,7 @@ import time
 import requests
 
 from . import models
+from .texte_google import nettoyer_texte_google
 
 ATTENTE_VERIFICATION_SECONDES = 15
 
@@ -56,7 +57,8 @@ def publier_un_post(
 ):
     url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/localPosts"
     type_post = type_post or "STANDARD"
-    corps = {"languageCode": "fr", "summary": texte, "topicType": type_post}
+    # Google refuse un texte avec telephone, lien ou e-mail, ou de plus de 1500 caracteres : retires avant l'envoi.
+    corps = {"languageCode": "fr", "summary": nettoyer_texte_google(texte), "topicType": type_post}
     if image_url:
         corps["media"] = [{"mediaFormat": "PHOTO", "sourceUrl": image_url}]
 

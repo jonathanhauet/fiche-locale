@@ -10,6 +10,8 @@ import re
 from datetime import date
 
 from anthropic import Anthropic
+
+from .texte_google import REGLES_GOOGLE_POST, nettoyer_texte_google
 from dotenv import load_dotenv
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
@@ -70,7 +72,7 @@ def _construire_prompt(
     with open(FICHIER_PROMPT, "r", encoding="utf-8") as f:
         gabarit_prompt = f.read()
 
-    instructions = gabarit_prompt.replace("{NOMBRE_POSTS}", str(nombre_posts))
+    instructions = gabarit_prompt.replace("{NOMBRE_POSTS}", str(nombre_posts)) + "\n\n" + REGLES_GOOGLE_POST
 
     instruction_prompt_image = (
         "\n\n---\n\n"
@@ -163,10 +165,12 @@ def _nettoyer_texte_genere(texte: str) -> str:
     return texte.strip()
 
 
-def _nettoyer_champs_post(post: dict) -> dict:
+def _nettoyer_champs_post(post: dict, google: bool = False) -> dict:
     for cle in ("titre", "texte"):
         if post.get(cle):
             post[cle] = _nettoyer_texte_genere(post[cle])
+    if google and post.get("texte"):
+        post["texte"] = nettoyer_texte_google(post["texte"])
     return post
 
 
@@ -256,7 +260,7 @@ def _generer_lot_posts(
         # trahit cette inversion.
         if len(post["titre"]) > len(post["texte"]):
             post["titre"], post["texte"] = post["texte"], post["titre"]
-        _nettoyer_champs_post(post)
+        _nettoyer_champs_post(post, google=True)
     return posts
 
 
@@ -313,6 +317,7 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
         "pas d'offre commerciale precise).\n"
         "- Ton professionnel, clair, engageant. Pas de jargon inutile.\n"
         "- Longueur : entre 1200 et 1500 caracteres (espaces compris), comme un vrai Google Post developpe.\n"
+        f"- {REGLES_GOOGLE_POST}\n"
         "- Passe des lignes entre les idees pour aerer le texte (pas un seul bloc compact) : "
         "utilise des sauts de ligne (\\n\\n) entre les paragraphes.\n"
         "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
@@ -339,7 +344,7 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
-    return _nettoyer_champs_post(json.loads(bloc_texte))
+    return _nettoyer_champs_post(json.loads(bloc_texte), google=True)
 
 
 SPECIALITE_SEO_LOCAL = (
@@ -1031,6 +1036,7 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
         "pratique, question, chiffre-cle, temoignage generique...), pour offrir un vrai choix.\n"
         "- Ton professionnel, clair, engageant. Pas de jargon inutile.\n"
         "- Longueur : entre 1200 et 1500 caracteres (espaces compris), comme un vrai Google Post developpe.\n"
+        f"- {REGLES_GOOGLE_POST}\n"
         "- Passe des lignes entre les idees pour aerer le texte (pas un seul bloc compact) : "
         "utilise des sauts de ligne (\\n\\n) entre les paragraphes.\n"
         "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
@@ -1058,7 +1064,7 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
     bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
-    return [_nettoyer_champs_post(post) for post in json.loads(bloc_texte)["posts"]]
+    return [_nettoyer_champs_post(post, google=True) for post in json.loads(bloc_texte)["posts"]]
 
 
 def suggerer_reponse_avis(
@@ -1484,7 +1490,8 @@ def generer_plan_action_audit(
 TONS_RESEAUX = {
     "google": (
         "Ton professionnel et informatif, oriente SEO local (met en avant un service ou un avantage "
-        "concret pour un client a proximite). Sobre, pas d'emoji, pas de hashtag."
+        "concret pour un client a proximite). Sobre, pas d'emoji, pas de hashtag. "
+        + REGLES_GOOGLE_POST
     ),
     "facebook": (
         "Ton chaleureux et communautaire, comme si on s'adressait directement aux habitants du quartier "
@@ -1774,7 +1781,8 @@ def adapter_post_multi_reseaux(
         f"{bloc_contexte}"
         f"{bloc_hashtags_fixes}\n"
         "Adapte ce message pour chacun des reseaux suivants, en gardant le meme fond (memes informations, "
-        "meme offre, memes coordonnees le cas echeant) mais en ajustant le ton et la formulation :\n"
+        "meme offre, memes coordonnees le cas echeant, SAUF pour Google Business Profile qui n'accepte ni numero de telephone, "
+        "ni lien, ni e-mail : retire-les de sa version) mais en ajustant le ton et la formulation :\n"
         f"{bloc_tons}\n\n"
         "Ne raccourcis ni n'allonge exagerement par rapport a l'original sauf si le ton du reseau l'exige "
         "naturellement. N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points "
@@ -1816,7 +1824,10 @@ def adapter_post_multi_reseaux(
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
 
     variantes = json.loads(bloc_texte)
-    return {r: _nettoyer_texte_genere(variantes[r]) for r in reseaux}
+    resultat = {r: _nettoyer_texte_genere(variantes[r]) for r in reseaux}
+    if "google" in resultat:
+        resultat["google"] = nettoyer_texte_google(resultat["google"])      # filet de securite si l'IA a garde un contact
+    return resultat
 
 
 def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", texte_cta_impose: bool = False) -> str:
