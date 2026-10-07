@@ -135,6 +135,9 @@ def generer_excel(resultats: list, mois: list) -> bytes:
     for indice in range(3, len(INDICATEURS_DETAIL) + 3):
         detail.column_dimensions[get_column_letter(indice)].width = 24
     detail.freeze_panes = "C2"
+    detail.auto_filter.ref = detail.dimensions        # filtre par agence ou par mois directement dans Excel
+    classeur.move_sheet("Détail", offset=-(len(classeur.sheetnames) - 1))     # l'onglet principal s'ouvre en premier
+    classeur.active = 0
 
     en_erreur = [r for r in ordonnes if not r["mois"]]
     if en_erreur:
