@@ -43,11 +43,51 @@
   .message-demande { font-size: 0.9rem; margin: 0.4rem 0 0; }
   .carte-promo { border: 1px dashed var(--carte-bordure); border-radius: var(--rayon); padding: 1rem 1.2rem; background: rgba(127, 127, 127, 0.06); }
   .carte-promo p { margin: 0 0 0.7rem; line-height: 1.5; }
-  .bloc-methode { background: var(--carte); border: 1px solid var(--carte-bordure); border-left: 4px solid var(--accent, #4f46e5); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.2rem 1.4rem; margin: 2rem 0 1rem; }
-  .bloc-methode h2 { margin-top: 0; font-size: 1.2rem; }
-  .bloc-methode p { line-height: 1.55; }
-  .etapes-methode { padding-left: 1.2rem; line-height: 1.55; }
-  .etapes-methode li { margin-bottom: 0.6rem; }
+  .bloc-methode { border-radius: var(--rayon); box-shadow: 0 6px 22px rgba(7, 94, 84, 0.22); margin: 2rem 0 1rem; overflow: hidden; border: 1px solid #128c7e; background: var(--carte); }
+  .methode-entete { display: flex; align-items: center; gap: 0.9rem; padding: 1.1rem 1.4rem; background: linear-gradient(135deg, #075e54, #128c7e); color: #fff; }
+  .logo-whatsapp { width: 3rem; height: 3rem; flex-shrink: 0; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25)); }
+  .methode-surtitre { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; background: #25d366; color: #05301f; padding: 0.12rem 0.55rem; border-radius: 999px; margin-bottom: 0.3rem; }
+  .bloc-methode h2 { margin: 0; font-size: 1.25rem; line-height: 1.3; color: #fff; }
+  .methode-corps { padding: 1.2rem 1.4rem 1.4rem; }
+  .methode-corps p { line-height: 1.55; }
+  .methode-grille { display: flex; gap: 1.6rem; align-items: flex-start; flex-wrap: wrap; margin-top: 1rem; }
+  .methode-texte { flex: 1 1 280px; min-width: 0; }
+  .telephone { margin: 0 auto; width: 290px; flex-shrink: 0; }
+  .telephone-ecran { position: relative; background: #efeae2; border: 9px solid #1f2933; border-radius: 34px; height: 590px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35); color: #111b21; }
+  .telephone-encoche { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 90px; height: 16px; background: #1f2933; border-radius: 0 0 12px 12px; z-index: 2; }
+  .wa-barre { display: flex; align-items: center; gap: 0.5rem; background: #075e54; color: #fff; padding: 1.5rem 0.7rem 0.55rem; }
+  .wa-retour { font-size: 1.5rem; line-height: 1; }
+  .wa-avatar { width: 2rem; height: 2rem; border-radius: 50%; background: #25d366; color: #05301f; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .wa-nom { display: flex; flex-direction: column; line-height: 1.15; font-size: 0.85rem; }
+  .wa-nom small { font-size: 0.7rem; opacity: 0.8; }
+  .wa-fil { flex: 1; display: flex; flex-direction: column; gap: 0.45rem; padding: 0.6rem 0.5rem; overflow: hidden; }
+  .wa-jour { align-self: center; font-size: 0.68rem; background: #e1f2fb; color: #54656f; padding: 0.1rem 0.6rem; border-radius: 8px; }
+  .bulle { position: relative; padding: 0.4rem 0.6rem 1.05rem; border-radius: 9px; max-width: 92%; font-size: 0.78rem; line-height: 1.35; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.13); }
+  .bulle-recue { background: #fff; align-self: flex-start; border-top-left-radius: 2px; }
+  .bulle-envoyee { background: #d9fdd3; align-self: flex-end; border-top-right-radius: 2px; }
+  .bulle-courte { min-width: 3.4rem; font-weight: 600; text-align: right; padding-right: 2.6rem; }
+  .bulle-auteur { display: block; font-size: 0.7rem; font-weight: 700; color: #128c7e; margin-bottom: 0.15rem; }
+  .bulle-heure { position: absolute; right: 0.5rem; bottom: 0.18rem; font-size: 0.6rem; color: #667781; }
+  .wa-saisie { display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.5rem 0.7rem; background: #efeae2; }
+  .wa-champ { flex: 1; display: flex; align-items: center; gap: 0.5rem; background: #fff; border-radius: 999px; padding: 0.45rem 0.8rem; }
+  .point-rec { width: 0.65rem; height: 0.65rem; border-radius: 50%; background: #ea0038; animation: wa-clignote 1s ease-in-out infinite; }
+  .wa-onde-vive { display: flex; align-items: center; gap: 2px; height: 1.2rem; flex: 1; }
+  .wa-onde-vive i { display: block; width: 3px; height: 100%; border-radius: 2px; background: #25d366; transform: scaleY(0.3); animation: wa-onde 0.9s ease-in-out infinite; }
+  .wa-onde-vive i:nth-child(2n) { animation-delay: 0.15s; } .wa-onde-vive i:nth-child(3n) { animation-delay: 0.3s; } .wa-onde-vive i:nth-child(5n) { animation-delay: 0.45s; }
+  .wa-chrono { font-size: 0.75rem; color: #54656f; }
+  .wa-micro { width: 2.5rem; height: 2.5rem; border-radius: 50%; background: #25d366; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; animation: wa-pulse 1.4s ease-out infinite; }
+  .telephone-legende { margin-top: 0.8rem; font-size: 0.85rem; color: var(--texte-discret); text-align: center; line-height: 1.4; }
+  .puce-renouvelle { display: block; width: fit-content; margin: 0 auto 0.3rem; background: #25d366; color: #05301f; font-weight: 700; padding: 0.2rem 0.8rem; border-radius: 999px; }
+  @keyframes wa-clignote { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+  @keyframes wa-onde { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
+  @keyframes wa-pulse { 0% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.6); } 70% { box-shadow: 0 0 0 12px rgba(37, 211, 102, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); } }
+  @media (prefers-reduced-motion: reduce) { .point-rec, .wa-onde-vive i, .wa-micro { animation: none; } .wa-onde-vive i { transform: scaleY(0.6); } }
+  .etapes-methode { padding-left: 0; list-style: none; counter-reset: etape; line-height: 1.55; }
+  .etapes-methode li { counter-increment: etape; position: relative; padding-left: 2.4rem; margin-bottom: 0.8rem; }
+  .etapes-methode li::before { content: counter(etape); position: absolute; left: 0; top: 0.05rem; width: 1.65rem; height: 1.65rem; border-radius: 50%; background: #25d366; color: #05301f; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; }
+  .bouton-whatsapp { background: #25d366; color: #05301f; border: none; border-radius: 999px; padding: 0.7rem 1.4rem; font-weight: 700; font-size: 1rem; cursor: pointer; box-shadow: 0 3px 10px rgba(37, 211, 102, 0.4); }
+  .bouton-whatsapp:hover { background: #1fbd59; }
+  .bouton-whatsapp:disabled { opacity: 0.6; cursor: default; }
   .bloc-ensemble { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.2rem 1.4rem; margin: 2rem 0 1.5rem; }
   .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
   .bloc-ensemble p { line-height: 1.6; }
@@ -82,6 +122,7 @@
     <p>
       Google et les assistants IA recoupent plusieurs signaux pour décider quelles entreprises recommander : plus vos canaux sont nombreux, réguliers et cohérents, plus vous êtes identifié comme une entreprise fiable.
       {% if premier_manquant %}<a href="#canal-{{ premier_manquant }}">Voir ce que je peux ajouter pour vous&nbsp;↓</a>{% endif %}
+      <a href="#methode">Découvrir ma méthode WhatsApp&nbsp;↓</a>
     </p>
   </div>
 
@@ -169,19 +210,76 @@
   </section>
 
   <div class="bloc-methode" id="methode">
-    <h2>Une méthode qui part de vous, pas d'un texte générique</h2>
-    <p>Beaucoup d'outils se contentent de faire écrire des textes par une IA. Ma méthode va plus loin, parce que le contenu vient de vous :</p>
-    <ol class="etapes-methode">
-      <li><strong>Des questions sur WhatsApp.</strong> Chaque semaine, je vous envoie 4 questions sur votre métier, plus un sujet libre. Vous choisissez celle qui vous inspire.</li>
-      <li><strong>Vous répondez à la voix.</strong> Un message vocal de 1 à 2 minutes, quand vous voulez, avec une photo si vous en avez une. Pas besoin d'écrire.</li>
-      <li><strong>Vos mots, votre voix.</strong> Vos réponses sont conservées : j'apprends vos expressions, votre façon de parler et vos vrais exemples, pour que chaque publication vous ressemble. L'historique évite aussi de traiter deux fois le même sujet.</li>
-      <li><strong>Je relis tout.</strong> L'IA aide à structurer, mais rien n'est publié sans ma relecture.</li>
-      <li><strong>Publié au bon format, partout.</strong> Le même contenu est adapté pour Google, Facebook, Instagram, LinkedIn ou votre blog.</li>
-    </ol>
-    <p>Le résultat : des publications authentiques et régulières, qui reflètent vraiment votre savoir-faire.</p>
-    <div class="zone-interet" data-sujet="methode">
-      <button type="button" class="bouton envoyer-interet">Je veux essayer cette méthode</button>
-      <p class="message-demande" hidden></p>
+    <div class="methode-entete">
+      <svg class="logo-whatsapp" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="16" fill="#25D366"/>
+        <path d="M16 6.5a9.5 9.5 0 0 0-8.1 14.4L6.6 25.4l4.6-1.2A9.5 9.5 0 1 0 16 6.5z" fill="none" stroke="#fff" stroke-width="2"/>
+        <path d="M12.5 12.2c.3-.6.6-.6.9-.6h.6c.2 0 .4.1.5.4l.8 1.9c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3-.1.4.7 1.2 1.7 2.1 2.9 2.7.2.1.3 0 .4-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.3.3.3.5 0 .8-.6 1.7-1.6 1.9-1 .2-2.3-.1-4-1.1-1.9-1.1-3.1-2.7-3.6-4-.4-1-.4-1.9.1-2.8z" fill="#fff"/>
+      </svg>
+      <div>
+        <span class="methode-surtitre">Ce qui fait la différence</span>
+        <h2>Une méthode qui part de vous, pas d'un texte générique</h2>
+      </div>
+    </div>
+    <div class="methode-corps">
+      <p>Beaucoup d'outils se contentent de faire écrire des textes par une IA. Ma méthode va plus loin, parce que le contenu vient de vous, et tout se passe sur WhatsApp :</p>
+
+      <div class="methode-grille">
+        <figure class="telephone" aria-label="Exemple d'une conversation WhatsApp avec les questions de la semaine">
+          <div class="telephone-ecran">
+            <div class="telephone-encoche"></div>
+            <div class="wa-barre">
+              <span class="wa-retour">‹</span>
+              <span class="wa-avatar">J</span>
+              <span class="wa-nom"><strong>Jonathan Hauët</strong><small>en ligne</small></span>
+            </div>
+            <div class="wa-fil">
+              <div class="wa-jour">Cette semaine</div>
+              <div class="bulle bulle-recue">
+                <span class="bulle-auteur">Questions de la semaine</span>
+                <b>1.</b> Quelle panne voyez-vous le plus souvent ?<br>
+                <b>2.</b> Quel chantier récent vous a rendu fier ?<br>
+                <b>3.</b> Quelle erreur vos clients font-ils avant de vous appeler ?<br>
+                <b>4.</b> Quel conseil donneriez-vous avant l'hiver ?<br>
+                <b>5.</b> Un autre sujet ? Vous avez la parole.
+                <span class="bulle-heure">9:02</span>
+              </div>
+              <div class="bulle bulle-envoyee bulle-courte">2<span class="bulle-heure">9:10 ✓✓</span></div>
+              <div class="bulle bulle-recue">
+                Parfait, tu as choisi la question 2 👇<br>« Quel chantier récent vous a rendu fier ? »<br>Envoie-moi maintenant ton vocal 🎙️ (1 à 2 minutes), et une photo pour illustrer la publication si tu veux 📸
+                <span class="bulle-heure">9:10</span>
+              </div>
+            </div>
+            <div class="wa-saisie">
+              <span class="wa-champ">
+                <span class="point-rec"></span>
+                <span class="wa-onde-vive"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                <span class="wa-chrono">0:42</span>
+              </span>
+              <span class="wa-micro">🎙️</span>
+            </div>
+          </div>
+          <figcaption class="telephone-legende">
+            <span class="puce-renouvelle">🔁 Renouvelées chaque semaine</span>
+            Exemple de questions : de nouvelles arrivent chaque semaine, jamais les mêmes.
+          </figcaption>
+        </figure>
+
+        <div class="methode-texte">
+          <ol class="etapes-methode">
+            <li><strong>Des questions sur WhatsApp.</strong> Chaque semaine, je vous envoie 4 questions sur votre métier, plus un sujet libre. Vous choisissez celle qui vous inspire.</li>
+            <li><strong>Vous répondez à la voix.</strong> Un message vocal de 1 à 2 minutes, quand vous voulez, avec une photo si vous en avez une. Pas besoin d'écrire.</li>
+            <li><strong>Vos mots, votre voix.</strong> Vos réponses sont conservées : j'apprends vos expressions, votre façon de parler et vos vrais exemples, pour que chaque publication vous ressemble. L'historique évite aussi de traiter deux fois le même sujet.</li>
+            <li><strong>Je relis tout.</strong> L'IA aide à structurer, mais rien n'est publié sans ma relecture.</li>
+            <li><strong>Publié au bon format, partout.</strong> Le même contenu est adapté pour Google, Facebook, Instagram, LinkedIn ou votre blog.</li>
+          </ol>
+          <p>Le résultat : des publications authentiques et régulières, qui reflètent vraiment votre savoir-faire.</p>
+          <div class="zone-interet" data-sujet="methode">
+            <button type="button" class="bouton-whatsapp envoyer-interet">Je veux essayer cette méthode</button>
+            <p class="message-demande" hidden></p>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
