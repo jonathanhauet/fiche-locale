@@ -266,6 +266,10 @@ def _migrer_vers_multi_comptes():
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
         _colonnes_clients_logo = {c["name"] for c in inspecteur.get_columns("clients")}
+        if "exemple_questions" not in _colonnes_clients_logo:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN exemple_questions TEXT DEFAULT ''"))
+        if "exemple_questions_maj_le" not in _colonnes_clients_logo:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN exemple_questions_maj_le TIMESTAMP"))
         if "option_ia_active" not in _colonnes_clients_logo:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN option_ia_active BOOLEAN DEFAULT FALSE"))
         if "logo_google_url" not in _colonnes_clients_logo:
@@ -3341,6 +3345,7 @@ def creer_page_client(client_id: int, request: Request, db: Session = Depends(ob
         client.token_page_client = secrets.token_urlsafe(24)
         db.commit()
         _logo_page_client(db, client, forcer=True)
+        _questions_exemple_page_client(db, client, forcer=True)
     return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
 
 
@@ -3401,6 +3406,64 @@ def _canal_connecte(client, code: str) -> bool:
         "linkedin": bool(client.compte_linkedin_id),
         "wordpress": bool((client.wordpress_url or "").strip()),
     }.get(code, False)
+
+
+QUESTIONS_EXEMPLE_PAR_DEFAUT = [
+    "Quelle panne voyez-vous le plus souvent ?",
+    "Quel chantier récent vous a rendu fier ?",
+    "Quelle erreur vos clients font-ils avant de vous appeler ?",
+    "Quel conseil donneriez-vous avant l'hiver ?",
+]
+DUREE_QUESTIONS_EXEMPLE = timedelta(days=14)
+LONGUEUR_MAX_QUESTION_EXEMPLE = 130
+
+
+def _raccourcir_question(question: str) -> str:
+    """Securite : une question vraiment trop longue est coupee a une virgule (et terminee par « ? »), sinon au dernier mot."""
+    question = " ".join(question.split())
+    if len(question) <= LONGUEUR_MAX_QUESTION_EXEMPLE:
+        return question
+    coupe = question[:LONGUEUR_MAX_QUESTION_EXEMPLE - 1]
+    virgule = coupe.rfind(", ")
+    if virgule > 50:
+        return coupe[:virgule].rstrip(" ,;:") + " ?"
+    return coupe[: coupe.rfind(" ")].rstrip(" ,;:") + "…"
+
+
+def _questions_exemple_page_client(db: Session, client, forcer: bool = False) -> list:
+    """
+    4 questions d'exemple pour le telephone de la page client, propres a l'activite du client : generees a partir de son
+    site (comme les vraies questions hebdomadaires), gardees 14 jours. Sans contenu de site, ou si l'IA est indisponible,
+    des questions d'exemple generiques - la page ne depend jamais de cet appel.
+    """
+    maintenant = datetime.utcnow()
+    try:
+        en_cache = [q for q in json.loads(client.exemple_questions or "[]") if isinstance(q, str) and q.strip()]
+    except ValueError:
+        en_cache = []
+    a_jour = bool(en_cache) and client.exemple_questions_maj_le and maintenant - client.exemple_questions_maj_le < DUREE_QUESTIONS_EXEMPLE
+    contexte = _contexte_ia_client(client)
+    if (forcer or not a_jour) and contexte.strip():
+        try:
+            # On demande plus de questions et on garde les 4 plus courtes (dans leur ordre d'origine) : elles tiennent dans le
+            # telephone sans etre coupees.
+            generees = [
+                q for q in claude_generation.generer_questions_interview(contexte, [], nombre=8, nom_client=client.nom, avec_sujet_libre=True)
+                if q != claude_generation.QUESTION_SUJET_LIBRE
+            ]
+            plus_courtes = sorted(range(len(generees)), key=lambda i: len(generees[i]))[:4]
+            questions = [_raccourcir_question(generees[i]) for i in sorted(plus_courtes)]
+            if len(questions) >= 3:
+                client.exemple_questions = json.dumps(questions, ensure_ascii=False)
+                client.exemple_questions_maj_le = maintenant
+                db.commit()
+                return questions
+        except Exception:
+            pass
+        # Echec : on garde les anciennes questions et on reessaie dans un jour, pas a chaque affichage.
+        client.exemple_questions_maj_le = maintenant - DUREE_QUESTIONS_EXEMPLE + timedelta(days=1)
+        db.commit()
+    return en_cache or QUESTIONS_EXEMPLE_PAR_DEFAUT
 
 
 DUREE_LOGO_GOOGLE = timedelta(days=7)
@@ -3487,6 +3550,7 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
         request, "page_publique_client.html",
         {"nom": nom_affiche_carrousel(client), "sections": sections, "geo_actif": geo_actif, "token": token,
          "nb_publications": len(publications), "logo": _logo_page_client(db, client), "canaux": canaux,
+         "exemple_questions": _questions_exemple_page_client(db, client),
          "nb_actifs": len(canaux) - len(manquants), "nb_canaux": len(canaux), "premier_manquant": manquants[0]["code"] if manquants else ""},
         headers=entetes,
     )

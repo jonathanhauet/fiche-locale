@@ -53,7 +53,7 @@
   .methode-grille { display: flex; gap: 1.6rem; align-items: flex-start; flex-wrap: wrap; margin-top: 1rem; }
   .methode-texte { flex: 1 1 280px; min-width: 0; }
   .telephone { margin: 0 auto; width: 290px; flex-shrink: 0; }
-  .telephone-ecran { position: relative; background: #efeae2; border: 9px solid #1f2933; border-radius: 34px; height: 590px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35); color: #111b21; }
+  .telephone-ecran { position: relative; background: #efeae2; border: 9px solid #1f2933; border-radius: 34px; min-height: 590px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35); color: #111b21; }
   .telephone-encoche { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 90px; height: 16px; background: #1f2933; border-radius: 0 0 12px 12px; z-index: 2; }
   .wa-barre { display: flex; align-items: center; gap: 0.5rem; background: #075e54; color: #fff; padding: 1.5rem 0.7rem 0.55rem; }
   .wa-retour { font-size: 1.5rem; line-height: 1; }
@@ -237,16 +237,13 @@
               <div class="wa-jour">Cette semaine</div>
               <div class="bulle bulle-recue">
                 <span class="bulle-auteur">Questions de la semaine</span>
-                <b>1.</b> Quelle panne voyez-vous le plus souvent ?<br>
-                <b>2.</b> Quel chantier récent vous a rendu fier ?<br>
-                <b>3.</b> Quelle erreur vos clients font-ils avant de vous appeler ?<br>
-                <b>4.</b> Quel conseil donneriez-vous avant l'hiver ?<br>
-                <b>5.</b> Un autre sujet ? Vous avez la parole.
+                {% for q in exemple_questions %}<b>{{ loop.index }}.</b> {{ q }}<br>{% endfor %}
+                <b>{{ exemple_questions|length + 1 }}.</b> Un autre sujet ? Vous avez la parole.
                 <span class="bulle-heure">9:02</span>
               </div>
               <div class="bulle bulle-envoyee bulle-courte">2<span class="bulle-heure">9:10 ✓✓</span></div>
               <div class="bulle bulle-recue">
-                Parfait, tu as choisi la question 2 👇<br>« Quel chantier récent vous a rendu fier ? »<br>Envoie-moi maintenant ton vocal 🎙️ (1 à 2 minutes), et une photo pour illustrer la publication si tu veux 📸
+                Parfait, tu as choisi la question 2 👇<br>« {{ exemple_questions[1] }} »<br>Envoie-moi maintenant ton vocal 🎙️ (1 à 2 minutes), et une photo pour illustrer la publication si tu veux 📸
                 <span class="bulle-heure">9:10</span>
               </div>
             </div>
