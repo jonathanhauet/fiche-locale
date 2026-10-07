@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% set page_actuelle = "reporting" %}
+{% block titre %}Reporting mensuel — Fiche Locale{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Reporting mensuel</h1>
+</div>
+<p class="texte-discret">
+  Les indicateurs Google (vues, clics vers le site, appels, itinéraires, messages) mois par mois et agence par agence. Choisissez les fiches puis chargez :
+  vous pouvez ensuite filtrer, trier, additionner la période, et télécharger l'Excel de la sélection. Les chiffres viennent directement de Google.
+</p>
+
+{% if not etiquettes %}
+<div class="bandeau-avertissement">Aucune étiquette pour l'instant : ajoutez-en depuis la page <a href="/etiquettes">Étiquettes</a>.</div>
+{% endif %}
+
+<div class="bloc-section">
+  <span class="choix-image-titre">1. Fiches</span>
+  {% if etiquettes %}
+  <div class="filtre-entreprises">
+    <span class="filtre-titre">Étiquettes :</span>
+    {% for etiquette in etiquettes %}
+    <label class="filtre-case"><input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}</label>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+  <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+  <p id="texte-compte-clients" class="texte-discret" hidden></p>
+
+  <div class="formulaire-ligne">
+    <label>Dernier mois <input type="month" id="mois-fin" value="{{ mois_defaut }}" max="{{ mois_max }}"></label>
+    <label>Historique
+      <select id="nb-mois"><option value="3">3 mois</option><option value="6" selected>6 mois</option><option value="12">12 mois</option></select>
+    </label>
+    <button type="button" id="bouton-charger" class="bouton" disabled>Charger les chiffres</button>
+  </div>
+  <div id="progression" class="conteneur-progression-avis" hidden>
+    <div class="barre-progression-fond"><div id="barre-progression" class="barre-progression-remplissage"></div></div>
+    <span id="texte-progression" class="texte-progression-avis"></span>
+  </div>
+</div>
+
+<div id="zone-resultats" hidden>
+  <div class="bloc-section">
+    <span class="choix-image-titre">2. Filtrer l'affichage</span>
+    <div class="formulaire-ligne">
+      <label>Agence <input type="search" id="recherche-agence" placeholder="Rechercher une agence…"></label>
+      <label>Du <select id="mois-debut-filtre"></select></label>
+      <label>Au <select id="mois-fin-filtre"></select></label>
+      <label>Affichage
+        <select id="mode-affichage">
+          <option value="mois">Une ligne par agence et par mois</option>
+          <option value="total">Une ligne par agence (total de la période)</option>
+        </select>
+      </label>
+    </div>
+    <div class="liste-etiquettes" id="cases-agences"></div>
+    <div class="liste-etiquettes" id="cases-colonnes">
+      {% for cle, libelle in colonnes %}
+      <label class="filtre-case"><input type="checkbox" class="case-colonne" value="{{ cle }}" {% if cle not in ('vues_recherche', 'vues_maps') %}checked{% endif %}> {{ libelle }}</label>
+      {% endfor %}
+    </div>
+    <div class="actions-avis">
+      <button type="button" class="bouton-secondaire" id="tout-cocher">Toutes les agences</button>
+      <button type="button" class="bouton-secondaire" id="tout-decocher">Aucune</button>
+      <a class="bouton" id="lien-excel" href="#">Télécharger l'Excel de cette sélection</a>
+    </div>
+  </div>
+
+  <div class="conteneur-tableau">
+    <table class="tableau-historique" id="tableau-reporting">
+      <thead id="entete-tableau"></thead>
+      <tbody id="corps-tableau"></tbody>
+      <tfoot id="pied-tableau"></tfoot>
+    </table>
+  </div>
+  <p id="fiches-non-lues" class="texte-discret" hidden></p>
+</div>
+
+<script id="donnees-clients" type="application/json">{{ clients_json|safe }}</script>
+<script id="donnees-colonnes" type="application/json">{{ colonnes|tojson }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients").textContent);
+  const colonnes = JSON.parse(document.getElementById("donnees-colonnes").textContent);   // [[cle, libelle], ...]
+  const MOIS_COURTS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  const $ = (id) => document.getElementById(id);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  let donnees = [];            // [{client_id, nom, mois: {"2026-09": {...}}, erreur}]
+  let listeMois = [];          // ["2026-04", ..., "2026-09"]
+  let tri = { cle: "nom", sens: 1 };
+
+  function echapper(texte) { const d = document.createElement("div"); d.textContent = texte == null ? "" : String(texte); return d.innerHTML; }
+  function libelleMois(m) { const [a, n] = m.split("-"); return MOIS_COURTS[parseInt(n, 10) - 1] + " " + a; }
+  const formatNombre = (n) => Number(n || 0).toLocaleString("fr-FR");
+
+  // ---- 1. choix des fiches
+  function actualiserListe() {
+    const actives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    const conteneur = $("liste-clients-cibles");
+    if (!actives.length) { conteneur.innerHTML = ""; $("texte-aucun-client").hidden = false; $("texte-compte-clients").hidden = true; majBouton(); return; }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => actives.includes(id)));
+    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false;
+    $("texte-compte-clients").textContent = `${correspondants.length} fiche(s) — décochez celles à exclure.`;
+    conteneur.innerHTML = correspondants.map((c) => `<label class="etiquette-chip-case"><input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}</label>`).join("");
+    conteneur.querySelectorAll("input").forEach((c) => c.addEventListener("change", majBouton));
+    majBouton();
+  }
+  function idsChoisis() { return Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value); }
+  function majBouton() { $("bouton-charger").disabled = idsChoisis().length === 0; }
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+
+  // ---- chargement fiche par fiche (4 en parallele)
+  $("bouton-charger").addEventListener("click", async () => {
+    const ids = idsChoisis(); if (!ids.length) return;
+    const parametres = new URLSearchParams({ mois_fin: $("mois-fin").value, nb_mois: $("nb-mois").value });
+    $("bouton-charger").disabled = true; $("progression").hidden = false; $("zone-resultats").hidden = true;
+    donnees = []; let faits = 0, curseur = 0;
+    $("barre-progression").style.width = "0%"; $("texte-progression").textContent = `0 / ${ids.length}`;
+    async function suivant() {
+      while (curseur < ids.length) {
+        const id = ids[curseur++];
+        try {
+          const r = await fetch(`/reporting/donnees/${id}?${parametres}`);
+          const d = await r.json();
+          if (r.ok) donnees.push(d);
+          else if (r.status === 400) { alert(d.erreur || "Paramètres invalides."); curseur = ids.length; }
+        } catch (e) { /* fiche suivante */ }
+        faits++;
+        $("barre-progression").style.width = Math.round((faits / ids.length) * 100) + "%";
+        $("texte-progression").textContent = `${faits} / ${ids.length}`;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, ids.length) }, suivant));
+    $("progression").hidden = true; majBouton();
+    if (!donnees.length) return;
+    const avecMois = donnees.find((d) => Object.keys(d.mois).length);
+    listeMois = avecMois ? Object.keys(avecMois.mois).sort() : [];
+    initialiserFiltres(); afficher();
+    $("zone-resultats").hidden = false;
+  });
+
+  // ---- 2. filtres
+  function initialiserFiltres() {
+    const options = listeMois.map((m) => `<option value="${m}">${libelleMois(m)}</option>`).join("");
+    $("mois-debut-filtre").innerHTML = options; $("mois-fin-filtre").innerHTML = options;
+    $("mois-debut-filtre").value = listeMois[0]; $("mois-fin-filtre").value = listeMois[listeMois.length - 1];
+    const lues = donnees.filter((d) => Object.keys(d.mois).length).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+    $("cases-agences").innerHTML = lues.map((d) => `<label class="etiquette-chip-case"><input type="checkbox" class="case-agence" value="${d.client_id}" checked> ${echapper(d.nom)}</label>`).join("");
+    document.querySelectorAll(".case-agence").forEach((c) => c.addEventListener("change", afficher));
+    const non = donnees.filter((d) => !Object.keys(d.mois).length);
+    $("fiches-non-lues").hidden = !non.length;
+    $("fiches-non-lues").textContent = non.length ? "Fiches non lues : " + non.map((d) => `${d.nom} (${d.erreur || "aucune donnée"})`).join(" ; ") : "";
+  }
+  ["recherche-agence", "mois-debut-filtre", "mois-fin-filtre", "mode-affichage"].forEach((id) => $(id).addEventListener("input", afficher));
+  document.querySelectorAll(".case-colonne").forEach((c) => c.addEventListener("change", afficher));
+  $("tout-cocher").addEventListener("click", () => { document.querySelectorAll(".case-agence").forEach((c) => { c.checked = true; }); afficher(); });
+  $("tout-decocher").addEventListener("click", () => { document.querySelectorAll(".case-agence").forEach((c) => { c.checked = false; }); afficher(); });
+
+  function moisFiltres() {
+    const a = $("mois-debut-filtre").value, b = $("mois-fin-filtre").value;
+    return listeMois.filter((m) => m >= a && m <= b);
+  }
+  function agencesFiltrees() {
+    const choisies = new Set(Array.from(document.querySelectorAll(".case-agence:checked")).map((c) => c.value));
+    const mot = $("recherche-agence").value.trim().toLowerCase();
+    return donnees.filter((d) => choisies.has(String(d.client_id)) && (!mot || d.nom.toLowerCase().includes(mot)));
+  }
+  function colonnesVisibles() { const cochees = new Set(Array.from(document.querySelectorAll(".case-colonne:checked")).map((c) => c.value)); return colonnes.filter(([cle]) => cochees.has(cle)); }
+
+  // ---- tableau
+  function afficher() {
+    const mois = moisFiltres(), agences = agencesFiltrees(), cols = colonnesVisibles(), modeTotal = $("mode-affichage").value === "total";
+    let lignes = [];
+    if (modeTotal) {
+      lignes = agences.map((d) => { const l = { nom: d.nom, mois: "" }; cols.forEach(([cle]) => { l[cle] = mois.reduce((s, m) => s + ((d.mois[m] || {})[cle] || 0), 0); }); return l; });
+    } else {
+      agences.forEach((d) => mois.forEach((m) => { const l = { nom: d.nom, mois: m }; cols.forEach(([cle]) => { l[cle] = (d.mois[m] || {})[cle] || 0; }); lignes.push(l); }));
+    }
+    lignes.sort((a, b) => {
+      const va = a[tri.cle], vb = b[tri.cle];
+      const c = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb), "fr");
+      return (c || a.nom.localeCompare(b.nom, "fr") || String(a.mois).localeCompare(String(b.mois))) * tri.sens;
+    });
+    const entetes = [["nom", "Agence"]].concat(modeTotal ? [] : [["mois", "Mois"]]).concat(cols);
+    $("entete-tableau").innerHTML = "<tr>" + entetes.map(([cle, lib]) => `<th data-cle="${cle}" style="cursor:pointer" title="Trier">${echapper(lib)}${tri.cle === cle ? (tri.sens > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
+    $("entete-tableau").querySelectorAll("th").forEach((th) => th.addEventListener("click", () => { tri = { cle: th.dataset.cle, sens: tri.cle === th.dataset.cle ? -tri.sens : 1 }; afficher(); }));
+    $("corps-tableau").innerHTML = lignes.length ? lignes.map((l) => "<tr><td>" + echapper(l.nom) + "</td>" + (modeTotal ? "" : "<td>" + libelleMois(l.mois) + "</td>")
+      + cols.map(([cle]) => `<td style="text-align:right">${formatNombre(l[cle])}</td>`).join("") + "</tr>").join("")
+      : `<tr><td colspan="${entetes.length}" class="texte-vide">Aucune ligne avec ces filtres.</td></tr>`;
+    const totaux = cols.map(([cle]) => lignes.reduce((s, l) => s + (l[cle] || 0), 0));
+    $("pied-tableau").innerHTML = lignes.length && agences.length > 1
+      ? `<tr style="font-weight:700"><td colspan="${modeTotal ? 1 : 2}">Total (${agences.length} agences)</td>` + totaux.map((t) => `<td style="text-align:right">${formatNombre(t)}</td>`).join("") + "</tr>" : "";
+    majLienExcel(mois, agences);
+  }
+
+  function majLienExcel(mois, agences) {
+    const lien = $("lien-excel");
+    if (!mois.length || !agences.length) { lien.removeAttribute("href"); lien.style.opacity = "0.5"; return; }
+    const p = new URLSearchParams({ mois_fin: mois[mois.length - 1], nb_mois: String(mois.length) });
+    agences.forEach((d) => p.append("client_ids", d.client_id));
+    lien.href = "/bilan/mensuel.xlsx?" + p.toString(); lien.style.opacity = "1";
+  }
+})();
+</script>
+{% endblock %}

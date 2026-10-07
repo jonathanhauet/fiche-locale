@@ -5746,12 +5746,58 @@ def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_sessio
     )
 
 
+def _mois_reporting_depuis_requete(request: Request):
+    """(liste de mois, None) ou (None, message d'erreur) a partir de mois_fin (AAAA-MM, defaut : dernier mois termine) et nb_mois."""
+    aujourdhui = date.today()
+    mois_precedent = (aujourdhui.replace(day=1) - timedelta(days=1)).replace(day=1)
+    try:
+        annee_fin, mois_fin = (int(x) for x in (request.query_params.get("mois_fin") or mois_precedent.strftime("%Y-%m")).split("-"))
+        fin_demandee = date(annee_fin, mois_fin, 1)
+        nb_mois = int(request.query_params.get("nb_mois") or 6)
+    except (ValueError, TypeError):
+        return None, "Mois ou nombre de mois invalide."
+    if fin_demandee > aujourdhui.replace(day=1) or not 1 <= nb_mois <= reporting_mensuel.NB_MOIS_MAX:
+        return None, f"Choisissez un mois deja commence et entre 1 et {reporting_mensuel.NB_MOIS_MAX} mois d'historique."
+    return reporting_mensuel.derniers_mois(fin_demandee, nb_mois), None
+
+
+@app.get("/reporting", response_class=HTMLResponse)
+def page_reporting(request: Request, db: Session = Depends(obtenir_session)):
+    """Page en ligne du reporting mensuel : choix des fiches, puis tableau filtrable et triable (voir reporting.html)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    return templates.TemplateResponse(request, "reporting.html", {
+        "etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db),
+        "mois_defaut": (date.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m"), "mois_max": date.today().strftime("%Y-%m"),
+        "colonnes": reporting_mensuel.COLONNES,
+    })
+
+
+@app.get("/reporting/donnees/{client_id}")
+def donnees_reporting_fiche(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Indicateurs mensuels d'UNE fiche en JSON (la page les charge fiche par fiche, avec une barre de progression)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Fiche introuvable."}, status_code=404)
+    mois, erreur = _mois_reporting_depuis_requete(request)
+    if erreur:
+        return JSONResponse({"erreur": erreur}, status_code=400)
+    lecture = reporting_mensuel.lire_fiche(db, client, mois)
+    return JSONResponse({
+        "client_id": client.id, "nom": client.nom, "erreur": lecture["erreur"],
+        "mois": {f"{a}-{m:02d}": reporting_mensuel.indicateurs(lecture["mois"].get((a, m), {})) for a, m in mois} if lecture["mois"] else {},
+    })
+
+
 @app.get("/bilan/mensuel.xlsx")
 def telecharger_reporting_mensuel(request: Request, db: Session = Depends(obtenir_session)):
     """
-    Reporting mensuel (Excel) : pour les fiches choisies, les indicateurs Google mois par mois, une feuille par indicateur
-    (agences en lignes, mois en colonnes) et une feuille de detail. mois_fin (AAAA-MM, defaut : dernier mois termine) et
-    nb_mois (3 a 13, defaut 6).
+    Reporting mensuel (Excel a un seul onglet) : pour les fiches choisies, les indicateurs Google mois par mois, une ligne par
+    agence et par mois. mois_fin (AAAA-MM, defaut : dernier mois termine) et nb_mois (1 a 13, defaut 6).
     """
     redirection = rediriger_si_non_connecte(request)
     if redirection:
@@ -5760,22 +5806,13 @@ def telecharger_reporting_mensuel(request: Request, db: Session = Depends(obteni
     client_ids = [int(v) for v in request.query_params.getlist("client_ids") if v.strip().isdigit()]
     if not client_ids:
         return HTMLResponse("Selectionnez au moins une fiche.", status_code=400)
-
-    aujourdhui = date.today()
-    mois_precedent = (aujourdhui.replace(day=1) - timedelta(days=1)).replace(day=1)
-    try:
-        annee_fin, mois_fin = (int(x) for x in (request.query_params.get("mois_fin") or mois_precedent.strftime("%Y-%m")).split("-"))
-        fin_demandee = date(annee_fin, mois_fin, 1)
-        nb_mois = int(request.query_params.get("nb_mois") or 6)
-    except (ValueError, TypeError):
-        return HTMLResponse("Mois ou nombre de mois invalide.", status_code=400)
-    if fin_demandee > aujourdhui.replace(day=1) or not 1 <= nb_mois <= reporting_mensuel.NB_MOIS_MAX:
-        return HTMLResponse(f"Choisissez un mois deja commence et entre 1 et {reporting_mensuel.NB_MOIS_MAX} mois d'historique.", status_code=400)
+    mois, erreur = _mois_reporting_depuis_requete(request)
+    if erreur:
+        return HTMLResponse(erreur, status_code=400)
 
     clients = [c for c in (db.get(models.Client, i) for i in client_ids) if c]
     if not clients:
         return HTMLResponse("Fiches introuvables.", status_code=404)
-    mois = reporting_mensuel.derniers_mois(fin_demandee, nb_mois)
     resultats = reporting_mensuel.collecter(db, clients, mois)
     if not any(r["mois"] for r in resultats):
         details = " ; ".join(f"{r['client'].nom} : {r['erreur']}" for r in resultats)[:600]
