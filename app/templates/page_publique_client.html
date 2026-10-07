@@ -92,13 +92,25 @@
   @keyframes wa-clignote { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
   @keyframes wa-onde { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
   @keyframes wa-pulse { 0% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.6); } 70% { box-shadow: 0 0 0 12px rgba(37, 211, 102, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); } }
-  @media (prefers-reduced-motion: reduce) { .point-rec, .wa-onde-vive i, .wa-micro { animation: none; } .wa-onde-vive i { transform: scaleY(0.6); } }
+  @keyframes wa-appel { 0%, 100% { box-shadow: 0 6px 18px rgba(18, 140, 126, 0.45), 0 0 0 0 rgba(37, 211, 102, 0.55); } 60% { box-shadow: 0 6px 18px rgba(18, 140, 126, 0.45), 0 0 0 14px rgba(37, 211, 102, 0); } }
+  .bouton-whatsapp-grand { animation: wa-appel 2.6s ease-out infinite; }
+  .bouton-whatsapp-grand:hover { animation: none; }
+  @media (prefers-reduced-motion: reduce) { .point-rec, .wa-onde-vive i, .wa-micro, .bouton-whatsapp-grand { animation: none; } .wa-onde-vive i { transform: scaleY(0.6); } }
   .etapes-methode { padding-left: 0; list-style: none; counter-reset: etape; line-height: 1.55; }
   .etapes-methode li { counter-increment: etape; position: relative; padding-left: 2.4rem; margin-bottom: 0.8rem; }
   .etapes-methode li::before { content: counter(etape); position: absolute; left: 0; top: 0.05rem; width: 1.65rem; height: 1.65rem; border-radius: 50%; background: #25d366; color: #05301f; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; }
   .bouton-whatsapp { background: #25d366; color: #05301f; border: none; border-radius: 999px; padding: 0.7rem 1.4rem; font-weight: 700; font-size: 1rem; cursor: pointer; box-shadow: 0 3px 10px rgba(37, 211, 102, 0.4); }
   .bouton-whatsapp:hover { background: #1fbd59; }
   .bouton-whatsapp:disabled { opacity: 0.6; cursor: default; }
+  .appel-final { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1.1rem 1.4rem; border-radius: var(--rayon); color: #fff; background: linear-gradient(135deg, #075e54, #128c7e 55%, #25d366); box-shadow: 0 6px 18px rgba(18, 140, 126, 0.4); margin-bottom: 1.2rem; }
+  .appel-final svg { width: 2.8rem; height: 2.8rem; flex-shrink: 0; }
+  .appel-final-texte { display: flex; flex-direction: column; line-height: 1.35; flex: 1 1 240px; }
+  .appel-final-texte strong { font-size: 1.1rem; }
+  .appel-final-texte span { font-size: 0.9rem; opacity: 0.95; }
+  .bouton-blanc { background: #fff; color: #075e54; border: none; border-radius: 999px; padding: 0.7rem 1.4rem; font-weight: 700; font-size: 1rem; cursor: pointer; }
+  .bouton-blanc:hover { background: #e7fbee; }
+  .bouton-blanc:disabled { opacity: 0.6; cursor: default; }
+  .appel-final .message-demande { color: #fff; }
   .bloc-ensemble { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.2rem 1.4rem; margin: 2rem 0 1.5rem; }
   .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
   .bloc-ensemble p { line-height: 1.6; }
@@ -307,6 +319,22 @@
       sa fiche Google, ses avis, son site, ses articles, ses réseaux sociaux, et la cohérence de toutes ses informations.</p>
     <p>Un seul canal fait une partie du travail. Plusieurs canaux actifs, réguliers et cohérents se renforcent les uns les autres : l'entreprise est mieux identifiée,
       jugée plus fiable, et plus souvent recommandée à celles et ceux qui la cherchent.</p>
+  </div>
+
+  <div class="appel-final">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="16" fill="#fff"/>
+      <path d="M16 6.5a9.5 9.5 0 0 0-8.1 14.4L6.6 25.4l4.6-1.2A9.5 9.5 0 1 0 16 6.5z" fill="none" stroke="#128c7e" stroke-width="2"/>
+      <path d="M12.5 12.2c.3-.6.6-.6.9-.6h.6c.2 0 .4.1.5.4l.8 1.9c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3-.1.4.7 1.2 1.7 2.1 2.9 2.7.2.1.3 0 .4-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.3.3.3.5 0 .8-.6 1.7-1.6 1.9-1 .2-2.3-.1-4-1.1-1.9-1.1-3.1-2.7-3.6-4-.4-1-.4-1.9.1-2.8z" fill="#128c7e"/>
+    </svg>
+    <div class="appel-final-texte">
+      <strong>Envie d'essayer la méthode WhatsApp ?</strong>
+      <span>Quelques minutes par semaine, à la voix. Je m'occupe du reste, et je relis tout avant publication.</span>
+    </div>
+    <div class="zone-interet" data-sujet="methode">
+      <button type="button" class="bouton-blanc envoyer-interet">Je veux essayer</button>
+      <p class="message-demande" hidden></p>
+    </div>
   </div>
 
   <p class="pied-page-publique">Cette page est réservée à {{ nom }}. Ne partagez pas son adresse.</p>
