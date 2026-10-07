@@ -69,6 +69,41 @@ def recuperer_statistiques(identifiants, location_id: str, date_debut: date, dat
     return {LIBELLES[m]: totaux[m] for m in METRIQUES}
 
 
+def recuperer_statistiques_par_mois(identifiants, location_id: str, date_debut: date, date_fin: date) -> dict:
+    """
+    Comme recuperer_statistiques, mais ventile par mois en UNE seule requete : {(annee, mois): {libelle: total}} pour
+    tous les mois de la periode (un mois sans donnee vaut 0 partout).
+    """
+    url = f"https://businessprofileperformance.googleapis.com/v1/locations/{location_id}:fetchMultiDailyMetricsTimeSeries"
+    params = [("dailyMetrics", metrique) for metrique in METRIQUES]
+    params += list(_params_date("dailyRange.start_date", date_debut).items())
+    params += list(_params_date("dailyRange.end_date", date_fin).items())
+
+    reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params=params, timeout=60)
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la recuperation des statistiques (code {reponse.status_code}) : {reponse.text}")
+
+    par_mois = {}
+    annee, mois = date_debut.year, date_debut.month
+    while (annee, mois) <= (date_fin.year, date_fin.month):
+        par_mois[(annee, mois)] = {LIBELLES[m]: 0 for m in METRIQUES}
+        mois += 1
+        if mois == 13:
+            annee, mois = annee + 1, 1
+
+    for groupe in reponse.json().get("multiDailyMetricTimeSeries", []):
+        for serie in groupe.get("dailyMetricTimeSeries", []):
+            metrique = serie.get("dailyMetric")
+            if metrique not in LIBELLES:
+                continue
+            for point in serie.get("timeSeries", {}).get("datedValues", []):
+                jour = point.get("date") or {}
+                cle = (jour.get("year"), jour.get("month"))
+                if cle in par_mois:
+                    par_mois[cle][LIBELLES[metrique]] += int(point.get("value", 0))
+    return par_mois
+
+
 def recuperer_mots_cles_recherche(identifiants, location_id: str, date_debut: date, date_fin: date, limite: int = 25) -> list[dict]:
     """
     Renvoie les mots-cles de recherche reels ayant amene des vues sur la fiche

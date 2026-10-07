@@ -88,6 +88,7 @@ from . import (
     ovh_upload,
     rank_tracking,
     rapport_donnees,
+    reporting_mensuel,
     rapport_pdf,
     recap_mensuel,
     search_console,
@@ -5678,7 +5679,8 @@ def bilan_formulaire(request: Request, db: Session = Depends(obtenir_session)):
     return templates.TemplateResponse(
         request,
         "bilan.html",
-        {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "debut": debut, "fin": fin},
+        {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "debut": debut, "fin": fin,
+         "mois_defaut": (date.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m"), "mois_max": date.today().strftime("%Y-%m")},
     )
 
 
@@ -5740,6 +5742,50 @@ def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_sessio
     return Response(
         content=octets_pdf,
         media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
+
+
+@app.get("/bilan/mensuel.xlsx")
+def telecharger_reporting_mensuel(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Reporting mensuel (Excel) : pour les fiches choisies, les indicateurs Google mois par mois, une feuille par indicateur
+    (agences en lignes, mois en colonnes) et une feuille de detail. mois_fin (AAAA-MM, defaut : dernier mois termine) et
+    nb_mois (3 a 13, defaut 6).
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client_ids = [int(v) for v in request.query_params.getlist("client_ids") if v.strip().isdigit()]
+    if not client_ids:
+        return HTMLResponse("Selectionnez au moins une fiche.", status_code=400)
+
+    aujourdhui = date.today()
+    mois_precedent = (aujourdhui.replace(day=1) - timedelta(days=1)).replace(day=1)
+    try:
+        annee_fin, mois_fin = (int(x) for x in (request.query_params.get("mois_fin") or mois_precedent.strftime("%Y-%m")).split("-"))
+        fin_demandee = date(annee_fin, mois_fin, 1)
+        nb_mois = int(request.query_params.get("nb_mois") or 6)
+    except (ValueError, TypeError):
+        return HTMLResponse("Mois ou nombre de mois invalide.", status_code=400)
+    if fin_demandee > aujourdhui.replace(day=1) or not 1 <= nb_mois <= reporting_mensuel.NB_MOIS_MAX:
+        return HTMLResponse(f"Choisissez un mois deja commence et entre 1 et {reporting_mensuel.NB_MOIS_MAX} mois d'historique.", status_code=400)
+
+    clients = [c for c in (db.get(models.Client, i) for i in client_ids) if c]
+    if not clients:
+        return HTMLResponse("Fiches introuvables.", status_code=404)
+    mois = reporting_mensuel.derniers_mois(fin_demandee, nb_mois)
+    resultats = reporting_mensuel.collecter(db, clients, mois)
+    if not any(r["mois"] for r in resultats):
+        details = " ; ".join(f"{r['client'].nom} : {r['erreur']}" for r in resultats)[:600]
+        return HTMLResponse(f"Aucune donnee lue sur ces fiches. {details}", status_code=502)
+
+    octets = reporting_mensuel.generer_excel(resultats, mois)
+    nom_fichier = f"reporting_mensuel_{mois[0][0]}-{mois[0][1]:02d}_a_{mois[-1][0]}-{mois[-1][1]:02d}.xlsx"
+    return Response(
+        content=octets,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
     )
 

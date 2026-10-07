@@ -54,6 +54,32 @@
   <div class="actions-avis">
     <button type="submit" id="bouton-telecharger-bilan" disabled>Télécharger le bilan PDF</button>
   </div>
+
+  <div class="bloc-section" id="reporting-mensuel">
+    <strong>📊 Reporting mensuel par agence (Excel)</strong>
+    <p class="texte-discret">
+      Les mêmes indicateurs Google (vues, clics vers le site, appels, demandes d'itinéraire, messages) <strong>mois par mois et agence par agence</strong>,
+      comparables d'un mois et d'une agence à l'autre : une feuille par indicateur, avec le total de toutes les agences et le détail. Les chiffres réels
+      sont toujours affichés ; l'évolution du dernier mois n'est mise en avant que lorsqu'elle est positive. Utilise les fiches cochées ci-dessus.
+    </p>
+    <div class="formulaire-ligne">
+      <label>
+        Dernier mois du rapport
+        <input type="month" name="mois_fin" value="{{ mois_defaut }}" max="{{ mois_max }}">
+      </label>
+      <label>
+        Historique
+        <select name="nb_mois">
+          <option value="3">3 mois</option>
+          <option value="6" selected>6 mois</option>
+          <option value="12">12 mois</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions-avis">
+      <button type="submit" id="bouton-reporting-mensuel" formaction="/bilan/mensuel.xlsx" disabled>Télécharger le reporting mensuel (Excel)</button>
+    </div>
+  </div>
 </form>
 
 <script id="donnees-clients-bilan" type="application/json">{{ clients_json|safe }}</script>
@@ -75,6 +101,7 @@
   function actualiserEtatBouton() {
     const auMoinsUne = conteneurClients.querySelectorAll('input[name="client_ids"]:checked').length > 0;
     boutonTelecharger.disabled = !auMoinsUne;
+    document.getElementById("bouton-reporting-mensuel").disabled = !auMoinsUne;
   }
 
   function actualiserListe() {
