@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import secrets
 import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -264,6 +265,8 @@ def _migrer_vers_multi_comptes():
             colonnes_posts_wordpress = {c["name"] for c in inspecteur.get_columns("posts_wordpress")}
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
+        if "token_page_client" not in {c["name"] for c in inspecteur.get_columns("clients")}:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN token_page_client VARCHAR DEFAULT ''"))
         if "site_web" not in {c["name"] for c in inspecteur.get_columns("clients")}:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN site_web VARCHAR DEFAULT ''"))
         if inspecteur.has_table("resultats_visibilite_ia"):
@@ -3265,6 +3268,7 @@ def _reponse_detail_client(
                 .all()
             ),
             "erreur_whatsapp_test": request.session.pop("erreur_whatsapp_test", None),
+            "lien_page_client": _lien_page_client(request, client),
             "nom_template_tuto": whatsapp_business.NOM_TEMPLATE_TUTO,
             "texte_modele_tuto": whatsapp_business.TEXTE_MODELE_TUTO,
             "erreur_voix": request.session.pop("erreur_voix", None),
@@ -3297,6 +3301,74 @@ def _date_photo_affichee(valeur: str) -> str:
         return datetime.fromisoformat(valeur.replace("Z", "+00:00")).strftime("%d/%m/%Y")
     except (ValueError, AttributeError):
         return ""
+
+
+# --- Page publique (lien secret) : les publications programmees a venir, a partager avec le client ---
+
+JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+NOMS_RESEAUX_PAGE_CLIENT = {
+    "google": "Google", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn", "wordpress": "Blog", "youtube": "YouTube",
+}
+
+
+def _lien_page_client(request: Request, client) -> str:
+    if not client.token_page_client:
+        return ""
+    protocole = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return f"{protocole}://{request.headers.get('host') or request.url.netloc}/p/{client.token_page_client}"
+
+
+@app.post("/clients/{client_id}/page-client/creer")
+def creer_page_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Cree (ou remplace, si le lien a fuite) le lien secret de la page client : l'ancien lien cesse de fonctionner."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if client:
+        client.token_page_client = secrets.token_urlsafe(24)
+        db.commit()
+    return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
+
+
+@app.post("/clients/{client_id}/page-client/desactiver")
+def desactiver_page_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if client:
+        client.token_page_client = ""
+        db.commit()
+    return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
+
+
+@app.get("/p/{token}", response_class=HTMLResponse)
+def page_publique_client(token: str, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Page publique en lecture seule, sans connexion, accessible uniquement par son lien secret : les publications
+    programmees a venir de la fiche (tous reseaux). Aucune action possible, aucune donnee interne (erreurs, brouillons...).
+    """
+    entetes = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    client = db.query(models.Client).filter(models.Client.token_page_client == token).first() if len(token) >= 20 else None
+    if not client:
+        return HTMLResponse("Page introuvable.", status_code=404, headers=entetes)
+
+    lignes = [l for l in _publications_multi_reseaux(db, client, limite=500, avec_externes=False) if l["a_venir"]]
+    lignes.sort(key=lambda l: (l["date"], l.get("heure") or "00:00"))
+    publications = []
+    for l in lignes:
+        publications.append({
+            "reseau": NOMS_RESEAUX_PAGE_CLIENT.get(l["reseau"], l["reseau"].capitalize()), "code_reseau": l["reseau"],
+            "jour": f"{JOURS_FR[l['date'].weekday()]} {l['date'].day} {MOIS_FR[l['date'].month - 1]} {l['date'].year}",
+            "heure": l.get("heure") or "", "images": (l.get("images") or [])[:4], "texte": l.get("texte") or l.get("titre") or "",
+            "video": bool(l.get("video")),
+        })
+    return templates.TemplateResponse(
+        request, "page_publique_client.html", {"nom": nom_affiche_carrousel(client), "publications": publications},
+        headers=entetes,
+    )
 
 
 @app.get("/clients/{client_id}/photos-fiche")

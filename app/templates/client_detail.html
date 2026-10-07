@@ -880,6 +880,41 @@
 })();
 </script>
 
+<div class="bloc-section" id="page-client">
+  <strong>🔗 Page de suivi pour le client</strong>
+  <p class="texte-discret">
+    Une page en lecture seule, sans connexion, qui montre au client ses publications programmées à venir (texte, image, date et heure, réseau).
+    Seules les personnes qui ont le lien peuvent la voir. Elle ne montre jamais les brouillons ni les erreurs.
+  </p>
+  {% if lien_page_client %}
+  <div class="formulaire-ligne">
+    <input type="text" id="lien-page-client" value="{{ lien_page_client }}" readonly style="flex:1;min-width:16rem" onclick="this.select()">
+    <button type="button" class="bouton-secondaire" id="copier-lien-page-client">Copier le lien</button>
+    <a class="bouton-secondaire" href="{{ lien_page_client }}" target="_blank" rel="noopener">Ouvrir</a>
+  </div>
+  <div class="actions-avis">
+    <form method="post" action="/clients/{{ client.id }}/page-client/creer" onsubmit="return confirm('Générer un nouveau lien ? L\'ancien lien ne fonctionnera plus.');">
+      <button type="submit" class="bouton-secondaire">Nouveau lien (annule l'ancien)</button>
+    </form>
+    <form method="post" action="/clients/{{ client.id }}/page-client/desactiver" onsubmit="return confirm('Désactiver la page ? Le lien actuel ne fonctionnera plus.');">
+      <button type="submit" class="bouton-danger">Désactiver la page</button>
+    </form>
+  </div>
+  <script>
+    document.getElementById("copier-lien-page-client").addEventListener("click", function () {
+      const bouton = this, ancien = bouton.textContent;
+      navigator.clipboard.writeText(document.getElementById("lien-page-client").value).then(() => {
+        bouton.textContent = "Lien copié"; setTimeout(() => { bouton.textContent = ancien; }, 1500);
+      });
+    });
+  </script>
+  {% else %}
+  <form method="post" action="/clients/{{ client.id }}/page-client/creer">
+    <button type="submit" class="bouton-secondaire">Créer le lien de la page client</button>
+  </form>
+  {% endif %}
+</div>
+
 <div class="barre-titre">
   <h2>Résumé multi-réseaux</h2>
   <a class="bouton-secondaire" href="/clients/{{ client.id }}/historique">Voir tout l'historique</a>
