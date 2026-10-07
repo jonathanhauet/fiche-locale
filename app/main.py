@@ -3388,7 +3388,7 @@ PRESENTATION_CANAUX_PAGE_CLIENT = [
      "exactement ce que les assistants IA (ChatGPT, Gemini, Perplexity...) viennent chercher pour recommander une entreprise."),
 ]
 CANAUX_AVEC_PROMOTION = {"facebook", "instagram", "linkedin", "wordpress"}   # YouTube : jamais mis en avant
-SUJETS_INTERET_PAGE_CLIENT = {c[0] for c in PRESENTATION_CANAUX_PAGE_CLIENT} | {"geo"}
+SUJETS_INTERET_PAGE_CLIENT = {c[0] for c in PRESENTATION_CANAUX_PAGE_CLIENT} | {"geo", "methode"}
 _demandes_page_client = {}          # token -> horodatages recents (limite anti-abus)
 MAX_DEMANDES_PAR_HEURE = 15
 

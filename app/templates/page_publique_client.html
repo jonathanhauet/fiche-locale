@@ -14,6 +14,7 @@
   .canal-puce { display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; color: inherit; font-size: 0.85rem; font-weight: 600; }
   .canal-puce-inactif { color: var(--texte-discret); font-weight: 500; }
   .canal-puce .badge-reseau { width: 1.9rem; height: 1.9rem; font-size: 0.72rem; }
+  .legende-canaux { margin: -0.4rem 0 1rem; font-size: 0.8rem; color: var(--texte-discret); }
   .accroche { border-left: 4px solid var(--accent, #4f46e5); background: rgba(79, 70, 229, 0.08); border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1.2rem; }
   .accroche p { margin: 0; line-height: 1.5; }
   .accroche-titre { font-weight: 700; margin-bottom: 0.25rem !important; }
@@ -42,6 +43,11 @@
   .message-demande { font-size: 0.9rem; margin: 0.4rem 0 0; }
   .carte-promo { border: 1px dashed var(--carte-bordure); border-radius: var(--rayon); padding: 1rem 1.2rem; background: rgba(127, 127, 127, 0.06); }
   .carte-promo p { margin: 0 0 0.7rem; line-height: 1.5; }
+  .bloc-methode { background: var(--carte); border: 1px solid var(--carte-bordure); border-left: 4px solid var(--accent, #4f46e5); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.2rem 1.4rem; margin: 2rem 0 1rem; }
+  .bloc-methode h2 { margin-top: 0; font-size: 1.2rem; }
+  .bloc-methode p { line-height: 1.55; }
+  .etapes-methode { padding-left: 1.2rem; line-height: 1.55; }
+  .etapes-methode li { margin-bottom: 0.6rem; }
   .bloc-ensemble { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.2rem 1.4rem; margin: 2rem 0 1.5rem; }
   .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
   .bloc-ensemble p { line-height: 1.6; }
@@ -60,16 +66,18 @@
 
   <nav class="bandeau-canaux" aria-label="Vos canaux">
     {% for c in canaux %}
-    <a class="canal-puce {{ '' if c.actif else 'canal-puce-inactif' }}" href="#canal-{{ c.code }}" title="{{ c.nom }} : {{ 'actif' if c.actif else ('non activé' if c.code == 'geo' else 'non connecté') }}">
+    <a class="canal-puce {{ '' if c.actif else 'canal-puce-inactif' }}" href="#canal-{{ c.code }}" title="{{ c.nom }} : {{ ('option activée' if c.code == 'geo' else 'géré avec Jonathan') if c.actif else ('option non activée' if c.code == 'geo' else 'pas encore connecté') }}">
       <span class="badge-reseau badge-reseau-{{ c.code }} {{ '' if c.actif else 'badge-reseau-inactif' }}">{{ c.lettre }}</span>
       <span class="canal-puce-nom">{{ c.nom }}</span>
     </a>
     {% endfor %}
   </nav>
 
+  <p class="legende-canaux">En couleur : géré avec Jonathan. Grisé : pas encore connecté.</p>
+
   <div class="accroche">
     <p class="accroche-titre">
-      {% if nb_actifs == nb_canaux %}Bravo : tous vos canaux sont actifs.{% elif nb_actifs == 0 %}Votre présence en ligne est à construire, et c'est le bon moment pour s'y mettre.{% else %}Vous êtes actif sur {{ nb_actifs }} {{ 'canaux' if nb_actifs > 1 else 'canal' }} sur {{ nb_canaux }}.{% endif %}
+      {% if nb_actifs == nb_canaux %}Bravo : tous vos canaux sont gérés avec moi.{% elif nb_actifs == 0 %}Aucun canal n'est encore géré avec moi, et c'est le bon moment pour s'y mettre.{% else %}{{ nb_actifs }} {{ 'canaux' if nb_actifs > 1 else 'canal' }} sur {{ nb_canaux }} {{ 'sont gérés' if nb_actifs > 1 else 'est géré' }} avec moi.{% endif %}
     </p>
     <p>
       Google et les assistants IA recoupent plusieurs signaux pour décider quelles entreprises recommander : plus vos canaux sont nombreux, réguliers et cohérents, plus vous êtes identifié comme une entreprise fiable.
@@ -85,7 +93,7 @@
     <div class="canal-entete">
       <h2>{{ canal.nom }}</h2>
       {% if canal.code != "youtube" %}
-      {% if canal.connecte %}<span class="statut-canal statut-actif">Actif</span>{% else %}<span class="statut-canal statut-absent">Non connecté</span>{% endif %}
+      {% if canal.connecte %}<span class="statut-canal statut-actif">Géré avec Jonathan</span>{% else %}<span class="statut-canal statut-absent">Non connecté</span>{% endif %}
       {% endif %}
     </div>
     {% if canal.explication %}<p class="explication-canal">{{ canal.explication }}</p>{% endif %}
@@ -123,9 +131,9 @@
     {% else %}
     <div class="carte-promo">
       {% if canal.code == "google" %}
-      <p>La fiche Google de {{ nom }} n'est pas encore connectée. C'est la base de la visibilité locale : je peux m'en occuper pour vous.</p>
+      <p>La fiche Google de {{ nom }} n'est pas encore connectée avec moi. C'est la base de la visibilité locale : je peux m'en occuper avec vous.</p>
       {% else %}
-      <p>Ce canal n'est pas encore connecté pour {{ nom }}. Je peux m'en occuper pour vous, avec le même suivi que celui de vos autres publications.</p>
+      <p>Vous gérez peut-être déjà ce canal vous-même. Je peux le prendre en charge avec vous, ou le compléter, avec la méthode présentée plus bas.</p>
       {% endif %}
       <div class="zone-interet" data-sujet="{{ canal.code }}">
         <button type="button" class="bouton-secondaire envoyer-interet">Je veux en savoir plus</button>
@@ -139,7 +147,7 @@
   <section class="canal" id="canal-geo">
     <div class="canal-entete">
       <h2>Visibilité dans les réponses des IA</h2>
-      {% if geo_actif %}<span class="statut-canal statut-actif">Actif</span>{% else %}<span class="statut-canal statut-absent">Non activé</span>{% endif %}
+      {% if geo_actif %}<span class="statut-canal statut-actif">Option activée</span>{% else %}<span class="statut-canal statut-absent">Option non activée</span>{% endif %}
     </div>
     <p class="explication-canal">De plus en plus de personnes ne cherchent plus sur Google : elles demandent directement à ChatGPT, Gemini ou Perplexity quelle entreprise choisir.
       Ce n'est pas le même terrain que le référencement classique. C'est un travail à part, avec ses propres méthodes :</p>
@@ -159,6 +167,23 @@
     </div>
     {% endif %}
   </section>
+
+  <div class="bloc-methode" id="methode">
+    <h2>Une méthode qui part de vous, pas d'un texte générique</h2>
+    <p>Beaucoup d'outils se contentent de faire écrire des textes par une IA. Ma méthode va plus loin, parce que le contenu vient de vous :</p>
+    <ol class="etapes-methode">
+      <li><strong>Des questions sur WhatsApp.</strong> Chaque semaine, je vous envoie 4 questions sur votre métier, plus un sujet libre. Vous choisissez celle qui vous inspire.</li>
+      <li><strong>Vous répondez à la voix.</strong> Un message vocal de 1 à 2 minutes, quand vous voulez, avec une photo si vous en avez une. Pas besoin d'écrire.</li>
+      <li><strong>Vos mots, votre voix.</strong> Vos réponses sont conservées : j'apprends vos expressions, votre façon de parler et vos vrais exemples, pour que chaque publication vous ressemble. L'historique évite aussi de traiter deux fois le même sujet.</li>
+      <li><strong>Je relis tout.</strong> L'IA aide à structurer, mais rien n'est publié sans ma relecture.</li>
+      <li><strong>Publié au bon format, partout.</strong> Le même contenu est adapté pour Google, Facebook, Instagram, LinkedIn ou votre blog.</li>
+    </ol>
+    <p>Le résultat : des publications authentiques et régulières, qui reflètent vraiment votre savoir-faire.</p>
+    <div class="zone-interet" data-sujet="methode">
+      <button type="button" class="bouton envoyer-interet">Je veux essayer cette méthode</button>
+      <p class="message-demande" hidden></p>
+    </div>
+  </div>
 
   <div class="bloc-ensemble">
     <h2>Pourquoi combiner plusieurs canaux ?</h2>

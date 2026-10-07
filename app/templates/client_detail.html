@@ -937,7 +937,7 @@
       <div class="texte-discret">
         {{ d.cree_le | heure_locale("%d/%m/%Y %H:%M") }} ·
         {% if d.type == "modification" %}Modification demandée sur {{ d.reseau|capitalize }}{% if d.date_post %}, publication du {{ d.date_post }}{% endif %}
-        {% else %}Intéressé par : {{ "la visibilité dans les réponses des IA" if d.reseau == "geo" else d.reseau|capitalize }}{% endif %}
+        {% else %}Intéressé par : {{ "la visibilité dans les réponses des IA" if d.reseau == "geo" else ("la méthode WhatsApp (questions, vocaux, voix du client)" if d.reseau == "methode" else d.reseau|capitalize) }}{% endif %}
       </div>
       {% if d.extrait %}<div class="texte-discret">« {{ d.extrait }}{% if d.extrait|length >= 160 %}…{% endif %} »</div>{% endif %}
       {% if d.type == "modification" %}<div>{{ d.message }}</div>{% endif %}
