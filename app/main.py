@@ -3269,6 +3269,10 @@ def _reponse_detail_client(
             ),
             "erreur_whatsapp_test": request.session.pop("erreur_whatsapp_test", None),
             "lien_page_client": _lien_page_client(request, client),
+            "demandes_client": (
+                db.query(models.DemandeClient).filter_by(client_id=client.id, statut="NOUVELLE")
+                .order_by(models.DemandeClient.cree_le.desc()).all()
+            ),
             "nom_template_tuto": whatsapp_business.NOM_TEMPLATE_TUTO,
             "texte_modele_tuto": whatsapp_business.TEXTE_MODELE_TUTO,
             "erreur_voix": request.session.pop("erreur_voix", None),
@@ -3344,31 +3348,173 @@ def desactiver_page_client(client_id: int, request: Request, db: Session = Depen
     return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
 
 
-@app.get("/p/{token}", response_class=HTMLResponse)
-def page_publique_client(token: str, request: Request, db: Session = Depends(obtenir_session)):
-    """
-    Page publique en lecture seule, sans connexion, accessible uniquement par son lien secret : les publications
-    programmees a venir de la fiche (tous reseaux). Aucune action possible, aucune donnee interne (erreurs, brouillons...).
-    """
-    entetes = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
-    client = db.query(models.Client).filter(models.Client.token_page_client == token).first() if len(token) >= 20 else None
-    if not client:
-        return HTMLResponse("Page introuvable.", status_code=404, headers=entetes)
+# Presentation de chaque canal sur la page client : ce qu'il apporte, et (pour les canaux non connectes) de quoi donner envie.
+PRESENTATION_CANAUX_PAGE_CLIENT = [
+    ("google", "Google Business Profile",
+     "Vos publications Google montrent à celles et ceux qui vous cherchent que votre activité est bien vivante : actualités, offres, réalisations. "
+     "Elles enrichissent votre fiche, donnent des raisons de vous choisir et contribuent aux signaux que Google utilise pour présenter les entreprises locales."),
+    ("facebook", "Facebook",
+     "Facebook entretient le lien avec votre communauté locale : actualités, réalisations, avis, coulisses. Une page active rassure avant le premier contact, "
+     "et ses publications sont autant de traces de votre sérieux que les moteurs de recherche et les assistants IA peuvent retrouver."),
+    ("instagram", "Instagram",
+     "Instagram est la vitrine de votre savoir-faire en images : chantiers, produits, équipe, coulisses. C'est souvent là que l'on vérifie qu'une entreprise est "
+     "réelle et active avant de la contacter, et un signal de plus de votre présence sur le terrain."),
+    ("linkedin", "LinkedIn",
+     "LinkedIn valorise votre expertise auprès des professionnels, partenaires et futurs collaborateurs. Vos publications y construisent votre crédibilité "
+     "et vous positionnent comme une référence dans votre métier."),
+    ("wordpress", "Blog / site web",
+     "Les articles de blog répondent précisément aux questions de vos clients. C'est la base du référencement naturel, et ce type de contenu clair et détaillé est "
+     "exactement ce que les assistants IA (ChatGPT, Gemini, Perplexity...) viennent chercher pour recommander une entreprise."),
+]
+CANAUX_AVEC_PROMOTION = {"facebook", "instagram", "linkedin", "wordpress"}   # YouTube : jamais mis en avant
+SUJETS_INTERET_PAGE_CLIENT = {c[0] for c in PRESENTATION_CANAUX_PAGE_CLIENT} | {"geo"}
+_demandes_page_client = {}          # token -> horodatages recents (limite anti-abus)
+MAX_DEMANDES_PAR_HEURE = 15
 
+
+def _canal_connecte(client, code: str) -> bool:
+    return {
+        "google": bool(client.account_id and client.location_id),
+        "facebook": bool(client.page_id_meta and client.token_page_meta),
+        "instagram": bool(client.instagram_id_meta and client.token_instagram),
+        "linkedin": bool(client.compte_linkedin_id),
+        "wordpress": bool((client.wordpress_url or "").strip()),
+    }.get(code, False)
+
+
+def _publications_a_venir_page_client(db: Session, client) -> list:
     lignes = [l for l in _publications_multi_reseaux(db, client, limite=500, avec_externes=False) if l["a_venir"]]
     lignes.sort(key=lambda l: (l["date"], l.get("heure") or "00:00"))
     publications = []
     for l in lignes:
+        jour = f"{JOURS_FR[l['date'].weekday()]} {l['date'].day} {MOIS_FR[l['date'].month - 1]} {l['date'].year}"
         publications.append({
-            "reseau": NOMS_RESEAUX_PAGE_CLIENT.get(l["reseau"], l["reseau"].capitalize()), "code_reseau": l["reseau"],
-            "jour": f"{JOURS_FR[l['date'].weekday()]} {l['date'].day} {MOIS_FR[l['date'].month - 1]} {l['date'].year}",
-            "heure": l.get("heure") or "", "images": (l.get("images") or [])[:4], "texte": l.get("texte") or l.get("titre") or "",
-            "video": bool(l.get("video")),
+            "code_reseau": l["reseau"], "id": l["id"], "jour": jour, "heure": l.get("heure") or "",
+            "images": (l.get("images") or [])[:4], "texte": l.get("texte") or l.get("titre") or "", "video": bool(l.get("video")),
         })
+    return publications
+
+
+def _client_par_token(db: Session, token: str):
+    return db.query(models.Client).filter(models.Client.token_page_client == token).first() if len(token) >= 20 else None
+
+
+def _limite_demandes_atteinte(token: str) -> bool:
+    maintenant = monotonic()
+    recentes = [t for t in _demandes_page_client.get(token, []) if maintenant - t < 3600]
+    if len(recentes) >= MAX_DEMANDES_PAR_HEURE:
+        _demandes_page_client[token] = recentes
+        return True
+    recentes.append(maintenant)
+    _demandes_page_client[token] = recentes
+    return False
+
+
+@app.get("/p/{token}", response_class=HTMLResponse)
+def page_publique_client(token: str, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Page publique en lecture seule, sans connexion, accessible uniquement par son lien secret : les publications
+    programmees a venir de la fiche, par canal, avec ce que chaque canal apporte. Les canaux non connectes sont signales
+    comme tels (pour donner envie d'en profiter). Seules actions possibles : demander une modification d'un post ou dire
+    son interet - Jonathan est prevenu. Aucune donnee interne (erreurs, brouillons...).
+    """
+    entetes = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    client = _client_par_token(db, token)
+    if not client:
+        return HTMLResponse("Page introuvable.", status_code=404, headers=entetes)
+
+    publications = _publications_a_venir_page_client(db, client)
+    sections = []
+    for code, nom, explication in PRESENTATION_CANAUX_PAGE_CLIENT:
+        posts = [p for p in publications if p["code_reseau"] == code]
+        connecte = _canal_connecte(client, code) or bool(posts)
+        sections.append({"code": code, "nom": nom, "explication": explication, "connecte": connecte, "publications": posts})
+    videos = [p for p in publications if p["code_reseau"] == "youtube"]
+    if videos:
+        sections.append({"code": "youtube", "nom": "YouTube", "explication": "", "connecte": True, "publications": videos})
+    geo_actif = db.query(models.RequeteVisibiliteIA).filter_by(client_id=client.id).count() > 0
     return templates.TemplateResponse(
-        request, "page_publique_client.html", {"nom": nom_affiche_carrousel(client), "publications": publications},
+        request, "page_publique_client.html",
+        {"nom": nom_affiche_carrousel(client), "sections": sections, "geo_actif": geo_actif, "token": token,
+         "nb_publications": len(publications)},
         headers=entetes,
     )
+
+
+@app.post("/p/{token}/modification")
+async def page_publique_demande_modification(token: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Le client demande une modification d'une publication programmee : enregistree et notifiee a Jonathan."""
+    client = _client_par_token(db, token)
+    if not client:
+        return JSONResponse({"erreur": "Page introuvable."}, status_code=404)
+    try:
+        corps = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    message = str(corps.get("message") or "").strip()[:1000]
+    reseau = str(corps.get("reseau") or "")
+    if not message:
+        return JSONResponse({"erreur": "Écrivez ce que vous souhaitez modifier."}, status_code=400)
+    try:
+        post_id = int(corps.get("post_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"erreur": "Publication introuvable."}, status_code=400)
+    post = next((p for p in _publications_a_venir_page_client(db, client) if p["code_reseau"] == reseau and p["id"] == post_id), None)
+    if not post:
+        return JSONResponse({"erreur": "Cette publication n'est plus programmée."}, status_code=404)
+    if _limite_demandes_atteinte(token):
+        return JSONResponse({"erreur": "Trop de demandes en peu de temps, réessayez plus tard."}, status_code=429)
+    db.add(models.DemandeClient(
+        client_id=client.id, type="modification", reseau=reseau, extrait=(post["texte"] or "")[:160].replace("\n", " "),
+        date_post=f"{post['jour']}" + (f" à {post['heure']}" if post["heure"] else ""), message=message,
+    ))
+    db.commit()
+    notifications.notifier(
+        "Demande de modification", f"{client.nom} ({reseau}, {post['jour']}) : {message[:140]}",
+        url=f"https://web-production-bf59a.up.railway.app/clients/{client.id}#page-client",
+    )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/p/{token}/interet")
+async def page_publique_interet(token: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Le client dit qu'un canal ou une prestation l'interesse : enregistre et notifie (une seule fois par sujet et par semaine)."""
+    client = _client_par_token(db, token)
+    if not client:
+        return JSONResponse({"erreur": "Page introuvable."}, status_code=404)
+    try:
+        corps = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    sujet = str(corps.get("sujet") or "")
+    if sujet not in SUJETS_INTERET_PAGE_CLIENT:
+        return JSONResponse({"erreur": "Sujet inconnu."}, status_code=400)
+    if _limite_demandes_atteinte(token):
+        return JSONResponse({"erreur": "Trop de demandes en peu de temps, réessayez plus tard."}, status_code=429)
+    deja = db.query(models.DemandeClient).filter(
+        models.DemandeClient.client_id == client.id, models.DemandeClient.type == "interet", models.DemandeClient.reseau == sujet,
+        models.DemandeClient.cree_le >= datetime.utcnow() - timedelta(days=7),
+    ).first()
+    if not deja:
+        db.add(models.DemandeClient(client_id=client.id, type="interet", reseau=sujet, message="Souhaite en savoir plus."))
+        db.commit()
+        notifications.notifier(
+            "Un client est intéressé", f"{client.nom} souhaite en savoir plus sur : {sujet}.",
+            url=f"https://web-production-bf59a.up.railway.app/clients/{client.id}#page-client",
+        )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/clients/{client_id}/demandes/{demande_id}/traitee")
+def marquer_demande_traitee(client_id: int, demande_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    demande = db.get(models.DemandeClient, demande_id)
+    if demande and demande.client_id == client_id:
+        demande.statut = "TRAITEE"
+        db.commit()
+    return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
 
 
 @app.get("/clients/{client_id}/photos-fiche")

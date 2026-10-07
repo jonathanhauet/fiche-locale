@@ -4,44 +4,173 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <style>
-  .page-publique { max-width: 760px; margin: 0 auto; padding: 1.4rem 1rem 3rem; }
-  .page-publique h1 { font-size: 1.5rem; margin: 0 0 0.2rem; }
-  .page-publique .intro { color: var(--texte-discret); margin: 0 0 1.4rem; }
-  .carte-publication { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1rem 1.2rem; margin-bottom: 1rem; }
-  .carte-publication-entete { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.7rem; }
+  .page-publique { max-width: 780px; margin: 0 auto; padding: 1.4rem 1rem 3rem; }
+  .page-publique h1 { font-size: 1.55rem; margin: 0 0 0.2rem; }
+  .page-publique .intro { color: var(--texte-discret); margin: 0 0 1.6rem; }
+  .canal { margin-bottom: 2rem; }
+  .canal-entete { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .canal-entete h2 { margin: 0; font-size: 1.2rem; }
+  .statut-canal { font-size: 0.78rem; font-weight: 700; padding: 0.15rem 0.65rem; border-radius: 999px; }
+  .statut-actif { background: rgba(34, 160, 90, 0.16); color: #1f9d55; }
+  .statut-absent { background: rgba(150, 150, 150, 0.2); color: var(--texte-discret); }
+  .explication-canal { color: var(--texte-discret); line-height: 1.55; margin: 0.5rem 0 0.9rem; }
+  .carte-publication { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1rem 1.2rem; margin-bottom: 0.9rem; }
+  .carte-publication-entete { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.7rem; }
   .carte-publication-date { font-weight: 700; }
   .carte-publication-heure { color: var(--texte-discret); }
-  .puce-reseau { margin-left: auto; font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--fond-secondaire, rgba(127,127,127,0.15)); }
   .images-publication { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.7rem; }
   .images-publication img { max-width: 100%; max-height: 320px; border-radius: 8px; display: block; }
   .images-publication.plusieurs img { max-width: calc(50% - 0.25rem); max-height: 220px; object-fit: cover; }
-  .texte-publication { white-space: pre-wrap; line-height: 1.5; margin: 0; word-break: break-word; }
+  .texte-publication { white-space: pre-wrap; line-height: 1.5; margin: 0 0 0.8rem; word-break: break-word; }
+  .zone-demande { margin-top: 0.4rem; }
+  .zone-demande textarea { width: 100%; min-height: 5rem; margin: 0.5rem 0; }
+  .zone-demande .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .message-demande { font-size: 0.9rem; margin: 0.4rem 0 0; }
+  .carte-promo { border: 1px dashed var(--carte-bordure); border-radius: var(--rayon); padding: 1rem 1.2rem; background: rgba(127, 127, 127, 0.06); }
+  .carte-promo p { margin: 0 0 0.7rem; line-height: 1.5; }
+  .bloc-ensemble { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.2rem 1.4rem; margin: 2rem 0 1.5rem; }
+  .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
+  .bloc-ensemble p { line-height: 1.6; }
   .pied-page-publique { color: var(--texte-discret); font-size: 0.85rem; text-align: center; margin-top: 2rem; }
 </style>
 {% endblock %}
 {% block corps %}
 <main class="page-publique">
   <h1>Vos prochaines publications</h1>
-  <p class="intro">{{ nom }} : voici ce qui est programmé et sera publié prochainement. Cette page se met à jour automatiquement.</p>
+  <p class="intro">{{ nom }} : voici ce qui est programmé et sera publié prochainement. Cette page se met à jour automatiquement.
+    {% if nb_publications %}Une modification à demander sur un texte ou une image ? Utilisez le bouton sous la publication concernée.{% endif %}</p>
 
-  {% for p in publications %}
-  <article class="carte-publication">
-    <div class="carte-publication-entete">
-      <span class="carte-publication-date">{{ p.jour|capitalize }}</span>
-      {% if p.heure %}<span class="carte-publication-heure">à {{ p.heure }}</span>{% endif %}
-      <span class="puce-reseau">{{ p.reseau }}</span>
+  {% for canal in sections %}
+  <section class="canal" id="canal-{{ canal.code }}">
+    <div class="canal-entete">
+      <h2>{{ canal.nom }}</h2>
+      {% if canal.code != "youtube" %}
+      {% if canal.connecte %}<span class="statut-canal statut-actif">Actif</span>{% else %}<span class="statut-canal statut-absent">Non connecté</span>{% endif %}
+      {% endif %}
     </div>
-    {% if p.images %}
-    <div class="images-publication {{ 'plusieurs' if p.images|length > 1 }}">
-      {% for image in p.images %}<img src="{{ image }}" alt="Image de la publication" loading="lazy" referrerpolicy="no-referrer">{% endfor %}
+    {% if canal.explication %}<p class="explication-canal">{{ canal.explication }}</p>{% endif %}
+
+    {% if canal.connecte %}
+      {% for p in canal.publications %}
+      <article class="carte-publication">
+        <div class="carte-publication-entete">
+          <span class="carte-publication-date">{{ p.jour|capitalize }}</span>
+          {% if p.heure %}<span class="carte-publication-heure">à {{ p.heure }}</span>{% endif %}
+        </div>
+        {% if p.images %}
+        <div class="images-publication {{ 'plusieurs' if p.images|length > 1 }}">
+          {% for image in p.images %}<img src="{{ image }}" alt="Image de la publication" loading="lazy" referrerpolicy="no-referrer">{% endfor %}
+        </div>
+        {% elif p.video %}<p class="texte-discret">🎬 Vidéo</p>{% endif %}
+        <p class="texte-publication">{{ p.texte }}</p>
+        {% if canal.code != "youtube" %}
+        <div class="zone-demande" data-reseau="{{ p.code_reseau }}" data-post="{{ p.id }}">
+          <button type="button" class="bouton-secondaire bouton-mini ouvrir-demande">✏️ Demander une modification</button>
+          <div class="formulaire-demande" hidden>
+            <textarea maxlength="1000" placeholder="Que souhaitez-vous modifier ? (texte, image, date...)"></textarea>
+            <div class="actions">
+              <button type="button" class="bouton bouton-mini envoyer-demande">Envoyer la demande</button>
+              <button type="button" class="bouton-secondaire bouton-mini annuler-demande">Annuler</button>
+            </div>
+          </div>
+          <p class="message-demande" hidden></p>
+        </div>
+        {% endif %}
+      </article>
+      {% else %}
+      <p class="texte-discret">Aucune publication programmée pour le moment.</p>
+      {% endfor %}
+    {% else %}
+    <div class="carte-promo">
+      {% if canal.code == "google" %}
+      <p>La fiche Google de {{ nom }} n'est pas encore connectée. C'est la base de la visibilité locale : je peux m'en occuper pour vous.</p>
+      {% else %}
+      <p>Ce canal n'est pas encore connecté pour {{ nom }}. Je peux m'en occuper pour vous, avec le même suivi que celui de vos autres publications.</p>
+      {% endif %}
+      <div class="zone-interet" data-sujet="{{ canal.code }}">
+        <button type="button" class="bouton-secondaire envoyer-interet">Je veux en savoir plus</button>
+        <p class="message-demande" hidden></p>
+      </div>
     </div>
-    {% elif p.video %}<p class="texte-discret">🎬 Vidéo</p>{% endif %}
-    <p class="texte-publication">{{ p.texte }}</p>
-  </article>
-  {% else %}
-  <p class="texte-vide">Aucune publication programmée pour le moment.</p>
+    {% endif %}
+  </section>
   {% endfor %}
 
-  <p class="pied-page-publique">Une question ou une modification à demander ? Répondez simplement au message qui contenait ce lien.</p>
+  <section class="canal" id="canal-geo">
+    <div class="canal-entete">
+      <h2>Visibilité dans les réponses des IA</h2>
+      {% if geo_actif %}<span class="statut-canal statut-actif">Actif</span>{% else %}<span class="statut-canal statut-absent">Non activé</span>{% endif %}
+    </div>
+    <p class="explication-canal">De plus en plus de personnes demandent à ChatGPT, Gemini ou Perplexity quelle entreprise choisir près de chez elles. Je vérifie si votre entreprise est citée
+      dans ces réponses, et je travaille ce qui permet d'y apparaître : fiche Google, avis, site, contenus et cohérence des informations partout.</p>
+    {% if not geo_actif %}
+    <div class="carte-promo">
+      <div class="zone-interet" data-sujet="geo">
+        <button type="button" class="bouton-secondaire envoyer-interet">Je veux en savoir plus</button>
+        <p class="message-demande" hidden></p>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <div class="bloc-ensemble">
+    <h2>Pourquoi combiner plusieurs canaux ?</h2>
+    <p>Pour être trouvée en local, une entreprise est jugée par Google, et de plus en plus par les assistants IA, sur un ensemble de signaux qui se recoupent :
+      sa fiche Google, ses avis, son site, ses articles, ses réseaux sociaux, et la cohérence de toutes ses informations.</p>
+    <p>Un seul canal fait une partie du travail. Plusieurs canaux actifs, réguliers et cohérents se renforcent les uns les autres : l'entreprise est mieux identifiée,
+      jugée plus fiable, et plus souvent recommandée à celles et ceux qui la cherchent.</p>
+  </div>
+
+  <p class="pied-page-publique">Cette page est réservée à {{ nom }}. Ne partagez pas son adresse.</p>
 </main>
+
+<script>
+(function () {
+  const base = "/p/{{ token }}";
+  async function envoyer(chemin, corps) {
+    const reponse = await fetch(base + chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+    let donnees = {};
+    try { donnees = await reponse.json(); } catch (e) { /* reponse vide */ }
+    return { ok: reponse.ok, donnees };
+  }
+
+  document.querySelectorAll(".zone-demande").forEach((zone) => {
+    const ouvrir = zone.querySelector(".ouvrir-demande"), formulaire = zone.querySelector(".formulaire-demande");
+    const champ = formulaire.querySelector("textarea"), message = zone.querySelector(".message-demande");
+    ouvrir.addEventListener("click", () => { formulaire.hidden = false; ouvrir.hidden = true; message.hidden = true; champ.focus(); });
+    zone.querySelector(".annuler-demande").addEventListener("click", () => { formulaire.hidden = true; ouvrir.hidden = false; });
+    const envoyerBouton = zone.querySelector(".envoyer-demande");
+    envoyerBouton.addEventListener("click", async () => {
+      const texte = champ.value.trim();
+      message.hidden = false;
+      if (!texte) { message.textContent = "Écrivez ce que vous souhaitez modifier."; return; }
+      envoyerBouton.disabled = true;
+      try {
+        const r = await envoyer("/modification", { reseau: zone.dataset.reseau, post_id: zone.dataset.post, message: texte });
+        if (!r.ok) { message.textContent = r.donnees.erreur || "Impossible d'envoyer la demande."; return; }
+        formulaire.hidden = true; champ.value = "";
+        message.textContent = "Merci, votre demande est bien envoyée. Je reviens vers vous rapidement.";
+        ouvrir.hidden = false; ouvrir.textContent = "✏️ Faire une autre demande";
+      } catch (e) {
+        message.textContent = "Erreur réseau, réessayez dans un instant.";
+      } finally { envoyerBouton.disabled = false; }
+    });
+  });
+
+  document.querySelectorAll(".zone-interet").forEach((zone) => {
+    const bouton = zone.querySelector(".envoyer-interet"), message = zone.querySelector(".message-demande");
+    bouton.addEventListener("click", async () => {
+      bouton.disabled = true;
+      try {
+        const r = await envoyer("/interet", { sujet: zone.dataset.sujet });
+        message.hidden = false;
+        if (r.ok) { bouton.hidden = true; message.textContent = "Merci ! Je vous recontacte très vite pour en parler."; }
+        else { message.textContent = r.donnees.erreur || "Impossible d'envoyer la demande."; bouton.disabled = false; }
+      } catch (e) {
+        message.hidden = false; message.textContent = "Erreur réseau, réessayez dans un instant."; bouton.disabled = false;
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}

@@ -209,6 +209,7 @@ class Client(Base):
     requetes_visibilite_ia = relationship("RequeteVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
     resultats_visibilite_ia = relationship("ResultatVisibiliteIA", back_populates="client", cascade="all, delete-orphan")
     scores_geo = relationship("ScoreGEO", back_populates="client", cascade="all, delete-orphan")
+    demandes_client = relationship("DemandeClient", back_populates="client", cascade="all, delete-orphan")
     controles_techniques_geo = relationship("ControleTechniqueGEO", back_populates="client", cascade="all, delete-orphan")
     avis_connus = relationship("AvisConnu", back_populates="client", cascade="all, delete-orphan")
     alertes_protection = relationship("AlerteProtectionFiche", back_populates="client", cascade="all, delete-orphan")
@@ -1110,3 +1111,24 @@ class IdeeVocale(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)   # fiche choisie (ou deduite) pour cette idee
     statut = Column(String, default="NOUVELLE")      # NOUVELLE, UTILISEE
     cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class DemandeClient(Base):
+    """
+    Demande faite par un client depuis sa page publique (voir /p/{token}) : modification d'une publication programmee
+    ("modification") ou envie d'en savoir plus sur un reseau ou une prestation ("interet"). Jonathan est notifie.
+    """
+
+    __tablename__ = "demandes_client"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    type = Column(String, default="modification")     # "modification" ou "interet"
+    reseau = Column(String, default="")              # google, facebook, instagram, linkedin, wordpress, geo
+    extrait = Column(String, default="")              # debut du post concerne (modification)
+    date_post = Column(String, default="")            # « vendredi 9 octobre 2026 a 08:30 » (modification)
+    message = Column(Text, default="")
+    statut = Column(String, default="NOUVELLE")       # NOUVELLE, TRAITEE
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="demandes_client")
