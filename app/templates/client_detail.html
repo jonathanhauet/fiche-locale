@@ -913,6 +913,22 @@
     <button type="submit" class="bouton-secondaire">Créer le lien de la page client</button>
   </form>
   {% endif %}
+  <div style="margin-top:0.9rem">
+    <strong>🤖 Option « Visibilité dans les réponses des IA »</strong>
+    <p class="texte-discret">
+      Sur la page du client, cette option est grisée tant que vous ne l'avez pas activée, avec un bouton « Je veux en savoir plus » qui vous prévient.
+      Activez-la quand le client a pris l'option.
+    </p>
+    <form method="post" action="/clients/{{ client.id }}/option-ia/basculer">
+      {% if client.option_ia_active %}
+      <span class="etiquette-statut etiquette-a_publier">Option activée</span>
+      <button type="submit" class="bouton-secondaire">Désactiver l'option</button>
+      {% else %}
+      <span class="etiquette-avertissement">Option non activée</span>
+      <button type="submit" class="bouton">Activer l'option pour ce client</button>
+      {% endif %}
+    </form>
+  </div>
   {% if demandes_client %}
   <div style="margin-top:0.9rem">
     <strong>📩 Demandes du client ({{ demandes_client|length }})</strong>

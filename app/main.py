@@ -266,6 +266,8 @@ def _migrer_vers_multi_comptes():
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
         _colonnes_clients_logo = {c["name"] for c in inspecteur.get_columns("clients")}
+        if "option_ia_active" not in _colonnes_clients_logo:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN option_ia_active BOOLEAN DEFAULT FALSE"))
         if "logo_google_url" not in _colonnes_clients_logo:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_google_url VARCHAR DEFAULT ''"))
         if "logo_google_maj_le" not in _colonnes_clients_logo:
@@ -3342,6 +3344,19 @@ def creer_page_client(client_id: int, request: Request, db: Session = Depends(ob
     return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
 
 
+@app.post("/clients/{client_id}/option-ia/basculer")
+def basculer_option_ia(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Active ou desactive l'option « visibilite dans les reponses des IA » de ce client (affichage sur sa page publique)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if client:
+        client.option_ia_active = not bool(client.option_ia_active)
+        db.commit()
+    return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
+
+
 @app.post("/clients/{client_id}/page-client/desactiver")
 def desactiver_page_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -3461,7 +3476,7 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
     videos = [p for p in publications if p["code_reseau"] == "youtube"]
     if videos:
         sections.append({"code": "youtube", "nom": "YouTube", "explication": "", "connecte": True, "publications": videos})
-    geo_actif = db.query(models.RequeteVisibiliteIA).filter_by(client_id=client.id).count() > 0
+    geo_actif = bool(client.option_ia_active)       # activee a la main depuis la fiche du client, jamais deduite
     lettres = {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in", "wordpress": "W"}
     canaux = [
         {"code": sec["code"], "nom": sec["nom"], "lettre": lettres[sec["code"]], "actif": sec["connecte"]}

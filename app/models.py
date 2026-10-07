@@ -62,6 +62,9 @@ class Client(Base):
     contenu_site = Column(Text, default="")
     # Lien secret de la page publique « publications a venir » (voir /p/{token}) : vide = page desactivee.
     token_page_client = Column(String, default="")
+    # Option « visibilite dans les reponses des IA » vendue au client : activee a la main par Jonathan quand le client la prend
+    # (affichee « Actif » ou grisee sur la page publique ci-dessus). Independante des questions suivies.
+    option_ia_active = Column(Boolean, default=False)
     # Logo lu sur la fiche Google (photo « Logo » ou, a defaut, « Profil »), garde en memoire pour la page publique ci-dessus.
     logo_google_url = Column(String, default="")
     logo_google_maj_le = Column(DateTime, nullable=True)

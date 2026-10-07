@@ -25,6 +25,9 @@
   .statut-actif { background: rgba(34, 160, 90, 0.16); color: #1f9d55; }
   .statut-absent { background: rgba(150, 150, 150, 0.2); color: var(--texte-discret); }
   .explication-canal { color: var(--texte-discret); line-height: 1.55; margin: 0.5rem 0 0.9rem; }
+  .liste-option { color: var(--texte-discret); line-height: 1.55; margin: 0 0 0.9rem; padding-left: 1.2rem; }
+  .liste-option li { margin-bottom: 0.4rem; }
+  .liste-option strong { color: var(--texte); }
   .carte-publication { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1rem 1.2rem; margin-bottom: 0.9rem; }
   .carte-publication-entete { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.7rem; }
   .carte-publication-date { font-weight: 700; }
@@ -138,8 +141,15 @@
       <h2>Visibilité dans les réponses des IA</h2>
       {% if geo_actif %}<span class="statut-canal statut-actif">Actif</span>{% else %}<span class="statut-canal statut-absent">Non activé</span>{% endif %}
     </div>
-    <p class="explication-canal">De plus en plus de personnes demandent à ChatGPT, Gemini ou Perplexity quelle entreprise choisir près de chez elles. Je vérifie si votre entreprise est citée
-      dans ces réponses, et je travaille ce qui permet d'y apparaître : fiche Google, avis, site, contenus et cohérence des informations partout.</p>
+    <p class="explication-canal">De plus en plus de personnes ne cherchent plus sur Google : elles demandent directement à ChatGPT, Gemini ou Perplexity quelle entreprise choisir.
+      Ce n'est pas le même terrain que le référencement classique. C'est un travail à part, avec ses propres méthodes :</p>
+    <ul class="liste-option">
+      <li><strong>Je mesure.</strong> Je pose à ces assistants les vraies questions de vos clients, et je relève si vous êtes cité, à quelle place, et quelles entreprises le sont à votre place.</li>
+      <li><strong>Je prépare votre site pour les IA.</strong> Des fichiers et un balisage conçus pour que les assistants comprennent et retiennent votre activité.</li>
+      <li><strong>Je rédige des contenus-réponses.</strong> Des textes écrits pour répondre précisément aux questions où vous n'êtes pas encore cité.</li>
+      <li><strong>Je repère les sources des IA.</strong> Les sites que les assistants consultent pour recommander quelqu'un, et je travaille votre présence sur ceux-là.</li>
+      <li><strong>Vous suivez votre progression.</strong> Un score et son évolution, relevés chaque mois.</li>
+    </ul>
     {% if not geo_actif %}
     <div class="carte-promo">
       <div class="zone-interet" data-sujet="geo">
