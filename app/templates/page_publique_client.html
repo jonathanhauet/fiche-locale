@@ -5,8 +5,19 @@
 <meta name="referrer" content="no-referrer">
 <style>
   .page-publique { max-width: 780px; margin: 0 auto; padding: 1.4rem 1rem 3rem; }
-  .page-publique h1 { font-size: 1.55rem; margin: 0 0 0.2rem; }
+  .page-publique h1 { font-size: 1.55rem; margin: 0 0 0.1rem; }
   .page-publique .intro { color: var(--texte-discret); margin: 0 0 1.6rem; }
+  .entete-page { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.1rem; }
+  .logo-client { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; background: #fff; border: 1px solid var(--carte-bordure); flex-shrink: 0; }
+  .nom-client { margin: 0; color: var(--texte-discret); font-size: 1.05rem; }
+  .bandeau-canaux { display: flex; flex-wrap: wrap; gap: 0.5rem 0.9rem; padding: 0.7rem 0.9rem; margin-bottom: 1rem; background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); }
+  .canal-puce { display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; color: inherit; font-size: 0.85rem; font-weight: 600; }
+  .canal-puce-inactif { color: var(--texte-discret); font-weight: 500; }
+  .canal-puce .badge-reseau { width: 1.9rem; height: 1.9rem; font-size: 0.72rem; }
+  .accroche { border-left: 4px solid var(--accent, #4f46e5); background: rgba(79, 70, 229, 0.08); border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1.2rem; }
+  .accroche p { margin: 0; line-height: 1.5; }
+  .accroche-titre { font-weight: 700; margin-bottom: 0.25rem !important; }
+  @media (max-width: 520px) { .canal-puce-nom { display: none; } .bandeau-canaux { justify-content: space-between; } }
   .canal { margin-bottom: 2rem; }
   .canal-entete { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
   .canal-entete h2 { margin: 0; font-size: 1.2rem; }
@@ -36,8 +47,34 @@
 {% endblock %}
 {% block corps %}
 <main class="page-publique">
-  <h1>Vos prochaines publications</h1>
-  <p class="intro">{{ nom }} : voici ce qui est programmé et sera publié prochainement. Cette page se met à jour automatiquement.
+  <header class="entete-page">
+    {% if logo %}<img class="logo-client" src="{{ logo }}" alt="Logo de {{ nom }}" referrerpolicy="no-referrer">{% endif %}
+    <div>
+      <h1>Vos prochaines publications</h1>
+      <p class="nom-client">{{ nom }}</p>
+    </div>
+  </header>
+
+  <nav class="bandeau-canaux" aria-label="Vos canaux">
+    {% for c in canaux %}
+    <a class="canal-puce {{ '' if c.actif else 'canal-puce-inactif' }}" href="#canal-{{ c.code }}" title="{{ c.nom }} : {{ 'actif' if c.actif else ('non activé' if c.code == 'geo' else 'non connecté') }}">
+      <span class="badge-reseau badge-reseau-{{ c.code }} {{ '' if c.actif else 'badge-reseau-inactif' }}">{{ c.lettre }}</span>
+      <span class="canal-puce-nom">{{ c.nom }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+
+  <div class="accroche">
+    <p class="accroche-titre">
+      {% if nb_actifs == nb_canaux %}Bravo : tous vos canaux sont actifs.{% elif nb_actifs == 0 %}Votre présence en ligne est à construire, et c'est le bon moment pour s'y mettre.{% else %}Vous êtes actif sur {{ nb_actifs }} {{ 'canaux' if nb_actifs > 1 else 'canal' }} sur {{ nb_canaux }}.{% endif %}
+    </p>
+    <p>
+      Google et les assistants IA recoupent plusieurs signaux pour décider quelles entreprises recommander : plus vos canaux sont nombreux, réguliers et cohérents, plus vous êtes identifié comme une entreprise fiable.
+      {% if premier_manquant %}<a href="#canal-{{ premier_manquant }}">Voir ce que je peux ajouter pour vous&nbsp;↓</a>{% endif %}
+    </p>
+  </div>
+
+  <p class="intro">Voici ce qui est programmé et sera publié prochainement. Cette page se met à jour automatiquement.
     {% if nb_publications %}Une modification à demander sur un texte ou une image ? Utilisez le bouton sous la publication concernée.{% endif %}</p>
 
   {% for canal in sections %}

@@ -265,6 +265,11 @@ def _migrer_vers_multi_comptes():
             colonnes_posts_wordpress = {c["name"] for c in inspecteur.get_columns("posts_wordpress")}
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
+        _colonnes_clients_logo = {c["name"] for c in inspecteur.get_columns("clients")}
+        if "logo_google_url" not in _colonnes_clients_logo:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_google_url VARCHAR DEFAULT ''"))
+        if "logo_google_maj_le" not in _colonnes_clients_logo:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN logo_google_maj_le TIMESTAMP"))
         if "token_page_client" not in {c["name"] for c in inspecteur.get_columns("clients")}:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN token_page_client VARCHAR DEFAULT ''"))
         if "site_web" not in {c["name"] for c in inspecteur.get_columns("clients")}:
@@ -3333,6 +3338,7 @@ def creer_page_client(client_id: int, request: Request, db: Session = Depends(ob
     if client:
         client.token_page_client = secrets.token_urlsafe(24)
         db.commit()
+        _logo_page_client(db, client, forcer=True)
     return RedirectResponse(f"/clients/{client_id}#page-client", status_code=303)
 
 
@@ -3380,6 +3386,29 @@ def _canal_connecte(client, code: str) -> bool:
         "linkedin": bool(client.compte_linkedin_id),
         "wordpress": bool((client.wordpress_url or "").strip()),
     }.get(code, False)
+
+
+DUREE_LOGO_GOOGLE = timedelta(days=7)
+
+
+def _logo_page_client(db: Session, client, forcer: bool = False) -> str:
+    """
+    Logo affiche en haut de la page client : celui de la fiche Google (relu au plus une fois par semaine, jamais bloquant),
+    sinon le logo enregistre dans l'identite visuelle du client, sinon rien.
+    """
+    maintenant = datetime.utcnow()
+    a_jour = client.logo_google_maj_le and maintenant - client.logo_google_maj_le < DUREE_LOGO_GOOGLE
+    if (forcer or not a_jour) and client.account_id and client.location_id:
+        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.compte_google_id else None
+        if identifiants:
+            try:
+                client.logo_google_url = google_business.trouver_logo_fiche(identifiants, client.account_id, client.location_id)
+                client.logo_google_maj_le = maintenant
+            except Exception:
+                # Lecture impossible : on garde l'ancien logo et on reessaie dans un jour, pas a chaque affichage.
+                client.logo_google_maj_le = maintenant - DUREE_LOGO_GOOGLE + timedelta(days=1)
+            db.commit()
+    return client.logo_google_url or client.logo_url or ""
 
 
 def _publications_a_venir_page_client(db: Session, client) -> list:
@@ -3433,10 +3462,17 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
     if videos:
         sections.append({"code": "youtube", "nom": "YouTube", "explication": "", "connecte": True, "publications": videos})
     geo_actif = db.query(models.RequeteVisibiliteIA).filter_by(client_id=client.id).count() > 0
+    lettres = {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in", "wordpress": "W"}
+    canaux = [
+        {"code": sec["code"], "nom": sec["nom"], "lettre": lettres[sec["code"]], "actif": sec["connecte"]}
+        for sec in sections if sec["code"] in lettres
+    ] + [{"code": "geo", "nom": "Réponses des IA", "lettre": "IA", "actif": geo_actif}]
+    manquants = [c for c in canaux if not c["actif"]]
     return templates.TemplateResponse(
         request, "page_publique_client.html",
         {"nom": nom_affiche_carrousel(client), "sections": sections, "geo_actif": geo_actif, "token": token,
-         "nb_publications": len(publications)},
+         "nb_publications": len(publications), "logo": _logo_page_client(db, client), "canaux": canaux,
+         "nb_actifs": len(canaux) - len(manquants), "nb_canaux": len(canaux), "premier_manquant": manquants[0]["code"] if manquants else ""},
         headers=entetes,
     )
 

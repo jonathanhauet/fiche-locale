@@ -172,6 +172,25 @@ def lister_photos(identifiants, account_id: str, location_id: str):
     return resultats
 
 
+def trouver_logo_fiche(identifiants, account_id: str, location_id: str, pages_max: int = 8) -> str:
+    """
+    Adresse du logo de la fiche : la photo de categorie « LOGO », sinon la photo de profil (« PROFILE »). Chaine vide si la
+    fiche n'en a pas. Leve RuntimeError si Google refuse la lecture (l'appelant decide quoi faire).
+    """
+    profil = ""
+    jeton = None
+    for _ in range(pages_max):
+        photos, jeton = lister_photos_page(identifiants, account_id, location_id, jeton, 100)
+        for photo in photos:
+            if photo["categorie"] == "LOGO":
+                return photo["url"]
+            if photo["categorie"] == "PROFILE" and not profil:
+                profil = photo["url"]
+        if not jeton:
+            break
+    return profil
+
+
 def supprimer_photo_fiche_google(identifiants, nom_media: str) -> None:
     """
     Supprime definitivement une photo de la fiche Google (pas seulement du
