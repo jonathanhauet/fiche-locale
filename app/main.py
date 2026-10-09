@@ -91,6 +91,7 @@ from . import (
     reporting_mensuel,
     jsonld_agences,
     audit_photos,
+    telechargement_photos,
     rapport_pdf,
     recap_mensuel,
     search_console,
@@ -5802,6 +5803,47 @@ def donnees_audit_photos_fiche(client_id: int, request: Request, ia: int = 0, db
         "manquants": regles["manquants"], "nb_petites": regles["nb_petites"], "derniere_photo": regles["derniere_photo"], "alertes": regles["alertes"],
         "score": score, "a_corriger": a_corriger, "observations": observations, "cles": cles,
     })
+
+
+@app.post("/photos-fiches/zip")
+async def lancer_zip_photos(request: Request, db: Session = Depends(obtenir_session)):
+    """Demarre la preparation (en arriere-plan) du ZIP des photos des fiches choisies : un dossier par agence."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    try:
+        corps = await request.json()
+        ids = [int(i) for i in corps.get("client_ids", [])]
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    portee, taille = str(corps.get("portee") or "cles"), str(corps.get("taille") or "1600")
+    if portee not in telechargement_photos.PORTEES or taille not in telechargement_photos.TAILLES:
+        return JSONResponse({"erreur": "Portee ou taille inconnue."}, status_code=400)
+    if not ids or len(ids) > telechargement_photos.NB_FICHES_MAX:
+        return JSONResponse({"erreur": f"Choisissez entre 1 et {telechargement_photos.NB_FICHES_MAX} fiches."}, status_code=400)
+    clients = [c for c in (db.get(models.Client, i) for i in ids) if c]
+    if not clients:
+        return JSONResponse({"erreur": "Fiches introuvables."}, status_code=404)
+    return JSONResponse({"id": telechargement_photos.lancer(db, clients, portee, taille)})
+
+
+@app.get("/photos-fiches/zip/{identifiant}/etat")
+def etat_zip_photos(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    etat = telechargement_photos.etat(identifiant) if re.fullmatch(r"[0-9a-f]{32}", identifiant) else None
+    if not etat:
+        return JSONResponse({"erreur": "Preparation introuvable ou expiree : relancez-la."}, status_code=404)
+    return JSONResponse(etat)
+
+
+@app.get("/photos-fiches/zip/{identifiant}/fichier")
+def fichier_zip_photos(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    tache = telechargement_photos.TACHES.get(identifiant) if re.fullmatch(r"[0-9a-f]{32}", identifiant) else None
+    if not tache or tache["etat"] != "termine" or not os.path.exists(tache["chemin"]):
+        return JSONResponse({"erreur": "Fichier indisponible : relancez la preparation."}, status_code=404)
+    return FileResponse(tache["chemin"], media_type="application/zip", filename="photos_agences.zip")
 
 
 @app.post("/photos-fiches/export.xlsx")

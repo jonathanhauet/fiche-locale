@@ -27,6 +27,29 @@
   <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
   <p id="texte-compte-clients" class="texte-discret" hidden></p>
 
+  <div class="bloc-section" id="bloc-telechargement" style="margin-top:0.8rem">
+    <strong>📥 Télécharger les photos (ZIP, un dossier par agence)</strong>
+    <div class="formulaire-ligne">
+      <label>Quelles photos
+        <select id="portee-zip">
+          <option value="cles">Photos clés (couverture, profil, logo, extérieur, intérieur)</option>
+          <option value="devanture">Devanture seulement (photos classées Extérieur)</option>
+          <option value="toutes">Toutes les photos (60 plus récentes par agence)</option>
+        </select>
+      </label>
+      <label>Taille
+        <select id="taille-zip"><option value="1600">Réduites (1 600 px, plus léger)</option><option value="0">Originales</option></select>
+      </label>
+      <button type="button" class="bouton" id="bouton-zip" disabled>Préparer le ZIP</button>
+    </div>
+    <div id="progression-zip" class="conteneur-progression-avis" hidden>
+      <div class="barre-progression-fond"><div id="barre-zip" class="barre-progression-remplissage"></div></div>
+      <span id="texte-zip" class="texte-progression-avis"></span>
+    </div>
+    <p id="resultat-zip" hidden></p>
+    <p class="texte-discret">Sans analyse. Un fichier « index.csv » liste chaque photo (agence, catégorie, date, taille) et « agences_a_verifier.txt » signale les agences sans photo ou non lues. La préparation de plusieurs dizaines d'agences prend quelques minutes : vous pouvez rester sur cette page.</p>
+  </div>
+
   <label class="filtre-case">
     <input type="checkbox" id="avec-ia" checked> Analyser aussi la qualité des images avec l'IA (quelques centimes par agence, 10 à 20 secondes chacune)
   </label>
@@ -81,7 +104,7 @@
     majBouton();
   }
   const idsChoisis = () => Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value);
-  function majBouton() { $("bouton-lancer").disabled = idsChoisis().length === 0; }
+  function majBouton() { const vide = idsChoisis().length === 0; $("bouton-lancer").disabled = vide; $("bouton-zip").disabled = vide; }
   casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
 
   // ---- audit fiche par fiche (3 en parallele)
@@ -106,6 +129,37 @@
     await Promise.all(Array.from({ length: Math.min(3, ids.length) }, suivant));
     $("progression").hidden = true; majBouton();
     afficher(); $("zone-resultats").hidden = !lignes.length;
+  });
+
+  // ---- telechargement groupe (ZIP prepare en arriere-plan, suivi par interrogations regulieres)
+  $("bouton-zip").addEventListener("click", async () => {
+    const ids = idsChoisis(); if (!ids.length) return;
+    $("bouton-zip").disabled = true; $("resultat-zip").hidden = true; $("progression-zip").hidden = false; $("barre-zip").style.width = "2%";
+    $("texte-zip").textContent = "Démarrage…";
+    let tache;
+    try {
+      const r = await fetch("/photos-fiches/zip", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_ids: ids, portee: $("portee-zip").value, taille: $("taille-zip").value }) });
+      tache = await r.json();
+      if (!r.ok) { $("texte-zip").textContent = tache.erreur || "Impossible de démarrer."; majBouton(); return; }
+    } catch (e) { $("texte-zip").textContent = "Erreur réseau."; majBouton(); return; }
+    while (true) {
+      await new Promise((ok) => setTimeout(ok, 2500));
+      let e;
+      try { const r = await fetch(`/photos-fiches/zip/${tache.id}/etat`); e = await r.json(); if (!r.ok) { $("texte-zip").textContent = e.erreur || "Suivi impossible."; break; } }
+      catch (x) { continue; }
+      $("barre-zip").style.width = Math.max(2, Math.round((e.fiches_faites / Math.max(1, e.fiches_total)) * 100)) + "%";
+      $("texte-zip").textContent = `${e.fiches_faites} / ${e.fiches_total} agences · ${e.photos} photos · ${e.taille_mo} Mo${e.agence_en_cours ? " · " + e.agence_en_cours : ""}`;
+      if (e.etat === "erreur") { $("texte-zip").textContent = "Échec : " + e.erreur; break; }
+      if (e.etat === "termine") {
+        $("progression-zip").hidden = true; $("resultat-zip").hidden = false;
+        const a_verifier = e.non_lues.length + e.sans_photo.length;
+        $("resultat-zip").innerHTML = `<a class="bouton" href="/photos-fiches/zip/${tache.id}/fichier">Télécharger le ZIP (${e.photos} photos, ${e.taille_mo} Mo)</a>`
+          + (a_verifier ? `<span class="texte-discret"> · ${a_verifier} agence(s) à vérifier, listées dans le fichier agences_a_verifier.txt</span>` : "");
+        break;
+      }
+    }
+    majBouton();
   });
 
   // ---- tableau
