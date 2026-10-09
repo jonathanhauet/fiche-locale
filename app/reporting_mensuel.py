@@ -147,14 +147,6 @@ def _sans_accents(texte: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", texte) if not unicodedata.combining(c)).lower()
 
 
-def _ligne_entete(feuille, titres: list):
-    feuille.append(titres)
-    for cellule in feuille[feuille.max_row]:
-        cellule.font = Font(bold=True, color="FFFFFF")
-        cellule.fill = PatternFill("solid", fgColor="1F4E8C")
-        cellule.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-
 def _fiche_non_lues(classeur, ordonnes: list):
     en_erreur = [r for r in ordonnes if not r["mois"]]
     if en_erreur:
@@ -178,76 +170,93 @@ def _nom_onglet(nom: str, utilises: set) -> str:
     return propre
 
 
-def _bloc_mensuel(feuille, etiquette_pays: str, nb_agences, groupes: list, mois: list, fond):
-    """Ajoute, pour un ensemble d'agences (groupes), une ligne par mois : pays, nombre d'agences, mois, indicateurs, evolution positive."""
-    precedent = None
+def _lignes_mensuelles(etiquette: str, nb_agences: int, groupes: list, mois: list) -> list:
+    """Une ligne par mois pour un groupe d'agences : pays, nombre d'agences, mois, indicateurs, evolution (positive seulement)."""
+    lignes, precedent = [], None
     for m in mois:
         totaux = {cle: sum(indicateurs(e["mois"].get(m, {}))[cle] for e in groupes) for cle, _ in COLONNES}
         evolution = _evolution_positive(precedent, totaux["vues"]) if precedent is not None else ""
-        feuille.append([etiquette_pays, nb_agences, libelle_mois(m)] + [totaux[cle] for cle, _ in COLONNES] + [evolution])
+        lignes.append([etiquette, nb_agences, libelle_mois(m)] + [totaux[cle] for cle, _ in COLONNES] + [evolution])
         precedent = totaux["vues"]
-        if fond:
-            for cellule in feuille[feuille.max_row]:
-                cellule.fill = fond
+    return lignes
 
 
-def _excel_par_pays(resultats: list, mois: list) -> bytes:
+def tableaux_par_pays(resultats: list, mois: list) -> list:
     """
-    Classeur « Synthèse » (par pays et par mois, puis toutes agences) + un onglet par pays (une ligne par agence et par mois),
-    + « Fiches non lues » si besoin.
+    Contenu neutre (Excel comme Google Sheets) : liste d'onglets {"nom", "lignes", "styles", "largeurs", "filtre", "gel", "premiere_numerique"}.
+    "styles" donne un style par ligne : entete, bande, normal, vide, titre ou total. Onglets : Synthese (par pays et par mois, puis toutes
+    agences), un par pays (une ligne par agence et par mois), « Fiches non lues » si besoin.
     """
-    classeur = Workbook()
-    synthese = classeur.active
-    synthese.title = "Synthèse"
     ordonnes = sorted(resultats, key=lambda r: (r["client"].nom or "").lower())
     valides = [r for r in ordonnes if r["mois"]]
     par_pays = {}
     for entree in valides:
         par_pays.setdefault(entree.get("pays") or PAYS_INCONNU, []).append(entree)
-    pays_tries = sorted(par_pays, key=lambda p: (p == PAYS_INCONNU, -len(par_pays[p]), _sans_accents(p)))       # le pays le plus fourni d'abord, l'inconnu en dernier
+    pays_tries = sorted(par_pays, key=lambda p: (p == PAYS_INCONNU, -len(par_pays[p]), _sans_accents(p)))       # le plus fourni d'abord, l'inconnu en dernier
+    libelle_evolution = "Évolution des vues vs mois précédent"
+    libelles = [libelle for _, libelle in COLONNES]
 
-    entete = ["Pays", "Nb agences", "Mois"] + [libelle for _, libelle in COLONNES] + ["Évolution des vues vs mois précédent"]
-    _ligne_entete(synthese, entete)
-    bandes = [PatternFill("solid", fgColor="E8EEF8"), None]
+    lignes = [["Pays", "Nb agences", "Mois"] + libelles + [libelle_evolution]]
+    styles = ["entete"]
     for rang, pays in enumerate(pays_tries):
-        _bloc_mensuel(synthese, pays, len(par_pays[pays]), par_pays[pays], mois, bandes[rang % 2])
+        bloc = _lignes_mensuelles(pays, len(par_pays[pays]), par_pays[pays], mois)
+        lignes += bloc
+        styles += ["bande" if rang % 2 == 0 else "normal"] * len(bloc)
     if valides:
-        synthese.append([])
-        synthese.append(["Toutes agences"])
-        synthese[synthese.max_row][0].font = Font(bold=True, size=12, color="1F4E8C")
-        debut_total = synthese.max_row + 1
-        _bloc_mensuel(synthese, "Toutes agences", len(valides), valides, mois, PatternFill("solid", fgColor="D5DEF0"))
-        for ligne in synthese.iter_rows(min_row=debut_total, max_row=synthese.max_row):
-            for cellule in ligne:
-                cellule.font = Font(bold=True)
-    synthese.column_dimensions["A"].width = 22
-    synthese.column_dimensions["B"].width = 12
-    synthese.column_dimensions["C"].width = 12
-    for indice in range(4, len(COLONNES) + 5):
-        synthese.column_dimensions[get_column_letter(indice)].width = 22
-    synthese.row_dimensions[1].height = 48
-    synthese.freeze_panes = "D2"
+        lignes += [[], ["Toutes agences"]]
+        styles += ["vide", "titre"]
+        bloc = _lignes_mensuelles("Toutes agences", len(valides), valides, mois)
+        lignes += bloc
+        styles += ["total"] * len(bloc)
+    tableaux = [{"nom": "Synthèse", "lignes": lignes, "styles": styles, "largeurs": [22, 12, 12] + [22] * (len(COLONNES) + 1), "filtre": False, "gel": (1, 3), "premiere_numerique": 1}]
 
     utilises = {"synthèse", "fiches non lues"}
     for pays in pays_tries:
-        feuille = classeur.create_sheet(_nom_onglet(pays, utilises))
-        _ligne_entete(feuille, ["Agence", "Mois"] + [libelle for _, libelle in COLONNES] + ["Évolution des vues vs mois précédent"])
+        lignes = [["Agence", "Mois"] + libelles + [libelle_evolution]]
         for entree in par_pays[pays]:
             precedent = None
             for m in mois:
                 valeurs = indicateurs(entree["mois"].get(m, {}))
                 evolution = _evolution_positive(precedent, valeurs["vues"]) if precedent is not None else ""
-                feuille.append([entree["client"].nom, libelle_mois(m)] + [valeurs[cle] for cle, _ in COLONNES] + [evolution])
+                lignes.append([entree["client"].nom, libelle_mois(m)] + [valeurs[cle] for cle, _ in COLONNES] + [evolution])
                 precedent = valeurs["vues"]
-        feuille.auto_filter.ref = f"A1:{get_column_letter(feuille.max_column)}{feuille.max_row}"
-        feuille.column_dimensions["A"].width = 38
-        feuille.column_dimensions["B"].width = 12
-        for indice in range(3, len(COLONNES) + 4):
-            feuille.column_dimensions[get_column_letter(indice)].width = 22
-        feuille.row_dimensions[1].height = 48
-        feuille.freeze_panes = "C2"
+        tableaux.append({"nom": _nom_onglet(pays, utilises), "lignes": lignes, "styles": ["entete"] + ["normal"] * (len(lignes) - 1), "largeurs": [38, 12] + [22] * (len(COLONNES) + 1),
+                         "filtre": True, "gel": (1, 2), "premiere_numerique": 2})
 
-    _fiche_non_lues(classeur, ordonnes)
+    en_erreur = [r for r in ordonnes if not r["mois"]]
+    if en_erreur:
+        lignes = [["Agence", "Raison"]] + [[e["client"].nom, e["erreur"] or "Aucune donnée renvoyée par Google."] for e in en_erreur]
+        tableaux.append({"nom": "Fiches non lues", "lignes": lignes, "styles": ["entete"] + ["normal"] * len(en_erreur), "largeurs": [38, 70], "filtre": False, "gel": (1, 0),
+                         "premiere_numerique": 99})
+    return tableaux
+
+
+def _excel_par_pays(resultats: list, mois: list) -> bytes:
+    """Classeur Excel : un onglet par tableau de tableaux_par_pays."""
+    classeur = Workbook()
+    classeur.remove(classeur.active)
+    fonds = {"bande": PatternFill("solid", fgColor="E8EEF8"), "total": PatternFill("solid", fgColor="D5DEF0")}
+    for tableau in tableaux_par_pays(resultats, mois):
+        feuille = classeur.create_sheet(tableau["nom"])
+        for ligne, style in zip(tableau["lignes"], tableau["styles"]):
+            feuille.append(ligne)
+            for cellule in feuille[feuille.max_row][:len(ligne)]:
+                if style == "entete":
+                    cellule.font, cellule.fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1F4E8C")
+                    cellule.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                elif style == "titre":
+                    cellule.font = Font(bold=True, size=12, color="1F4E8C")
+                elif style == "total":
+                    cellule.font, cellule.fill = Font(bold=True), fonds["total"]
+                elif style == "bande":
+                    cellule.fill = fonds["bande"]
+        for indice, largeur in enumerate(tableau["largeurs"], start=1):
+            feuille.column_dimensions[get_column_letter(indice)].width = largeur
+        feuille.row_dimensions[1].height = 48
+        if tableau["gel"][0] or tableau["gel"][1]:
+            feuille.freeze_panes = f"{get_column_letter(tableau['gel'][1] + 1)}{tableau['gel'][0] + 1}"
+        if tableau["filtre"]:
+            feuille.auto_filter.ref = f"A1:{get_column_letter(feuille.max_column)}{feuille.max_row}"
     sortie = BytesIO()
     classeur.save(sortie)
     return sortie.getvalue()

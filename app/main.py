@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import secrets
+import threading
 import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -88,7 +89,9 @@ from . import (
     ovh_upload,
     rank_tracking,
     rapport_donnees,
+    google_sheets,
     reporting_mensuel,
+    reporting_sheet,
     jsonld_agences,
     audit_photos,
     telechargement_photos,
@@ -642,6 +645,16 @@ planificateur.add_job(
     "interval",
     minutes=INTERVALLE_PLANIFICATEUR_MINUTES,
     id="suivi_geo_mensuel",
+)
+# Reporting Google Sheet mensuel (voir reporting_sheet.mise_a_jour_mensuelle) : du 3 au 10, une fois par jour tant que le mois termine n'est pas a jour.
+planificateur.add_job(
+    reporting_sheet.mise_a_jour_mensuelle,
+    "cron",
+    day="3-10",
+    hour=7,
+    minute=30,
+    timezone="Europe/Brussels",
+    id="reporting_sheet_mensuel",
 )
 planificateur.start()
 
@@ -5891,7 +5904,125 @@ def page_reporting(request: Request, db: Session = Depends(obtenir_session)):
         "etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db),
         "mois_defaut": (date.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m"), "mois_max": date.today().strftime("%Y-%m"),
         "colonnes": reporting_mensuel.COLONNES,
+        "sheet": google_oauth.obtenir_parametre_sheets(db),
+        "mois_debut_defaut": "%d-%02d" % reporting_sheet.mois_a_afficher("", date.today())[0],
     })
+
+
+def _etat_sheet(parametre) -> dict:
+    """Etat du reporting Google Sheet pour la page (sans jamais exposer le jeton)."""
+    if not parametre:
+        return {"connecte": False}
+    return {
+        "connecte": bool(parametre.refresh_token), "libelle": parametre.libelle, "statut": parametre.statut or "", "message": parametre.message or "",
+        "url": parametre.spreadsheet_url or "", "actif": bool(parametre.actif), "dernier_mois": parametre.dernier_mois or "",
+        "derniere_maj": parametre.derniere_maj.strftime("%d/%m/%Y %H:%M") if parametre.derniere_maj else "",
+    }
+
+
+@app.get("/google-sheets/connecter")
+def google_sheets_connecter(request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    redirect_uri = str(request.url_for("google_sheets_callback"))
+    flow = google_oauth.construire_flow_sheets(redirect_uri)
+    url_autorisation, state = flow.authorization_url(access_type="offline", prompt="consent")
+    request.session["oauth_sheets_state"] = state
+    request.session["oauth_sheets_code_verifier"] = flow.code_verifier
+    return RedirectResponse(url_autorisation)
+
+
+@app.get("/google-sheets/callback", name="google_sheets_callback")
+def google_sheets_callback(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    state_attendu = request.session.get("oauth_sheets_state")
+    if state_attendu and request.query_params.get("state") != state_attendu:
+        return HTMLResponse("Etat OAuth invalide, merci de reessayer depuis /google-sheets/connecter.", status_code=400)
+    if request.query_params.get("error"):
+        return HTMLResponse(f"Connexion refusee : {request.query_params.get('error')}. Retour a /reporting.", status_code=400)
+
+    redirect_uri = str(request.url_for("google_sheets_callback"))
+    flow = google_oauth.construire_flow_sheets(redirect_uri, code_verifier=request.session.get("oauth_sheets_code_verifier"))
+    flow.fetch_token(authorization_response=str(request.url))
+    if not flow.credentials.refresh_token:
+        return HTMLResponse("Google n'a pas renvoye de jeton durable : recommencez depuis /google-sheets/connecter.", status_code=400)
+
+    google_oauth.enregistrer_refresh_token_sheets(db, flow.credentials.refresh_token)
+    return RedirectResponse("/reporting#bloc-sheet", status_code=303)
+
+
+@app.post("/google-sheets/deconnecter")
+def google_sheets_deconnecter(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    parametre = google_oauth.obtenir_parametre_sheets(db)
+    if parametre:
+        parametre.refresh_token, parametre.libelle, parametre.actif = "", "", False
+        db.commit()
+    return RedirectResponse("/reporting#bloc-sheet", status_code=303)
+
+
+@app.post("/reporting/sheet/config")
+async def enregistrer_config_sheet(request: Request, db: Session = Depends(obtenir_session)):
+    """Enregistre les reglages du Sheet automatique : etiquette des agences, nom du fichier, Sheet existant (adresse), mois de debut, activation."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    parametre = google_oauth.obtenir_parametre_sheets(db)
+    if not parametre or not parametre.refresh_token:
+        return JSONResponse({"erreur": "Connectez d'abord Google Sheets."}, status_code=400)
+    try:
+        corps = await request.json()
+        etiquette_id = int(corps.get("etiquette_id"))
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Choisissez l'etiquette des agences."}, status_code=400)
+    if not db.get(models.Etiquette, etiquette_id):
+        return JSONResponse({"erreur": "Etiquette introuvable."}, status_code=404)
+    mois_debut = str(corps.get("mois_debut") or "").strip()
+    if not re.fullmatch(r"20\d\d-(0[1-9]|1[0-2])", mois_debut):
+        return JSONResponse({"erreur": "Mois de debut invalide."}, status_code=400)
+    adresse = str(corps.get("sheet_url") or "").strip()
+    identifiant_sheet = google_sheets.extraire_id(adresse) if adresse else ""
+    if adresse and not identifiant_sheet:
+        return JSONResponse({"erreur": "Adresse de Sheet non reconnue (collez l'adresse complete du Google Sheet)."}, status_code=400)
+    parametre.etiquette_id, parametre.mois_debut = etiquette_id, mois_debut
+    parametre.nom_fichier = str(corps.get("nom_fichier") or "").strip()[:150] or "Reporting mensuel - Fiches établissement"
+    parametre.actif = bool(corps.get("actif"))
+    if identifiant_sheet and identifiant_sheet != parametre.spreadsheet_id:
+        parametre.spreadsheet_id, parametre.spreadsheet_url = identifiant_sheet, f"https://docs.google.com/spreadsheets/d/{identifiant_sheet}"
+        parametre.dernier_mois = ""
+    if corps.get("nouveau"):
+        parametre.spreadsheet_id, parametre.spreadsheet_url, parametre.dernier_mois = "", "", ""
+    db.commit()
+    return JSONResponse({"ok": True, **_etat_sheet(parametre)})
+
+
+@app.post("/reporting/sheet/maj")
+def lancer_maj_sheet(request: Request, db: Session = Depends(obtenir_session)):
+    """Lance la mise a jour du Sheet en arriere-plan (plusieurs minutes pour 150 agences) ; l'avancement se suit avec /reporting/sheet/etat."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    parametre = google_oauth.obtenir_parametre_sheets(db)
+    if not parametre or not parametre.refresh_token or not parametre.etiquette_id or not parametre.mois_debut:
+        return JSONResponse({"erreur": "Connectez Google Sheets et enregistrez d'abord les reglages."}, status_code=400)
+    if not reporting_sheet.demarrer(db, parametre):
+        return JSONResponse({"erreur": "Une mise a jour est deja en cours."}, status_code=409)
+    threading.Thread(target=reporting_sheet.executer, args=(parametre.id, False), daemon=True).start()
+    return JSONResponse({"ok": True, **_etat_sheet(parametre)})
+
+
+@app.get("/reporting/sheet/etat")
+def etat_maj_sheet(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    db.expire_all()
+    return JSONResponse(_etat_sheet(google_oauth.obtenir_parametre_sheets(db)))
 
 
 @app.get("/reporting/donnees/{client_id}")

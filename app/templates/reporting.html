@@ -41,6 +41,50 @@
   </div>
 </div>
 
+<details class="bloc-repliable" id="bloc-sheet" {% if sheet and sheet.refresh_token %}open{% endif %}>
+  <summary>📊 Google Sheet mis à jour automatiquement chaque mois{% if sheet and sheet.refresh_token and sheet.actif %} (actif){% endif %}</summary>
+  <p class="texte-discret">
+    Un seul Google Sheet, remis à jour tout seul le 3 de chaque mois (dès que Google a les chiffres du mois écoulé) : un onglet Synthèse par pays et par mois,
+    puis un onglet par pays. L'historique grandit mois après mois à partir du mois de début choisi. Partagez ensuite le lien du Sheet avec le client.
+  </p>
+  {% if not sheet or not sheet.refresh_token %}
+  <p><a class="bouton" href="/google-sheets/connecter">Connecter Google Sheets</a></p>
+  <p class="texte-discret">Une autorisation à donner une seule fois, avec le compte Google qui sera propriétaire du Sheet.</p>
+  {% else %}
+  <p class="texte-discret">
+    ✅ Connecté avec {{ sheet.libelle }} · <a href="/google-sheets/connecter">Reconnecter</a>
+  </p>
+  <div class="formulaire-ligne">
+    <label>Agences (étiquette)
+      <select id="sheet-etiquette">
+        <option value="">Choisir…</option>
+        {% for etiquette in etiquettes %}<option value="{{ etiquette.id }}" {% if sheet.etiquette_id == etiquette.id %}selected{% endif %}>{{ etiquette.nom }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Premier mois affiché <input type="month" id="sheet-mois-debut" value="{{ sheet.mois_debut or mois_debut_defaut }}" max="{{ mois_max }}"></label>
+    <label>Nom du fichier <input type="text" id="sheet-nom" value="{{ sheet.nom_fichier }}" maxlength="150"></label>
+  </div>
+  <div class="formulaire-ligne">
+    <label>Sheet existant (facultatif) <input type="url" id="sheet-url" value="{{ sheet.spreadsheet_url }}" placeholder="Laisser vide pour que la plateforme crée le Sheet"></label>
+    <label class="filtre-case"><input type="checkbox" id="sheet-actif" {% if sheet.actif %}checked{% endif %}> Mise à jour automatique chaque mois</label>
+  </div>
+  <div class="actions-avis">
+    <button type="button" class="bouton-secondaire" id="sheet-enregistrer">Enregistrer</button>
+    <button type="button" class="bouton" id="sheet-maj">Mettre à jour maintenant</button>
+    <a class="bouton-secondaire" id="sheet-lien" href="{{ sheet.spreadsheet_url }}" target="_blank" rel="noopener" {% if not sheet.spreadsheet_url %}hidden{% endif %}>Ouvrir le Google Sheet</a>
+  </div>
+  <p id="sheet-statut" class="texte-discret">
+    {% if sheet.statut == 'ok' %}Dernière mise à jour : {{ sheet.derniere_maj.strftime('%d/%m/%Y %H:%M') if sheet.derniere_maj else '' }}. {{ sheet.message }}
+    {% elif sheet.statut == 'erreur' %}❌ {{ sheet.message }}
+    {% elif sheet.statut == 'en_cours' %}Mise à jour en cours…{% endif %}
+  </p>
+  <p class="texte-discret">Si vous donnez l'adresse d'un Sheet existant, ses onglets Synthèse et pays sont réécrits à chaque mise à jour (ne modifiez pas ces onglets à la main) ; vos autres onglets ne sont pas touchés. Pour 150 agences, comptez quelques minutes.</p>
+  <form method="post" action="/google-sheets/deconnecter" onsubmit="return confirm('Déconnecter Google Sheets ? La mise à jour automatique sera arrêtée.');" style="display:inline">
+    <button type="submit" class="bouton-danger bouton-mini">Déconnecter Google Sheets</button>
+  </form>
+  {% endif %}
+</details>
+
 <details class="bloc-repliable" id="bloc-jsonld">
   <summary>🧩 Données structurées des agences (JSON-LD) pour le développeur du site</summary>
   <p class="texte-discret">
@@ -236,6 +280,49 @@
       lien.href = "/bilan/mensuel.xlsx?" + p.toString(); lien.style.opacity = "1";
     });
   }
+})();
+</script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  if (!$("sheet-maj")) return;
+  const dire = (texte) => { $("sheet-statut").textContent = texte; };
+  function afficherEtat(e) {
+    if (e.url) { $("sheet-lien").href = e.url; $("sheet-lien").hidden = false; $("sheet-url").value = e.url; }
+    if (e.statut === "ok") dire("Dernière mise à jour : " + e.derniere_maj + ". " + e.message);
+    else if (e.statut === "erreur") dire("❌ " + e.message);
+    else if (e.statut === "en_cours") dire("Mise à jour en cours… (vous pouvez quitter la page, elle continue)");
+  }
+  function corps(nouveau) {
+    return JSON.stringify({ etiquette_id: $("sheet-etiquette").value, mois_debut: $("sheet-mois-debut").value, nom_fichier: $("sheet-nom").value,
+      sheet_url: $("sheet-url").value, actif: $("sheet-actif").checked, nouveau: !!nouveau });
+  }
+  async function enregistrer() {
+    const r = await fetch("/reporting/sheet/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: corps(false) });
+    const d = await r.json();
+    if (!r.ok) { dire("❌ " + (d.erreur || "Enregistrement impossible.")); return false; }
+    return true;
+  }
+  async function suivre() {
+    while (true) {
+      await new Promise((ok) => setTimeout(ok, 4000));
+      let e;
+      try { e = await (await fetch("/reporting/sheet/etat")).json(); } catch (x) { continue; }
+      afficherEtat(e);
+      if (e.statut !== "en_cours") break;
+    }
+    $("sheet-maj").disabled = false;
+  }
+  $("sheet-enregistrer").addEventListener("click", async () => { if (await enregistrer()) dire("Réglages enregistrés."); });
+  $("sheet-maj").addEventListener("click", async () => {
+    if (!(await enregistrer())) return;
+    $("sheet-maj").disabled = true; dire("Démarrage…");
+    const r = await fetch("/reporting/sheet/maj", { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) { dire("❌ " + (d.erreur || "Impossible de démarrer.")); $("sheet-maj").disabled = false; return; }
+    suivre();
+  });
+  if ($("sheet-statut").textContent.includes("en cours")) { $("sheet-maj").disabled = true; suivre(); }
 })();
 </script>
 {% endblock %}

@@ -35,6 +35,14 @@ SCOPES_SEARCH_CONSOLE = [
     "https://www.googleapis.com/auth/userinfo.email",
 ]
 
+# Google Sheets : autorisation separee (un seul compte pour toute l'agence, voir models.ParametreGoogleSheets). Ce compte cree
+# ou modifie le Sheet du reporting mensuel automatique.
+SCOPES_SHEETS = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
+
 # Libelle place sur le compte cree automatiquement lors de la migration depuis
 # l'ancien modele mono-compte (voir main.py, _migrer_vers_multi_comptes). Son
 # refresh token a ete emis avant l'ajout des scopes openid/userinfo.email et ne
@@ -96,6 +104,15 @@ def construire_flow_search_console(redirect_uri: str, code_verifier: str = None)
 
     return Flow.from_client_config(
         _configuration_client(), scopes=SCOPES_SEARCH_CONSOLE, redirect_uri=redirect_uri, code_verifier=code_verifier
+    )
+
+
+def construire_flow_sheets(redirect_uri: str, code_verifier: str = None) -> Flow:
+    if redirect_uri.startswith("http://localhost") or redirect_uri.startswith("http://127.0.0.1"):
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+    return Flow.from_client_config(
+        _configuration_client(), scopes=SCOPES_SHEETS, redirect_uri=redirect_uri, code_verifier=code_verifier
     )
 
 
@@ -242,6 +259,52 @@ def obtenir_identifiants_search_console(db: Session):
     identifiants = Credentials(
         token=None, refresh_token=parametre.refresh_token, token_uri="https://oauth2.googleapis.com/token",
         client_id=CLIENT_ID, client_secret=CLIENT_SECRET, scopes=SCOPES_SEARCH_CONSOLE,
+    )
+    try:
+        identifiants.refresh(Request())
+    except RefreshError:
+        return None
+    return identifiants
+
+
+def obtenir_parametre_sheets(db: Session, creer: bool = False):
+    """La ligne unique du reporting Google Sheets ; None si absente (sauf creer=True)."""
+    parametre = db.query(models.ParametreGoogleSheets).first()
+    if not parametre and creer:
+        parametre = models.ParametreGoogleSheets()
+        db.add(parametre)
+        db.commit()
+        db.refresh(parametre)
+    return parametre
+
+
+def sheets_connecte(db: Session) -> bool:
+    parametre = obtenir_parametre_sheets(db)
+    return bool(parametre and parametre.refresh_token)
+
+
+def enregistrer_refresh_token_sheets(db: Session, refresh_token: str) -> "models.ParametreGoogleSheets":
+    identifiants = Credentials(
+        token=None, refresh_token=refresh_token, token_uri="https://oauth2.googleapis.com/token",
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, scopes=SCOPES_SHEETS,
+    )
+    identifiants.refresh(Request())
+    parametre = obtenir_parametre_sheets(db, creer=True)
+    parametre.refresh_token = refresh_token
+    parametre.libelle = _recuperer_email(identifiants.token) or "(compte sans adresse e-mail)"
+    db.commit()
+    db.refresh(parametre)
+    return parametre
+
+
+def obtenir_identifiants_sheets(db: Session):
+    """Identifiants Google Sheets valides, ou None (jamais connecte, ou acces revoque)."""
+    parametre = obtenir_parametre_sheets(db)
+    if not parametre or not parametre.refresh_token:
+        return None
+    identifiants = Credentials(
+        token=None, refresh_token=parametre.refresh_token, token_uri="https://oauth2.googleapis.com/token",
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, scopes=SCOPES_SHEETS,
     )
     try:
         identifiants.refresh(Request())

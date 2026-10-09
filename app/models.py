@@ -835,6 +835,32 @@ class ParametreSearchConsole(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class ParametreGoogleSheets(Base):
+    """
+    Reporting mensuel envoye automatiquement dans UN Google Sheet (voir reporting_sheet.py) : connexion Google (scope spreadsheets,
+    distinct de celui des fiches), etiquette des agences concernees, fichier utilise et suivi de la derniere mise a jour.
+    Une seule ligne attendue.
+    """
+
+    __tablename__ = "parametre_google_sheets"
+
+    id = Column(Integer, primary_key=True)
+    refresh_token = Column(Text, default="")
+    libelle = Column(String, default="")                      # adresse e-mail du compte connecte
+    etiquette_id = Column(Integer, nullable=True)             # agences incluses : celles de cette etiquette
+    nom_fichier = Column(String, default="Reporting mensuel - Fiches établissement")
+    spreadsheet_id = Column(String, default="")
+    spreadsheet_url = Column(String, default="")
+    mois_debut = Column(String, default="")                   # AAAA-MM : premier mois affiche (l'historique grandit chaque mois)
+    actif = Column(Boolean, default=False)                    # mise a jour automatique chaque mois
+    statut = Column(String, default="")                       # "", "en_cours", "ok" ou "erreur"
+    message = Column(Text, default="")
+    maj_demarree_le = Column(DateTime, nullable=True)
+    derniere_maj = Column(DateTime, nullable=True)
+    dernier_mois = Column(String, default="")                 # AAAA-MM du dernier mois couvert par une mise a jour reussie
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class PromptImageGenere(Base):
     """
     Historique des prompts d'images IA generes avec l'option "Varier automatiquement" :
