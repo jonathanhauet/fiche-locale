@@ -43,6 +43,13 @@ TYPES_ENTREPRISE_LOCALE = {
     "homeandconstructionbusiness", "professionalservice", "medicalbusiness", "accountingservice", "autodealer", "dayspa",
     "gymnasium", "sportsactivitylocation", "veterinarycare", "generalcontractor", "roofingcontractor", "housepainter", "movingcompany",
     "cafeorcoffeeshop", "hotel", "lodgingbusiness", "childcare", "financialservice", "insuranceagency", "travelagency", "petstore",
+    # sous-types de Store (schema.org) : toutes des entreprises locales
+    "wholesalestore", "jewelrystore", "pawnshop", "autopartsstore", "bikestore", "bookstore", "clothingstore", "computerstore",
+    "conveniencestore", "departmentstore", "electronicsstore", "florist", "furniturestore", "gardenstore", "grocerystore", "hardwarestore",
+    "hobbyshop", "homegoodsstore", "liquorstore", "mensclothingstore", "mobilephonestore", "movierentalstore", "musicstore",
+    "officeequipmentstore", "outletstore", "shoestore", "sportinggoodsstore", "tireshop", "toystore", "womenclothingstore",
+    "bankoraccount", "automotivebusiness", "autorental", "carwash", "gasstation", "emergencyservice", "entertainmentbusiness",
+    "sportsclub", "healthclub", "optician", "pharmacy", "hospital", "medicalclinic", "notary", "realestateagent", "storageservice",
 }
 
 
@@ -108,6 +115,7 @@ class _AnalyseurPage(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.titre = ""
+        self._titre_pris = False       # seul le premier <title> compte : les icones SVG en ont souvent d'autres dans la page
         self.description = ""
         self.nb_h1 = 0
         self.json_ld = []
@@ -126,6 +134,8 @@ class _AnalyseurPage(HTMLParser):
             self._tampon_ld = []
 
     def handle_endtag(self, balise):
+        if balise == "title" and self.titre:
+            self._titre_pris = True
         if balise == "script" and self._tampon_ld is not None:
             self.json_ld.append("".join(self._tampon_ld))
             self._tampon_ld = None
@@ -137,7 +147,7 @@ class _AnalyseurPage(HTMLParser):
         if self._tampon_ld is not None:
             self._tampon_ld.append(donnees)
             return
-        if self._pile and self._pile[-1] == "title":
+        if self._pile and self._pile[-1] == "title" and not self._titre_pris:
             self.titre += donnees
         if not any(b in ("script", "style", "noscript", "head", "svg", "template") for b in self._pile):
             texte = donnees.strip()
