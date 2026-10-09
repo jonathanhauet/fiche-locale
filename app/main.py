@@ -5989,13 +5989,14 @@ def telecharger_reporting_mensuel(request: Request, db: Session = Depends(obteni
     clients = [c for c in (db.get(models.Client, i) for i in client_ids) if c]
     if not clients:
         return HTMLResponse("Fiches introuvables.", status_code=404)
-    resultats = reporting_mensuel.collecter(db, clients, mois)
+    par_pays = request.query_params.get("mise_en_page") == "pays"
+    resultats = reporting_mensuel.collecter(db, clients, mois, avec_pays=par_pays)
     if not any(r["mois"] for r in resultats):
         details = " ; ".join(f"{r['client'].nom} : {r['erreur']}" for r in resultats)[:600]
         return HTMLResponse(f"Aucune donnee lue sur ces fiches. {details}", status_code=502)
 
-    octets = reporting_mensuel.generer_excel(resultats, mois)
-    nom_fichier = f"reporting_mensuel_{mois[0][0]}-{mois[0][1]:02d}_a_{mois[-1][0]}-{mois[-1][1]:02d}.xlsx"
+    octets = reporting_mensuel.generer_excel(resultats, mois, par_pays=par_pays)
+    nom_fichier = f"reporting_mensuel_{'par_pays_' if par_pays else ''}{mois[0][0]}-{mois[0][1]:02d}_a_{mois[-1][0]}-{mois[-1][1]:02d}.xlsx"
     return Response(
         content=octets,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

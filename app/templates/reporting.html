@@ -83,6 +83,7 @@
       <button type="button" class="bouton-secondaire" id="tout-cocher">Toutes les agences</button>
       <button type="button" class="bouton-secondaire" id="tout-decocher">Aucune</button>
       <a class="bouton" id="lien-excel" href="#">Télécharger l'Excel de cette sélection</a>
+      <a class="bouton-secondaire" id="lien-excel-pays" href="#" title="Un onglet Synthèse (par pays et par mois, puis toutes agences) et un onglet par pays">Excel par pays (Synthèse + un onglet par pays)</a>
     </div>
   </div>
 
@@ -226,11 +227,14 @@
   }
 
   function majLienExcel(mois, agences) {
-    const lien = $("lien-excel");
-    if (!mois.length || !agences.length) { lien.removeAttribute("href"); lien.style.opacity = "0.5"; return; }
-    const p = new URLSearchParams({ mois_fin: mois[mois.length - 1], nb_mois: String(mois.length) });
-    agences.forEach((d) => p.append("client_ids", d.client_id));
-    lien.href = "/bilan/mensuel.xlsx?" + p.toString(); lien.style.opacity = "1";
+    const liens = [[$("lien-excel"), ""], [$("lien-excel-pays"), "pays"]];
+    if (!mois.length || !agences.length) { liens.forEach(([l]) => { l.removeAttribute("href"); l.style.opacity = "0.5"; }); return; }
+    liens.forEach(([lien, miseEnPage]) => {
+      const p = new URLSearchParams({ mois_fin: mois[mois.length - 1], nb_mois: String(mois.length) });
+      if (miseEnPage) p.set("mise_en_page", miseEnPage);
+      agences.forEach((d) => p.append("client_ids", d.client_id));
+      lien.href = "/bilan/mensuel.xlsx?" + p.toString(); lien.style.opacity = "1";
+    });
   }
 })();
 </script>
