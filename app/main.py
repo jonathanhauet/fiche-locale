@@ -89,6 +89,7 @@ from . import (
     rank_tracking,
     rapport_donnees,
     reporting_mensuel,
+    jsonld_agences,
     rapport_pdf,
     recap_mensuel,
     search_console,
@@ -5791,6 +5792,63 @@ def donnees_reporting_fiche(client_id: int, request: Request, db: Session = Depe
         "client_id": client.id, "nom": client.nom, "erreur": lecture["erreur"],
         "mois": {f"{a}-{m:02d}": reporting_mensuel.indicateurs(lecture["mois"].get((a, m), {})) for a, m in mois} if lecture["mois"] else {},
     })
+
+
+def _entrees_jsonld_depuis_requete(request: Request, db: Session):
+    """(entrees, resultats, None) ou (None, None, reponse d'erreur) pour les deux exports JSON-LD."""
+    ids = [int(v) for v in request.query_params.getlist("client_ids") if v.strip().isdigit()]
+    if not ids:
+        return None, None, HTMLResponse("Selectionnez au moins une fiche.", status_code=400)
+    if len(ids) > jsonld_agences.NB_FICHES_MAX:
+        return None, None, HTMLResponse(f"{jsonld_agences.NB_FICHES_MAX} fiches maximum par fichier.", status_code=400)
+    type_schema = (request.query_params.get("type_schema") or "").strip()
+    if type_schema and not jsonld_agences.REGEX_TYPE_SCHEMA.match(type_schema):
+        return None, None, HTMLResponse("Type schema.org invalide (lettres uniquement, ex. JewelryStore).", status_code=400)
+    reseau_url = (request.query_params.get("reseau_url") or "").strip()
+    if reseau_url and not reseau_url.lower().startswith(("http://", "https://")):
+        return None, None, HTMLResponse("L'adresse du site du reseau doit commencer par http:// ou https://.", status_code=400)
+    clients = [c for c in (db.get(models.Client, i) for i in ids) if c]
+    if not clients:
+        return None, None, HTMLResponse("Fiches introuvables.", status_code=404)
+    resultats = jsonld_agences.collecter(db, clients)
+    entrees = jsonld_agences.construire_entrees(
+        resultats, type_schema, (request.query_params.get("reseau_nom") or "")[:120], reseau_url[:300],
+    )
+    if not entrees:
+        details = " ; ".join(f"{r['client'].nom} : {r['erreur']}" for r in resultats)[:600]
+        return None, None, HTMLResponse(f"Aucune fiche Google lue. {details}", status_code=502)
+    return entrees, resultats, None
+
+
+@app.get("/reporting/jsonld.xlsx")
+def telecharger_jsonld_agences_excel(request: Request, db: Session = Depends(obtenir_session)):
+    """Excel des blocs JSON-LD LocalBusiness de toutes les agences choisies (une ligne par agence), a remettre au developpeur du site."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    entrees, resultats, erreur = _entrees_jsonld_depuis_requete(request, db)
+    if erreur:
+        return erreur
+    return Response(
+        content=jsonld_agences.en_excel(entrees, resultats),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="donnees_structurees_agences.xlsx"'},
+    )
+
+
+@app.get("/reporting/jsonld.json")
+def telecharger_jsonld_agences_json(request: Request, db: Session = Depends(obtenir_session)):
+    """Les memes donnees en JSON (agence, url_page, json_ld, informations_manquantes) pour un traitement automatique."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    entrees, _, erreur = _entrees_jsonld_depuis_requete(request, db)
+    if erreur:
+        return erreur
+    return Response(
+        content=jsonld_agences.en_json(entrees), media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="donnees_structurees_agences.json"'},
+    )
 
 
 @app.get("/bilan/mensuel.xlsx")

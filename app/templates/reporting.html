@@ -41,6 +41,24 @@
   </div>
 </div>
 
+<details class="bloc-repliable" id="bloc-jsonld">
+  <summary>🧩 Données structurées des agences (JSON-LD) pour le développeur du site</summary>
+  <p class="texte-discret">
+    Un bloc LocalBusiness par agence (adresse, téléphone, horaires, coordonnées, lien Google Maps), construit à partir de leur fiche Google : rien n'est inventé,
+    ce qui manque est signalé. À poser sur chaque page agence pour que Google et les assistants IA la comprennent. Utilise les fiches cochées ci-dessus.
+  </p>
+  <div class="formulaire-ligne">
+    <label>Nom du réseau (facultatif) <input type="text" id="jsonld-reseau-nom" placeholder="Ex : GoldUnion" maxlength="120"></label>
+    <label>Site du réseau (facultatif) <input type="url" id="jsonld-reseau-url" placeholder="https://goldunion.fr"></label>
+    <label>Type schema.org (facultatif) <input type="text" id="jsonld-type" placeholder="Ex : JewelryStore" maxlength="40"></label>
+  </div>
+  <div class="actions-avis">
+    <a class="bouton" id="lien-jsonld-excel" href="#">Télécharger l'Excel</a>
+    <a class="bouton-secondaire" id="lien-jsonld-json" href="#">Télécharger le JSON</a>
+  </div>
+  <p class="texte-discret">Le type est déduit de la catégorie Google si vous le laissez vide. La génération lit chaque fiche chez Google : comptez quelques secondes pour 200 agences.</p>
+</details>
+
 <div id="zone-resultats" hidden>
   <div class="bloc-section">
     <span class="choix-image-titre">2. Filtrer l'affichage</span>
@@ -108,7 +126,19 @@
     majBouton();
   }
   function idsChoisis() { return Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value); }
-  function majBouton() { $("bouton-charger").disabled = idsChoisis().length === 0; }
+  function majLiensJsonld() {
+    const ids = idsChoisis();
+    const p = new URLSearchParams();
+    ids.forEach((id) => p.append("client_ids", id));
+    [["reseau_nom", "jsonld-reseau-nom"], ["reseau_url", "jsonld-reseau-url"], ["type_schema", "jsonld-type"]].forEach(([cle, id]) => { if ($(id).value.trim()) p.set(cle, $(id).value.trim()); });
+    ["lien-jsonld-excel", "lien-jsonld-json"].forEach((id, i) => {
+      const lien = $(id);
+      if (!ids.length) { lien.removeAttribute("href"); lien.style.opacity = "0.5"; return; }
+      lien.href = (i === 0 ? "/reporting/jsonld.xlsx?" : "/reporting/jsonld.json?") + p.toString(); lien.style.opacity = "1";
+    });
+  }
+  ["jsonld-reseau-nom", "jsonld-reseau-url", "jsonld-type"].forEach((id) => $(id).addEventListener("input", majLiensJsonld));
+  function majBouton() { $("bouton-charger").disabled = idsChoisis().length === 0; majLiensJsonld(); }
   casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
 
   // ---- chargement fiche par fiche (4 en parallele)

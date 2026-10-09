@@ -380,8 +380,17 @@ def type_schema(categorie: str) -> str:
 
 def construire_json_ld(client, infos: dict = None, site_web: str = "", categorie: str = "") -> str:
     """Bloc <script type="application/ld+json"> LocalBusiness construit uniquement a partir de donnees connues (jamais inventees)."""
+    donnees = construire_json_ld_dict(client, infos, site_web, categorie)
+    return '<script type="application/ld+json">\n' + json.dumps(donnees, ensure_ascii=False, indent=2) + "\n</script>"
+
+
+def construire_json_ld_dict(client, infos: dict = None, site_web: str = "", categorie: str = "", type_force: str = "", parent: dict = None) -> dict:
+    """
+    Le meme bloc sous forme de dictionnaire. type_force : type schema.org impose (ex. « JewelryStore »), sinon deduit de la categorie.
+    parent : organisation du reseau (« parentOrganization »), pour les agences d'un meme reseau.
+    """
     infos = infos or {}
-    donnees = {"@context": "https://schema.org", "@type": type_schema(categorie), "name": infos.get("title") or client.nom}
+    donnees = {"@context": "https://schema.org", "@type": type_force or type_schema(categorie), "name": infos.get("title") or client.nom}
     if site_web:
         donnees["url"] = site_web
     telephone = (infos.get("phoneNumbers") or {}).get("primaryPhone")
@@ -415,7 +424,9 @@ def construire_json_ld(client, infos: dict = None, site_web: str = "", categorie
     if lien_maps:
         donnees["hasMap"] = lien_maps
         donnees["sameAs"] = [lien_maps]
-    return '<script type="application/ld+json">\n' + json.dumps(donnees, ensure_ascii=False, indent=2) + "\n</script>"
+    if parent:
+        donnees["parentOrganization"] = parent
+    return donnees
 
 
 def generer_llms_txt(client, infos: dict, site_web: str, urls_site: list, categorie: str = "") -> str:
