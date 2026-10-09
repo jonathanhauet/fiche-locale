@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% set page_actuelle = "photos_fiches" %}
+{% block titre %}Audit des photos — Fiche Locale{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Audit des photos des fiches</h1>
+</div>
+<p class="texte-discret">
+  Voir en un coup d'œil ce qu'il y a aujourd'hui sur les fiches Google d'un réseau, et repérer celles à corriger : photos manquantes (couverture, logo, devanture),
+  trop petites, anciennes, et, avec l'analyse IA, images floues, sombres, mal cadrées ou sans rapport. Les photos analysées sont celles ajoutées par l'entreprise
+  et ses gestionnaires (Google ne fournit pas celles des internautes).
+</p>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">1. Fiches</span>
+  {% if etiquettes %}
+  <div class="filtre-entreprises">
+    <span class="filtre-titre">Étiquettes :</span>
+    {% for etiquette in etiquettes %}
+    <label class="filtre-case"><input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}</label>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bandeau-avertissement">Aucune étiquette pour l'instant : ajoutez-en depuis la page <a href="/etiquettes">Étiquettes</a>.</div>
+  {% endif %}
+  <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+  <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+  <p id="texte-compte-clients" class="texte-discret" hidden></p>
+
+  <label class="filtre-case">
+    <input type="checkbox" id="avec-ia" checked> Analyser aussi la qualité des images avec l'IA (quelques centimes par agence, 10 à 20 secondes chacune)
+  </label>
+  <div class="actions-avis">
+    <button type="button" id="bouton-lancer" class="bouton" disabled>Lancer l'audit</button>
+  </div>
+  <div id="progression" class="conteneur-progression-avis" hidden>
+    <div class="barre-progression-fond"><div id="barre-progression" class="barre-progression-remplissage"></div></div>
+    <span id="texte-progression" class="texte-progression-avis"></span>
+  </div>
+</div>
+
+<div id="zone-resultats" hidden>
+  <div class="bloc-section">
+    <div id="resume-audit" class="texte-discret"></div>
+    <div class="formulaire-ligne">
+      <label class="filtre-case"><input type="checkbox" id="filtre-a-corriger"> Seulement les fiches à corriger</label>
+      <label>Agence <input type="search" id="recherche-agence" placeholder="Rechercher…"></label>
+      <button type="button" class="bouton-secondaire" id="bouton-excel">Télécharger l'index Excel</button>
+    </div>
+  </div>
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead><tr><th>Agence</th><th>Score</th><th>Photos clés</th><th>À corriger</th></tr></thead>
+      <tbody id="corps-tableau"></tbody>
+    </table>
+  </div>
+  <p id="fiches-non-lues" class="texte-discret" hidden></p>
+</div>
+
+<div id="zoom-photo" class="zoom-image-flottant" hidden><img alt="Photo en grand"></div>
+
+<script id="donnees-clients" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients").textContent);
+  const $ = (id) => document.getElementById(id);
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  let lignes = [];
+  function echapper(texte) { const d = document.createElement("div"); d.textContent = texte == null ? "" : String(texte); return d.innerHTML; }
+
+  // ---- choix des fiches
+  function actualiserListe() {
+    const actives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    const conteneur = $("liste-clients-cibles");
+    if (!actives.length) { conteneur.innerHTML = ""; $("texte-aucun-client").hidden = false; $("texte-compte-clients").hidden = true; majBouton(); return; }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => actives.includes(id)));
+    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false;
+    $("texte-compte-clients").textContent = `${correspondants.length} fiche(s) — décochez celles à exclure.`;
+    conteneur.innerHTML = correspondants.map((c) => `<label class="etiquette-chip-case"><input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}</label>`).join("");
+    conteneur.querySelectorAll("input").forEach((c) => c.addEventListener("change", majBouton));
+    majBouton();
+  }
+  const idsChoisis = () => Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value);
+  function majBouton() { $("bouton-lancer").disabled = idsChoisis().length === 0; }
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+
+  // ---- audit fiche par fiche (3 en parallele)
+  $("bouton-lancer").addEventListener("click", async () => {
+    const ids = idsChoisis(); if (!ids.length) return;
+    const ia = $("avec-ia").checked ? 1 : 0;
+    $("bouton-lancer").disabled = true; $("progression").hidden = false; $("zone-resultats").hidden = true;
+    lignes = []; let faits = 0, curseur = 0;
+    $("barre-progression").style.width = "0%"; $("texte-progression").textContent = `0 / ${ids.length}`;
+    async function suivant() {
+      while (curseur < ids.length) {
+        const id = ids[curseur++];
+        try {
+          const r = await fetch(`/photos-fiches/donnees/${id}?ia=${ia}`);
+          if (r.ok) lignes.push(await r.json());
+        } catch (e) { /* fiche suivante */ }
+        faits++;
+        $("barre-progression").style.width = Math.round((faits / ids.length) * 100) + "%";
+        $("texte-progression").textContent = `${faits} / ${ids.length}`;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, ids.length) }, suivant));
+    $("progression").hidden = true; majBouton();
+    afficher(); $("zone-resultats").hidden = !lignes.length;
+  });
+
+  // ---- tableau
+  function badgeScore(l) {
+    const couleur = l.score >= 85 ? "#1f9d55" : l.score >= 70 ? "#c98a00" : "#d92d20";
+    return `<span style="display:inline-block;min-width:2.6rem;text-align:center;padding:0.15rem 0.5rem;border-radius:999px;font-weight:700;color:#fff;background:${couleur}">${l.score}</span>`;
+  }
+  function vignette(c) {
+    const a = c.analyse, mauvaise = a && a.qualite <= 2;
+    const tip = `${c.libelle}${c.largeur && c.hauteur ? " · " + c.largeur + "×" + c.hauteur + " px" : ""}${c.date ? " · " + c.date : ""}${a ? " · " + a.commentaire : ""}${a && a.libelles_problemes.length ? " (" + a.libelles_problemes.join(", ") + ")" : ""}`;
+    return `<figure class="vignette-audit" data-grande="${echapper(c.url)}" title="${echapper(tip)}" style="margin:0;display:inline-block;text-align:center;font-size:0.7rem;max-width:84px">
+      <img src="${echapper(c.miniature)}" alt="${echapper(c.libelle)}" loading="lazy" referrerpolicy="no-referrer" style="width:80px;height:80px;object-fit:cover;border-radius:6px;display:block;border:3px solid ${mauvaise ? "#d92d20" : a && a.problemes.length ? "#c98a00" : "transparent"}">
+      <figcaption>${echapper(c.libelle)}${a ? " · " + a.qualite + "/5" : ""}</figcaption></figure>`;
+  }
+  function afficher() {
+    const seulementACorriger = $("filtre-a-corriger").checked, mot = $("recherche-agence").value.trim().toLowerCase();
+    const lues = lignes.filter((l) => !l.erreur);
+    const visibles = lues.filter((l) => (!seulementACorriger || l.a_corriger) && (!mot || l.nom.toLowerCase().includes(mot))).sort((a, b) => a.score - b.score || a.nom.localeCompare(b.nom, "fr"));
+    const aCorriger = lues.filter((l) => l.a_corriger).length;
+    $("resume-audit").innerHTML = `<strong>${lues.length}</strong> fiche(s) analysée(s) : <strong>${aCorriger}</strong> à corriger, ${lues.length - aCorriger} correcte(s).`;
+    $("corps-tableau").innerHTML = visibles.length ? visibles.map((l) => `
+      <tr>
+        <td><strong>${echapper(l.nom)}</strong><div class="texte-discret">${l.nb}${l.tronque ? "+" : ""} photo(s)${l.derniere_photo ? " · dernière le " + l.derniere_photo : ""}</div></td>
+        <td>${badgeScore(l)}</td>
+        <td>${l.cles.length ? l.cles.map(vignette).join(" ") : '<span class="texte-discret">Aucune photo</span>'}</td>
+        <td>${l.alertes.length ? "<ul style='margin:0;padding-left:1.1rem'>" + l.alertes.map((a) => `<li>${echapper(a)}</li>`).join("") + "</ul>" : '<span class="texte-discret">Rien à signaler</span>'}
+          ${l.observations.length ? "<div class='texte-discret' style='margin-top:0.3rem'>🔍 " + l.observations.map(echapper).join(" ; ") + "</div>" : ""}
+          ${l.ia_erreur ? "<div class='texte-discret'>Analyse IA indisponible : " + echapper(l.ia_erreur) + "</div>" : ""}</td>
+      </tr>`).join("") : `<tr><td colspan="4" class="texte-vide">Aucune fiche avec ces filtres.</td></tr>`;
+    const non = lignes.filter((l) => l.erreur);
+    $("fiches-non-lues").hidden = !non.length;
+    $("fiches-non-lues").textContent = non.length ? "Fiches non lues : " + non.map((l) => `${l.nom} (${l.erreur})`).join(" ; ") : "";
+  }
+  $("filtre-a-corriger").addEventListener("change", afficher); $("recherche-agence").addEventListener("input", afficher);
+
+  // ---- zoom au survol
+  const zoom = $("zoom-photo"), grande = zoom.querySelector("img");
+  function placer(x, y) {
+    const l = zoom.offsetWidth, h = zoom.offsetHeight; let g = x + 18, t = y + 14;
+    if (g + l > innerWidth - 12) g = Math.max(12, x - l - 18); if (t + h > innerHeight - 12) t = Math.max(12, innerHeight - h - 12);
+    zoom.style.left = g + "px"; zoom.style.top = t + "px";
+  }
+  document.addEventListener("mouseover", (e) => { const v = e.target.closest(".vignette-audit"); if (!v) return; grande.src = v.dataset.grande.replace(/=[swh][0-9a-z-]*$/, "") + "=s640"; zoom.hidden = false; placer(e.clientX, e.clientY); });
+  document.addEventListener("mousemove", (e) => { if (!zoom.hidden) placer(e.clientX, e.clientY); });
+  document.addEventListener("mouseout", (e) => { if (e.target.closest(".vignette-audit")) zoom.hidden = true; });
+
+  // ---- export Excel de ce qui est affiche
+  $("bouton-excel").addEventListener("click", async () => {
+    const reponse = await fetch("/photos-fiches/export.xlsx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lignes: lignes.filter((l) => !l.erreur) }) });
+    if (!reponse.ok) { alert("Export impossible."); return; }
+    const lien = document.createElement("a"); lien.href = URL.createObjectURL(await reponse.blob()); lien.download = "audit_photos_fiches.xlsx"; lien.click();
+    setTimeout(() => URL.revokeObjectURL(lien.href), 5000);
+  });
+})();
+</script>
+{% endblock %}

@@ -120,6 +120,9 @@ def _photo_depuis_item(item: dict):
         # pour la suppression (voir supprimer_photo_fiche_google).
         "nom_media": item.get("name", ""),
         "date_publication": item.get("createTime", ""),
+        "largeur": (item.get("dimensions") or {}).get("widthPixels"),
+        "hauteur": (item.get("dimensions") or {}).get("heightPixels"),
+        "description": item.get("description", ""),
     }
 
 

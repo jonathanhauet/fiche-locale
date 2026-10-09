@@ -90,6 +90,7 @@ from . import (
     rapport_donnees,
     reporting_mensuel,
     jsonld_agences,
+    audit_photos,
     rapport_pdf,
     recap_mensuel,
     search_console,
@@ -5744,6 +5745,81 @@ def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_sessio
         content=octets_pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
+
+
+@app.get("/photos-fiches", response_class=HTMLResponse)
+def page_audit_photos(request: Request, db: Session = Depends(obtenir_session)):
+    """Audit des photos actuelles des fiches d'un reseau : choix des fiches, puis tableau des fiches a corriger (voir photos_fiches.html)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    return templates.TemplateResponse(request, "photos_fiches.html", {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db)})
+
+
+@app.get("/photos-fiches/donnees/{client_id}")
+def donnees_audit_photos_fiche(client_id: int, request: Request, ia: int = 0, db: Session = Depends(obtenir_session)):
+    """Audit des photos d'UNE fiche en JSON : constats objectifs et, si ia=1, analyse de la qualite des images par l'IA."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Fiche introuvable."}, status_code=404)
+    base = {"client_id": client.id, "nom": client.nom, "erreur": "", "ia": bool(ia), "ia_erreur": ""}
+    if not client.account_id or not client.location_id:
+        return JSONResponse({**base, "erreur": "Pas de fiche Google associée."})
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({**base, "erreur": "Compte Google non valide (à reconnecter)."})
+    try:
+        photos, tronque = audit_photos.lire_photos(identifiants, client.account_id, client.location_id)
+    except Exception as erreur:
+        return JSONResponse({**base, "erreur": str(erreur)[:200]})
+
+    regles = audit_photos.analyse_regles(photos, tronque)
+    echantillon = audit_photos.choisir_echantillon(photos)
+    analyses = {}
+    if ia and echantillon:
+        try:
+            infos, _ = _infos_google_client(db, client)
+            categorie = google_location.valeurs_protegees(infos).get("categorie_nom", "") if infos else ""
+            analyses = audit_photos.analyser_images(client.nom, categorie, echantillon)
+        except Exception as erreur:
+            base["ia_erreur"] = str(erreur)[:200]
+    score, a_corriger, observations = audit_photos.score_et_verdict(regles, analyses)
+    cles = []
+    for indice, photo in enumerate(echantillon):
+        analyse = analyses.get(indice)
+        cles.append({
+            "categorie": photo["categorie"], "libelle": audit_photos.LIBELLES_CATEGORIE.get(photo["categorie"], photo["categorie"] or "Autre"),
+            "miniature": photo["miniature"] or photo["url"], "url": photo["url"], "largeur": photo.get("largeur"), "hauteur": photo.get("hauteur"),
+            "date": (photo.get("date_publication") or "")[:10] if (photo.get("date_publication") or "")[:4] > "2000" else "",
+            "analyse": {**analyse, "libelles_problemes": [audit_photos.PROBLEMES.get(p, p) for p in analyse["problemes"]]} if analyse else None,
+        })
+    return JSONResponse({
+        **base, "nb": regles["nb"], "tronque": regles["tronque"], "par_categorie": {audit_photos.LIBELLES_CATEGORIE.get(k, k): v for k, v in regles["par_categorie"].items()},
+        "manquants": regles["manquants"], "nb_petites": regles["nb_petites"], "derniere_photo": regles["derniere_photo"], "alertes": regles["alertes"],
+        "score": score, "a_corriger": a_corriger, "observations": observations, "cles": cles,
+    })
+
+
+@app.post("/photos-fiches/export.xlsx")
+async def export_audit_photos(request: Request):
+    """Index Excel de l'audit affiche a l'ecran (les lignes sont renvoyees par la page : l'analyse IA n'est pas refaite)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    try:
+        corps = await request.json()
+        lignes = [l for l in corps.get("lignes", []) if isinstance(l, dict)][:500]
+    except (ValueError, AttributeError):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    if not lignes:
+        return JSONResponse({"erreur": "Aucune ligne a exporter."}, status_code=400)
+    return Response(
+        content=audit_photos.en_excel(lignes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="audit_photos_fiches.xlsx"'},
     )
 
 
