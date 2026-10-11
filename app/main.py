@@ -7669,6 +7669,8 @@ def _options_montage(brut, dossier: str, db: Session) -> dict:
         "mode": brut.get("mode") if brut.get("mode") in ("montage", "shorts") else "montage",
         "consignes": " ".join(str(brut.get("consignes") or "").split())[:1000],
         "musique": None,
+        "style": "sobre" if brut.get("style") == "sobre" else "tendance",
+        "effets": {cle: bool((brut.get("effets") or {}).get(cle, True)) for cle in montage_parole.EFFETS_DEFAUT},
     }
     try:
         options["nb_shorts"] = max(1, min(int(brut.get("nb_shorts") or 3), 6))
@@ -7703,6 +7705,14 @@ def _choisir_retouches(phrases, consignes):
 
 def _choisir_extraits(phrases, nombre, duree_min, duree_max):
     return claude_generation.choisir_extraits_shorts(phrases, nombre, duree_min, duree_max)
+
+
+def _choisir_tendance(phrases):
+    return claude_generation.tendance_depuis_transcription(phrases)
+
+
+def _interpreter_annotations(notes, phrases, duree):
+    return claude_generation.actions_depuis_annotations(notes, phrases, duree)
 
 
 @app.post("/montage-video/lancer")
@@ -7741,7 +7751,7 @@ async def montage_video_lancer(
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
 
     opts = await run_in_threadpool(_options_montage, brut, dossier, db)
-    montage_parole.lancer_montage(identifiant, dossier, source, opts, _choisir_retouches, _choisir_extraits)
+    montage_parole.lancer_montage(identifiant, dossier, source, opts, _choisir_retouches, _choisir_extraits, _choisir_tendance)
     return JSONResponse({"id": identifiant})
 
 
@@ -7760,8 +7770,50 @@ async def montage_video_relancer(identifiant: str, request: Request, db: Session
     except ValueError:
         brut = {}
     opts = await run_in_threadpool(_options_montage, brut, montage["dossier"], db)
-    montage_parole.lancer_montage(identifiant, montage["dossier"], montage["source"], opts, _choisir_retouches, _choisir_extraits)
+    montage_parole.lancer_montage(identifiant, montage["dossier"], montage["source"], opts, _choisir_retouches, _choisir_extraits, _choisir_tendance)
     return JSONResponse({"id": identifiant})
+
+
+@app.post("/montage-video/{identifiant}/reviser")
+async def montage_video_reviser(identifiant: str, request: Request):
+    """
+    Relecture : applique les notes de l'utilisateur (« a 0:12, zoom ici », « enleve cette phrase »...) a l'un des montages et le refait
+    depuis la video d'origine, sans retranscrire. Corps : {"numero": int, "notes": [{"t": secondes sur le montage, "texte": str}]}.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage = montage_parole.MONTAGES.get(identifiant)
+    if not montage or not montage.get("sorties") or not os.path.exists(montage["source"]):
+        return JSONResponse({"erreur": "Ce montage n'est plus disponible : relancez-le."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un montage est déjà en cours pour cette vidéo."}, status_code=409)
+    try:
+        corps = await request.json()
+        numero = int(corps.get("numero"))
+        notes = [{"t": float(n["t"]), "texte": " ".join(str(n["texte"]).split())[:300]} for n in corps.get("notes", [])]
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    notes = [n for n in notes if n["texte"] and n["t"] >= 0]
+    if not 0 <= numero < len(montage["sorties"]):
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if not 1 <= len(notes) <= 20:
+        return JSONResponse({"erreur": "Écrivez entre 1 et 20 notes."}, status_code=400)
+    montage_parole.lancer_revision(identifiant, numero, notes, _interpreter_annotations)
+    return JSONResponse({"id": identifiant})
+
+
+@app.post("/montage-video/{identifiant}/annuler-revision")
+async def montage_video_annuler_revision(identifiant: str, request: Request):
+    """Revient a la version precedente d'un montage (annule la derniere relecture). Corps : {"numero": int}."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        numero = int((await request.json()).get("numero"))
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if not montage_parole.annuler_revision(identifiant, numero):
+        return JSONResponse({"erreur": "Pas de version précédente."}, status_code=404)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/montage-video/{identifiant}/etat")

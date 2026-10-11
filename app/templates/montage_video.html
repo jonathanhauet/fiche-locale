@@ -10,8 +10,11 @@
 
 <p class="texte-vide">
   Envoyez votre vidéo face caméra (la prise brute) : la plateforme la transcrit, coupe les silences et les « euh »,
-  ajoute des sous-titres à votre couleur et, si vous voulez, une musique discrète. Elle peut aussi tirer plusieurs Shorts
-  d'une longue vidéo, ou appliquer vos consignes (« enlève la partie sur le prix »). Comptez environ la moitié de la durée
+  ajoute des sous-titres à votre couleur et, si vous voulez, une musique discrète. Le style « tendance » ajoute des zooms
+  sur les moments forts, des sous-titres animés mot par mot, un titre d'accroche et une barre de progression. Elle peut aussi
+  tirer plusieurs Shorts d'une longue vidéo, ou appliquer vos consignes (« enlève la partie sur le prix »). Une fois le
+  montage prêt, relisez-le et laissez des notes à l'endroit voulu (« zoom ici », « enlève cette phrase », « mets ce mot en
+  gros ») : la plateforme les applique et refait la vidéo sans tout recommencer. Comptez environ la moitié de la durée
   de la vidéo pour le montage, plus la transcription.
 </p>
 
@@ -39,7 +42,21 @@
   <fieldset class="groupe-options-visuel">
     <legend>Format</legend>
     <label class="etiquette-chip-case"><input type="radio" name="montage-format" value="horizontal" checked> Horizontal 16:9 (YouTube)</label>
-    <label class="etiquette-chip-case"><input type="radio" name="montage-format" value="vertical"> Vertical 9:16 (Shorts, Reels, TikTok : recadré au centre)</label>
+    <label class="etiquette-chip-case"><input type="radio" name="montage-format" value="vertical"> Vertical 9:16 (Shorts, Reels, TikTok : recadré sur votre visage)</label>
+  </fieldset>
+
+  <fieldset class="groupe-options-visuel">
+    <legend>Style</legend>
+    <label class="etiquette-chip-case"><input type="radio" name="montage-style" value="tendance" checked> Tendance (réseaux sociaux)</label>
+    <label class="etiquette-chip-case"><input type="radio" name="montage-style" value="sobre"> Sobre (sous-titres classiques)</label>
+  </fieldset>
+  <fieldset class="groupe-options-visuel" id="montage-effets">
+    <legend>Effets du style tendance</legend>
+    <label class="etiquette-chip-case"><input type="checkbox" data-effet="zooms" checked> Zooms sur les moments forts</label>
+    <label class="etiquette-chip-case"><input type="checkbox" data-effet="mots" checked> Sous-titres animés mot par mot, mots-clés en couleur</label>
+    <label class="etiquette-chip-case"><input type="checkbox" data-effet="accroche" checked> Titre d'accroche au début</label>
+    <label class="etiquette-chip-case"><input type="checkbox" data-effet="barre" checked> Barre de progression</label>
+    <label class="etiquette-chip-case"><input type="checkbox" data-effet="visage" checked> Cadrage vertical centré sur mon visage</label>
   </fieldset>
 
   <fieldset class="groupe-options-visuel">
@@ -82,6 +99,13 @@
   .montage-resultats { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 1rem; }
   .montage-carte { border: 1px solid rgba(128,128,140,.35); border-radius: 12px; padding: .8rem; display: flex; flex-direction: column; gap: .5rem; }
   .montage-carte video { width: 100%; border-radius: 8px; background: #000; max-height: 480px; }
+  .montage-revision { border-top: 1px solid rgba(128,128,140,.3); padding-top: .6rem; display: flex; flex-direction: column; gap: .5rem; }
+  .montage-notes, .montage-resume { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; }
+  .montage-notes li { display: flex; gap: .5rem; align-items: baseline; }
+  .montage-notes .note-temps { font-variant-numeric: tabular-nums; background: rgba(91,124,255,.18); border: 0; border-radius: 6px; padding: .1rem .45rem; cursor: pointer; color: inherit; }
+  .montage-notes .note-retirer { margin-left: auto; background: none; border: 0; cursor: pointer; color: inherit; opacity: .6; }
+  .montage-saisie-note { display: flex; gap: .4rem; }
+  .montage-saisie-note input { flex: 1; }
 </style>
 
 <script>
@@ -100,8 +124,15 @@
         nb_shorts: parseInt($("montage-nb-shorts").value, 10), duree_max_short: parseInt($("montage-duree-short").value, 10),
         silences: $("montage-silences").checked, hesitations: $("montage-hesitations").checked, sous_titres: $("montage-sous-titres").checked,
         musique_id: $("montage-musique").value, consignes: $("montage-consignes").value.trim(),
+        style: document.querySelector('input[name="montage-style"]:checked').value,
+        effets: Object.fromEntries(Array.from(document.querySelectorAll("#montage-effets input[data-effet]")).map((c) => [c.dataset.effet, c.checked])),
       };
     }
+
+    document.querySelectorAll('input[name="montage-style"]').forEach((r) => r.addEventListener("change", () => {
+      $("montage-effets").hidden = document.querySelector('input[name="montage-style"]:checked').value === "sobre";
+    }));
+    const minutes = (t) => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
 
     // Shorts = vertical par defaut, montage complet = horizontal : l'utilisateur peut toujours changer ensuite.
     document.querySelectorAll('input[name="montage-mode"]').forEach((r) => r.addEventListener("change", () => {
@@ -124,7 +155,8 @@
         const carte = document.createElement("div");
         carte.className = "montage-carte";
         const titre = document.createElement("strong");
-        titre.textContent = sortie.titre + " · " + Math.floor(sortie.duree / 60) + " min " + String(Math.round(sortie.duree % 60)).padStart(2, "0") + " s";
+        titre.textContent = sortie.titre + " · " + Math.floor(sortie.duree / 60) + " min " + String(Math.round(sortie.duree % 60)).padStart(2, "0") + " s"
+          + (sortie.version > 1 ? " · version " + sortie.version : "");
         const video = document.createElement("video");
         video.controls = true; video.preload = "metadata";
         video.src = "/montage-video/" + identifiant + "/fichier/" + i + "?v=" + Date.now();
@@ -132,9 +164,98 @@
         lien.className = "bouton-secondaire"; lien.textContent = "⬇ Télécharger";
         lien.href = "/montage-video/" + identifiant + "/fichier/" + i + "?telecharger=1";
         carte.appendChild(titre); carte.appendChild(video); carte.appendChild(lien);
+        carte.appendChild(panneauRevision(carte, video, i, sortie));
         zone.appendChild(carte);
       });
       $("montage-note").hidden = false;
+    }
+
+    // ---- relecture : notes datees sur la video, appliquees ensuite en un seul nouveau rendu
+    function panneauRevision(carte, video, numero, sortie) {
+      const notes = [];
+      const bloc = document.createElement("div");
+      bloc.className = "montage-revision";
+      const intro = document.createElement("span");
+      intro.className = "texte-discret";
+      intro.textContent = "Relecture : mettez la vidéo en pause à l'endroit voulu, puis ajoutez une note (« zoom ici », « enlève cette phrase », « mets le mot prix en gros », « corrige Googel en Google »).";
+      const ajouter = document.createElement("button");
+      ajouter.type = "button"; ajouter.className = "bouton-secondaire"; ajouter.textContent = "📝 Ajouter une note à cet instant";
+      const saisie = document.createElement("div");
+      saisie.className = "montage-saisie-note"; saisie.hidden = true;
+      const champ = document.createElement("input");
+      champ.type = "text"; champ.maxLength = 300; champ.placeholder = "Votre note";
+      const valider = document.createElement("button");
+      valider.type = "button"; valider.className = "bouton-secondaire"; valider.textContent = "OK";
+      saisie.appendChild(champ); saisie.appendChild(valider);
+      const liste = document.createElement("ul");
+      liste.className = "montage-notes";
+      const appliquer = document.createElement("button");
+      appliquer.type = "button"; appliquer.className = "bouton"; appliquer.hidden = true;
+      const annuler = document.createElement("button");
+      annuler.type = "button"; annuler.className = "bouton-secondaire"; annuler.textContent = "↩ Revenir à la version précédente"; annuler.hidden = !sortie.peut_annuler;
+      const resume = document.createElement("ul");
+      resume.className = "montage-resume";
+      (sortie.resume || []).forEach((ligne) => {
+        const li = document.createElement("li");
+        li.textContent = (ligne.startsWith("Non appliqué") ? "⚠ " : "✓ ") + ligne;
+        resume.appendChild(li);
+      });
+      let instant = 0;
+
+      function dessiner() {
+        liste.innerHTML = "";
+        notes.sort((a, b) => a.t - b.t).forEach((note, k) => {
+          const li = document.createElement("li");
+          const temps = document.createElement("button");
+          temps.type = "button"; temps.className = "note-temps"; temps.textContent = minutes(note.t);
+          temps.addEventListener("click", () => { video.currentTime = note.t; video.pause(); });
+          const texte = document.createElement("span"); texte.textContent = note.texte;
+          const retirer = document.createElement("button");
+          retirer.type = "button"; retirer.className = "note-retirer"; retirer.textContent = "✕"; retirer.title = "Supprimer la note";
+          retirer.addEventListener("click", () => { notes.splice(k, 1); dessiner(); });
+          li.appendChild(temps); li.appendChild(texte); li.appendChild(retirer);
+          liste.appendChild(li);
+        });
+        appliquer.hidden = !notes.length;
+        appliquer.textContent = "✨ Appliquer mes " + notes.length + " note" + (notes.length > 1 ? "s" : "") + " et refaire la vidéo";
+      }
+      ajouter.addEventListener("click", () => {
+        video.pause(); instant = video.currentTime || 0;
+        ajouter.textContent = "📝 Note à " + minutes(instant);
+        saisie.hidden = false; champ.value = ""; champ.focus();
+      });
+      function enregistrerNote() {
+        const texte = champ.value.trim();
+        if (!texte) return;
+        notes.push({ t: Math.round(instant * 10) / 10, texte });
+        saisie.hidden = true; ajouter.textContent = "📝 Ajouter une note à cet instant"; dessiner();
+      }
+      valider.addEventListener("click", enregistrerNote);
+      champ.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); enregistrerNote(); } });
+      appliquer.addEventListener("click", async () => {
+        message("");
+        carte.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+        boutonLancer.disabled = true; boutonRelancer.disabled = true;
+        try {
+          const reponse = await fetch("/montage-video/" + identifiant + "/reviser", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numero, notes }),
+          });
+          const donnees = await reponse.json();
+          if (!reponse.ok) { message(donnees.erreur || "Impossible d'appliquer les notes."); carte.querySelectorAll("button").forEach((b) => { b.disabled = false; }); terminer(); return; }
+          zoneProgression.hidden = false; suivre();
+        } catch (erreur) { message("Erreur réseau."); carte.querySelectorAll("button").forEach((b) => { b.disabled = false; }); terminer(); }
+      });
+      annuler.addEventListener("click", async () => {
+        annuler.disabled = true;
+        const reponse = await fetch("/montage-video/" + identifiant + "/annuler-revision", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numero }),
+        });
+        if (!reponse.ok) { message("Pas de version précédente."); annuler.disabled = false; return; }
+        const etat = await (await fetch("/montage-video/" + identifiant + "/etat")).json();
+        message("Version précédente rétablie."); afficherResultats(etat);
+      });
+      [intro, ajouter, saisie, liste, appliquer, annuler, resume].forEach((element) => bloc.appendChild(element));
+      return bloc;
     }
 
     async function suivre() {
@@ -155,6 +276,7 @@
     function terminer() {
       clearTimeout(minuteur);
       boutonLancer.disabled = false; boutonRelancer.disabled = false;
+      document.querySelectorAll(".montage-carte button").forEach((b) => { b.disabled = false; });
       boutonRelancer.hidden = !identifiant;
     }
 

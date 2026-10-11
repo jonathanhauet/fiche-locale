@@ -2870,3 +2870,119 @@ def choisir_extraits_shorts(phrases: list, nombre: int, duree_min: float = 25.0,
         if not sans_chevauchement or e["debut"] >= sans_chevauchement[-1]["fin"]:
             sans_chevauchement.append(e)
     return sans_chevauchement[:nombre]
+
+
+SCHEMA_TENDANCE = {
+    "type": "object",
+    "properties": {"accroche": {"type": "string"}, "mots_cles": {"type": "array", "items": {"type": "string"}}},
+    "required": ["accroche", "mots_cles"], "additionalProperties": False,
+}
+
+
+def tendance_depuis_transcription(phrases: list) -> dict:
+    """
+    Pour le style « tendance » d'un montage : une accroche courte affichee pendant les 3 premieres secondes et les mots-cles a faire
+    ressortir dans les sous-titres (et sur lesquels placer des zooms). Tire uniquement de ce que la personne dit, rien d'invente.
+    Renvoie {"accroche": str, "mots_cles": [str, ...]}.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not phrases:
+        return {"accroche": "", "mots_cles": []}
+    prompt = (
+        "Voici la transcription horodatée (en secondes) d'une vidéo courte face caméra :\n\n"
+        f"{_transcription_pour_prompt(phrases)}\n\n"
+        "1) accroche : une phrase d'accroche de 3 à 8 mots, en français, qui donne envie de regarder la vidéo jusqu'au bout "
+        "(question, promesse ou chiffre fort), fidèle à ce qui est dit dans la vidéo, sans rien inventer, sans emoji, sans guillemets, "
+        "sans point final.\n"
+        "2) mots_cles : 6 à 12 mots importants à faire ressortir à l'écran (chiffres, noms, verbes forts, termes clés), écrits "
+        "exactement comme dans la transcription, un seul mot chacun, pas de mots vides (le, de, et, que...)."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=800, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_TENDANCE}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)
+        accroche, mots_cles = _nettoyer_texte_genere(str(brut["accroche"])).strip(" .\"«»"), brut["mots_cles"]
+    except (json.JSONDecodeError, KeyError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+    return {"accroche": accroche, "mots_cles": [m.strip() for m in mots_cles if isinstance(m, str) and m.strip() and " " not in m.strip()][:14]}
+
+
+ACTIONS_REVISION = ("couper", "zoom", "sans_zoom", "titre", "mot_en_gros", "corriger_texte")
+SCHEMA_REVISION = {
+    "type": "object",
+    "properties": {
+        "actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": list(ACTIONS_REVISION)},
+                    "debut": {"type": "number"}, "fin": {"type": "number"},
+                    "texte": {"type": "string"}, "ancien": {"type": "string"}, "force": {"type": "string", "enum": ["leger", "fort", "aucune"]},
+                },
+                "required": ["type", "debut", "fin", "texte", "ancien", "force"], "additionalProperties": False,
+            },
+        },
+        "ignorees": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"note": {"type": "string"}, "raison": {"type": "string"}},
+                "required": ["note", "raison"], "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["actions", "ignorees"], "additionalProperties": False,
+}
+
+
+def actions_depuis_annotations(notes: list, phrases: list, duree: float) -> tuple:
+    """
+    Traduit les notes de relecture d'une video montee (« à 0:12, zoom ici », « enlève cette phrase », « mets le mot prix en gros »,
+    « le sous-titre dit Googel ») en actions precises sur le montage. notes : [{"t": secondes, "texte": str}]. Les temps sont ceux du
+    montage actuel. Renvoie (actions, ignorees) : actions = [{"type", "debut", "fin", "texte", "ancien", "force"}], ignorees = [str]
+    (notes qui ne correspondent a aucune action possible, avec la raison).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    liste = "\n".join(f"- à {n['t']:.1f} s : {n['texte']}" for n in notes)
+    prompt = (
+        f"Voici la transcription horodatée (en secondes, sur la vidéo montée de {duree:.1f} s) :\n\n"
+        f"{_transcription_pour_prompt(phrases)}\n\n"
+        f"Notes de relecture de Jonathan, avec l'instant de la vidéo où il les a écrites :\n{liste}\n\n"
+        "Traduis chaque note en actions, parmi uniquement :\n"
+        "- couper : retirer un passage (debut et fin sur des débuts et fins de phrases proches de l'instant de la note).\n"
+        "- zoom : ajouter un zoom sur un moment (debut, fin ; force leger ou fort ; 'fort' si la note demande du punch).\n"
+        "- sans_zoom : retirer le zoom automatique autour d'un moment.\n"
+        "- titre : afficher un texte à l'écran (texte, debut ; fin = debut + 3 s sauf indication).\n"
+        "- mot_en_gros : mettre un ou plusieurs mots en valeur dans les sous-titres (texte = les mots, tels que dits).\n"
+        "- corriger_texte : corriger un mot ou une expression mal transcrite dans les sous-titres (ancien = le texte erroné tel qu'écrit "
+        "dans la transcription, texte = la version correcte, debut = l'instant approximatif).\n"
+        "Pour chaque action, mets 0 dans debut et fin si inutilisés, '' dans texte et ancien si inutilisés, et force = 'aucune' "
+        "sauf pour zoom. Une note qui ne correspond à aucune de ces actions (musique, style général, couleur...) va dans 'ignorees' avec "
+        "une raison courte. N'invente aucune action qui n'est pas demandée."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=2500, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_REVISION}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)
+        actions = [a for a in brut["actions"] if a.get("type") in ACTIONS_REVISION]
+        ignorees = [f"« {i['note'][:80]} » : {i['raison'][:120]}" for i in brut["ignorees"]]
+    except (json.JSONDecodeError, KeyError, TypeError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+    return actions, ignorees

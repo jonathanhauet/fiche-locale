@@ -9,6 +9,7 @@ temporaire du serveur) : la page interroge l'etat toutes les quelques secondes. 
 un redemarrage du serveur ou plus de DUREE_CONSERVATION_HEURES supprime les montages.
 """
 
+import copy
 import json
 import os
 import re
@@ -18,6 +19,7 @@ import tempfile
 import textwrap
 import threading
 import time
+import unicodedata
 import uuid
 import wave
 from concurrent.futures import ThreadPoolExecutor
@@ -329,42 +331,148 @@ def _lignes_sous_titre(mots: list, max_car: int) -> list:
     return [meilleur]
 
 
-def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: tuple = (255, 214, 10), titre: str = "") -> None:
-    """Sous-titres « karaoke » : les mots se colorent au rythme de la voix (duree repartie selon la longueur des mots)."""
+def _normaliser(mot: str) -> str:
+    """Mot en minuscules, sans accents ni ponctuation (comparaison des mots-cles)."""
+    sans_accents = "".join(c for c in unicodedata.normalize("NFKD", mot or "") if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]", "", sans_accents.lower())
+
+
+def _mots_pop(texte: str) -> list:
+    mots = [re.sub(r"[,;:.]+$", "", m) for m in _echapper_ass(texte).split()]
+    return [m.upper() for m in mots if m]
+
+
+def _groupes_pop(mots: list, max_car: int) -> list:
+    """Groupes de 1 a 3 mots affiches ensemble (indices de mots), sur au plus deux lignes."""
+    groupes, courant = [], []
+    for indice, mot in enumerate(mots):
+        essai = courant + [indice]
+        total = sum(len(mots[i]) for i in essai) + len(essai) - 1
+        if courant and (len(essai) > 3 or total > max_car * 2 - 2):
+            groupes.append(courant)
+            courant = [indice]
+        else:
+            courant = essai
+    if courant:
+        groupes.append(courant)
+    return groupes
+
+
+def _coupure_pop(mots_groupe: list, max_car: int):
+    """Position (dans le groupe) du mot qui commence la 2e ligne, ou None si tout tient sur une ligne."""
+    total = sum(len(m) for m in mots_groupe) + len(mots_groupe) - 1
+    if total <= max_car or len(mots_groupe) < 2:
+        return None
+    if len(mots_groupe) == 2:
+        return 1
+    cumul, meilleur, ecart = 0, 1, 10 ** 6
+    for i in range(1, len(mots_groupe)):
+        cumul += len(mots_groupe[i - 1]) + 1
+        if abs(cumul - total / 2) < ecart:
+            meilleur, ecart = i, abs(cumul - total / 2)
+    return meilleur
+
+
+def _lignes_titre(debut: float, fin: float, texte: str, vertical: bool) -> str:
+    # Pas de retour a la ligne automatique (WrapStyle 2) : le titre est coupe ici, sur 3 lignes au plus.
+    lignes = textwrap.wrap(_echapper_ass(texte).upper(), width=18 if vertical else 34)[:3]
+    return f"Dialogue: 1,{_horodatage_ass(debut)},{_horodatage_ass(fin)},Titre,,0,0,0,,{{\\fad(250,350)}}" + "\\N".join(lignes)
+
+
+def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set) -> list:
+    """
+    Sous-titres « pop » : 1 a 3 mots a la fois, en majuscules, le mot prononce grossit et prend la couleur d'accent ; les mots
+    importants restent en couleur et plus gros. Un evenement par mot, calé sur la voix (duree repartie selon la longueur des mots).
+    """
+    couleur_accent = _couleur_ass(accent)
+    sorties = []
+    for p in phrases:
+        mots = _mots_pop(p["texte"])
+        if not mots:
+            continue
+        poids = [len(m) + 1 for m in mots]
+        total_poids, duree = sum(poids), max(0.05, p["fin"] - p["debut"])
+        debuts, cumul = [], 0.0
+        for poids_mot in poids:
+            debuts.append(p["debut"] + duree * cumul / total_poids)
+            cumul += poids_mot
+        fins = debuts[1:] + [p["fin"]]
+        for groupe in _groupes_pop(mots, max_car):
+            mots_groupe = [mots[i] for i in groupe]
+            coupure = _coupure_pop(mots_groupe, max_car)
+            for rang, indice in enumerate(groupe):
+                morceaux = []
+                for j, mot in enumerate(mots_groupe):
+                    if j == rang:
+                        balise = f"{{\\c{couleur_accent}\\fscx82\\fscy82\\t(0,90,\\fscx118\\fscy118)\\t(90,190,\\fscx108\\fscy108)}}"
+                    elif _normaliser(mot) in gros:
+                        balise = f"{{\\c{couleur_accent}\\fscx122\\fscy122}}"
+                    else:
+                        balise = "{\\c&H00FFFFFF&\\fscx100\\fscy100}"
+                    if j:
+                        morceaux.append("\\N" if j == coupure else " ")
+                    morceaux.append(balise + mot)
+                fin = max(fins[indice], debuts[indice] + 0.05)
+                sorties.append(f"Dialogue: 0,{_horodatage_ass(debuts[indice])},{_horodatage_ass(fin)},Pop,,0,0,0,,{''.join(morceaux)}")
+    return sorties
+
+
+def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: tuple = (255, 214, 10), titre: str = "",
+               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0) -> None:
+    """
+    Sous-titres, titre d'accroche, titres ajoutes a la main (titres : [(debut, fin, texte)]) et barre de progression (barre : duree
+    totale en secondes, 0 = pas de barre). Par defaut sous-titres « karaoke » : les mots se colorent au rythme de la voix ;
+    pop=True : style tendance, quelques mots a la fois qui « popent » (voir _dialogues_pop).
+    """
     vertical = hauteur > largeur
     taille = 84 if vertical else 60
+    taille_pop = 94 if vertical else 66
     contour = 7 if vertical else 5
     marge_v = 430 if vertical else 80
     max_car = 20 if vertical else 38
+    max_car_pop = 14 if vertical else 30
+    hauteur_barre = 18 if vertical else 12
     lignes = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {largeur}", f"PlayResY: {hauteur}", "WrapStyle: 2", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
         "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Sous,Poppins,{taille},{_couleur_ass(accent)},&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour},2,2,60,60,{marge_v},1",
+        f"Style: Pop,Poppins,{taille_pop},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour + 1},3,2,50,50,{marge_v},1",
         f"Style: Titre,Poppins,{int(taille * 0.9)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour},2,8,70,70,{int(hauteur * 0.09)},1",
+        f"Style: Barre,Poppins,20,{_couleur_ass(accent)},&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     if titre:
-        # Pas de retour a la ligne automatique (WrapStyle 2) : le titre est coupe ici, sur 3 lignes au plus.
-        titre_lignes = textwrap.wrap(_echapper_ass(titre).upper(), width=18 if vertical else 34)[:3]
-        lignes.append(f"Dialogue: 1,{_horodatage_ass(0.2)},{_horodatage_ass(3.6)},Titre,,0,0,0,,{{\\fad(250,350)}}" + "\\N".join(titre_lignes))
-    for p in phrases:
-        mots = _echapper_ass(p["texte"]).split()
-        if not mots:
-            continue
-        poids = [len(m) + 1 for m in mots]
-        duree_cs = max(1, int(round((p["fin"] - p["debut"]) * 100)))
-        coupures = set(_lignes_sous_titre(mots, max_car))
-        texte, restant_cs, restant_poids = "", duree_cs, sum(poids)
-        for i, (mot, poids_mot) in enumerate(zip(mots, poids)):
-            cs = max(1, round(restant_cs * poids_mot / restant_poids)) if restant_poids else 1
-            restant_cs -= cs
-            restant_poids -= poids_mot
-            if i in coupures:
-                texte += "\\N"
-            texte += f"{{\\k{cs}}}{mot}" + (" " if i < len(mots) - 1 and (i + 1) not in coupures else "")
-        lignes.append(f"Dialogue: 0,{_horodatage_ass(p['debut'])},{_horodatage_ass(p['fin'])},Sous,,0,0,0,,{texte}")
+        lignes.append(_lignes_titre(0.2, 3.6, titre, vertical))
+    for debut, fin, texte in (titres or []):
+        lignes.append(_lignes_titre(debut, fin, texte, vertical))
+    if pop:
+        lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set())
+    else:
+        for p in phrases:
+            mots = _echapper_ass(p["texte"]).split()
+            if not mots:
+                continue
+            poids = [len(m) + 1 for m in mots]
+            duree_cs = max(1, int(round((p["fin"] - p["debut"]) * 100)))
+            coupures = set(_lignes_sous_titre(mots, max_car))
+            texte, restant_cs, restant_poids = "", duree_cs, sum(poids)
+            for i, (mot, poids_mot) in enumerate(zip(mots, poids)):
+                cs = max(1, round(restant_cs * poids_mot / restant_poids)) if restant_poids else 1
+                restant_cs -= cs
+                restant_poids -= poids_mot
+                if i in coupures:
+                    texte += "\\N"
+                texte += f"{{\\k{cs}}}{mot}" + (" " if i < len(mots) - 1 and (i + 1) not in coupures else "")
+            lignes.append(f"Dialogue: 0,{_horodatage_ass(p['debut'])},{_horodatage_ass(p['fin'])},Sous,,0,0,0,,{texte}")
+    if barre > 0:
+        # Rectangle (dessin ASS) ancre a gauche, dont la largeur grandit de 1 % a 100 % pendant toute la video.
+        lignes.append(
+            f"Dialogue: 3,{_horodatage_ass(0)},{_horodatage_ass(barre)},Barre,,0,0,0,,"
+            f"{{\\an7\\pos(0,{hauteur - hauteur_barre})\\fscx1\\t(0,{int(barre * 1000)},\\fscx100)\\p1}}"
+            f"m 0 0 l {largeur} 0 {largeur} {hauteur_barre} 0 {hauteur_barre}"
+        )
     with open(chemin, "w", encoding="utf-8") as fichier:
         fichier.write("\n".join(lignes) + "\n")
 
@@ -375,9 +483,19 @@ def _chemin_filtre(chemin: str) -> str:
     return chemin.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
 
+def expression_zoom(zooms: list) -> str:
+    """Facteur de zoom (expression ffmpeg en fonction du temps t) : 1, plus une bosse douce par fenetre (debut, fin, amplitude)."""
+    termes = [f"{amp:.3f}*between(t,{a:.2f},{b:.2f})*min(1,(t-{a:.2f})/0.20)*min(1,({b:.2f}-t)/0.35)" for a, b, amp in zooms]
+    return "1+" + "+".join(termes)
+
+
 def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie: str, fichier_ass: str = None,
-           musique: str = None, progression=None) -> None:
-    """Assemble les segments de `source`, recadre, incruste les sous-titres, mixe la musique (baisse sous la voix) et encode."""
+           musique: str = None, progression=None, zooms: list = None, visage_x: float = None) -> None:
+    """
+    Assemble les segments de `source`, recadre (en vertical, centre sur le visage si visage_x est connu : 0 = bord gauche, 1 = bord
+    droit), applique les zooms (debut, fin, amplitude) sur la chronologie du montage, incruste les sous-titres, mixe la musique
+    (baisse sous la voix) et encode.
+    """
     if not segments:
         raise ErreurMontage("Il ne reste rien à monter (tout a été coupé).")
     dossier = os.path.dirname(sortie)
@@ -393,11 +511,17 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     if vertical:
         if portrait_source:
             recadrage = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=increase,crop={largeur}:{hauteur}"
+        elif visage_x is not None:
+            recadrage = f"crop=w=ih*9/16:h=ih:x='max(0,min(iw-ow,{visage_x:.4f}*iw-ow/2))':y=0,scale={largeur}:{hauteur}"
         else:
             recadrage = f"crop=ih*9/16:ih,scale={largeur}:{hauteur}"
     else:
         recadrage = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=decrease,pad={largeur}:{hauteur}:(ow-iw)/2:(oh-ih)/2:black"
     filtre_video = f"[0:v]{recadrage},setsar=1,fps={FPS}"
+    if zooms:
+        facteur = expression_zoom(zooms)
+        filtre_video += (f",scale=w='trunc({largeur}*({facteur})/2)*2':h='trunc({hauteur}*({facteur})/2)*2':eval=frame:flags=bilinear,"
+                         f"crop={largeur}:{hauteur}")
     if fichier_ass:
         filtre_video += f",ass='{_chemin_filtre(fichier_ass)}':fontsdir='{_chemin_filtre(DOSSIER_POLICES)}'"
     filtre_video += "[v]"
@@ -445,6 +569,284 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
         raise ErreurMontage(f"Le rendu de la vidéo a échoué. {detail}".strip())
 
 
+# --------------------------------------------------------------------------- style tendance : zooms, cadrage sur le visage
+
+MAX_ZOOMS = 40
+ECART_MINI_ZOOM = 3.2           # secondes entre deux zooms automatiques
+DUREE_ZOOM = 2.4
+AMPLITUDES_ZOOM = (0.10, 0.17)  # alternance : zoom leger, puis plus marque
+FORCE_ZOOM = {"leger": 0.10, "fort": 0.20}
+EFFETS_DEFAUT = {"zooms": True, "mots": True, "accroche": True, "barre": True, "visage": True}
+
+
+def calculer_zooms(phrases: list, duree: float, mots_cles=()) -> list:
+    """
+    Fenetres de zoom automatiques (debut, fin, amplitude) sur la chronologie du montage : au debut de certaines phrases, jamais
+    pendant l'accroche (1,5 premiere seconde), espacees d'au moins ECART_MINI_ZOOM (davantage sur une longue video), en privilegiant
+    les phrases qui contiennent un mot-cle. Alternance de zooms legers et plus marques.
+    """
+    if duree < 6:
+        return []
+    cles = {_normaliser(m) for m in mots_cles}
+    espacement = max(ECART_MINI_ZOOM, duree / MAX_ZOOMS)
+    candidats = []
+    for p in phrases:
+        if p["fin"] - p["debut"] < 1.0 or p["debut"] < 1.5 or p["debut"] > duree - 1.0:
+            continue
+        a_cle = any(_normaliser(m) in cles for m in p["texte"].split()) if cles else False
+        candidats.append((0 if a_cle else 1, p))
+    choisis = []
+    for _, p in sorted(candidats, key=lambda c: (c[0], c[1]["debut"])):
+        if len(choisis) >= MAX_ZOOMS:
+            break
+        if all(abs(p["debut"] - c["debut"]) >= espacement for c in choisis):
+            choisis.append(p)
+    choisis.sort(key=lambda p: p["debut"])
+    return [(p["debut"], min(p["debut"] + DUREE_ZOOM, p["fin"] + 0.4, duree), AMPLITUDES_ZOOM[i % 2]) for i, p in enumerate(choisis)]
+
+
+PROMPT_VISAGE = (
+    "Pour chacune de ces {n} images (extraites d'une meme video), donne la position horizontale du centre du visage de la personne "
+    "qui parle, entre 0 (bord gauche de l'image) et 1 (bord droit). Mets null si aucun visage n'est visible. Reponds uniquement "
+    "par un tableau JSON de {n} valeurs, par exemple [0.42, 0.45, null]."
+)
+
+
+def position_visage(source: str, infos: dict, dossier: str):
+    """Position horizontale moyenne du visage (0 a 1, mediane de 3 images) pour cadrer le format vertical ; None si introuvable."""
+    try:
+        from google import genai
+        from google.genai import types
+
+        cle = os.getenv("GEMINI_API_KEY")
+        if not cle or infos["duree"] < 3:
+            return None
+        parties = []
+        for rang, fraction in enumerate((0.2, 0.5, 0.8)):
+            image = os.path.join(dossier, f"visage-{rang}.jpg")
+            resultat = _lancer([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{infos['duree'] * fraction:.2f}", "-i", source,
+                                "-frames:v", "1", "-vf", "scale=512:-2", "-q:v", "5", image], 120)
+            if resultat.returncode == 0 and os.path.exists(image):
+                with open(image, "rb") as fichier:
+                    parties.append(types.Part.from_bytes(data=fichier.read(), mime_type="image/jpeg"))
+        if not parties:
+            return None
+        client = genai.Client(api_key=cle)
+        reponse = client.models.generate_content(
+            model=MODELE_TRANSCRIPTION, contents=parties + [PROMPT_VISAGE.format(n=len(parties))],
+            config=types.GenerateContentConfig(temperature=0, response_mime_type="application/json"),
+        )
+        valeurs = sorted(float(v) for v in _json_depuis_texte(reponse.text) if isinstance(v, (int, float)) and 0 <= v <= 1)
+        return max(0.15, min(0.85, valeurs[len(valeurs) // 2])) if valeurs else None
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- revision : conversions de temps et actions
+
+def montage_vers_source(instant: float, segments: list, fin_de_plage: bool = False) -> float:
+    """Instant du montage -> instant de la video d'origine (borne au debut/fin du montage)."""
+    cumul = 0.0
+    for debut, fin in segments:
+        longueur = fin - debut
+        if instant < cumul + longueur or (fin_de_plage and instant <= cumul + longueur):
+            return debut + max(0.0, instant - cumul)
+        cumul += longueur
+    return segments[-1][1] if segments else 0.0
+
+
+def soustraire_intervalles(segments: list, retirer: list) -> list:
+    """Segments sans les intervalles retires (en temps de la video d'origine)."""
+    restants = []
+    for debut, fin in segments:
+        morceaux = [(debut, fin)]
+        for r_debut, r_fin in retirer:
+            suivants = []
+            for m_debut, m_fin in morceaux:
+                if r_fin <= m_debut or r_debut >= m_fin:
+                    suivants.append((m_debut, m_fin))
+                    continue
+                if r_debut > m_debut:
+                    suivants.append((m_debut, r_debut))
+                if r_fin < m_fin:
+                    suivants.append((r_fin, m_fin))
+            morceaux = suivants
+        restants += morceaux
+    return [(a, b) for a, b in restants if b - a >= DUREE_MINI_SEGMENT]
+
+
+def _mmss(secondes: float) -> str:
+    secondes = int(round(max(0.0, secondes)))
+    return f"{secondes // 60}:{secondes % 60:02d}"
+
+
+def appliquer_actions(sortie: dict, actions: list) -> tuple:
+    """
+    Applique les actions issues des notes de revision (temps en secondes sur le montage actuel) a une COPIE de l'etat d'une sortie.
+    Renvoie (nouvel etat, resume des modifications, motifs des actions refusees). Les temps sont tous convertis avec le montage
+    de depart avant la premiere modification, pour que les notes restent coherentes entre elles.
+    """
+    segments_depart = list(sortie["segments"])
+    segments = list(segments_depart)
+    effets = copy.deepcopy(sortie["effets"])
+    phrases = copy.deepcopy(sortie["phrases"])
+    duree = duree_montee(segments_depart)
+    resume, refus = [], []
+    for action in actions:
+        genre = action.get("type")
+        debut_m = max(0.0, min(float(action.get("debut") or 0), duree))
+        fin_m = max(0.0, min(float(action.get("fin") or 0), duree))
+        debut_s = montage_vers_source(debut_m, segments_depart)
+        fin_s = montage_vers_source(fin_m, segments_depart, True)
+        texte = " ".join(str(action.get("texte") or "").split())
+        if genre == "couper":
+            if fin_m - debut_m < 0.2:
+                refus.append(f"Coupe trop courte à {_mmss(debut_m)}.")
+                continue
+            restants = soustraire_intervalles(segments, [(debut_s, fin_s)])
+            if not restants:
+                refus.append("Cette coupe retirerait toute la vidéo.")
+                continue
+            segments = restants
+            resume.append(f"Coupé de {_mmss(debut_m)} à {_mmss(fin_m)}")
+        elif genre == "zoom":
+            if fin_m - debut_m < 0.5:
+                fin_s = min(debut_s + 2.5, segments_depart[-1][1])
+            effets["zoom_manuel"].append((debut_s, min(fin_s, debut_s + 8.0), FORCE_ZOOM.get(action.get("force"), FORCE_ZOOM["leger"])))
+            resume.append(f"Zoom ajouté à {_mmss(debut_m)}")
+        elif genre == "sans_zoom":
+            effets["sans_zoom"].append((debut_s, max(fin_s, debut_s + 0.5)))
+            effets["zoom_manuel"] = [z for z in effets["zoom_manuel"] if z[1] <= debut_s or z[0] >= max(fin_s, debut_s + 0.5)]
+            resume.append(f"Zoom retiré vers {_mmss(debut_m)}")
+        elif genre == "titre":
+            if not texte:
+                refus.append("Titre sans texte.")
+                continue
+            effets["titres"].append((debut_s, debut_s + (max(fin_s - debut_s, 0) if fin_m - debut_m >= 1.0 else 3.0), texte[:80]))
+            resume.append(f"Titre ajouté à {_mmss(debut_m)} : « {texte[:50]} »")
+        elif genre == "mot_en_gros":
+            mots = [_normaliser(m) for m in texte.split() if _normaliser(m)]
+            if not mots:
+                refus.append("Mot à mettre en valeur introuvable dans la note.")
+                continue
+            effets["mots_gros"] = sorted(set(effets["mots_gros"]) | set(mots))
+            resume.append("Mis en valeur : " + ", ".join(texte.split()))
+        elif genre == "corriger_texte":
+            ancien = " ".join(str(action.get("ancien") or "").split())
+            if not ancien or not texte:
+                refus.append("Correction de sous-titre incomplète.")
+                continue
+            motif = re.compile(re.escape(ancien), re.IGNORECASE)
+            proches = sorted((p for p in phrases if motif.search(p["texte"])), key=lambda p: abs((p["debut"] + p["fin"]) / 2 - debut_s))
+            if not proches or abs((proches[0]["debut"] + proches[0]["fin"]) / 2 - debut_s) > 15:
+                refus.append(f"Texte « {ancien} » introuvable près de {_mmss(debut_m)}.")
+                continue
+            proches[0]["texte"] = motif.sub(lambda _: texte, proches[0]["texte"], count=1)
+            resume.append(f"Sous-titre corrigé : « {ancien} » devient « {texte} »")
+        else:
+            refus.append("Action non reconnue.")
+    nouvel = {**sortie, "segments": segments, "effets": effets, "phrases": phrases}
+    return nouvel, resume, refus
+
+
+def zooms_du_rendu(sortie: dict, phrases_montage: list, duree: float) -> list:
+    """Fenetres de zoom (chronologie du montage) : automatiques sauf zones « sans zoom », plus les zooms demandes a la main."""
+    effets, segments = sortie["effets"], sortie["segments"]
+    interdits = []
+    for debut, fin in effets["sans_zoom"]:
+        a, b = _remapper(debut, segments, True), _remapper(fin, segments, False)
+        if a is not None and b is not None:
+            interdits.append((a, b))
+    zooms = []
+    if effets["actif"]["zooms"]:
+        zooms = [z for z in calculer_zooms(phrases_montage, duree, list(effets["mots_cles"]) + list(effets["mots_gros"]))
+                 if not any(z[0] < b and z[1] > a for a, b in interdits)]
+    for debut, fin, amplitude in effets["zoom_manuel"]:
+        a, b = _remapper(debut, segments, True), _remapper(fin, segments, False)
+        if a is not None and b is not None and b - a >= 0.4:
+            zooms = [z for z in zooms if not (z[0] < b and z[1] > a)] + [(a, min(b, duree), amplitude)]
+    return sorted(zooms)[:MAX_ZOOMS + 10]
+
+
+def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
+    """Rend (ou re-rend) une sortie depuis la video d'origine et son etat (segments, effets, phrases) : (chemin du fichier, duree)."""
+    infos, segments, effets = montage["infos"], sortie["segments"], sortie["effets"]
+    largeur, hauteur = (1080, 1920) if sortie["format"] == "vertical" else (1920, 1080)
+    duree = duree_montee(segments)
+    phrases_montage = phrases_sur_montage(sortie["phrases"], segments)
+    zooms = zooms_du_rendu(sortie, phrases_montage, duree)
+    titres = []
+    for debut, fin, texte in effets["titres"]:
+        a, b = _remapper(debut, segments, True), _remapper(fin, segments, False)
+        if a is not None and b is not None and b - a >= 0.5:
+            titres.append((a, b, texte))
+    pop = effets["style"] == "tendance" and effets["actif"]["mots"]
+    gros = {_normaliser(m) for m in list(effets["mots_cles"]) + list(effets["mots_gros"])} if pop else {_normaliser(m) for m in effets["mots_gros"]}
+    barre = duree if effets["style"] == "tendance" and effets["actif"]["barre"] else 0.0
+    titre = effets["titre"] if (effets["actif"]["accroche"] or sortie["mode"] == "shorts") else ""
+    dessiner = bool(phrases_montage and sortie["sous_titres"]) or bool(titres) or barre > 0 or (titre and sortie["sous_titres"])
+    fichier_ass = None
+    if dessiner:
+        fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
+        ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
+                   pop=pop, titres=titres, mots_gros=gros, barre=barre)
+    chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
+    try:
+        rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"))
+    except ErreurMontage:
+        if not fichier_ass:
+            raise
+        # Incrustation des sous-titres impossible sur ce serveur (ffmpeg sans libass...) : montage sans eux.
+        rendre(montage["source"], infos, segments, chemin, sortie["format"], None, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"))
+        montage["avertissement"] = "Les sous-titres n'ont pas pu être incrustés sur ce serveur : montage livré sans sous-titres."
+    return chemin, duree
+
+
+def annuler_revision(identifiant: str, numero: int) -> bool:
+    """Revient a la version precedente d'une sortie (annule la derniere revision) ; False s'il n'y en a pas."""
+    montage = MONTAGES.get(identifiant)
+    if not montage or montage["etat"] == "en_cours" or not (0 <= numero < len(montage["sorties"])):
+        return False
+    sortie = montage["sorties"][numero]
+    if not sortie["historique"]:
+        return False
+    precedente = sortie["historique"].pop()
+    sortie.update(precedente)
+    return True
+
+
+def lancer_revision(identifiant: str, numero: int, notes: list, interpreter) -> None:
+    """
+    Applique les notes de relecture (« à 0:12, zoom ici », « enlève cette phrase »...) a une sortie et la re-rend depuis la video
+    d'origine, sans rien retranscrire. interpreter(notes, phrases_montage, duree) -> (actions, ignorees) est fourni par main.py (Claude).
+    notes : [{"t": secondes sur le montage, "texte": ...}]. La version precedente reste disponible (annuler_revision).
+    """
+    montage = MONTAGES[identifiant]
+    montage.update(etat="en_cours", etape="Lecture de vos notes", progression=0.05, erreur="", avertissement="")
+
+    def travail():
+        try:
+            sortie = montage["sorties"][numero]
+            phrases_montage = phrases_sur_montage(sortie["phrases"], sortie["segments"])
+            actions, ignorees = interpreter(notes, phrases_montage, duree_montee(sortie["segments"]))
+            nouvel, resume, refus = appliquer_actions(sortie, actions)
+            motifs = [f"Non appliqué : {m}" for m in list(ignorees) + refus]
+            if not resume:
+                raise ErreurMontage("Aucune de vos notes n'a pu être appliquée. " + " ".join(motifs)[:500])
+            montage.update(etape="Nouveau rendu de la vidéo", progression=0.2)
+            suivi = lambda p: montage.__setitem__("progression", 0.2 + 0.8 * p)
+            chemin, duree = _rendre_sortie(montage, nouvel, suivi)
+            instantane = {c: sortie[c] for c in ("chemin", "segments", "effets", "phrases", "duree", "version", "resume")}
+            sortie["historique"] = (sortie["historique"] + [instantane])[-5:]
+            sortie.update(segments=nouvel["segments"], effets=nouvel["effets"], phrases=nouvel["phrases"], chemin=chemin, duree=round(duree, 1),
+                          version=sortie["version"] + 1, resume=resume + motifs)
+            montage.update(etat="termine", etape="Terminé", progression=1.0)
+        except Exception as erreur:  # la version precedente reste intacte et affichee
+            montage.update(etat="erreur", erreur=str(erreur) or erreur.__class__.__name__)
+
+    threading.Thread(target=travail, daemon=True).start()
+
+
 # --------------------------------------------------------------------------- montages en tache de fond
 
 MONTAGES: dict = {}
@@ -477,7 +879,8 @@ def etat_montage(identifiant: str):
     if not montage:
         return None
     etat = {k: montage[k] for k in ("etat", "etape", "progression", "erreur", "avertissement")}
-    etat["sorties"] = [{"titre": o["titre"], "duree": o["duree"]} for o in montage["sorties"]]
+    etat["sorties"] = [{"titre": o["titre"], "duree": o["duree"], "version": o["version"], "resume": o["resume"], "peut_annuler": bool(o["historique"])}
+                       for o in montage["sorties"]]
     return etat
 
 
@@ -489,15 +892,17 @@ def fichier_sortie(identifiant: str, numero: int):
     return chemin if os.path.exists(chemin) else None
 
 
-def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, choisir_retouches, choisir_extraits) -> None:
+def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, choisir_retouches, choisir_extraits, choisir_tendance=None) -> None:
     """
     Demarre (ou relance) un montage en tache de fond. options : silences, hesitations, sous_titres, format ("vertical" /
-    "horizontal"), musique (chemin ou None), mode ("montage" / "shorts"), nb_shorts, duree_max_short, consignes, accent.
+    "horizontal"), musique (chemin ou None), mode ("montage" / "shorts"), nb_shorts, duree_max_short, consignes, accent, style
+    ("tendance" / "sobre"), effets (zooms, mots, accroche, barre, visage : booleens, tous actifs par defaut).
     choisir_retouches(phrases, consignes) -> [(debut, fin)] a retirer ; choisir_extraits(phrases, nb, duree_min, duree_max)
-    -> [{"debut", "fin", "titre"}] : fournis par main.py (Claude), pour garder ce module independant de l'IA.
+    -> [{"debut", "fin", "titre"}] ; choisir_tendance(phrases) -> {"accroche", "mots_cles"} (style tendance) : fournis par main.py
+    (Claude), pour garder ce module independant de l'IA.
     """
     montage = MONTAGES.setdefault(identifiant, {"cree": time.time(), "source": source, "dossier": dossier, "transcription": None,
-                                                "silences": None, "infos": None, "audio": None})
+                                                "silences": None, "infos": None, "audio": None, "visage_x": "inconnu"})
     montage.update(etat="en_cours", etape="Analyse de la vidéo", progression=0.0, erreur="", sorties=[], avertissement="")
 
     def fixer(etape, progression=None):
@@ -539,8 +944,9 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
 
             sorties = []
             format_sortie = options.get("format", "vertical")
-            largeur, hauteur = (1080, 1920) if format_sortie == "vertical" else (1920, 1080)
             accent = options.get("accent") or (255, 214, 10)
+            style = "sobre" if options.get("style") == "sobre" else "tendance"
+            actifs = {cle: bool((options.get("effets") or {}).get(cle, valeur)) for cle, valeur in EFFETS_DEFAUT.items()}
 
             if options.get("mode") == "shorts":
                 fixer("Choix des meilleurs extraits", 0.45)
@@ -551,28 +957,35 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
             else:
                 travaux = [({"titre": "Montage complet"}, segments_a_garder(infos["duree"], montage["silences"], options.get("silences", True), retirer))]
 
+            visage_x = None
+            if style == "tendance" and actifs["visage"] and format_sortie == "vertical" and infos["largeur"] > infos["hauteur"]:
+                if montage.get("visage_x") == "inconnu":
+                    fixer("Repérage de votre visage pour le cadrage", 0.46)
+                    montage["visage_x"] = position_visage(source, infos, dossier)
+                visage_x = montage["visage_x"] if isinstance(montage["visage_x"], float) else None
+
             for numero, (extrait, segments) in enumerate(travaux, start=1):
                 base = 0.5 + 0.5 * (numero - 1) / len(travaux)
                 fixer(f"Montage {numero}/{len(travaux)}" if len(travaux) > 1 else "Montage de la vidéo", base)
-                fichier_ass = None
-                if options.get("sous_titres", True) and phrases:
-                    fichier_ass = os.path.join(dossier, f"sous-titres-{numero}.ass")
-                    ecrire_ass(phrases_sur_montage(phrases, segments), fichier_ass, largeur, hauteur, accent,
-                               extrait["titre"] if options.get("mode") == "shorts" else "")
-                sortie = os.path.join(dossier, f"montage-{uuid.uuid4().hex[:6]}-{numero}.mp4")
+                accroche, mots_cles = "", []
+                phrases_extrait = phrases_sur_montage(phrases, segments)
+                if style == "tendance" and choisir_tendance and phrases_extrait and (actifs["accroche"] or actifs["mots"] or actifs["zooms"]):
+                    try:
+                        analyse = choisir_tendance(phrases_extrait)
+                        accroche, mots_cles = str(analyse.get("accroche") or "")[:90], [str(m) for m in (analyse.get("mots_cles") or [])][:14]
+                    except Exception:
+                        montage["avertissement"] = "L'accroche et les mots-clés automatiques n'ont pas pu être générés : montage livré sans eux."
+                sortie = {
+                    "numero": numero, "titre": extrait["titre"], "mode": options.get("mode") or "montage", "format": format_sortie, "accent": accent,
+                    "musique": options.get("musique"), "sous_titres": bool(options.get("sous_titres", True)), "visage_x": visage_x,
+                    "segments": segments, "phrases": copy.deepcopy(phrases), "version": 1, "resume": [], "historique": [],
+                    "effets": {"style": style, "actif": actifs, "titre": extrait["titre"] if options.get("mode") == "shorts" else accroche,
+                               "mots_cles": mots_cles, "mots_gros": [], "zoom_manuel": [], "sans_zoom": [], "titres": []},
+                }
                 suivi = lambda p, b=base, n=len(travaux): montage.__setitem__("progression", b + 0.5 * p / n)
-                try:
-                    rendre(source, infos, segments, sortie, format_sortie, fichier_ass, options.get("musique"), suivi)
-                except ErreurMontage:
-                    if not fichier_ass:
-                        raise
-                    # Incrustation des sous-titres impossible sur ce serveur (ffmpeg sans libass...) : montage sans eux.
-                    rendre(source, infos, segments, sortie, format_sortie, None, options.get("musique"), suivi)
-                    montage["avertissement"] = "Les sous-titres n'ont pas pu être incrustés sur ce serveur : montage livré sans sous-titres."
-                sorties.append({
-                    "chemin": sortie, "titre": extrait["titre"], "duree": round(duree_montee(segments), 1),
-                    "duree_origine": round(infos["duree"], 1) if len(travaux) == 1 else round(extrait["fin"] - extrait["debut"], 1),
-                })
+                chemin, duree = _rendre_sortie(montage, sortie, suivi)
+                sortie.update(chemin=chemin, duree=round(duree, 1))
+                sorties.append(sortie)
                 montage["sorties"] = list(sorties)
             montage.update(etat="termine", etape="Terminé", progression=1.0)
         except Exception as erreur:  # rien ne doit rester bloque sur « en cours »
