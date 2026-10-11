@@ -24,3 +24,4 @@ openpyxl
 google-ads
 staticmap
 tzdata
+imageio-ffmpeg

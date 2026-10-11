@@ -11,9 +11,11 @@ sur l'ensemble du montage (pas par segment).
 """
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+
 
 def _trouver_binaire(nom: str, variable: str) -> str:
     """
@@ -27,16 +29,26 @@ def _trouver_binaire(nom: str, variable: str) -> str:
     if trouve:
         return trouve
     extension = ".exe" if os.name == "nt" else ""
-    dossiers = [os.path.join(os.getenv("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links"), r"C:fmpegin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]
+    dossiers = [os.path.join(os.getenv("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links"), "C:/ffmpeg/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]
     for dossier in dossiers:
         chemin = os.path.join(dossier, nom + extension)
         if dossier and os.path.isfile(chemin):
             return chemin
+    if nom == "ffmpeg":
+        # Paquet Python qui embarque un ffmpeg complet : marche meme quand l'hebergeur n'installe pas ffmpeg lui-meme (voir requirements.txt).
+        try:
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            pass
     return nom
 
 
 FFMPEG = _trouver_binaire("ffmpeg", "FFMPEG_BINAIRE")
 FFPROBE = _trouver_binaire("ffprobe", "FFPROBE_BINAIRE")
+# Le ffmpeg embarque n'a pas ffprobe : dans ce cas les informations d'un fichier sont lues avec ffmpeg (voir sonde_ffmpeg).
+FFPROBE_DISPONIBLE = bool(shutil.which(FFPROBE) or os.path.isfile(FFPROBE))
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
 POLICE_TEXTE = os.path.join(DOSSIER_APP, "static", "polices", "Poppins-Bold.ttf")
@@ -70,8 +82,28 @@ def _executer_ffmpeg(args: list) -> None:
         raise RuntimeError(f"Echec du montage vidéo : {resultat.stderr.decode('utf-8', 'ignore')[-600:]}")
 
 
+def sonde_ffmpeg(chemin: str) -> dict:
+    """
+    Infos d'un fichier lues dans le rapport de `ffmpeg -i` (quand ffprobe n'est pas installe) : duree (secondes, 0 si inconnue),
+    largeur et hauteur apres rotation eventuelle d'un smartphone (0 sans image), presence d'une piste audio.
+    """
+    sortie = subprocess.run([FFMPEG, "-hide_banner", "-i", chemin], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60).stderr
+    duree = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", sortie)
+    video = re.search(r"Stream #[^\n]*?Video:[^\n]*?[ ,](\d{2,5})x(\d{2,5})[ ,\[]", sortie)
+    rotation = re.search(r"rotation of (-?[\d.]+) degrees", sortie) or re.search(r"rotate\s*:\s*(-?\d+)", sortie)
+    largeur, hauteur = (int(video.group(1)), int(video.group(2))) if video else (0, 0)
+    if rotation and abs(int(round(float(rotation.group(1))))) % 180 == 90:
+        largeur, hauteur = hauteur, largeur
+    return {
+        "duree": int(duree.group(1)) * 3600 + int(duree.group(2)) * 60 + float(duree.group(3)) if duree else 0.0,
+        "largeur": largeur, "hauteur": hauteur, "audio": "Audio:" in sortie,
+    }
+
+
 def duree_media(chemin: str) -> float:
-    """Duree en secondes d'un fichier audio ou video (via ffprobe)."""
+    """Duree en secondes d'un fichier audio ou video (via ffprobe, ou ffmpeg si ffprobe est absent)."""
+    if not FFPROBE_DISPONIBLE:
+        return sonde_ffmpeg(chemin)["duree"] or 8.0
     resultat = subprocess.run(
         [FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", chemin],
         capture_output=True, timeout=30,

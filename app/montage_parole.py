@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
 
+from . import montage_video
 from .montage_video import FFMPEG, FFPROBE
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
@@ -64,6 +65,11 @@ def _lancer(commande: list, delai: int = 600) -> subprocess.CompletedProcess:
 
 def sonde(chemin: str) -> dict:
     """Duree, dimensions (apres rotation eventuelle d'un smartphone) et presence d'une piste audio."""
+    if not montage_video.FFPROBE_DISPONIBLE:
+        infos = montage_video.sonde_ffmpeg(chemin)
+        if not infos["largeur"]:
+            raise ErreurMontage("Fichier vidéo illisible.")
+        return infos
     resultat = _lancer([FFPROBE, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", chemin], 60)
     if resultat.returncode != 0:
         raise ErreurMontage("Fichier vidéo illisible.")
