@@ -11,11 +11,32 @@ sur l'ensemble du montage (pas par segment).
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 
-FFMPEG = os.getenv("FFMPEG_BINAIRE", "ffmpeg")
-FFPROBE = os.getenv("FFPROBE_BINAIRE", "ffprobe")
+def _trouver_binaire(nom: str, variable: str) -> str:
+    """
+    Chemin du binaire : la variable d'environnement si elle est definie, sinon celui du PATH, sinon les dossiers habituels (sous
+    Windows, winget place ffmpeg dans un dossier que le PATH du serveur de developpement ne voit pas toujours), sinon le simple nom.
+    """
+    valeur = os.getenv(variable)
+    if valeur:
+        return valeur
+    trouve = shutil.which(nom)
+    if trouve:
+        return trouve
+    extension = ".exe" if os.name == "nt" else ""
+    dossiers = [os.path.join(os.getenv("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Links"), r"C:fmpegin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]
+    for dossier in dossiers:
+        chemin = os.path.join(dossier, nom + extension)
+        if dossier and os.path.isfile(chemin):
+            return chemin
+    return nom
+
+
+FFMPEG = _trouver_binaire("ffmpeg", "FFMPEG_BINAIRE")
+FFPROBE = _trouver_binaire("ffprobe", "FFPROBE_BINAIRE")
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
 POLICE_TEXTE = os.path.join(DOSSIER_APP, "static", "polices", "Poppins-Bold.ttf")
