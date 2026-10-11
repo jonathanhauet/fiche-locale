@@ -272,6 +272,8 @@ def _migrer_vers_multi_comptes():
             colonnes_posts_wordpress = {c["name"] for c in inspecteur.get_columns("posts_wordpress")}
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
+        if inspecteur.has_table("parametre_google_sheets") and "etiquette_ids" not in {c["name"] for c in inspecteur.get_columns("parametre_google_sheets")}:
+            connexion.execute(text("ALTER TABLE parametre_google_sheets ADD COLUMN etiquette_ids VARCHAR DEFAULT ''"))
         _colonnes_clients_logo = {c["name"] for c in inspecteur.get_columns("clients")}
         if "exemple_questions" not in _colonnes_clients_logo:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN exemple_questions TEXT DEFAULT ''"))
@@ -5904,7 +5906,7 @@ def page_reporting(request: Request, db: Session = Depends(obtenir_session)):
         "etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db),
         "mois_defaut": (date.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m"), "mois_max": date.today().strftime("%Y-%m"),
         "colonnes": reporting_mensuel.COLONNES,
-        "sheet": google_oauth.obtenir_parametre_sheets(db),
+        "sheet": google_oauth.obtenir_parametre_sheets(db), "sheet_etiquette_ids": reporting_sheet.ids_etiquettes(google_oauth.obtenir_parametre_sheets(db)),
         "mois_debut_defaut": "%d-%02d" % reporting_sheet.mois_a_afficher("", date.today())[0],
     })
 
@@ -5979,10 +5981,12 @@ async def enregistrer_config_sheet(request: Request, db: Session = Depends(obten
         return JSONResponse({"erreur": "Connectez d'abord Google Sheets."}, status_code=400)
     try:
         corps = await request.json()
-        etiquette_id = int(corps.get("etiquette_id"))
+        etiquette_ids = sorted({int(i) for i in (corps.get("etiquette_ids") or [])})
     except (ValueError, TypeError, AttributeError):
-        return JSONResponse({"erreur": "Choisissez l'etiquette des agences."}, status_code=400)
-    if not db.get(models.Etiquette, etiquette_id):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    if not etiquette_ids:
+        return JSONResponse({"erreur": "Cochez au moins une etiquette d'agences."}, status_code=400)
+    if any(not db.get(models.Etiquette, i) for i in etiquette_ids):
         return JSONResponse({"erreur": "Etiquette introuvable."}, status_code=404)
     mois_debut = str(corps.get("mois_debut") or "").strip()
     if not re.fullmatch(r"20\d\d-(0[1-9]|1[0-2])", mois_debut):
@@ -5991,7 +5995,7 @@ async def enregistrer_config_sheet(request: Request, db: Session = Depends(obten
     identifiant_sheet = google_sheets.extraire_id(adresse) if adresse else ""
     if adresse and not identifiant_sheet:
         return JSONResponse({"erreur": "Adresse de Sheet non reconnue (collez l'adresse complete du Google Sheet)."}, status_code=400)
-    parametre.etiquette_id, parametre.mois_debut = etiquette_id, mois_debut
+    parametre.etiquette_ids, parametre.etiquette_id, parametre.mois_debut = ",".join(str(i) for i in etiquette_ids), etiquette_ids[0], mois_debut
     parametre.nom_fichier = str(corps.get("nom_fichier") or "").strip()[:150] or "Reporting mensuel - Fiches établissement"
     parametre.actif = bool(corps.get("actif"))
     if identifiant_sheet and identifiant_sheet != parametre.spreadsheet_id:
@@ -6009,7 +6013,7 @@ def lancer_maj_sheet(request: Request, db: Session = Depends(obtenir_session)):
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Non connecte."}, status_code=401)
     parametre = google_oauth.obtenir_parametre_sheets(db)
-    if not parametre or not parametre.refresh_token or not parametre.etiquette_id or not parametre.mois_debut:
+    if not parametre or not parametre.refresh_token or not reporting_sheet.ids_etiquettes(parametre) or not parametre.mois_debut:
         return JSONResponse({"erreur": "Connectez Google Sheets et enregistrez d'abord les reglages."}, status_code=400)
     if not reporting_sheet.demarrer(db, parametre):
         return JSONResponse({"erreur": "Une mise a jour est deja en cours."}, status_code=409)

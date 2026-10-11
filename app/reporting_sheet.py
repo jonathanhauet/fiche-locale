@@ -30,11 +30,23 @@ def mois_a_afficher(mois_debut: str, aujourdhui: date) -> list:
     return [m for m in tous if m >= (annee, mois)] or tous[-1:]
 
 
-def clients_du_reporting(db, parametre) -> list:
-    etiquette = db.get(models.Etiquette, parametre.etiquette_id) if parametre.etiquette_id else None
-    if not etiquette:
+def ids_etiquettes(parametre) -> list:
+    """Identifiants des etiquettes choisies (l'ancien reglage a une seule etiquette est repris tant que rien n'a ete enregistre)."""
+    if not parametre:
         return []
-    return sorted([c for c in etiquette.clients if c.account_id and c.location_id], key=lambda c: (c.nom or "").lower())
+    ids = [int(i) for i in (parametre.etiquette_ids or "").split(",") if i.strip().isdigit()]
+    return ids or ([parametre.etiquette_id] if parametre.etiquette_id else [])
+
+
+def clients_du_reporting(db, parametre) -> list:
+    """Fiches Google de toutes les etiquettes choisies (une agence presente dans plusieurs etiquettes n'est comptee qu'une fois)."""
+    clients = {}
+    for identifiant in ids_etiquettes(parametre):
+        etiquette = db.get(models.Etiquette, identifiant)
+        for client in (etiquette.clients if etiquette else []):
+            if client.account_id and client.location_id:
+                clients[client.id] = client
+    return sorted(clients.values(), key=lambda c: (c.nom or "").lower())
 
 
 def mettre_a_jour(db, parametre, aujourdhui: date = None) -> dict:
@@ -45,7 +57,7 @@ def mettre_a_jour(db, parametre, aujourdhui: date = None) -> dict:
         raise RuntimeError("Google Sheets n'est pas connecté (ou l'accès a été révoqué) : reconnectez-le.")
     clients = clients_du_reporting(db, parametre)
     if not clients:
-        raise RuntimeError("Aucune agence : choisissez une étiquette qui contient des fiches Google.")
+        raise RuntimeError("Aucune agence : choisissez au moins une étiquette qui contient des fiches Google.")
     mois = mois_a_afficher(parametre.mois_debut, aujourdhui)
     resultats = reporting_mensuel.collecter(db, clients, mois, avec_pays=True)
     if not any(r["mois"] for r in resultats):

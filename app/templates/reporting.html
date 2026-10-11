@@ -54,13 +54,13 @@
   <p class="texte-discret">
     ✅ Connecté avec {{ sheet.libelle }} · <a href="/google-sheets/connecter">Reconnecter</a>
   </p>
+  <div class="filtre-entreprises">
+    <span class="filtre-titre">Agences (cochez une ou plusieurs étiquettes) :</span>
+    {% for etiquette in etiquettes %}
+    <label class="filtre-case"><input type="checkbox" class="case-sheet-etiquette" value="{{ etiquette.id }}" {% if etiquette.id in sheet_etiquette_ids %}checked{% endif %}> {{ etiquette.nom }}</label>
+    {% endfor %}
+  </div>
   <div class="formulaire-ligne">
-    <label>Agences (étiquette)
-      <select id="sheet-etiquette">
-        <option value="">Choisir…</option>
-        {% for etiquette in etiquettes %}<option value="{{ etiquette.id }}" {% if sheet.etiquette_id == etiquette.id %}selected{% endif %}>{{ etiquette.nom }}</option>{% endfor %}
-      </select>
-    </label>
     <label>Premier mois affiché <input type="month" id="sheet-mois-debut" value="{{ sheet.mois_debut or mois_debut_defaut }}" max="{{ mois_max }}"></label>
     <label>Nom du fichier <input type="text" id="sheet-nom" value="{{ sheet.nom_fichier }}" maxlength="150"></label>
   </div>
@@ -294,7 +294,7 @@
     else if (e.statut === "en_cours") dire("Mise à jour en cours… (vous pouvez quitter la page, elle continue)");
   }
   function corps(nouveau) {
-    return JSON.stringify({ etiquette_id: $("sheet-etiquette").value, mois_debut: $("sheet-mois-debut").value, nom_fichier: $("sheet-nom").value,
+    return JSON.stringify({ etiquette_ids: Array.from(document.querySelectorAll(".case-sheet-etiquette:checked")).map((c) => c.value), mois_debut: $("sheet-mois-debut").value, nom_fichier: $("sheet-nom").value,
       sheet_url: $("sheet-url").value, actif: $("sheet-actif").checked, nouveau: !!nouveau });
   }
   async function enregistrer() {

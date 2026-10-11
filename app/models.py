@@ -847,7 +847,8 @@ class ParametreGoogleSheets(Base):
     id = Column(Integer, primary_key=True)
     refresh_token = Column(Text, default="")
     libelle = Column(String, default="")                      # adresse e-mail du compte connecte
-    etiquette_id = Column(Integer, nullable=True)             # agences incluses : celles de cette etiquette
+    etiquette_id = Column(Integer, nullable=True)             # ancien reglage (une seule etiquette) : remplace par etiquette_ids
+    etiquette_ids = Column(String, default="")                # agences incluses : celles de ces etiquettes (identifiants separes par des virgules)
     nom_fichier = Column(String, default="Reporting mensuel - Fiches établissement")
     spreadsheet_id = Column(String, default="")
     spreadsheet_url = Column(String, default="")
