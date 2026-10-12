@@ -10,15 +10,20 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-from . import google_business, google_location, google_oauth, google_reviews
+from . import google_business, google_location, google_oauth, google_place_actions, google_reviews
 
 ENTETES = [
     "Nom", "Prénom", "Email", "Compte Google", "Étiquettes",
     "Téléphone", "Site web", "Adresse", "Catégorie principale",
     "Statut d'ouverture", "Complétude fiche", "Éléments manquants (estimation)", "Note moyenne", "Nombre d'avis",
     "Photos sur la fiche", "Posts publiés (plateforme)",
-    "Lien fiche Google", "Erreur",
+    "Lien RDV / réservation présent", "Lien RDV / réservation", "Lien fiche Google", "Erreur",
 ]
+COLONNE_LIEN_FICHE = ENTETES.index("Lien fiche Google")
+COLONNE_RDV_PRESENT = ENTETES.index("Lien RDV / réservation présent")
+COLONNE_RDV_LIEN = ENTETES.index("Lien RDV / réservation")
+# Liens d'action de la fiche Google qui servent a prendre un rendez-vous ou a reserver (les autres, comme commander, ne comptent pas ici).
+TYPES_RDV = ("APPOINTMENT", "ONLINE_APPOINTMENT", "DINING_RESERVATION")
 
 
 def _adresse_lisible(infos: dict) -> str:
@@ -48,7 +53,7 @@ def generer_export(db, clients: list) -> bytes:
             ", ".join(e.nom for e in client.etiquettes),
             "", "", "", "", "", "", "", "", "", "",
             nb_posts,
-            "", "",
+            "", "", "", "",
         ]
 
         if client.account_id and client.location_id:
@@ -80,9 +85,18 @@ def generer_export(db, clients: list) -> bytes:
                     ligne[8] = categorie_principale
                     ligne[9] = google_location.LIBELLES_STATUT_OUVERTURE.get(statut_ouverture, statut_ouverture)
                     ligne[10] = f"{completude['score']}/{completude['total']}"
-                    ligne[16] = (infos.get("metadata") or {}).get("mapsUri", "")
+                    ligne[COLONNE_LIEN_FICHE] = (infos.get("metadata") or {}).get("mapsUri", "")
                 except Exception as erreur:
                     erreurs.append(f"Fiche : {erreur}")
+
+                try:
+                    liens_rdv = [l.get("uri", "") for l in google_place_actions.lister_liens(identifiants, client.location_id)
+                                 if l.get("placeActionType") in TYPES_RDV and l.get("uri")]
+                    ligne[COLONNE_RDV_PRESENT] = "Oui" if liens_rdv else "Non"
+                    ligne[COLONNE_RDV_LIEN] = " ; ".join(liens_rdv)
+                except Exception as erreur:
+                    ligne[COLONNE_RDV_PRESENT] = "Non vérifié"
+                    erreurs.append(f"Liens RDV : {erreur}")
 
                 try:
                     resume_avis = google_reviews.resume_rapide(identifiants, client.account_id, client.location_id)
