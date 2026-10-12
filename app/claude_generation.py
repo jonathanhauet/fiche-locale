@@ -9,10 +9,51 @@ import os
 import re
 from datetime import date
 
-from anthropic import Anthropic
+from anthropic import Anthropic as _AnthropicSDK
 
 from .texte_google import REGLES_GOOGLE_POST, nettoyer_texte_google
 from dotenv import load_dotenv
+
+# La plupart des consignes de ce module sont ecrites sans accents : sans rappel explicite, l'IA reprend parfois ce style (ou celui
+# d'une reponse orale sans accents) et livre des posts sans accents. Cette consigne est donc ajoutee a CHAQUE appel.
+CONSIGNE_ACCENTS = (
+    "IMPORTANT. Règle d'écriture : tout texte en français que tu rédiges doit avoir une orthographe correcte avec tous ses accents, cédilles et "
+    "ligatures (é, è, ê, à, â, ô, û, î, ç, œ...), même si les consignes qui précèdent sont écrites sans accents et même si le texte fourni "
+    "(réponse orale, transcription, brouillon) en est dépourvu : corrige simplement l'orthographe, sans rien changer au fond. "
+    "Ne produis jamais de français sans accents."
+)
+
+
+RAPPEL_ACCENTS = "\n\n(Rappel : tout le texte en français doit avoir ses accents, y compris dans les premiers mots : é, è, à, ç, ô...)"
+
+
+class Anthropic(_AnthropicSDK):
+    """Client Anthropic qui ajoute CONSIGNE_ACCENTS (message systeme) a chaque appel de messages.create."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        creer_origine = self.messages.create
+
+        def creer(*a, **k):
+            messages = k.get("messages")
+            if messages and messages[-1].get("role") == "user":      # rappel en fin de demande, la ou il pese le plus
+                dernier = dict(messages[-1])
+                if isinstance(dernier.get("content"), str):
+                    dernier["content"] += RAPPEL_ACCENTS
+                elif isinstance(dernier.get("content"), list):
+                    dernier["content"] = list(dernier["content"]) + [{"type": "text", "text": RAPPEL_ACCENTS.strip()}]
+                k["messages"] = list(messages[:-1]) + [dernier]
+            systeme = k.get("system")
+            if systeme is None:
+                k["system"] = CONSIGNE_ACCENTS
+            elif isinstance(systeme, str):
+                k["system"] = systeme + "\n\n" + CONSIGNE_ACCENTS
+            elif isinstance(systeme, list):
+                k["system"] = systeme + [{"type": "text", "text": CONSIGNE_ACCENTS}]
+            return creer_origine(*a, **k)
+
+        self.messages.create = creer
+
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
 DOSSIER_PLATEFORME = os.path.dirname(DOSSIER_APP)
@@ -140,6 +181,47 @@ _CARACTERES_INDESIRABLES = re.compile(r"[`　-〿＀-￯]+")
 _ENTITES_HTML_INDESIRABLES = re.compile(r"&#x?[0-9a-fA-F]+;")
 
 
+# Formes SANS accent qui ne sont pas des mots francais : si un texte en contient plusieurs, il a ete ecrit sans accents.
+_MOTS_SANS_ACCENT = re.compile(
+    r"\b(?:etre|ete|pieces?|reponses?|possedez|possede|possedent|etablissements?|equipes?|reelles?|reels?|immediats?|immediate|metaux|precieux|"
+    r"precieuse|apres|deja|tres|problemes?|negatifs?|negatives?|decouvrez|decouvrir|resultats?|securite|qualite|specialistes?|experiences?|"
+    r"references?|referencement|ecrire|ecrit|creer|creation|etudes?|etats?|etapes?|eviter|elements?|meme|memes|francais|prefere|differents?|"
+    r"evenements?|energie|ecoute|ecoutons|accueillons|realise|realisee|realisation|beneficier|systeme|"
+    r"generalement|numero|telephone|developpement|evaluation|evaluer|verifier|verification|regles?|periode|priorite|interets?)\b",
+    re.IGNORECASE,
+)
+
+
+def _semble_sans_accents(texte: str) -> bool:
+    """Vrai si le texte contient au moins deux formes sans accent differentes qui n'existent pas telles quelles en francais."""
+    trouves = {m.lower() for m in _MOTS_SANS_ACCENT.findall(texte)}
+    return len(trouves) >= 2
+
+
+def _retablir_accents(texte: str) -> str:
+    """
+    Filet de securite : l'IA livre parfois un texte francais sans accents (elle reprend le style sans accents des consignes ou d'une
+    reponse orale). Si le texte en a l'air, une courte passe de correction orthographique remet les accents, sans rien changer d'autre.
+    En cas d'echec, le texte d'origine est conserve.
+    """
+    if not CLE_API or len(texte) < 40 or not _semble_sans_accents(texte):
+        return texte
+    try:
+        reponse = _AnthropicSDK(api_key=CLE_API).messages.create(
+            model=MODELE_CLAUDE, max_tokens=4096, thinking={"type": "disabled"},
+            system=("Tu es correcteur typographique. Tu reçois un texte en français écrit sans accents. Rends exactement le même texte avec "
+                    "les accents, cédilles et ligatures rétablis (é, è, ê, à, â, ô, û, î, ç, œ...). Ne change aucun mot, aucune ponctuation, "
+                    "aucun saut de ligne, aucun emoji ; laisse les hashtags, adresses web et chiffres tels quels. Réponds uniquement par le texte corrigé."),
+            messages=[{"role": "user", "content": texte}],
+        )
+        corrige = next((b.text for b in reponse.content if b.type == "text"), "").strip()
+    except Exception:
+        return texte
+    if not corrige or abs(len(corrige) - len(texte)) > max(12, len(texte) * 0.15):
+        return texte
+    return corrige
+
+
 def _nettoyer_texte_genere(texte: str) -> str:
     """
     Filet de securite contre de rares artefacts de generation (ex. suites de
@@ -162,7 +244,7 @@ def _nettoyer_texte_genere(texte: str) -> str:
     # laisser plusieurs lignes vides d'affilee a la place.
     texte = re.sub(r"\n{3,}", "\n\n", texte)
     texte = texte.replace("—", "-")
-    return texte.strip()
+    return _retablir_accents(texte.strip())
 
 
 def _nettoyer_champs_post(post: dict, google: bool = False) -> dict:
