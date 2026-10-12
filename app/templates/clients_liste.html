@@ -22,13 +22,15 @@
 <div class="barre-titre">
   <h1>{{ "Clients — " ~ espace.nom if espace else "Clients" }}</h1>
   <div class="barre-outils-import-masse">
-    <a class="bouton-secondaire" href="/clients/export.xlsx{{ '?etiquette_id=' ~ espace.id if espace else '' }}">📊 Exporter en Excel</a>
+    <button type="button" class="bouton-secondaire" id="bouton-export-excel" data-etiquette="{{ espace.id if espace else '' }}">📊 Exporter en Excel</button>
     {% if not espace %}
     <a class="bouton-secondaire" href="/clients/import-masse">+ Import multiple</a>
     <a class="bouton" href="/clients/nouveau">+ Ajouter un client</a>
     {% endif %}
   </div>
 </div>
+
+<p id="statut-export-excel" class="texte-discret" hidden></p>
 
 <div class="grille-resume">
   <div class="carte-resume">
@@ -210,4 +212,35 @@
 <p class="texte-vide">Aucun client pour l'instant.</p>
 {% endif %}
 
+<script>
+(function () {
+  // Export Excel en tache de fond : sur plus de 100 fiches la lecture chez Google dure plusieurs minutes, trop pour une seule requete.
+  const bouton = document.getElementById("bouton-export-excel"), statut = document.getElementById("statut-export-excel");
+  if (!bouton) return;
+  const dire = (texte) => { statut.hidden = !texte; statut.textContent = texte || ""; };
+  bouton.addEventListener("click", async () => {
+    bouton.disabled = true; dire("Démarrage de l'export…");
+    try {
+      const etiquette = bouton.dataset.etiquette;
+      const reponse = await fetch("/clients/export/lancer" + (etiquette ? "?etiquette_id=" + encodeURIComponent(etiquette) : ""), { method: "POST" });
+      const donnees = await reponse.json();
+      if (!reponse.ok) { dire(donnees.erreur || "Impossible de démarrer l'export."); bouton.disabled = false; return; }
+      while (true) {
+        await new Promise((ok) => setTimeout(ok, 2500));
+        let etat;
+        try { etat = await (await fetch("/clients/export/" + donnees.id + "/etat")).json(); } catch (e) { continue; }
+        if (etat.erreur && etat.etat !== "erreur") { dire(etat.erreur); break; }
+        if (etat.etat === "erreur") { dire("Échec de l'export : " + etat.erreur); break; }
+        if (etat.etat === "termine") {
+          dire("Export prêt : le téléchargement démarre.");
+          window.location.href = "/clients/export/" + donnees.id + "/fichier";
+          break;
+        }
+        dire("Lecture des fiches Google : " + etat.faits + " / " + etat.total + " (vous pouvez rester sur cette page)");
+      }
+    } catch (erreur) { dire("Erreur réseau : relancez l'export."); }
+    bouton.disabled = false;
+  });
+})();
+</script>
 {% endblock %}

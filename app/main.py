@@ -2609,8 +2609,51 @@ def exporter_clients_excel(request: Request, etiquette_id: int = None, db: Sessi
     espace, clients = _resoudre_espace_et_clients(db, etiquette_id)
 
     octets = export_clients_excel.generer_export(db, clients)
+    nom_fichier = _nom_fichier_export_clients(espace)
+    return Response(
+        content=octets,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
+
+
+def _nom_fichier_export_clients(espace) -> str:
     suffixe = espace.nom.replace(" ", "_") if espace else "tous"
-    nom_fichier = f"clients_{suffixe}_{date.today().isoformat()}.xlsx"
+    return f"clients_{suffixe}_{date.today().isoformat()}.xlsx"
+
+
+@app.post("/clients/export/lancer")
+def lancer_export_clients(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
+    """
+    Demarre l'export Excel des clients en tache de fond (lecture de Google en parallele) et renvoie son identifiant : sur 130 fiches ou
+    plus, une seule requete depasserait le delai de l'hebergeur. L'avancement se suit avec /clients/export/{id}/etat.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    espace, clients = _resoudre_espace_et_clients(db, etiquette_id)
+    if not clients:
+        return JSONResponse({"erreur": "Aucun client à exporter."}, status_code=400)
+    return JSONResponse({"id": export_clients_excel.lancer(db, clients, _nom_fichier_export_clients(espace))})
+
+
+@app.get("/clients/export/{identifiant}/etat")
+def etat_export_clients(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    etat = export_clients_excel.etat_tache(identifiant)
+    if etat is None:
+        return JSONResponse({"erreur": "Export introuvable (le serveur a peut-être redémarré) : relancez-le."}, status_code=404)
+    return JSONResponse(etat)
+
+
+@app.get("/clients/export/{identifiant}/fichier")
+def fichier_export_clients(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    resultat = export_clients_excel.fichier_tache(identifiant)
+    if not resultat:
+        return JSONResponse({"erreur": "Fichier indisponible : relancez l'export."}, status_code=404)
+    octets, nom_fichier = resultat
     return Response(
         content=octets,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
