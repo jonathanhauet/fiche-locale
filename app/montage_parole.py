@@ -490,17 +490,27 @@ def _chemin_filtre(chemin: str) -> str:
 
 
 def expression_zoom(zooms: list) -> str:
-    """Facteur de zoom (expression ffmpeg en fonction du temps t) : 1, plus une bosse douce par fenetre (debut, fin, amplitude)."""
-    termes = [f"{amp:.3f}*between(t,{a:.2f},{b:.2f})*min(1,(t-{a:.2f})/0.20)*min(1,({b:.2f}-t)/0.35)" for a, b, amp in zooms]
+    """
+    Facteur de zoom (expression ffmpeg en fonction du temps t) : 1, plus une bosse douce par fenetre (debut, fin, amplitude), ou un
+    saut franc sans transition si la fenetre porte un quatrieme element « sec » (cadrage alterne a chaque coupe).
+    """
+    termes = []
+    for fenetre in zooms:
+        a, b, amp = fenetre[:3]
+        if len(fenetre) > 3 and fenetre[3] == "sec":
+            termes.append(f"{amp:.3f}*between(t,{a:.2f},{b:.2f})")
+        else:
+            termes.append(f"{amp:.3f}*between(t,{a:.2f},{b:.2f})*min(1,(t-{a:.2f})/0.20)*min(1,({b:.2f}-t)/0.35)")
     return "1+" + "+".join(termes)
 
 
 def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie: str, fichier_ass: str = None,
-           musique: str = None, progression=None, zooms: list = None, visage_x: float = None) -> None:
+           musique: str = None, progression=None, zooms: list = None, visage_x: float = None, illustrations: list = None) -> None:
     """
     Assemble les segments de `source`, recadre (en vertical, centre sur le visage si visage_x est connu : 0 = bord gauche, 1 = bord
-    droit), applique les zooms (debut, fin, amplitude) sur la chronologie du montage, incruste les sous-titres, mixe la musique
-    (baisse sous la voix) et encode.
+    droit), applique les zooms (debut, fin, amplitude) sur la chronologie du montage, incruste les illustrations
+    (illustrations : [{"debut", "fin", "chemin", "mode"}], temps du montage, mode « plein » ecran ou « incrust » en cadre), puis les
+    sous-titres, mixe la musique (baisse sous la voix) et encode.
     """
     if not segments:
         raise ErreurMontage("Il ne reste rien à monter (tout a été coupé).")
@@ -528,14 +538,37 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
         facteur = expression_zoom(zooms)
         filtre_video += (f",scale=w='trunc({largeur}*({facteur})/2)*2':h='trunc({hauteur}*({facteur})/2)*2':eval=frame:flags=bilinear,"
                          f"crop={largeur}:{hauteur}")
+    etiquette, parties = "v0", [filtre_video + "[v0]"]
+    premiere_image = 2 if musique else 1
+    images = []
+    for k, illustration in enumerate(illustrations or []):
+        debut_i, fin_i = illustration["debut"], illustration["fin"]
+        duree_i = max(0.5, fin_i - debut_i)
+        images.append((illustration["chemin"], duree_i))
+        if illustration.get("mode") == "plein":
+            mise = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=increase,crop={largeur}:{hauteur}"
+            x, y = "0", "0"
+        else:
+            mise = f"scale={int(largeur * 0.78)}:-2,pad=iw+16:ih+16:8:8:white"
+            x, y = "(W-w)/2", ("H*0.10" if vertical else "H*0.08")
+        parties.append(
+            f"[{premiere_image + k}:v]format=rgba,{mise},fade=t=in:st=0:d=0.25:alpha=1,fade=t=out:st={max(0.0, duree_i - 0.25):.2f}:d=0.25:alpha=1,"
+            f"setpts=PTS+{debut_i:.3f}/TB[i{k}]"
+        )
+        parties.append(f"[{etiquette}][i{k}]overlay=x={x}:y={y}:enable='between(t,{debut_i:.3f},{fin_i:.3f})'[v{k + 1}]")
+        etiquette = f"v{k + 1}"
     if fichier_ass:
-        filtre_video += f",ass='{_chemin_filtre(fichier_ass)}':fontsdir='{_chemin_filtre(DOSSIER_POLICES)}'"
-    filtre_video += "[v]"
+        parties.append(f"[{etiquette}]ass='{_chemin_filtre(fichier_ass)}':fontsdir='{_chemin_filtre(DOSSIER_POLICES)}'[v]")
+    else:
+        parties.append(f"[{etiquette}]null[v]")
+    filtre_video = ";".join(parties)
 
     commande = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats",
                 "-f", "concat", "-safe", "0", "-i", liste]
     if musique:
         commande += ["-stream_loop", "-1", "-i", musique]
+    for chemin_image, duree_image in images:
+        commande += ["-loop", "1", "-framerate", str(FPS), "-t", f"{duree_image:.3f}", "-i", chemin_image]
     if infos["audio"] and musique:
         filtre_audio = ("[0:a]aresample=48000,asplit=2[v1][v2];[1:a]aresample=48000,volume=0.30[m];"
                         "[m][v1]sidechaincompress=threshold=0.04:ratio=9:attack=30:release=600[md];"
@@ -755,9 +788,27 @@ def appliquer_actions(sortie: dict, actions: list) -> tuple:
     return nouvel, resume, refus
 
 
+def _instant_montage(instant: float, segments: list, duree: float) -> float:
+    """Instant de la video d'origine -> instant du montage ; un instant dans une partie coupee tombe sur la jonction, apres la fin sur la duree."""
+    resultat = _remapper(instant, segments, True)
+    return duree if resultat is None else resultat
+
+
 def zooms_du_rendu(sortie: dict, phrases_montage: list, duree: float) -> list:
     """Fenetres de zoom (chronologie du montage) : automatiques sauf zones « sans zoom », plus les zooms demandes a la main."""
     effets, segments = sortie["effets"], sortie["segments"]
+    if effets.get("alterne"):
+        # Cadrage alterne a chaque coupe : un morceau sur deux est legerement zoome, sans transition (rythme « jump cut »).
+        zooms, cumul = [], 0.0
+        for rang, (debut, fin) in enumerate(segments):
+            if rang % 2 == 1:
+                zooms.append((cumul, cumul + fin - debut, 0.12, "sec"))
+            cumul += fin - debut
+        for debut, fin, amplitude in effets["zoom_manuel"]:
+            a, b = _remapper(debut, segments, True), _remapper(fin, segments, False)
+            if a is not None and b is not None and b - a >= 0.4:
+                zooms.append((a, min(b, duree), amplitude))
+        return sorted(zooms)
     interdits = []
     for debut, fin in effets["sans_zoom"]:
         a, b = _remapper(debut, segments, True), _remapper(fin, segments, False)
@@ -796,16 +847,36 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
         fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
         ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
                    pop=pop, titres=titres, mots_gros=gros, barre=barre)
+    illustrations = []
+    for illustration in effets.get("illustrations", []):
+        a, b = _instant_montage(illustration["debut"], segments, duree), _instant_montage(illustration["fin"], segments, duree)
+        if b - a >= 0.5 and os.path.exists(illustration["fichier"]):
+            illustrations.append({"debut": a, "fin": b, "chemin": illustration["fichier"], "mode": illustration.get("mode", "incrust")})
     chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
     try:
-        rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"))
+        rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"),
+               illustrations=illustrations)
     except ErreurMontage:
         if not fichier_ass:
             raise
         # Incrustation des sous-titres impossible sur ce serveur (ffmpeg sans libass...) : montage sans eux.
-        rendre(montage["source"], infos, segments, chemin, sortie["format"], None, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"))
+        rendre(montage["source"], infos, segments, chemin, sortie["format"], None, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"),
+               illustrations=illustrations)
         montage["avertissement"] = "Les sous-titres n'ont pas pu être incrustés sur ce serveur : montage livré sans sous-titres."
     return chemin, duree
+
+
+def _figer_etat_rendu(sortie: dict) -> None:
+    """Memorise l'etat (coupes, effets, textes) qui correspond au fichier video actuel : l'editeur modifie l'etat avant le rendu."""
+    sortie["etat_rendu"] = {"segments": list(sortie["segments"]), "effets": copy.deepcopy(sortie["effets"]), "phrases": copy.deepcopy(sortie["phrases"]),
+                            "sous_titres": sortie["sous_titres"]}
+
+
+def _version_rendue(sortie: dict) -> dict:
+    """Instantane de la version video actuelle (fichier + l'etat qui l'a produite), pour pouvoir y revenir."""
+    rendu = sortie.get("etat_rendu") or {"segments": list(sortie["segments"]), "effets": copy.deepcopy(sortie["effets"]), "phrases": copy.deepcopy(sortie["phrases"]),
+                                         "sous_titres": sortie["sous_titres"]}
+    return {"chemin": sortie["chemin"], "duree": sortie["duree"], "version": sortie["version"], "resume": sortie["resume"], **copy.deepcopy(rendu)}
 
 
 def annuler_revision(identifiant: str, numero: int) -> bool:
@@ -818,6 +889,8 @@ def annuler_revision(identifiant: str, numero: int) -> bool:
         return False
     precedente = sortie["historique"].pop()
     sortie.update(precedente)
+    sortie["annulations"] = []
+    _figer_etat_rendu(sortie)
     return True
 
 
@@ -842,10 +915,10 @@ def lancer_revision(identifiant: str, numero: int, notes: list, interpreter) -> 
             montage.update(etape="Nouveau rendu de la vidéo", progression=0.2)
             suivi = lambda p: montage.__setitem__("progression", 0.2 + 0.8 * p)
             chemin, duree = _rendre_sortie(montage, nouvel, suivi)
-            instantane = {c: sortie[c] for c in ("chemin", "segments", "effets", "phrases", "duree", "version", "resume")}
-            sortie["historique"] = (sortie["historique"] + [instantane])[-5:]
+            sortie["historique"] = (sortie["historique"] + [_version_rendue(sortie)])[-5:]
             sortie.update(segments=nouvel["segments"], effets=nouvel["effets"], phrases=nouvel["phrases"], chemin=chemin, duree=round(duree, 1),
-                          version=sortie["version"] + 1, resume=resume + motifs)
+                          version=sortie["version"] + 1, resume=resume + motifs, annulations=[])
+            _figer_etat_rendu(sortie)
             montage.update(etat="termine", etape="Terminé", progression=1.0)
         except Exception as erreur:  # la version precedente reste intacte et affichee
             montage.update(etat="erreur", erreur=str(erreur) or erreur.__class__.__name__)
@@ -986,11 +1059,12 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                     "musique": options.get("musique"), "sous_titres": bool(options.get("sous_titres", True)), "visage_x": visage_x,
                     "segments": segments, "phrases": copy.deepcopy(phrases), "version": 1, "resume": [], "historique": [],
                     "effets": {"style": style, "actif": actifs, "titre": extrait["titre"] if options.get("mode") == "shorts" else accroche,
-                               "mots_cles": mots_cles, "mots_gros": [], "zoom_manuel": [], "sans_zoom": [], "titres": []},
+                               "mots_cles": mots_cles, "mots_gros": [], "zoom_manuel": [], "sans_zoom": [], "titres": [], "illustrations": [], "alterne": False},
                 }
                 suivi = lambda p, b=base, n=len(travaux): montage.__setitem__("progression", b + 0.5 * p / n)
                 chemin, duree = _rendre_sortie(montage, sortie, suivi)
-                sortie.update(chemin=chemin, duree=round(duree, 1))
+                sortie.update(chemin=chemin, duree=round(duree, 1), annulations=[])
+                _figer_etat_rendu(sortie)
                 sorties.append(sortie)
                 montage["sorties"] = list(sorties)
             montage.update(etat="termine", etape="Terminé", progression=1.0)

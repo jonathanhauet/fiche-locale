@@ -3068,3 +3068,81 @@ def actions_depuis_annotations(notes: list, phrases: list, duree: float) -> tupl
     except (json.JSONDecodeError, KeyError, TypeError) as erreur:
         raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
     return actions, ignorees
+
+
+ACTIONS_EDITEUR = ("couper", "restaurer", "zoom", "retirer_zoom", "titre", "mot_en_gros", "accroche", "illustration", "alterne")
+SCHEMA_COMMANDE_EDITEUR = {
+    "type": "object",
+    "properties": {
+        "actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": list(ACTIONS_EDITEUR)},
+                    "debut": {"type": "number"}, "fin": {"type": "number"}, "texte": {"type": "string"},
+                    "force": {"type": "string", "enum": ["leger", "fort", "aucune"]},
+                    "mode": {"type": "string", "enum": ["incrust", "plein", "aucun"]},
+                    "prompt": {"type": "string"}, "valeur": {"type": "boolean"},
+                },
+                "required": ["type", "debut", "fin", "texte", "force", "mode", "prompt", "valeur"], "additionalProperties": False,
+            },
+        },
+        "reponse": {"type": "string"},
+    },
+    "required": ["actions", "reponse"], "additionalProperties": False,
+}
+
+
+def commande_editeur(commande: str, phrases: list, segments: list, duree: float) -> dict:
+    """
+    Traduit une commande en langage naturel donnee dans l'editeur de montage (« retire les repetitions », « mets un zoom sur chaque
+    chiffre », « illustre les idees principales », « propose une meilleure accroche ») en actions. Les temps sont ceux de la video
+    d'origine, comme dans la transcription fournie (les phrases deja coupees y sont signalees). Renvoie
+    {"actions": [{"type", "debut", "fin", "texte", "force", "mode", "prompt", "valeur"}], "reponse": str}.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    gardees = [(a, b) for a, b in segments]
+
+    def coupee(p):
+        milieu = (p["debut"] + p["fin"]) / 2
+        return not any(a <= milieu <= b for a, b in gardees)
+
+    transcription = "\n".join(f"[{p['debut']:.1f}-{p['fin']:.1f}]{' (COUPÉ)' if coupee(p) else ''} {p['texte']}" for p in phrases)[:60000]
+    prompt = (
+        f"Voici la transcription horodatée (secondes de la vidéo d'origine) d'une vidéo face caméra en cours de montage ; les phrases "
+        f"déjà coupées sont marquées (COUPÉ). Durée de la vidéo d'origine : {duree:.1f} s.\n\n{transcription}\n\n"
+        f"Commande de Jonathan : « {commande.strip()[:500]} »\n\n"
+        "Traduis cette commande en actions (12 au maximum), parmi uniquement :\n"
+        "- couper : retirer un passage (debut, fin en secondes d'origine, sur des débuts et fins de phrases).\n"
+        "- restaurer : remettre un passage coupé.\n"
+        "- zoom : zoom sur un moment (debut, fin d'environ 2 à 3 s ; force leger ou fort).\n"
+        "- retirer_zoom : retirer le zoom automatique autour de debut.\n"
+        "- titre : texte affiché à l'écran (texte court, debut, fin = debut + 3 s).\n"
+        "- mot_en_gros : mots à mettre en valeur dans les sous-titres (texte = les mots, tels que dits).\n"
+        "- accroche : remplacer le titre d'accroche du début (texte de 3 à 8 mots, fidèle à la vidéo).\n"
+        "- illustration : une image à afficher pendant un moment concret (debut, fin = debut + 3 s environ, mode incrust ou plein ; "
+        "prompt = une description en anglais d'une scène ou d'un objet précis et réaliste lié à ce qui est dit, sans texte écrit ni "
+        "logo ; 4 illustrations au maximum).\n"
+        "- alterne : activer (valeur true) ou désactiver (false) le cadrage alterné à chaque coupe.\n"
+        "Pour chaque action, mets 0 dans debut et fin si inutilisés, '' dans texte et prompt si inutilisés, force = 'aucune' sauf "
+        "pour zoom, mode = 'aucun' sauf pour illustration, valeur = false sauf pour alterne. N'invente aucune action qui n'est pas "
+        "demandée. Dans 'reponse', écris en 1 à 3 phrases en français ce que tu as fait (ou, si la commande demande des propositions, "
+        "donne-les)."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=3000, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_COMMANDE_EDITEUR}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)
+        actions = [a for a in brut["actions"] if a.get("type") in ACTIONS_EDITEUR][:12]
+        return {"actions": actions, "reponse": _nettoyer_texte_genere(str(brut["reponse"]))}
+    except (json.JSONDecodeError, KeyError, TypeError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur

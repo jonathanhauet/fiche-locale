@@ -163,7 +163,10 @@
         const lien = document.createElement("a");
         lien.className = "bouton-secondaire"; lien.textContent = "⬇ Télécharger";
         lien.href = "/montage-video/" + identifiant + "/fichier/" + i + "?telecharger=1";
-        carte.appendChild(titre); carte.appendChild(video); carte.appendChild(lien);
+        const editeur = document.createElement("a");
+        editeur.className = "bouton"; editeur.textContent = "🎬 Ouvrir dans l'éditeur (coupes, effets, illustrations)";
+        editeur.href = "/montage-video/" + identifiant + "/editeur/" + i;
+        carte.appendChild(titre); carte.appendChild(video); carte.appendChild(editeur); carte.appendChild(lien);
         carte.appendChild(panneauRevision(carte, video, i, sortie));
         zone.appendChild(carte);
       });
@@ -313,6 +316,10 @@
       message("");
       requete.send(formulaire);
     });
+
+    // Retour depuis l'editeur : /montage-video?id=... recharge les montages deja produits
+    const identifiantUrl = new URLSearchParams(window.location.search).get("id");
+    if (identifiantUrl && /^[0-9a-f]{12}$/.test(identifiantUrl)) { identifiant = identifiantUrl; boutonRelancer.hidden = false; suivre(); }
 
     boutonRelancer.addEventListener("click", async () => {
       boutonRelancer.disabled = true;

@@ -83,6 +83,7 @@ from . import (
     meta_publish,
     models,
     miniature_youtube,
+    montage_editeur,
     montage_parole,
     montage_video,
     notifications,
@@ -7815,6 +7816,225 @@ async def montage_video_relancer(identifiant: str, request: Request, db: Session
     opts = await run_in_threadpool(_options_montage, brut, montage["dossier"], db)
     montage_parole.lancer_montage(identifiant, montage["dossier"], montage["source"], opts, _choisir_retouches, _choisir_extraits, _choisir_tendance)
     return JSONResponse({"id": identifiant})
+
+
+# --- Editeur de montage (voir montage_editeur.py) ---------------------------------------------------------------
+
+def _generer_image_illustration(prompt: str, vertical: bool, plein: bool) -> bytes:
+    ratio = ("9:16" if vertical else "16:9") if plein else "4:3"
+    return gemini_images.generer_image(prompt, aspect_ratio=ratio)
+
+
+def _commande_editeur(commande, phrases, segments, duree):
+    return claude_generation.commande_editeur(commande, phrases, segments, duree)
+
+
+def _montage_et_sortie(identifiant: str, numero: int):
+    montage = montage_parole.MONTAGES.get(identifiant)
+    if not montage or not montage.get("sorties") or not 0 <= numero < len(montage["sorties"]) or not os.path.exists(montage["source"]):
+        return None, None
+    return montage, montage["sorties"][numero]
+
+
+def _reponse_editeur(identifiant: str, montage: dict, sortie: dict, **supplements):
+    return JSONResponse({"etat": montage_editeur.etat_editeur(identifiant, montage, sortie), **supplements})
+
+
+@app.get("/montage-video/{identifiant}/editeur/{numero}", response_class=HTMLResponse)
+def montage_editeur_page(identifiant: str, numero: int, request: Request):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return RedirectResponse("/montage-video", status_code=303)
+    montage_editeur.preparer_apercu(montage)
+    return templates.TemplateResponse(request, "montage_editeur.html", {"page_actuelle": "montage_video", "identifiant": identifiant, "numero": numero, "titre": sortie["titre"]})
+
+
+@app.get("/montage-video/{identifiant}/editeur/{numero}/etat")
+def montage_editeur_etat(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable (le serveur a peut-être redémarré) : relancez-le."}, status_code=404)
+    return _reponse_editeur(identifiant, montage, sortie, rendu=montage_parole.etat_montage(identifiant))
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/operations")
+async def montage_editeur_operations(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est en cours : attendez qu'il se termine."}, status_code=409)
+    try:
+        operations = [o for o in (await request.json()).get("operations", []) if isinstance(o, dict)]
+    except (ValueError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if not 1 <= len(operations) <= 200:
+        return JSONResponse({"erreur": "Aucune opération."}, status_code=400)
+    resume, refus = montage_editeur.appliquer_operations(montage, sortie, operations)
+    return _reponse_editeur(identifiant, montage, sortie, resume=resume, refus=refus)
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/annuler")
+def montage_editeur_annuler(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours" or not montage_editeur.annuler(sortie):
+        return JSONResponse({"erreur": "Rien à annuler."}, status_code=409)
+    return _reponse_editeur(identifiant, montage, sortie, resume=["Dernière modification annulée"], refus=[])
+
+
+def _lire_plage_illustration(debut, fin, mode):
+    try:
+        debut, fin = float(debut), float(fin)
+    except (TypeError, ValueError):
+        return None
+    return debut, max(fin, debut + 0.5), mode if mode in montage_editeur.MODES_ILLUSTRATION else "incrust"
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/illustrations/importer")
+async def montage_editeur_importer_illustration(
+    identifiant: str, numero: int, request: Request, fichier: UploadFile = File(...), debut: float = Form(0.0), fin: float = Form(3.0), mode: str = Form("incrust"),
+):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est en cours : attendez qu'il se termine."}, status_code=409)
+    octets = await fichier.read(montage_editeur.TAILLE_MAX_IMAGE + 1)
+    plage = _lire_plage_illustration(debut, fin, mode)
+    try:
+        montage_editeur.ajouter_illustration(montage, sortie, octets, plage[0], plage[1], plage[2], "import")
+    except montage_editeur.ErreurEditeur as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    return _reponse_editeur(identifiant, montage, sortie, resume=["Illustration ajoutée"], refus=[])
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/illustrations/generer")
+async def montage_editeur_generer_illustration(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est en cours : attendez qu'il se termine."}, status_code=409)
+    try:
+        corps = await request.json()
+        prompt = " ".join(str(corps.get("prompt") or "").split())[:400]
+    except (ValueError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    plage = _lire_plage_illustration(corps.get("debut"), corps.get("fin"), corps.get("mode"))
+    if not prompt or not plage:
+        return JSONResponse({"erreur": "Décrivez l'image à créer."}, status_code=400)
+    try:
+        octets = await run_in_threadpool(_generer_image_illustration, prompt, sortie["format"] == "vertical", plage[2] == "plein")
+        montage_editeur.ajouter_illustration(montage, sortie, octets, plage[0], plage[1], plage[2], "ia", prompt)
+    except montage_editeur.ErreurEditeur as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Image non générée : {str(erreur)[:200]}"}, status_code=502)
+    return _reponse_editeur(identifiant, montage, sortie, resume=["Illustration créée par l'IA"], refus=[])
+
+
+@app.get("/montage-video/{identifiant}/editeur/{numero}/illustrations/{illustration_id}")
+def montage_editeur_fichier_illustration(identifiant: str, numero: int, illustration_id: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    chemin = montage_editeur.fichier_illustration(sortie, illustration_id) if sortie else None
+    if not chemin:
+        return JSONResponse({"erreur": "Illustration introuvable."}, status_code=404)
+    return FileResponse(chemin, media_type="image/jpeg")
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/commande")
+async def montage_editeur_commande(identifiant: str, numero: int, request: Request):
+    """Commande en langage naturel (« retire les répétitions », « illustre les idées principales »...) traduite par l'IA en modifications."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est en cours : attendez qu'il se termine."}, status_code=409)
+    try:
+        commande = " ".join(str((await request.json()).get("commande") or "").split())[:500]
+    except (ValueError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if not commande:
+        return JSONResponse({"erreur": "Écrivez une commande."}, status_code=400)
+    try:
+        reponse_ia = await run_in_threadpool(_commande_editeur, commande, sortie["phrases"], sortie["segments"], montage["infos"]["duree"])
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"L'IA n'a pas pu traiter la commande : {str(erreur)[:200]}"}, status_code=502)
+
+    operations, illustrations = [], []
+    for action in reponse_ia["actions"]:
+        genre = action["type"]
+        if genre == "illustration":
+            if action.get("prompt") and len(illustrations) < 4:
+                illustrations.append(action)
+        elif genre == "alterne":
+            operations.append({"type": "reglage", "cle": "alterne", "valeur": bool(action.get("valeur"))})
+        elif genre == "mot_en_gros":
+            operations.append({"type": "mot_en_gros", "mots": action.get("texte")})
+        else:
+            operations.append({**action, "type": genre})
+    resume, refus = montage_editeur.appliquer_operations(montage, sortie, operations) if operations else ([], [])
+
+    def creer(action):
+        plein = action.get("mode") == "plein"
+        return action, _generer_image_illustration(action["prompt"], sortie["format"] == "vertical", plein)
+
+    if illustrations:
+        resultats = await asyncio.gather(*[run_in_threadpool(creer, a) for a in illustrations], return_exceptions=True)
+        for action, resultat in zip(illustrations, resultats):
+            if isinstance(resultat, Exception):
+                refus.append(f"Illustration non générée : {str(resultat)[:120]}")
+                continue
+            try:
+                montage_editeur.ajouter_illustration(montage, sortie, resultat[1], action["debut"], action["fin"] if action["fin"] > action["debut"] else action["debut"] + 3.0,
+                                                     "plein" if action.get("mode") == "plein" else "incrust", "ia", action["prompt"])
+                resume.append(f"Illustration créée à {montage_parole._mmss(action['debut'])}")
+            except montage_editeur.ErreurEditeur as erreur:
+                refus.append(str(erreur))
+    return _reponse_editeur(identifiant, montage, sortie, resume=resume, refus=refus, reponse=reponse_ia["reponse"])
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/rendre")
+def montage_editeur_rendre(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est déjà en cours."}, status_code=409)
+    montage_editeur.lancer_rendu(identifiant, numero)
+    return JSONResponse({"id": identifiant})
+
+
+@app.get("/montage-video/{identifiant}/apercu.mp4")
+def montage_editeur_apercu(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    montage = montage_parole.MONTAGES.get(identifiant)
+    chemin = montage_editeur.fichier_apercu(montage) if montage else None
+    if not chemin:
+        return JSONResponse({"erreur": "Aperçu pas encore prêt."}, status_code=404)
+    return FileResponse(chemin, media_type="video/mp4")
 
 
 @app.post("/montage-video/{identifiant}/reviser")

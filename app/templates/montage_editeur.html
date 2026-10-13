@@ -1,0 +1,572 @@
+{% extends "base.html" %}
+{% set page_actuelle = "montage_video" %}
+{% block titre %}Éditeur de montage — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/montage-video?id={{ identifiant }}">&larr; Retour aux montages</a></p>
+
+<div class="barre-titre">
+  <h1>Éditeur · {{ titre }}</h1>
+  <div class="barre-outils-import-masse">
+    <button type="button" class="bouton-secondaire" id="ed-annuler" disabled>↶ Annuler</button>
+    <button type="button" class="bouton" id="ed-rendre">🎞️ Rendre la vidéo</button>
+  </div>
+</div>
+<p class="texte-discret">
+  Coupez dans le texte, ajoutez zooms, titres et illustrations : l'aperçu se met à jour tout de suite, sans rendu. Le rendu final (quelques minutes)
+  applique tout en une fois. Les mots coupés apparaissent barrés.
+</p>
+<p id="ed-message" class="texte-vide" hidden></p>
+<div id="ed-progression" hidden>
+  <div class="ed-barre-rendu"><div id="ed-barre-rendu-remplissage"></div></div>
+  <p id="ed-etape" class="texte-discret"></p>
+</div>
+<div id="ed-resultat" class="ed-resultat" hidden>
+  <strong>Version rendue</strong>
+  <video id="ed-resultat-video" controls preload="metadata"></video>
+  <a class="bouton-secondaire" id="ed-resultat-lien" href="#">⬇ Télécharger</a>
+</div>
+
+<div class="ed-grille">
+  <div class="ed-gauche">
+    <div class="ed-scene" id="ed-scene">
+      <video id="ed-video" playsinline preload="auto"></video>
+      <div class="ed-ill" id="ed-ill" hidden><img alt=""></div>
+      <div class="ed-titre" id="ed-titre" hidden></div>
+      <div class="ed-titre ed-accroche" id="ed-accroche" hidden></div>
+      <div class="ed-sous" id="ed-sous"></div>
+      <div class="ed-barre" id="ed-barre"><div></div></div>
+      <div class="ed-attente" id="ed-attente">Préparation de l'aperçu…</div>
+    </div>
+    <div class="ed-controles">
+      <button type="button" class="bouton-secondaire" id="ed-lecture">▶ Lecture</button>
+      <span id="ed-temps" class="ed-temps">0:00 / 0:00</span>
+      <button type="button" class="bouton-secondaire" id="ed-marque-i" title="Raccourci : I">[ Début</button>
+      <button type="button" class="bouton-secondaire" id="ed-marque-o" title="Raccourci : O">Fin ]</button>
+      <button type="button" class="bouton-secondaire" id="ed-couper-plage">✂ Couper la plage</button>
+      <button type="button" class="bouton-secondaire" id="ed-restaurer-plage">↩ Restaurer la plage</button>
+    </div>
+    <canvas id="ed-frise" height="104"></canvas>
+    <p class="texte-discret ed-legende">
+      <span class="ed-pastille" style="background:#3d6bff"></span>gardé
+      <span class="ed-pastille" style="background:#2a2d38"></span>coupé (double-clic pour restaurer)
+      <span class="ed-pastille" style="background:#f0a020"></span>zoom
+      <span class="ed-pastille" style="background:#9a5cff"></span>titre
+      <span class="ed-pastille" style="background:#22b573"></span>illustration
+    </p>
+  </div>
+
+  <div class="ed-droite">
+    <div class="ed-onglets" role="tablist">
+      <button type="button" class="ed-onglet actif" data-onglet="transcription">Texte</button>
+      <button type="button" class="ed-onglet" data-onglet="effets">Effets</button>
+      <button type="button" class="ed-onglet" data-onglet="illustrations">Illustrations</button>
+      <button type="button" class="ed-onglet" data-onglet="ia">IA</button>
+    </div>
+
+    <div class="ed-panneau" id="panneau-transcription">
+      <div class="ed-actions-selection">
+        <span id="ed-selection-info" class="texte-discret">Cliquez sur un mot, puis Maj + clic sur un autre pour sélectionner un passage.</span>
+        <button type="button" class="bouton-secondaire" id="ed-couper-sel" disabled>✂ Couper (Suppr)</button>
+        <button type="button" class="bouton-secondaire" id="ed-restaurer-sel" disabled>↩ Restaurer</button>
+        <button type="button" class="bouton-secondaire" id="ed-valoriser-sel" disabled>⭐ Mettre en valeur</button>
+        <button type="button" class="bouton-secondaire" id="ed-corriger-sel" disabled>✏️ Corriger</button>
+      </div>
+      <div id="ed-transcription" class="ed-transcription"></div>
+    </div>
+
+    <div class="ed-panneau" id="panneau-effets" hidden>
+      <div class="ed-groupe">
+        <strong>Effets automatiques</strong>
+        <label><input type="checkbox" data-reglage="zooms"> Zooms sur les moments forts</label>
+        <label><input type="checkbox" data-reglage="alterne"> Cadrage alterné à chaque coupe (rythme « jump cut »)</label>
+        <label><input type="checkbox" data-reglage="sous_titres"> Sous-titres</label>
+        <label><input type="checkbox" data-reglage="mots"> Sous-titres animés mot par mot</label>
+        <label><input type="checkbox" data-reglage="barre"> Barre de progression</label>
+        <label><input type="checkbox" data-reglage="accroche"> Titre d'accroche au début</label>
+      </div>
+      <div class="ed-groupe">
+        <strong>Titre d'accroche</strong>
+        <div class="ed-ligne"><input type="text" id="ed-accroche-texte" maxlength="90" placeholder="Ex : 3 erreurs à éviter sur Google"><button type="button" class="bouton-secondaire" id="ed-accroche-ok">Enregistrer</button></div>
+      </div>
+      <div class="ed-groupe">
+        <strong>À la position de la lecture</strong>
+        <div class="ed-ligne">
+          <button type="button" class="bouton-secondaire" id="ed-zoom-leger">🔍 Zoom léger ici</button>
+          <button type="button" class="bouton-secondaire" id="ed-zoom-fort">🔍 Zoom fort ici</button>
+          <button type="button" class="bouton-secondaire" id="ed-zoom-retirer">Retirer le zoom ici</button>
+        </div>
+        <div class="ed-ligne"><input type="text" id="ed-titre-texte" maxlength="80" placeholder="Texte à afficher à l'écran"><button type="button" class="bouton-secondaire" id="ed-titre-ajouter">Ajouter un titre (3 s)</button></div>
+        <ul id="ed-liste-titres" class="ed-liste"></ul>
+      </div>
+    </div>
+
+    <div class="ed-panneau" id="panneau-illustrations" hidden>
+      <div class="ed-groupe">
+        <strong>Ajouter à la position de la lecture</strong>
+        <div class="ed-ligne">
+          <label>Durée <input type="number" id="ed-ill-duree" value="3" min="1" max="10" step="0.5" style="width:5rem"> s</label>
+          <label>Affichage
+            <select id="ed-ill-mode"><option value="incrust">En cadre sur la vidéo</option><option value="plein">Plein écran</option></select>
+          </label>
+        </div>
+        <div class="ed-ligne"><label class="bouton-secondaire ed-fichier">📁 Importer une image<input type="file" id="ed-ill-fichier" accept="image/*" hidden></label></div>
+        <div class="ed-ligne"><input type="text" id="ed-ill-prompt" maxlength="400" placeholder="Décrivez l'image à créer (ex : un bijoutier qui pèse de l'or)"><button type="button" class="bouton-secondaire" id="ed-ill-generer">✨ Créer avec l'IA</button></div>
+      </div>
+      <ul id="ed-liste-illustrations" class="ed-liste"></ul>
+    </div>
+
+    <div class="ed-panneau" id="panneau-ia" hidden>
+      <div class="ed-groupe">
+        <strong>Demandez à l'IA</strong>
+        <textarea id="ed-ia-commande" rows="3" maxlength="500" placeholder="Ex : retire les répétitions, mets un zoom sur chaque chiffre, illustre les idées principales"></textarea>
+        <div class="ed-ligne">
+          <button type="button" class="bouton" id="ed-ia-envoyer">Envoyer</button>
+        </div>
+        <div class="ed-puces">
+          <button type="button" class="ed-puce">Retire les répétitions et les passages faibles</button>
+          <button type="button" class="ed-puce">Illustre les idées principales</button>
+          <button type="button" class="ed-puce">Mets un zoom sur chaque chiffre ou moment fort</button>
+          <button type="button" class="ed-puce">Propose une meilleure accroche</button>
+          <button type="button" class="ed-puce">Garde seulement le passage le plus fort</button>
+        </div>
+        <div id="ed-ia-reponse" class="ed-ia-reponse" hidden></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .ed-grille { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 1rem; align-items: start; }
+  @media (max-width: 900px) { .ed-grille { grid-template-columns: 1fr; } }
+  .ed-gauche, .ed-droite { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+  .ed-scene { position: relative; width: 100%; background: #000; border-radius: 12px; overflow: hidden; container-type: size; }
+  .ed-scene.vertical { aspect-ratio: 9 / 16; max-width: 360px; margin: 0 auto; }
+  .ed-scene.horizontal { aspect-ratio: 16 / 9; }
+  .ed-scene video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; background: #000; }
+  .ed-scene.horizontal video { object-fit: contain; }
+  .ed-ill { position: absolute; inset: 0; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
+  .ed-ill img { max-width: 78%; max-height: 62%; margin-top: 10%; border: 4px solid #fff; border-radius: 2px; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+  .ed-ill.plein { align-items: stretch; }
+  .ed-ill.plein img { max-width: none; max-height: none; width: 100%; height: 100%; margin: 0; border: 0; object-fit: cover; box-shadow: none; }
+  .ed-titre { position: absolute; left: 6%; right: 6%; top: 9%; text-align: center; color: #fff; font-weight: 800; text-transform: uppercase; font-family: Poppins, system-ui, sans-serif;
+    text-shadow: 0 0 6px #000, 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000; pointer-events: none; line-height: 1.12; }
+  .ed-titre.ed-accroche { top: 9%; }
+  .ed-sous { position: absolute; left: 4%; right: 4%; bottom: 22%; text-align: center; color: #fff; font-weight: 800; text-transform: uppercase; font-family: Poppins, system-ui, sans-serif;
+    text-shadow: 0 0 5px #000, 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000; pointer-events: none; line-height: 1.15; }
+  .ed-scene.horizontal .ed-sous { bottom: 8%; }
+  .ed-sous { word-spacing: .12em; }
+  .ed-sous .actif { color: #ffd60a; display: inline-block; transform: scale(1.1); margin: 0 .05em; }
+  .ed-sous .gros { color: #ffd60a; }
+  .ed-barre { position: absolute; left: 0; right: 0; bottom: 0; height: 1%; min-height: 4px; }
+  .ed-barre > div { height: 100%; width: 0; background: #ffd60a; }
+  .ed-attente { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; color: #fff; background: rgba(0,0,0,.72); font-size: .95rem; }
+  .ed-controles { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .ed-temps { font-variant-numeric: tabular-nums; font-size: .9rem; margin: 0 .3rem; }
+  #ed-frise { width: 100%; border-radius: 8px; background: #181b23; cursor: pointer; touch-action: none; }
+  .ed-legende { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; margin: 0; }
+  .ed-pastille { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; margin-right: .3rem; vertical-align: -1px; }
+  .ed-onglets { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .ed-onglet { border: 1px solid var(--carte-bordure); background: var(--carte); color: var(--texte); border-radius: 8px; padding: .35rem .8rem; cursor: pointer; }
+  .ed-onglet.actif { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ed-panneau { border: 1px solid var(--carte-bordure); background: var(--carte); border-radius: 12px; padding: .8rem; }
+  .ed-groupe { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1rem; }
+  .ed-groupe label { display: flex; gap: .5rem; align-items: center; justify-content: flex-start; text-align: left; }
+  .ed-ligne { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .ed-ligne input[type="text"] { flex: 1; min-width: 12rem; }
+  .ed-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+  .ed-liste li { display: flex; gap: .5rem; align-items: center; border: 1px solid var(--carte-bordure); border-radius: 8px; padding: .3rem .5rem; }
+  .ed-liste img { width: 54px; height: 54px; object-fit: cover; border-radius: 6px; }
+  .ed-liste .espace { margin-left: auto; }
+  .ed-actions-selection { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-bottom: .6rem; }
+  .ed-transcription { max-height: 62vh; overflow: auto; display: flex; flex-direction: column; gap: .5rem; line-height: 1.7; }
+  .ed-phrase { display: flex; gap: .5rem; align-items: baseline; }
+  .ed-phrase .ed-horo { flex: 0 0 auto; font-size: .75rem; color: var(--texte-discret); border: 0; background: none; cursor: pointer; font-variant-numeric: tabular-nums; padding: 0; }
+  .ed-mot { cursor: pointer; border-radius: 4px; padding: 0 1px; }
+  .ed-mot:hover { background: var(--accent-clair); }
+  .ed-mot.coupe { text-decoration: line-through; color: var(--texte-discret); opacity: .65; }
+  .ed-mot.selection { background: #ffe58a; color: #1a1d23; }
+  .ed-mot.courant { outline: 2px solid var(--accent); }
+  .ed-mot.gros { font-weight: 700; }
+  .ed-puces { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .ed-puce { border: 1px solid var(--carte-bordure); background: var(--accent-clair); color: var(--texte); border-radius: 999px; padding: .25rem .7rem; cursor: pointer; font-size: .85rem; }
+  .ed-ia-reponse { border-left: 3px solid var(--accent); padding: .4rem .7rem; white-space: pre-wrap; }
+  .ed-barre-rendu { height: 10px; border-radius: 6px; background: rgba(128,128,140,.3); overflow: hidden; margin: .6rem 0 .3rem; }
+  .ed-barre-rendu > div { height: 100%; width: 0; background: #5b7cff; transition: width .4s; }
+  .ed-resultat { display: flex; flex-direction: column; gap: .5rem; max-width: 420px; margin-bottom: 1rem; }
+  .ed-resultat video { width: 100%; border-radius: 10px; background: #000; max-height: 520px; }
+</style>
+
+<script>
+(function () {
+  const ID = {{ identifiant|tojson }}, NUMERO = {{ numero }};
+  const BASE = "/montage-video/" + ID + "/editeur/" + NUMERO;
+  const $ = (id) => document.getElementById(id);
+  const video = $("ed-video"), scene = $("ed-scene"), frise = $("ed-frise"), ctx = frise.getContext("2d");
+  let E = null;                      // etat renvoye par le serveur (temps de la video d'origine)
+  let enRendu = false, apercuPret = false, sceneConfiguree = false;
+  let selection = null;              // {p1, w1, p2, w2} (mots, ordre normalise)
+  let marqueI = null, marqueO = null;
+  let motCourant = "";
+
+  // ---------- utilitaires
+  const minutes = (t) => Math.floor(Math.max(0, t) / 60) + ":" + String(Math.floor(Math.max(0, t) % 60)).padStart(2, "0");
+  function message(texte, grave) { const m = $("ed-message"); m.hidden = !texte; m.textContent = texte || ""; m.style.color = grave ? "var(--danger)" : ""; }
+  const normaliser = (m) => m.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+  async function api(chemin, options) {
+    const reponse = await fetch(BASE + chemin, options);
+    let donnees = {};
+    try { donnees = await reponse.json(); } catch (e) { /* reponse sans JSON */ }
+    if (!reponse.ok) throw new Error(donnees.erreur || "Erreur " + reponse.status);
+    return donnees;
+  }
+  const envoyer = (chemin, corps) => api(chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps || {}) });
+
+  function estGarde(t) { return E.segments.some((s) => t >= s[0] - 0.02 && t < s[1]); }
+  function tempsMonte(t) {
+    let cumul = 0;
+    for (const s of E.segments) { if (t < s[0]) return cumul; if (t <= s[1]) return cumul + (t - s[0]); cumul += s[1] - s[0]; }
+    return cumul;
+  }
+
+  // ---------- etat
+  function appliquerEtat(etat) {
+    E = etat;
+    if (!sceneConfiguree) configurerScene();
+    $("ed-annuler").disabled = !E.peut_annuler || enRendu;
+    document.querySelectorAll("[data-reglage]").forEach((c) => { c.checked = !!E.reglages[c.dataset.reglage]; });
+    if (document.activeElement !== $("ed-accroche-texte")) $("ed-accroche-texte").value = E.accroche || "";
+    dessinerTranscription(); dessinerListes(); dessinerFrise(); majSurimpressions();
+    $("ed-temps").textContent = minutes(tempsMonte(video.currentTime || 0)) + " / " + minutes(E.duree_montee);
+    if (E.apercu && E.apercu.etat === "pret" && !apercuPret) { apercuPret = true; video.src = "/montage-video/" + ID + "/apercu.mp4"; $("ed-attente").hidden = true; }
+    else if (!apercuPret) {
+      $("ed-attente").hidden = false;
+      $("ed-attente").textContent = E.apercu && E.apercu.etat === "erreur" ? "Aperçu indisponible : " + (E.apercu.erreur || "erreur") + ". Le montage reste possible dans le texte." : "Préparation de l'aperçu… " + Math.round(((E.apercu || {}).progression || 0) * 100) + " %";
+    }
+  }
+  function configurerScene() {
+    sceneConfiguree = true;
+    scene.classList.add(E.format === "vertical" ? "vertical" : "horizontal");
+    redimensionner();
+  }
+  function redimensionner() {
+    const hauteur = scene.clientHeight || 1; const echelle = hauteur / (E && E.format === "vertical" ? 1920 : 1080);
+    scene.style.setProperty("--u", echelle);
+    $("ed-sous").style.fontSize = Math.round((E && E.format === "vertical" ? 94 : 66) * echelle) + "px";
+    document.querySelectorAll(".ed-titre").forEach((t) => { t.style.fontSize = Math.round((E && E.format === "vertical" ? 76 : 54) * echelle) + "px"; });
+    dessinerFrise();
+  }
+  window.addEventListener("resize", redimensionner);
+
+  async function charger() { try { appliquerEtat((await api("/etat")).etat); } catch (e) { message(e.message, true); } }
+  async function operer(operations) {
+    if (enRendu) { message("Un rendu est en cours : attendez qu'il se termine.", true); return null; }
+    try {
+      const donnees = await envoyer("/operations", { operations });
+      appliquerEtat(donnees.etat);
+      annoncer(donnees);
+      return donnees;
+    } catch (e) { message(e.message, true); return null; }
+  }
+  function annoncer(donnees) {
+    const lignes = (donnees.resume || []).concat((donnees.refus || []).map((r) => "Non appliqué : " + r));
+    message(lignes.join(" · "), !(donnees.resume || []).length && (donnees.refus || []).length > 0);
+  }
+
+  // ---------- lecture avec coupes et surimpressions
+  function lectureBoucle() {
+    if (video.paused || video.ended) return;
+    const t = video.currentTime;
+    if (!estGarde(t)) {
+      const suivant = E.segments.find((s) => s[0] > t);
+      if (suivant) video.currentTime = suivant[0];
+      else { video.pause(); video.currentTime = Math.max(0, E.segments[E.segments.length - 1][1] - 0.05); }
+    }
+    majSurimpressions();
+    requestAnimationFrame(lectureBoucle);
+  }
+  video.addEventListener("play", () => { $("ed-lecture").textContent = "⏸ Pause"; requestAnimationFrame(lectureBoucle); });
+  video.addEventListener("pause", () => { $("ed-lecture").textContent = "▶ Lecture"; majSurimpressions(); });
+  video.addEventListener("seeked", majSurimpressions);
+  video.addEventListener("timeupdate", () => { if (video.paused) majSurimpressions(); });
+  $("ed-lecture").addEventListener("click", () => {
+    if (!apercuPret) { message("L'aperçu est en cours de préparation.", true); return; }
+    if (video.paused) {
+      const t = video.currentTime;
+      if (!estGarde(t)) { const s = E.segments.find((x) => x[0] > t); video.currentTime = s ? s[0] : E.segments[0][0]; }
+      video.play();
+    } else video.pause();
+  });
+
+  function fenetreZoom(t) {
+    let facteur = 1;
+    for (const z of E.zooms) {
+      if (t < z.debut || t > z.fin) continue;
+      facteur += z.mode === "sec" ? z.amplitude : z.amplitude * Math.min(1, (t - z.debut) / 0.2) * Math.min(1, (z.fin - t) / 0.35);
+    }
+    return facteur;
+  }
+  function chunkSousTitre(phrase, t) {
+    const mots = phrase.mots; if (!mots.length) return null;
+    let courant = mots.findIndex((m) => t >= m.debut && t < m.fin); if (courant < 0) courant = t < mots[0].debut ? 0 : mots.length - 1;
+    // memes groupes que dans le rendu : 3 mots au plus, deux lignes
+    const groupes = []; let g = [];
+    mots.forEach((m, i) => { const essai = g.concat([i]); const total = essai.reduce((s, k) => s + mots[k].texte.length, 0) + essai.length - 1; if (g.length && (essai.length > 3 || total > 26)) { groupes.push(g); g = [i]; } else g = essai; });
+    if (g.length) groupes.push(g);
+    return { groupe: groupes.find((x) => x.includes(courant)), courant };
+  }
+  function majSurimpressions() {
+    if (!E) return;
+    const t = video.currentTime || 0, tm = tempsMonte(t), visible = estGarde(t);
+    video.style.transform = "scale(" + fenetreZoom(t).toFixed(4) + ")";
+    if (E.format === "vertical" && E.visage_x != null) video.style.objectPosition = Math.round(E.visage_x * 100) + "% 50%";
+    $("ed-temps").textContent = minutes(tm) + " / " + minutes(E.duree_montee);
+    // sous-titres
+    const sous = $("ed-sous"); sous.textContent = "";
+    const phrase = visible && E.reglages.sous_titres ? E.phrases.find((p) => t >= p.debut && t < p.fin) : null;
+    const gros = new Set(E.mots_gros || []);
+    if (phrase) {
+      if (E.reglages.mots) {
+        const c = chunkSousTitre(phrase, t);
+        if (c) c.groupe.forEach((i, rang) => {
+          const span = document.createElement("span"); span.textContent = phrase.mots[i].texte.replace(/[,;:.]+$/, "").toUpperCase();
+          if (i === c.courant) span.className = "actif"; else if (gros.has(normaliser(phrase.mots[i].texte))) span.className = "gros";
+          sous.appendChild(span); if (rang < c.groupe.length - 1) sous.appendChild(document.createTextNode(" "));
+        });
+      } else sous.textContent = phrase.texte.toUpperCase();
+    }
+    // titres, accroche, illustration, barre
+    const titres = E.titres.filter((x) => t >= x.debut && t < x.fin).map((x) => x.texte);
+    $("ed-titre").hidden = !(visible && titres.length); $("ed-titre").textContent = titres.join(" · ");
+    const accroche = E.reglages.accroche && E.accroche && tm >= 0.2 && tm < 3.6;
+    $("ed-accroche").hidden = !accroche; $("ed-accroche").textContent = accroche ? E.accroche : "";
+    const ill = visible ? E.illustrations.find((x) => t >= x.debut && t < x.fin) : null;
+    $("ed-ill").hidden = !ill;
+    if (ill) { $("ed-ill").className = "ed-ill" + (ill.mode === "plein" ? " plein" : ""); const img = $("ed-ill").querySelector("img"); const src = BASE + "/illustrations/" + ill.id; if (img.dataset.src !== src) { img.dataset.src = src; img.src = src; } }
+    $("ed-barre").hidden = !E.reglages.barre; $("ed-barre").firstElementChild.style.width = (E.duree_montee ? Math.min(100, tm / E.duree_montee * 100) : 0) + "%";
+    // mot courant dans le texte + curseur de la frise
+    if (phrase) { const i = phrase.mots.findIndex((m) => t >= m.debut && t < m.fin); const cle = phrase.indice + ":" + i; if (cle !== motCourant) { motCourant = cle; marquerMotCourant(phrase.indice, i); } }
+    dessinerFrise();
+  }
+  function marquerMotCourant(p, w) {
+    document.querySelectorAll(".ed-mot.courant").forEach((x) => x.classList.remove("courant"));
+    const el = document.querySelector('.ed-mot[data-p="' + p + '"][data-w="' + w + '"]'); if (el) el.classList.add("courant");
+  }
+
+  // ---------- frise
+  function dessinerFrise() {
+    if (!E) return;
+    const largeur = frise.clientWidth || 600, ratio = window.devicePixelRatio || 1;
+    if (frise.width !== Math.round(largeur * ratio)) { frise.width = Math.round(largeur * ratio); }
+    frise.height = Math.round(104 * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, largeur, 104);
+    const px = (t) => t / E.duree_source * largeur;
+    ctx.fillStyle = "#2a2d38"; ctx.fillRect(0, 52, largeur, 40);                                  // tout est coupe par defaut
+    ctx.fillStyle = "#3d6bff"; E.segments.forEach((s) => ctx.fillRect(px(s[0]), 52, Math.max(1, px(s[1]) - px(s[0])), 40));
+    ctx.fillStyle = "rgba(255,255,255,.18)"; E.silences.forEach((s) => ctx.fillRect(px(s[0]), 52, Math.max(1, px(s[1]) - px(s[0])), 40));
+    ctx.fillStyle = "#f0a020"; E.zooms.forEach((z) => ctx.fillRect(px(z.debut), 8, Math.max(2, px(z.fin) - px(z.debut)), 14));
+    ctx.fillStyle = "#9a5cff"; E.titres.forEach((x) => ctx.fillRect(px(x.debut), 27, Math.max(2, px(x.fin) - px(x.debut)), 10));
+    ctx.fillStyle = "#22b573"; E.illustrations.forEach((x) => ctx.fillRect(px(x.debut), 39, Math.max(2, px(x.fin) - px(x.debut)), 10));
+    if (marqueI !== null || marqueO !== null) {
+      const a = marqueI !== null ? marqueI : 0, b = marqueO !== null ? marqueO : E.duree_source;
+      ctx.fillStyle = "rgba(255,214,10,.25)"; ctx.fillRect(px(Math.min(a, b)), 52, Math.abs(px(b) - px(a)), 40);
+      ctx.fillStyle = "#ffd60a"; if (marqueI !== null) ctx.fillRect(px(marqueI) - 1, 48, 3, 48); if (marqueO !== null) ctx.fillRect(px(marqueO) - 1, 48, 3, 48);
+    }
+    if (selection) { const [a, b] = bornesSelection(); ctx.fillStyle = "rgba(255,229,138,.35)"; ctx.fillRect(px(a), 52, Math.max(2, px(b) - px(a)), 40); }
+    ctx.fillStyle = "#ff3b5c"; ctx.fillRect(px(video.currentTime || 0) - 1, 2, 2, 98);
+    ctx.fillStyle = "#9aa1ac"; ctx.font = "10px sans-serif";
+    for (let t = 0; t <= E.duree_source; t += Math.max(5, Math.ceil(E.duree_source / 12 / 5) * 5)) ctx.fillText(minutes(t), Math.min(largeur - 26, px(t) + 2), 100);
+  }
+  function instantDepuisEvenement(e) { const r = frise.getBoundingClientRect(); return Math.max(0, Math.min(E.duree_source, (e.clientX - r.left) / r.width * E.duree_source)); }
+  let glisse = false;
+  frise.addEventListener("pointerdown", (e) => { if (!E) return; glisse = true; frise.setPointerCapture(e.pointerId); video.currentTime = instantDepuisEvenement(e); });
+  frise.addEventListener("pointermove", (e) => { if (glisse && E) video.currentTime = instantDepuisEvenement(e); });
+  frise.addEventListener("pointerup", () => { glisse = false; });
+  frise.addEventListener("dblclick", (e) => {
+    if (!E) return;
+    const t = instantDepuisEvenement(e);
+    if (estGarde(t)) return;
+    const avant = E.segments.filter((s) => s[1] <= t).pop(), apres = E.segments.find((s) => s[0] > t);
+    operer([{ type: "restaurer", debut: avant ? avant[1] : 0, fin: apres ? apres[0] : E.duree_source }]);
+  });
+
+  // ---------- transcription
+  function motCoupe(m) { const milieu = (m.debut + m.fin) / 2; return !E.segments.some((s) => milieu >= s[0] && milieu <= s[1]); }
+  function dessinerTranscription() {
+    const zone = $("ed-transcription"), haut = zone.scrollTop; zone.textContent = "";
+    const gros = new Set(E.mots_gros || []);
+    E.phrases.forEach((p) => {
+      const ligne = document.createElement("div"); ligne.className = "ed-phrase";
+      const horo = document.createElement("button"); horo.type = "button"; horo.className = "ed-horo"; horo.textContent = minutes(p.debut);
+      horo.addEventListener("click", () => { video.currentTime = p.debut; });
+      const texte = document.createElement("div");
+      p.mots.forEach((m, j) => {
+        const span = document.createElement("span"); span.className = "ed-mot"; span.textContent = m.texte; span.dataset.p = p.indice; span.dataset.w = j;
+        if (motCoupe(m)) span.classList.add("coupe"); if (gros.has(normaliser(m.texte))) span.classList.add("gros");
+        span.addEventListener("click", (e) => clicMot(e, p.indice, j)); span.addEventListener("dblclick", () => { selection = { p1: p.indice, w1: j, p2: p.indice, w2: j }; corrigerSelection(); });
+        texte.appendChild(span); texte.appendChild(document.createTextNode(" "));
+      });
+      ligne.appendChild(horo); ligne.appendChild(texte); zone.appendChild(ligne);
+    });
+    zone.scrollTop = haut; motCourant = ""; marquerSelection();
+  }
+  function clicMot(e, p, w) {
+    const mot = E.phrases[p].mots[w];
+    if (e.shiftKey && selection) { selection.p2 = p; selection.w2 = w; }
+    else { selection = { p1: p, w1: w, p2: p, w2: w }; video.currentTime = mot.debut; }
+    marquerSelection(); dessinerFrise();
+  }
+  function bornesSelection() {
+    const a = E.phrases[selection.p1].mots[selection.w1], b = E.phrases[selection.p2].mots[selection.w2];
+    const ordonnes = (selection.p1 < selection.p2 || (selection.p1 === selection.p2 && selection.w1 <= selection.w2));
+    return ordonnes ? [a.debut, b.fin] : [b.debut, a.fin];
+  }
+  function motsSelectionnes() {
+    if (!selection) return [];
+    const ord = (selection.p1 < selection.p2 || (selection.p1 === selection.p2 && selection.w1 <= selection.w2));
+    const [p1, w1, p2, w2] = ord ? [selection.p1, selection.w1, selection.p2, selection.w2] : [selection.p2, selection.w2, selection.p1, selection.w1];
+    const liste = [];
+    for (let p = p1; p <= p2; p++) { const mots = E.phrases[p].mots; for (let w = (p === p1 ? w1 : 0); w <= (p === p2 ? w2 : mots.length - 1); w++) liste.push({ p, w, mot: mots[w] }); }
+    return liste;
+  }
+  function marquerSelection() {
+    document.querySelectorAll(".ed-mot.selection").forEach((x) => x.classList.remove("selection"));
+    const mots = motsSelectionnes();
+    mots.forEach(({ p, w }) => { const el = document.querySelector('.ed-mot[data-p="' + p + '"][data-w="' + w + '"]'); if (el) el.classList.add("selection"); });
+    const coupes = mots.filter((x) => motCoupe(x.mot)).length;
+    const info = $("ed-selection-info");
+    info.textContent = mots.length ? mots.length + " mot" + (mots.length > 1 ? "s" : "") + " sélectionné" + (mots.length > 1 ? "s" : "") + " (" + minutes(bornesSelection()[0]) + " à " + minutes(bornesSelection()[1]) + ")" : "Cliquez sur un mot, puis Maj + clic sur un autre pour sélectionner un passage.";
+    $("ed-couper-sel").disabled = !mots.length || coupes === mots.length; $("ed-restaurer-sel").disabled = !coupes;
+    $("ed-valoriser-sel").disabled = !mots.length; $("ed-corriger-sel").disabled = !mots.length;
+  }
+  $("ed-couper-sel").addEventListener("click", () => { if (!selection) return; const [a, b] = bornesSelection(); selection = null; operer([{ type: "couper", debut: a, fin: b }]); });
+  $("ed-restaurer-sel").addEventListener("click", () => { if (!selection) return; const [a, b] = bornesSelection(); selection = null; operer([{ type: "restaurer", debut: a, fin: b }]); });
+  $("ed-valoriser-sel").addEventListener("click", () => { operer([{ type: "mot_en_gros", mots: motsSelectionnes().map((x) => x.mot.texte).join(" ") }]); });
+  function corrigerSelection() {
+    const mots = motsSelectionnes(); if (!mots.length) return;
+    const p = mots[0].p, phrase = E.phrases[p], idx = mots.filter((x) => x.p === p).map((x) => x.w);
+    const avant = idx.map((w) => phrase.mots[w].texte).join(" ");
+    const nouveau = window.prompt("Corriger le texte « " + avant + " » :", avant);
+    if (nouveau === null || !nouveau.trim()) return;
+    const tous = phrase.mots.map((m) => m.texte); tous.splice(idx[0], idx.length, nouveau.trim());
+    selection = null; operer([{ type: "corriger_phrase", indice: p, texte: tous.join(" ") }]);
+  }
+  $("ed-corriger-sel").addEventListener("click", corrigerSelection);
+
+  // ---------- plage In / Out
+  function marquer(cle) { const t = video.currentTime || 0; if (cle === "i") marqueI = t; else marqueO = t; dessinerFrise(); }
+  $("ed-marque-i").addEventListener("click", () => marquer("i")); $("ed-marque-o").addEventListener("click", () => marquer("o"));
+  function plage() { if (marqueI === null || marqueO === null) { message("Posez d'abord un début [ et une fin ] sur la lecture.", true); return null; } return [Math.min(marqueI, marqueO), Math.max(marqueI, marqueO)]; }
+  $("ed-couper-plage").addEventListener("click", () => { const p = plage(); if (p) { marqueI = marqueO = null; operer([{ type: "couper", debut: p[0], fin: p[1] }]); } });
+  $("ed-restaurer-plage").addEventListener("click", () => { const p = plage(); if (p) { marqueI = marqueO = null; operer([{ type: "restaurer", debut: p[0], fin: p[1] }]); } });
+
+  // ---------- effets
+  document.querySelectorAll("[data-reglage]").forEach((c) => c.addEventListener("change", () => operer([{ type: "reglage", cle: c.dataset.reglage, valeur: c.checked }])));
+  $("ed-accroche-ok").addEventListener("click", () => operer([{ type: "accroche", texte: $("ed-accroche-texte").value }]));
+  $("ed-zoom-leger").addEventListener("click", () => operer([{ type: "zoom", debut: video.currentTime, fin: video.currentTime + 2.5, force: "leger" }]));
+  $("ed-zoom-fort").addEventListener("click", () => operer([{ type: "zoom", debut: video.currentTime, fin: video.currentTime + 2.5, force: "fort" }]));
+  $("ed-zoom-retirer").addEventListener("click", () => operer([{ type: "retirer_zoom", debut: video.currentTime }]));
+  $("ed-titre-ajouter").addEventListener("click", async () => { const texte = $("ed-titre-texte").value.trim(); if (!texte) { message("Écrivez le texte du titre.", true); return; } if (await operer([{ type: "titre", debut: video.currentTime, fin: video.currentTime + 3, texte }])) $("ed-titre-texte").value = ""; });
+
+  function dessinerListes() {
+    const titres = $("ed-liste-titres"); titres.textContent = "";
+    E.titres.forEach((x) => {
+      const li = document.createElement("li"); const bouton = document.createElement("button"); bouton.type = "button"; bouton.className = "ed-horo"; bouton.textContent = minutes(x.debut); bouton.addEventListener("click", () => { video.currentTime = x.debut; });
+      const t = document.createElement("span"); t.textContent = x.texte; const retirer = document.createElement("button"); retirer.type = "button"; retirer.className = "bouton-secondaire espace"; retirer.textContent = "✕"; retirer.addEventListener("click", () => operer([{ type: "retirer_titre", indice: x.indice }]));
+      li.appendChild(bouton); li.appendChild(t); li.appendChild(retirer); titres.appendChild(li);
+    });
+    const liste = $("ed-liste-illustrations"); liste.textContent = "";
+    E.illustrations.forEach((x) => {
+      const li = document.createElement("li"); const img = document.createElement("img"); img.src = BASE + "/illustrations/" + x.id; img.alt = "";
+      const infos = document.createElement("div"); const quand = document.createElement("button"); quand.type = "button"; quand.className = "ed-horo"; quand.textContent = minutes(x.debut) + " (" + Math.round((x.fin - x.debut) * 10) / 10 + " s)"; quand.addEventListener("click", () => { video.currentTime = x.debut; });
+      const origine = document.createElement("div"); origine.className = "texte-discret"; origine.textContent = (x.origine === "ia" ? "Créée par l'IA" : "Importée") + (x.prompt ? " : " + x.prompt : "");
+      infos.appendChild(quand); infos.appendChild(origine);
+      const mode = document.createElement("select"); [["incrust", "En cadre"], ["plein", "Plein écran"]].forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; if (x.mode === v) o.selected = true; mode.appendChild(o); });
+      mode.addEventListener("change", () => operer([{ type: "modifier_illustration", id: x.id, mode: mode.value }]));
+      const duree = document.createElement("input"); duree.type = "number"; duree.min = "1"; duree.max = "10"; duree.step = "0.5"; duree.value = Math.round((x.fin - x.debut) * 10) / 10; duree.style.width = "4.5rem";
+      duree.addEventListener("change", () => operer([{ type: "modifier_illustration", id: x.id, fin: x.debut + Math.max(0.5, parseFloat(duree.value) || 3) }]));
+      const retirer = document.createElement("button"); retirer.type = "button"; retirer.className = "bouton-secondaire espace"; retirer.textContent = "✕"; retirer.addEventListener("click", () => operer([{ type: "retirer_illustration", id: x.id }]));
+      li.appendChild(img); li.appendChild(infos); li.appendChild(mode); li.appendChild(duree); li.appendChild(retirer); liste.appendChild(li);
+    });
+  }
+
+  // ---------- illustrations
+  const dureeIll = () => Math.max(1, Math.min(10, parseFloat($("ed-ill-duree").value) || 3));
+  $("ed-ill-fichier").addEventListener("change", async (e) => {
+    const fichier = e.target.files[0]; if (!fichier) return;
+    const f = new FormData(); f.append("fichier", fichier); f.append("debut", video.currentTime || 0); f.append("fin", (video.currentTime || 0) + dureeIll()); f.append("mode", $("ed-ill-mode").value);
+    message("Envoi de l'image…");
+    try { const r = await fetch(BASE + "/illustrations/importer", { method: "POST", body: f }); const d = await r.json(); if (!r.ok) throw new Error(d.erreur || "Échec de l'envoi."); appliquerEtat(d.etat); annoncer(d); }
+    catch (err) { message(err.message, true); }
+    e.target.value = "";
+  });
+  $("ed-ill-generer").addEventListener("click", async () => {
+    const prompt = $("ed-ill-prompt").value.trim(); if (!prompt) { message("Décrivez l'image à créer.", true); return; }
+    $("ed-ill-generer").disabled = true; message("Création de l'image par l'IA (quelques secondes)…");
+    try { const d = await envoyer("/illustrations/generer", { prompt, debut: video.currentTime || 0, fin: (video.currentTime || 0) + dureeIll(), mode: $("ed-ill-mode").value }); appliquerEtat(d.etat); annoncer(d); $("ed-ill-prompt").value = ""; }
+    catch (err) { message(err.message, true); }
+    $("ed-ill-generer").disabled = false;
+  });
+
+  // ---------- IA
+  async function commandeIA(texte) {
+    if (!texte.trim()) return;
+    $("ed-ia-envoyer").disabled = true; message("L'IA travaille sur votre commande… (les illustrations demandent quelques secondes de plus)");
+    try {
+      const d = await envoyer("/commande", { commande: texte.trim() }); appliquerEtat(d.etat);
+      const zone = $("ed-ia-reponse"); zone.hidden = false; zone.textContent = d.reponse + ((d.resume || []).length ? "\n\n✓ " + d.resume.join("\n✓ ") : "") + ((d.refus || []).length ? "\n\n⚠ " + d.refus.join("\n⚠ ") : "");
+      message("");
+    } catch (err) { message(err.message, true); }
+    $("ed-ia-envoyer").disabled = false;
+  }
+  $("ed-ia-envoyer").addEventListener("click", () => commandeIA($("ed-ia-commande").value));
+  document.querySelectorAll(".ed-puce").forEach((p) => p.addEventListener("click", () => { $("ed-ia-commande").value = p.textContent; commandeIA(p.textContent); }));
+
+  // ---------- annuler, onglets, clavier
+  $("ed-annuler").addEventListener("click", async () => { try { const d = await envoyer("/annuler"); appliquerEtat(d.etat); annoncer(d); } catch (e) { message(e.message, true); } });
+  document.querySelectorAll(".ed-onglet").forEach((o) => o.addEventListener("click", () => {
+    document.querySelectorAll(".ed-onglet").forEach((x) => x.classList.toggle("actif", x === o));
+    ["transcription", "effets", "illustrations", "ia"].forEach((n) => { $("panneau-" + n).hidden = n !== o.dataset.onglet; });
+  }));
+  document.addEventListener("keydown", (e) => {
+    const champ = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
+    if (champ || !E) return;
+    if (e.code === "Space") { e.preventDefault(); $("ed-lecture").click(); }
+    else if (e.key === "i") marquer("i"); else if (e.key === "o") marquer("o");
+    else if (e.key === "Delete" || e.key === "Backspace") { if (selection) { e.preventDefault(); $("ed-couper-sel").click(); } }
+    else if (e.key === "ArrowLeft") video.currentTime = Math.max(0, video.currentTime - (e.shiftKey ? 5 : 1));
+    else if (e.key === "ArrowRight") video.currentTime = Math.min(E.duree_source, video.currentTime + (e.shiftKey ? 5 : 1));
+  });
+
+  // ---------- rendu final
+  $("ed-rendre").addEventListener("click", async () => {
+    if (enRendu) return;
+    try { await envoyer("/rendre"); } catch (e) { message(e.message, true); return; }
+    enRendu = true; $("ed-rendre").disabled = true; $("ed-annuler").disabled = true; $("ed-progression").hidden = false; $("ed-resultat").hidden = true; message("");
+    suivreRendu();
+  });
+  async function suivreRendu() {
+    let etat;
+    try { etat = (await (await fetch("/montage-video/" + ID + "/etat")).json()); } catch (e) { setTimeout(suivreRendu, 3000); return; }
+    $("ed-barre-rendu-remplissage").style.width = Math.round((etat.progression || 0) * 100) + "%";
+    $("ed-etape").textContent = (etat.etape || "Rendu") + " (" + Math.round((etat.progression || 0) * 100) + " %)";
+    if (etat.etat === "en_cours") { setTimeout(suivreRendu, 2000); return; }
+    enRendu = false; $("ed-rendre").disabled = false; $("ed-progression").hidden = true;
+    if (etat.etat === "erreur") { message("Le rendu a échoué : " + etat.erreur, true); await charger(); return; }
+    message(etat.avertissement || "Rendu terminé : relisez la vidéo avant de publier.");
+    const url = "/montage-video/" + ID + "/fichier/" + NUMERO;
+    $("ed-resultat").hidden = false; $("ed-resultat-video").src = url + "?v=" + Date.now(); $("ed-resultat-lien").href = url + "?telecharger=1";
+    $("ed-resultat").scrollIntoView({ behavior: "smooth", block: "start" }); await charger();
+  }
+
+  // ---------- demarrage : etat, puis suivi de la preparation de l'apercu
+  async function demarrer() {
+    await charger();
+    const surveiller = setInterval(async () => {
+      if (apercuPret) { clearInterval(surveiller); return; }
+      try { const d = await api("/etat"); if (!enRendu) appliquerEtat(d.etat); else E.apercu = d.etat.apercu; } catch (e) { /* on reessaie */ }
+    }, 2500);
+  }
+  demarrer();
+})();
+</script>
+{% endblock %}
