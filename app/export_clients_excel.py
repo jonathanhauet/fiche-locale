@@ -24,11 +24,17 @@ from . import google_business, google_location, google_oauth, google_place_actio
 ENTETES = [
     "Nom", "Prénom", "Email", "Compte Google", "Étiquettes",
     "Téléphone", "Site web", "Adresse", "Catégorie principale",
-    "Statut d'ouverture", "Complétude fiche", "Éléments manquants (estimation)", "Note moyenne", "Nombre d'avis",
+    "Statut d'ouverture", "Complétude infos (hors photos)", "Complétude infos + photos", "Éléments manquants (estimation)", "Note moyenne", "Nombre d'avis",
     "Photos sur la fiche", "Posts publiés (plateforme)",
     "Lien RDV / réservation présent", "Lien RDV / réservation", "Lien fiche Google", "Erreur",
 ]
 COLONNE_LIEN_FICHE = ENTETES.index("Lien fiche Google")
+COLONNE_COMPLETUDE_INFOS = ENTETES.index("Complétude infos (hors photos)")
+COLONNE_COMPLETUDE_TOTALE = ENTETES.index("Complétude infos + photos")
+COLONNE_MANQUANTS = ENTETES.index("Éléments manquants (estimation)")
+COLONNE_NOTE = ENTETES.index("Note moyenne")
+COLONNE_NB_AVIS = ENTETES.index("Nombre d'avis")
+COLONNE_PHOTOS = ENTETES.index("Photos sur la fiche")
 COLONNE_RDV_PRESENT = ENTETES.index("Lien RDV / réservation présent")
 COLONNE_RDV_LIEN = ENTETES.index("Lien RDV / réservation")
 # Liens d'action de la fiche Google qui servent a prendre un rendez-vous ou a reserver (les autres, comme commander, ne comptent pas ici).
@@ -78,6 +84,7 @@ def _lire_google(travail: dict) -> list:
     # None = pas pu etre verifie (erreur de lecture) : on n'affirme alors jamais qu'un element manque.
     manquants_champs = None
     manquants_photos = None
+    total_infos = score_infos = None
     try:
         infos = google_location.obtenir_infos_fiche(identifiants, travail["location_id"])
         completude = google_location.score_completude(infos)
@@ -89,7 +96,8 @@ def _lire_google(travail: dict) -> list:
         ligne[7] = _adresse_lisible(infos)
         ligne[8] = categorie_principale
         ligne[9] = google_location.LIBELLES_STATUT_OUVERTURE.get(statut_ouverture, statut_ouverture)
-        ligne[10] = f"{completude['score']}/{completude['total']}"
+        ligne[COLONNE_COMPLETUDE_INFOS] = f"{completude['score']}/{completude['total']}"
+        total_infos, score_infos = completude["total"], completude["score"]
         ligne[COLONNE_LIEN_FICHE] = (infos.get("metadata") or {}).get("mapsUri", "")
     except Exception as erreur:
         erreurs.append(f"Fiche : {erreur}")
@@ -105,21 +113,25 @@ def _lire_google(travail: dict) -> list:
 
     try:
         resume_avis = google_reviews.resume_rapide(identifiants, travail["account_id"], travail["location_id"])
-        ligne[12] = resume_avis["note_moyenne"] if resume_avis["note_moyenne"] is not None else ""
-        ligne[13] = resume_avis["total_avis"]
+        ligne[COLONNE_NOTE] = resume_avis["note_moyenne"] if resume_avis["note_moyenne"] is not None else ""
+        ligne[COLONNE_NB_AVIS] = resume_avis["total_avis"]
     except Exception as erreur:
         erreurs.append(f"Avis : {erreur}")
 
     try:
         photos = google_business.lister_photos(identifiants, travail["account_id"], travail["location_id"])
-        ligne[14] = len(photos)
+        ligne[COLONNE_PHOTOS] = len(photos)
         manquants_photos = google_location.photos_manquantes(photos)
     except Exception as erreur:
         erreurs.append(f"Photos : {erreur}")
 
     if manquants_champs is not None or manquants_photos is not None:
         manquants = (manquants_champs or []) + (manquants_photos or [])
-        ligne[11] = ", ".join(manquants) if manquants else "Aucun"
+        ligne[COLONNE_MANQUANTS] = ", ".join(manquants) if manquants else "Aucun"
+    if score_infos is not None and manquants_photos is not None:
+        # Note globale : les champs de la fiche + les photos que Google recommande (vitrine, intérieur, logo, couverture).
+        total = total_infos + len(google_location.CRITERES_PHOTOS)
+        ligne[COLONNE_COMPLETUDE_TOTALE] = f"{total - len(manquants_champs or []) - len(manquants_photos)}/{total}"
 
     ligne[-1] = " ; ".join(erreurs)
     return ligne
