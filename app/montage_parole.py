@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
 
-from . import montage_video, sons
+from . import charte_montage, montage_video, sons
 from .montage_video import FFMPEG, FFPROBE
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
@@ -385,12 +385,16 @@ def _lignes_titre(debut: float, fin: float, texte: str, vertical: bool) -> str:
     return f"Dialogue: 1,{_horodatage_ass(debut)},{_horodatage_ass(fin)},Titre,,0,0,0,,{{\\fad(250,350)}}" + "\\N".join(lignes)
 
 
-def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set) -> list:
+def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastille: tuple = None, contour: int = 8) -> list:
     """
     Sous-titres « pop » : 1 a 3 mots a la fois, en majuscules, le mot prononce grossit et prend la couleur d'accent ; les mots
     importants restent en couleur et plus gros. Un evenement par mot, calé sur la voix (duree repartie selon la longueur des mots).
     """
     couleur_accent = _couleur_ass(accent)
+    couleur_pastille = _couleur_ass(pastille) if pastille else None
+    # Une « pastille » est le contour epais, arrondi, de la couleur de la charte : le mot reste en blanc par-dessus.
+    contour_pastille = int(contour * 2.4)
+    normal = f"\\3c&H00000000&\\bord{contour}"
     sorties = []
     for p in phrases:
         mots = _mots_pop(p["texte"])
@@ -409,12 +413,16 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set) -> lis
             for rang, indice in enumerate(groupe):
                 morceaux = []
                 for j, mot in enumerate(mots_groupe):
-                    if j == rang:
-                        balise = f"{{\\c{couleur_accent}\\fscx82\\fscy82\\t(0,90,\\fscx118\\fscy118)\\t(90,190,\\fscx108\\fscy108)}}"
-                    elif _normaliser(mot) in gros:
-                        balise = f"{{\\c{couleur_accent}\\fscx122\\fscy122}}"
+                    cle = _normaliser(mot) in gros
+                    if cle and couleur_pastille:
+                        taille = "\\fscx82\\fscy82\\t(0,90,\\fscx118\\fscy118)\\t(90,190,\\fscx108\\fscy108)" if j == rang else "\\fscx108\\fscy108"
+                        balise = f"{{\\c&H00FFFFFF&\\3c{couleur_pastille}\\bord{contour_pastille}{taille}}}"
+                    elif j == rang:
+                        balise = f"{{\\c{couleur_accent}{normal}\\fscx82\\fscy82\\t(0,90,\\fscx118\\fscy118)\\t(90,190,\\fscx108\\fscy108)}}"
+                    elif cle:
+                        balise = f"{{\\c{couleur_accent}{normal}\\fscx122\\fscy122}}"
                     else:
-                        balise = "{\\c&H00FFFFFF&\\fscx100\\fscy100}"
+                        balise = f"{{\\c&H00FFFFFF&{normal}\\fscx100\\fscy100}}"
                     if j:
                         morceaux.append("\\N" if j == coupure else " ")
                     morceaux.append(balise + mot)
@@ -424,7 +432,7 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set) -> lis
 
 
 def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: tuple = (255, 214, 10), titre: str = "",
-               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0) -> None:
+               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0, pastille: tuple = None) -> None:
     """
     Sous-titres, titre d'accroche, titres ajoutes a la main (titres : [(debut, fin, texte)]) et barre de progression (barre : duree
     totale en secondes, 0 = pas de barre). Par defaut sous-titres « karaoke » : les mots se colorent au rythme de la voix ;
@@ -454,7 +462,7 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
     for debut, fin, texte in (titres or []):
         lignes.append(_lignes_titre(debut, fin, texte, vertical))
     if pop:
-        lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set())
+        lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set(), pastille, contour + 1)
     else:
         for p in phrases:
             mots = _echapper_ass(p["texte"]).split()
@@ -560,7 +568,14 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
         debut_i, fin_i = illustration["debut"], illustration["fin"]
         duree_i = max(0.5, fin_i - debut_i)
         images.append((illustration["chemin"], duree_i, bool(illustration.get("video"))))
-        if illustration.get("mode") == "plein":
+        carte = illustration.get("mode") == "carte"
+        if carte:
+            # Carte graphique (PNG transparent a sa taille) : elle « pope » a l'arrivee (de 82 a 100 % en 0,28 s) avant le fondu.
+            mise = "scale=w='trunc(iw*(0.82+0.18*min(1,t/0.28))/2)*2':h=-2:eval=frame:flags=bilinear"
+            x = "(W-w)/2"
+            fraction_bas = 0.65 if vertical else 0.82
+            y = {"haut": "H*0.07", "centre": "(H-h)/2", "bas": f"H*{fraction_bas}-h"}.get(illustration.get("place"), "H*0.07")
+        elif illustration.get("mode") == "plein":
             mise = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=increase,crop={largeur}:{hauteur}"
             x, y = "0", "0"
         else:
@@ -948,9 +963,12 @@ def plan_effets(sortie: dict) -> dict:
         a, b = _instant_montage(illustration["debut"], segments, duree), _instant_montage(illustration["fin"], segments, duree)
         fichier = illustration.get("fichier_video") if illustration.get("kind") == "video" else illustration["fichier"]
         if b - a >= 0.5 and fichier and os.path.exists(fichier):
-            illustrations.append({"debut": a, "fin": b, "chemin": fichier, "mode": illustration.get("mode", "incrust"), "video": illustration.get("kind") == "video"})
+            illustrations.append({"debut": a, "fin": b, "chemin": fichier, "mode": illustration.get("mode", "incrust"), "video": illustration.get("kind") == "video",
+                                  "place": illustration.get("place", "haut")})
     bruitages = evenements_sons(zooms, titres, illustrations, effets["actif"]["accroche"] and bool(effets["titre"]), fenetres) if effets.get("bruitages") else []
-    return {"duree": duree, "phrases": phrases_montage, "zooms": zooms, "titres": titres, "pop": pop, "gros": gros, "barre": barre, "titre": titre,
+    charte = charte_montage.nettoyer(effets.get("charte"))
+    pastille = charte_montage.rgb(charte["principale"]) if pop and effets.get("pastille") else None
+    return {"duree": duree, "phrases": phrases_montage, "zooms": zooms, "titres": titres, "pop": pop, "gros": gros, "barre": barre, "titre": titre, "pastille": pastille,
             "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages}
 
 
@@ -965,7 +983,7 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
     if dessiner:
         fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
         ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
-                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre)
+                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"])
     chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
     options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"])
     try:
@@ -1174,6 +1192,7 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                     "effets": {"style": style, "actif": actifs, "titre": extrait["titre"] if options.get("mode") == "shorts" else accroche,
                                "mots_cles": mots_cles, "mots_gros": [], "zoom_manuel": [], "sans_zoom": [], "titres": [], "illustrations": [],
                                "alterne": bool(options.get("alterne", False)), "bruitages": bool(options.get("bruitages", style == "tendance")),
+                               "pastille": bool(options.get("pastille", style == "tendance")), "charte": charte_montage.nettoyer(options.get("charte")),
                                "transition": options.get("transition") if options.get("transition") in TRANSITIONS else ("melange" if style == "tendance" else "aucune")},
                 }
                 suivi = lambda p, b=base, n=len(travaux): montage.__setitem__("progression", b + 0.5 * p / n)

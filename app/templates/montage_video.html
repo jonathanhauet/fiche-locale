@@ -30,7 +30,7 @@
   <div class="ligne-champs" id="montage-reglages-shorts" hidden>
     <label for="montage-nb-shorts" class="texte-discret">Nombre de Shorts</label>
     <select id="montage-nb-shorts" style="width:auto;">
-      <option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option>
+      <option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
     </select>
     <label for="montage-duree-short" class="texte-discret">Durée maximale</label>
     <select id="montage-duree-short" style="width:auto;">
@@ -50,6 +50,17 @@
     <select id="montage-modele" style="width:auto;"></select>
     <span id="montage-modele-description" class="texte-discret"></span>
   </fieldset>
+  <details class="groupe-options-visuel" id="montage-copie-style">
+    <summary>🎯 Copier le style d'une vidéo de référence</summary>
+    <p class="texte-discret">Envoyez une vidéo dont vous aimez le montage (3 minutes et 150 Mo maximum). La plateforme mesure son rythme, l'IA décrit ses sous-titres, pastilles, cartes et couleurs, et cela devient un modèle de style que vous pouvez appliquer ou ajuster.</p>
+    <div class="ligne-champs">
+      <input type="file" id="montage-ref-fichier" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv">
+      <input type="text" id="montage-ref-nom" maxlength="60" placeholder="Nom du style (ex : Style Codelynx)">
+      <button type="button" class="bouton-secondaire" id="montage-ref-lancer">Analyser et copier</button>
+    </div>
+    <p id="montage-ref-statut" class="texte-discret" hidden></p>
+    <button type="button" class="bouton-secondaire" id="montage-ref-charte" hidden>Utiliser ses couleurs pour ma charte</button>
+  </details>
   <fieldset class="groupe-options-visuel" id="montage-effets">
     <legend>Effets (réglés par le modèle, ajustables)</legend>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="zooms" checked> Zooms sur les moments forts</label>
@@ -57,6 +68,7 @@
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="accroche" checked> Titre d'accroche au début</label>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="barre" checked> Barre de progression</label>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="visage" checked> Cadrage vertical centré sur mon visage</label>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-pastille" checked> Mots-clés en pastille colorée</label>
     <label class="etiquette-chip-case"><input type="checkbox" id="montage-bruitages" checked> Bruitages (whoosh, pop, impact)</label>
     <label class="etiquette-chip-case"><input type="checkbox" id="montage-alterne"> Cadrage alterné à chaque coupe</label>
     <label class="etiquette-chip-case">Transitions sur les coupes
@@ -102,6 +114,7 @@
 </div>
 
 <script id="donnees-styles" type="application/json">{{ styles_json|safe }}</script>
+<script id="donnee-style-defaut" type="application/json">{{ style_defaut|tojson }}</script>
 <style>
   .montage-barre { height: 10px; border-radius: 6px; background: rgba(128,128,140,.3); overflow: hidden; margin: .6rem 0 .3rem; }
   .montage-barre > div { height: 100%; width: 0; background: #5b7cff; transition: width .4s; }
@@ -135,7 +148,7 @@
         musique_id: $("montage-musique").value, consignes: $("montage-consignes").value.trim(),
         style: styleBase,
         effets: Object.fromEntries(Array.from(document.querySelectorAll("#montage-effets input[data-effet]")).map((c) => [c.dataset.effet, c.checked])),
-        bruitages: $("montage-bruitages").checked, alterne: $("montage-alterne").checked, transition: $("montage-transition").value,
+        bruitages: $("montage-bruitages").checked, pastille: $("montage-pastille").checked, alterne: $("montage-alterne").checked, transition: $("montage-transition").value,
       };
     }
 
@@ -147,13 +160,40 @@
       const r = modele.reglages; styleBase = r.style || "tendance";
       document.querySelectorAll("#montage-effets input[data-effet]").forEach((c) => { if (c.dataset.effet in r) c.checked = !!r[c.dataset.effet]; });
       if ("bruitages" in r) $("montage-bruitages").checked = !!r.bruitages;
+      if ("pastille" in r) $("montage-pastille").checked = !!r.pastille;
       if ("alterne" in r) $("montage-alterne").checked = !!r.alterne;
       if (r.transition) $("montage-transition").value = r.transition;
       $("montage-modele-description").textContent = modele.description;
     }
+    function remplirModeles() {
+      $("montage-modele").textContent = "";
+      MODELES.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.nom + (m.perso ? " (à moi)" : ""); $("montage-modele").appendChild(o); });
+    }
+    let charteReference = null;
+    $("montage-ref-lancer").addEventListener("click", async () => {
+      const f = $("montage-ref-fichier").files[0]; const statut = $("montage-ref-statut");
+      if (!f) { statut.hidden = false; statut.textContent = "Choisissez d'abord une vidéo de référence."; return; }
+      $("montage-ref-lancer").disabled = true; statut.hidden = false; statut.textContent = "Analyse en cours (envoi, mesure du rythme, description par l'IA) : une à deux minutes…";
+      const form = new FormData(); form.append("fichier", f); form.append("nom", $("montage-ref-nom").value);
+      try {
+        const r = await fetch("/montage-video/styles/depuis-video", { method: "POST", body: form }); const d = await r.json();
+        if (!r.ok) throw new Error(d.erreur || "Analyse impossible.");
+        MODELES.length = 0; d.styles.forEach((m) => MODELES.push(m)); remplirModeles(); $("montage-modele").value = d.style.id; appliquerModele(d.style.id);
+        charteReference = d.charte; $("montage-ref-charte").hidden = false;
+        statut.textContent = "Style « " + d.style.nom + " » créé et appliqué : plans de " + d.rythme.duree_moyenne_plan + " s en moyenne, " + d.rythme.nb_coupes + " coupes. " + d.resume;
+      } catch (e) { statut.textContent = e.message; }
+      $("montage-ref-lancer").disabled = false;
+    });
+    $("montage-ref-charte").addEventListener("click", async () => {
+      if (!charteReference) return;
+      const r = await fetch("/montage-video/charte", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(charteReference) });
+      $("montage-ref-statut").textContent = r.ok ? "Couleurs et police enregistrées dans votre charte : elles serviront pour vos prochains montages." : "Enregistrement impossible.";
+    });
     MODELES.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.nom + (m.perso ? " (à moi)" : ""); $("montage-modele").appendChild(o); });
     $("montage-modele").addEventListener("change", () => appliquerModele($("montage-modele").value));
-    if (MODELES.length) appliquerModele(MODELES[0].id);
+    const STYLE_DEFAUT = JSON.parse(document.getElementById("donnee-style-defaut").textContent);
+    const premier = MODELES.find((m) => m.id === STYLE_DEFAUT) || MODELES[0];
+    if (premier) { $("montage-modele").value = premier.id; appliquerModele(premier.id); }
     const minutes = (t) => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
 
     // Shorts = vertical par defaut, montage complet = horizontal : l'utilisateur peut toujours changer ensuite.

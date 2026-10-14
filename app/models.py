@@ -835,6 +835,34 @@ class ParametreSearchConsole(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class RegleMontage(Base):
+    """Preference de montage retenue par l'utilisateur (voir regles_montage.py), ajoutee aux consignes des IA a chaque montage."""
+
+    __tablename__ = "regles_montage"
+
+    id = Column(Integer, primary_key=True)
+    texte = Column(String, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class ParametreMontage(Base):
+    """Reglages generaux du montage video (une seule ligne) : modele de style choisi par defaut."""
+
+    __tablename__ = "parametre_montage"
+
+    id = Column(Integer, primary_key=True)
+    style_defaut = Column(String, default="")
+
+
+class CharteMontage(Base):
+    """Charte graphique du montage video (couleurs, police, arrondis : voir charte_montage.py). Une seule ligne attendue."""
+
+    __tablename__ = "charte_montage"
+
+    id = Column(Integer, primary_key=True)
+    valeurs_json = Column(Text, default="{}")
+
+
 class VideoMontee(Base):
     """Video montee gardee dans la bibliotheque (voir /videos) : fichier heberge sur OVH, texte de publication, pour y revenir plus tard."""
 

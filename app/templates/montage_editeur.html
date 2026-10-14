@@ -61,6 +61,7 @@
       <button type="button" class="ed-onglet actif" data-onglet="transcription">Texte</button>
       <button type="button" class="ed-onglet" data-onglet="effets">Effets</button>
       <button type="button" class="ed-onglet" data-onglet="illustrations">Illustrations</button>
+      <button type="button" class="ed-onglet" data-onglet="cartes">Cartes</button>
       <button type="button" class="ed-onglet" data-onglet="ia">IA</button>
       <button type="button" class="ed-onglet" data-onglet="publier">Publier</button>
     </div>
@@ -82,6 +83,7 @@
         <div class="ed-ligne">
           <select id="ed-style"></select>
           <button type="button" class="bouton-secondaire" id="ed-style-appliquer">Appliquer</button>
+          <button type="button" class="bouton-secondaire" id="ed-style-defaut">⭐ Par défaut</button>
           <button type="button" class="bouton-secondaire" id="ed-style-supprimer" hidden>Supprimer</button>
         </div>
         <span id="ed-style-description" class="texte-discret"></span>
@@ -93,6 +95,7 @@
         <label><input type="checkbox" data-reglage="alterne"> Cadrage alterné à chaque coupe (rythme « jump cut »)</label>
         <label><input type="checkbox" data-reglage="sous_titres"> Sous-titres</label>
         <label><input type="checkbox" data-reglage="mots"> Sous-titres animés mot par mot</label>
+        <label><input type="checkbox" data-reglage="pastille"> Mots-clés des sous-titres en pastille colorée</label>
         <label><input type="checkbox" data-reglage="barre"> Barre de progression</label>
         <label><input type="checkbox" data-reglage="bruitages"> Bruitages (whoosh, pop, impact), audibles dans l'aperçu</label>
         <label>Transitions sur les coupes
@@ -172,12 +175,57 @@
       </div>
     </div>
 
+    <div class="ed-panneau" id="panneau-cartes" hidden>
+      <div class="ed-groupe">
+        <strong>🪧 Ajouter une carte animée</strong>
+        <div class="ed-ligne">
+          <select id="ed-carte-type">
+            <option value="etape">Étape numérotée</option><option value="info">Information</option><option value="chiffre">Chiffre clé</option>
+            <option value="citation">Citation</option><option value="titre">Titre</option>
+          </select>
+          <select id="ed-carte-place"><option value="haut">En haut</option><option value="centre">Au centre</option><option value="bas">En bas</option></select>
+          <label>Durée <input type="number" id="ed-carte-duree" value="3.5" min="1.5" max="8" step="0.5" style="width:5rem"> s</label>
+        </div>
+        <input type="text" id="ed-carte-numero" maxlength="2" placeholder="Numéro (1, 2, 3…)" data-champ="etape">
+        <input type="text" id="ed-carte-titre" maxlength="60" placeholder="Titre" data-champ="etape info titre">
+        <input type="text" id="ed-carte-sous-titre" maxlength="90" placeholder="Précision (facultatif)" data-champ="etape info">
+        <input type="text" id="ed-carte-valeur" maxlength="12" placeholder="Chiffre (ex : 137 %)" data-champ="chiffre">
+        <input type="text" id="ed-carte-libelle" maxlength="60" placeholder="Ce que mesure ce chiffre" data-champ="chiffre">
+        <input type="text" id="ed-carte-texte" maxlength="140" placeholder="La phrase à mettre en avant" data-champ="citation">
+        <input type="text" id="ed-carte-auteur" maxlength="40" placeholder="Auteur (facultatif)" data-champ="citation">
+        <div class="ed-ligne">
+          <button type="button" class="bouton-secondaire" id="ed-carte-ajouter">Ajouter à la position de la lecture</button>
+          <button type="button" class="bouton" id="ed-carte-proposer">✨ Proposer des cartes avec l'IA</button>
+        </div>
+        <p class="texte-discret" style="margin:0">Les cartes apparaissent avec une petite animation et un bruitage, aux couleurs de votre charte. Vous les retrouvez dans « Illustrations » pour les déplacer ou les supprimer.</p>
+      </div>
+      <div class="ed-groupe">
+        <strong>🎨 Charte graphique</strong>
+        <div class="ed-ligne">
+          <label>Couleur principale <input type="color" id="ed-charte-principale"></label>
+          <label>Accent <input type="color" id="ed-charte-secondaire"></label>
+          <label>Texte <input type="color" id="ed-charte-texte"></label>
+          <label>Fond des cartes <input type="color" id="ed-charte-fond"></label>
+        </div>
+        <div class="ed-ligne">
+          <label>Police <select id="ed-charte-police"><option>Poppins</option><option>Bebas Neue</option><option>DM Serif Display</option><option>Kalam</option></select></label>
+          <label>Arrondis <select id="ed-charte-arrondi"><option value="petit">Petits</option><option value="moyen">Moyens</option><option value="grand">Grands</option></select></label>
+        </div>
+        <div class="ed-ligne">
+          <button type="button" class="bouton-secondaire" id="ed-charte-appliquer">Appliquer à ce montage</button>
+          <button type="button" class="bouton-secondaire" id="ed-charte-enregistrer">💾 Enregistrer pour mes prochains montages</button>
+        </div>
+        <p class="texte-discret" style="margin:0">La couleur principale sert aux pastilles et aux cartes, l'accent au mot prononcé. Les cartes déjà créées gardent leurs couleurs.</p>
+      </div>
+    </div>
+
     <div class="ed-panneau" id="panneau-ia" hidden>
       <div class="ed-groupe">
         <strong>Demandez à l'IA</strong>
         <textarea id="ed-ia-commande" rows="3" maxlength="500" placeholder="Ex : retire les répétitions, mets un zoom sur chaque chiffre, illustre les idées principales"></textarea>
         <div class="ed-ligne">
           <button type="button" class="bouton" id="ed-ia-envoyer">Envoyer</button>
+          <label><input type="checkbox" id="ed-ia-retenir"> Retenir cette consigne pour mes prochains montages</label>
         </div>
         <div class="ed-puces">
           <button type="button" class="ed-puce">Retire les répétitions et les passages faibles</button>
@@ -187,6 +235,12 @@
           <button type="button" class="ed-puce">Garde seulement le passage le plus fort</button>
         </div>
         <div id="ed-ia-reponse" class="ed-ia-reponse" hidden></div>
+      </div>
+      <div class="ed-groupe">
+        <strong>🧠 Mes préférences retenues</strong>
+        <p class="texte-discret" style="margin:0">Ajoutées aux consignes de l'IA à chaque montage (accroche, cartes, commandes, notes de relecture).</p>
+        <div class="ed-ligne"><input type="text" id="ed-regle-texte" maxlength="240" placeholder="Ex : pas plus d'un zoom toutes les 8 secondes"><button type="button" class="bouton-secondaire" id="ed-regle-ajouter">Retenir</button></div>
+        <ul id="ed-liste-regles" class="ed-liste"></ul>
       </div>
     </div>
   </div>
@@ -216,6 +270,10 @@
   .ed-sous { word-spacing: .12em; }
   .ed-sous .actif { color: #ffd60a; display: inline-block; transform: scale(1.1); margin: 0 .05em; }
   .ed-sous .gros { color: #ffd60a; }
+  .ed-sous .pastille { color: #fff; background: var(--pastille, #2f5eff); border-radius: .35em; padding: 0 .22em; }
+  .ed-ill.carte { display: block; }
+  .ed-ill.carte img { position: absolute; left: 50%; max-width: none; max-height: none; border: 0; box-shadow: none; margin: 0; width: 91.4%; }
+  .ed-scene.horizontal .ed-ill.carte img { width: 43.4%; }
   .ed-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
   .ed-barre { position: absolute; left: 0; right: 0; bottom: 0; height: 1%; min-height: 4px; }
   .ed-barre > div { height: 100%; width: 0; background: #ffd60a; }
@@ -409,7 +467,9 @@
         const c = chunkSousTitre(phrase, t);
         if (c) c.groupe.forEach((i, rang) => {
           const span = document.createElement("span"); span.textContent = phrase.mots[i].texte.replace(/[,;:.]+$/, "").toUpperCase();
-          if (i === c.courant) span.className = "actif"; else if (gros.has(normaliser(phrase.mots[i].texte))) span.className = "gros";
+          const motCle = gros.has(normaliser(phrase.mots[i].texte));
+          if (motCle && E.reglages.pastille) span.className = "pastille" + (i === c.courant ? " actif" : "");
+          else if (i === c.courant) span.className = "actif"; else if (motCle) span.className = "gros";
           sous.appendChild(span); if (rang < c.groupe.length - 1) sous.appendChild(document.createTextNode(" "));
         });
       } else sous.textContent = phrase.texte.toUpperCase();
@@ -422,10 +482,20 @@
     const ill = visible ? E.illustrations.find((x) => t >= x.debut && t < x.fin) : null;
     $("ed-ill").hidden = !ill;
     const pv = $("ed-ill-video");
+    scene.style.setProperty("--pastille", (E.charte || {}).principale || "#2f5eff");
     if (ill) {
-      $("ed-ill").className = "ed-ill" + (ill.mode === "plein" ? " plein" : "");
+      $("ed-ill").className = "ed-ill" + (ill.mode === "plein" ? " plein" : ill.mode === "carte" ? " carte" : "");
       const img = $("ed-ill").querySelector("img"), src = BASE + "/illustrations/" + ill.id;
-      if (ill.kind === "video") {
+      if (ill.mode === "carte") {
+        pv.hidden = true; img.hidden = false; if (!pv.paused) pv.pause();
+        if (img.dataset.src !== src) { img.dataset.src = src; img.src = src; }
+        const f = 0.82 + 0.18 * Math.min(1, Math.max(0, (t - ill.debut) / 0.28));
+        const bas = E.format === "vertical" ? "35%" : "18%";
+        img.style.top = ill.place === "haut" ? "7%" : ill.place === "centre" ? "50%" : "auto";
+        img.style.bottom = ill.place === "bas" ? bas : "auto";
+        img.style.transformOrigin = ill.place === "haut" ? "50% 0" : ill.place === "centre" ? "50% 50%" : "50% 100%";
+        img.style.transform = "translate(-50%," + (ill.place === "centre" ? "-50%" : "0") + ") scale(" + f.toFixed(3) + ")";
+      } else if (ill.kind === "video") {
         img.hidden = true; pv.hidden = false;
         const srcVideo = src + "/video"; if (pv.dataset.src !== srcVideo) { pv.dataset.src = srcVideo; pv.src = srcVideo; }
         const decalage = Math.max(0, Math.min(t - ill.debut, (ill.duree_clip || 8) - 0.05));
@@ -574,7 +644,7 @@
     const nom = window.prompt("Nom de ce style :"); if (!nom || !nom.trim()) return;
     const r = E.reglages;
     try {
-      const d = await envoyer_global("/montage-video/styles", { nom: nom.trim(), reglages: { style: r.style, zooms: r.zooms, mots: r.mots, accroche: r.accroche, barre: r.barre, bruitages: r.bruitages, transition: r.transition, alterne: r.alterne } });
+      const d = await envoyer_global("/montage-video/styles", { nom: nom.trim(), reglages: { style: r.style, zooms: r.zooms, mots: r.mots, accroche: r.accroche, barre: r.barre, bruitages: r.bruitages, pastille: r.pastille, transition: r.transition, alterne: r.alterne } });
       styles = d.styles; await chargerStyles(); message("Style « " + nom.trim() + " » enregistré.");
     } catch (e) { message(e.message, true); }
   });
@@ -582,6 +652,26 @@
     const m = styleChoisi(); if (!m || !m.perso || !window.confirm("Supprimer le style « " + m.nom + " » ?")) return;
     try { await envoyer_global("/montage-video/styles/" + m.id + "/supprimer", {}); await chargerStyles(); message("Style supprimé."); } catch (e) { message(e.message, true); }
   });
+  $("ed-style-defaut").addEventListener("click", async () => {
+    const m = styleChoisi(); if (!m) return;
+    try { await envoyer_global("/montage-video/styles/defaut", { id: m.id }); message("Le style « " + m.nom + " » sera proposé par défaut à chaque nouveau montage."); } catch (e) { message(e.message, true); }
+  });
+
+  // ---------- preferences retenues
+  async function chargerRegles() {
+    let regles = [];
+    try { regles = (await (await fetch("/montage-video/regles")).json()).regles || []; } catch (e) { return; }
+    const liste = $("ed-liste-regles"); liste.textContent = "";
+    regles.forEach((r) => {
+      const li = document.createElement("li"); const t = document.createElement("span"); t.textContent = r.texte;
+      const x = document.createElement("button"); x.type = "button"; x.className = "bouton-secondaire espace"; x.textContent = "✕"; x.title = "Oublier cette préférence";
+      x.addEventListener("click", async () => { try { await envoyer_global("/montage-video/regles/" + r.id + "/supprimer", {}); chargerRegles(); } catch (e) { message(e.message, true); } });
+      li.appendChild(t); li.appendChild(x); liste.appendChild(li);
+    });
+  }
+  async function retenirRegle(texte) { try { await envoyer_global("/montage-video/regles", { texte }); await chargerRegles(); return true; } catch (e) { message(e.message, true); return false; } }
+  $("ed-regle-ajouter").addEventListener("click", async () => { const t = $("ed-regle-texte").value.trim(); if (t && await retenirRegle(t)) $("ed-regle-texte").value = ""; });
+
   async function envoyer_global(chemin, corps) {
     const reponse = await fetch(chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
     let donnees = {}; try { donnees = await reponse.json(); } catch (e) { /* sans JSON */ }
@@ -612,10 +702,12 @@
     E.illustrations.forEach((x) => {
       const li = document.createElement("li"); const img = document.createElement("img"); img.src = BASE + "/illustrations/" + x.id; img.alt = "";
       const infos = document.createElement("div"); const quand = document.createElement("button"); quand.type = "button"; quand.className = "ed-horo"; quand.textContent = minutes(x.debut) + " (" + Math.round((x.fin - x.debut) * 10) / 10 + " s)"; quand.addEventListener("click", () => { video.currentTime = x.debut; });
-      const origine = document.createElement("div"); origine.className = "texte-discret"; origine.textContent = (x.origine === "ia-video" ? "Plan vidéo IA" : x.origine === "ia" ? "Image créée par l'IA" : "Image importée") + (x.prompt ? " : " + x.prompt : "");
+      const estCarte = x.kind === "carte", tx = (x.carte || {}).textes || {};
+      const origine = document.createElement("div"); origine.className = "texte-discret"; origine.textContent = estCarte ? "Carte " + ((x.carte || {}).type || "") + " : " + (tx.titre || tx.valeur || tx.texte || "") : (x.origine === "ia-video" ? "Plan vidéo IA" : x.origine === "ia" ? "Image créée par l'IA" : "Image importée") + (x.prompt ? " : " + x.prompt : "");
       infos.appendChild(quand); infos.appendChild(origine);
-      const mode = document.createElement("select"); [["incrust", "En cadre"], ["plein", "Plein écran"]].forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; if (x.mode === v) o.selected = true; mode.appendChild(o); });
-      mode.addEventListener("change", () => operer([{ type: "modifier_illustration", id: x.id, mode: mode.value }]));
+      const mode = document.createElement("select");
+      (estCarte ? [["haut", "En haut"], ["centre", "Au centre"], ["bas", "En bas"]] : [["incrust", "En cadre"], ["plein", "Plein écran"]]).forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; if ((estCarte ? x.place : x.mode) === v) o.selected = true; mode.appendChild(o); });
+      mode.addEventListener("change", () => operer([estCarte ? { type: "modifier_illustration", id: x.id, place: mode.value } : { type: "modifier_illustration", id: x.id, mode: mode.value }]));
       const duree = document.createElement("input"); duree.type = "number"; duree.min = "1"; duree.max = "10"; duree.step = "0.5"; duree.value = Math.round((x.fin - x.debut) * 10) / 10; duree.style.width = "4.5rem";
       duree.addEventListener("change", () => operer([{ type: "modifier_illustration", id: x.id, fin: x.debut + Math.max(0.5, parseFloat(duree.value) || 3) }]));
       const retirer = document.createElement("button"); retirer.type = "button"; retirer.className = "bouton-secondaire espace"; retirer.textContent = "✕"; retirer.addEventListener("click", () => operer([{ type: "retirer_illustration", id: x.id }]));
@@ -641,6 +733,38 @@
     $("ed-ill-generer").disabled = false;
   });
 
+  // ---------- cartes animees et charte graphique
+  function majChampsCarte() {
+    const genre = $("ed-carte-type").value;
+    document.querySelectorAll("[data-champ]").forEach((c) => { c.hidden = !c.dataset.champ.split(" ").includes(genre); });
+  }
+  $("ed-carte-type").addEventListener("change", majChampsCarte); majChampsCarte();
+  $("ed-carte-ajouter").addEventListener("click", async () => {
+    const textes = { numero: $("ed-carte-numero").value, titre: $("ed-carte-titre").value, sous_titre: $("ed-carte-sous-titre").value, valeur: $("ed-carte-valeur").value,
+      libelle: $("ed-carte-libelle").value, texte: $("ed-carte-texte").value, auteur: $("ed-carte-auteur").value };
+    try {
+      const d = await envoyer("/cartes/ajouter", { type: $("ed-carte-type").value, textes, debut: video.currentTime || 0, duree: parseFloat($("ed-carte-duree").value) || 3.5, place: $("ed-carte-place").value });
+      appliquerEtat(d.etat); annoncer(d);
+      document.querySelectorAll("#panneau-cartes input[type=text]").forEach((c) => { c.value = ""; });
+    } catch (err) { message(err.message, true); }
+  });
+  $("ed-carte-proposer").addEventListener("click", async () => {
+    $("ed-carte-proposer").disabled = true; message("L'IA cherche les moments qui méritent une carte…");
+    try { const d = await envoyer("/cartes/proposer"); appliquerEtat(d.etat); annoncer(d); } catch (err) { message(err.message, true); }
+    $("ed-carte-proposer").disabled = false;
+  });
+  function remplirCharte() {
+    const c = E.charte || {};
+    $("ed-charte-principale").value = c.principale || "#2f5eff"; $("ed-charte-secondaire").value = c.secondaire || "#ffd60a";
+    $("ed-charte-texte").value = c.texte || "#1a1d23"; $("ed-charte-fond").value = c.fond || "#ffffff";
+    $("ed-charte-police").value = c.police || "Poppins"; $("ed-charte-arrondi").value = c.arrondi || "moyen";
+  }
+  const charteSaisie = () => ({ principale: $("ed-charte-principale").value, secondaire: $("ed-charte-secondaire").value, texte: $("ed-charte-texte").value, fond: $("ed-charte-fond").value, police: $("ed-charte-police").value, arrondi: $("ed-charte-arrondi").value });
+  $("ed-charte-appliquer").addEventListener("click", () => operer([{ type: "appliquer_charte", charte: charteSaisie() }]));
+  $("ed-charte-enregistrer").addEventListener("click", async () => {
+    try { await envoyer_global("/montage-video/charte", charteSaisie()); message("Charte enregistrée : elle servira pour vos prochains montages."); } catch (err) { message(err.message, true); }
+  });
+
   // ---------- plans video IA
   let minuteurPlans = null, plansEnCours = 0;
   function surveillerPlans() {
@@ -664,6 +788,7 @@
   // ---------- IA
   async function commandeIA(texte) {
     if (!texte.trim()) return;
+    if ($("ed-ia-retenir").checked) { await retenirRegle(texte.trim()); $("ed-ia-retenir").checked = false; }
     $("ed-ia-envoyer").disabled = true; message("L'IA travaille sur votre commande… (les illustrations demandent quelques secondes de plus)");
     try {
       const d = await envoyer("/commande", { commande: texte.trim() }); appliquerEtat(d.etat);
@@ -727,7 +852,8 @@
   $("ed-annuler").addEventListener("click", async () => { try { const d = await envoyer("/annuler"); appliquerEtat(d.etat); annoncer(d); } catch (e) { message(e.message, true); } });
   document.querySelectorAll(".ed-onglet").forEach((o) => o.addEventListener("click", () => {
     document.querySelectorAll(".ed-onglet").forEach((x) => x.classList.toggle("actif", x === o));
-    ["transcription", "effets", "illustrations", "ia", "publier"].forEach((n) => { $("panneau-" + n).hidden = n !== o.dataset.onglet; });
+    ["transcription", "effets", "illustrations", "cartes", "ia", "publier"].forEach((n) => { $("panneau-" + n).hidden = n !== o.dataset.onglet; });
+    if (o.dataset.onglet === "cartes") remplirCharte();
     if (o.dataset.onglet === "publier") ouvrirPublication();
   }));
   document.addEventListener("keydown", (e) => {
@@ -763,7 +889,7 @@
 
   // ---------- demarrage : etat, puis suivi de la preparation de l'apercu
   async function demarrer() {
-    chargerStyles();
+    chargerStyles(); chargerRegles();
     await charger();
     const surveiller = setInterval(async () => {
       if (apercuPret) { clearInterval(surveiller); return; }

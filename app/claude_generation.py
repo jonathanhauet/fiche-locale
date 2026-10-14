@@ -2923,7 +2923,7 @@ def choisir_extraits_shorts(phrases: list, nombre: int, duree_min: float = 25.0,
     )
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
-        model=MODELE_CLAUDE, max_tokens=2000, thinking={"type": "disabled"},
+        model=MODELE_CLAUDE, max_tokens=4000, thinking={"type": "disabled"},
         output_config={"format": {"type": "json_schema", "schema": SCHEMA_EXTRAITS}},
         messages=[{"role": "user", "content": prompt}],
     )
@@ -2954,6 +2954,19 @@ def choisir_extraits_shorts(phrases: list, nombre: int, duree_min: float = 25.0,
     return sans_chevauchement[:nombre]
 
 
+REGLES_MONTAGE: list = []          # preferences de montage de l'utilisateur (voir regles_montage.py), mises a jour avant chaque appel
+
+
+def definir_regles_montage(regles: list) -> None:
+    REGLES_MONTAGE[:] = [str(r)[:240] for r in (regles or [])][:30]
+
+
+def _bloc_regles() -> str:
+    if not REGLES_MONTAGE:
+        return ""
+    return "\n\nPréférences de Jonathan pour ses montages, à respecter chaque fois que c'est possible :\n" + "\n".join(f"- {r}" for r in REGLES_MONTAGE)
+
+
 SCHEMA_TENDANCE = {
     "type": "object",
     "properties": {"accroche": {"type": "string"}, "mots_cles": {"type": "array", "items": {"type": "string"}}},
@@ -2980,6 +2993,7 @@ def tendance_depuis_transcription(phrases: list) -> dict:
         "2) mots_cles : 6 à 12 mots importants à faire ressortir à l'écran (chiffres, noms, verbes forts, termes clés), écrits "
         "exactement comme dans la transcription, un seul mot chacun, pas de mots vides (le, de, et, que...)."
     )
+    prompt += _bloc_regles()
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
         model=MODELE_CLAUDE, max_tokens=800, thinking={"type": "disabled"},
@@ -3052,6 +3066,7 @@ def actions_depuis_annotations(notes: list, phrases: list, duree: float) -> tupl
         "sauf pour zoom. Une note qui ne correspond à aucune de ces actions (musique, style général, couleur...) va dans 'ignorees' avec "
         "une raison courte. N'invente aucune action qui n'est pas demandée."
     )
+    prompt += _bloc_regles()
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
         model=MODELE_CLAUDE, max_tokens=2500, thinking={"type": "disabled"},
@@ -3131,6 +3146,7 @@ def commande_editeur(commande: str, phrases: list, segments: list, duree: float)
         "demandée. Dans 'reponse', écris en 1 à 3 phrases en français ce que tu as fait (ou, si la commande demande des propositions, "
         "donne-les)."
     )
+    prompt += _bloc_regles()
     client = Anthropic(api_key=CLE_API)
     reponse = client.messages.create(
         model=MODELE_CLAUDE, max_tokens=3000, thinking={"type": "disabled"},
@@ -3197,4 +3213,121 @@ def kit_publication_montage(phrases: list, accroche: str = "") -> dict:
             "hashtags": [h for h in hashtags if h][:8], "accroches": [_nettoyer_texte_genere(a).strip(" .") for a in brut["accroches"]][:3],
         }
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+
+
+SCHEMA_CARTES = {
+    "type": "object",
+    "properties": {
+        "cartes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["etape", "info", "chiffre", "citation", "titre"]},
+                    "debut": {"type": "number"}, "duree": {"type": "number"}, "numero": {"type": "string"},
+                    "titre": {"type": "string"}, "sous_titre": {"type": "string"}, "valeur": {"type": "string"}, "libelle": {"type": "string"},
+                    "texte": {"type": "string"}, "auteur": {"type": "string"},
+                },
+                "required": ["type", "debut", "duree", "numero", "titre", "sous_titre", "valeur", "libelle", "texte", "auteur"], "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["cartes"], "additionalProperties": False,
+}
+
+
+def cartes_depuis_transcription(phrases: list, duree: float, nombre_max: int = 6) -> list:
+    """
+    Propose des cartes graphiques a afficher sur une video face camera (etape numerotee, information, chiffre cle, citation, titre), placees
+    la ou la personne dit quelque chose de concret : un numero d'etape, un chiffre, une definition, une phrase forte. Uniquement ce qui est
+    dit, rien d'invente. Renvoie [{"type", "debut", "duree", "textes": {...}}] (temps de la transcription fournie).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    transcription = _transcription_pour_prompt(phrases)
+    if not transcription.strip():
+        return []
+    prompt = (
+        f"Voici la transcription horodatée (secondes) d'une vidéo face caméra de {duree:.0f} s :\n\n{transcription}\n\n"
+        f"Propose au plus {nombre_max} cartes graphiques à afficher à l'écran pendant la vidéo, uniquement là où la personne dit quelque chose de "
+        "concret qui gagne à être montré : un numéro d'étape (type etape), une information à retenir (info), un chiffre clé (chiffre), une phrase "
+        "forte (citation) ou un titre de partie (titre). Pas plus d'une carte toutes les 8 secondes, jamais pendant les 2 premières secondes ; "
+        "debut = début de la phrase concernée, duree entre 2,5 et 4 secondes. Textes courts, repris de ce qui est dit, sans rien inventer : "
+        "etape (numero, titre 4 à 7 mots, sous_titre facultatif), info (titre, sous_titre facultatif), chiffre (valeur comme « 137 % » ou « 3 », "
+        "libelle), citation (texte, auteur laissé vide), titre (titre). Mets '' dans les champs non utilisés, et '0' dans numero sauf pour etape. "
+        "Si rien ne s'y prête, renvoie une liste vide."
+    )
+    prompt += _bloc_regles()
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=2500, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_CARTES}}, messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)["cartes"]
+    except (json.JSONDecodeError, KeyError, TypeError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+    cartes, dernier = [], -100.0
+    for c in sorted(brut, key=lambda x: float(x["debut"])):
+        debut = float(c["debut"])
+        if debut < 2.0 or debut - dernier < 8.0 or debut > duree - 1.0:
+            continue
+        textes = {cle: _nettoyer_texte_genere(str(c.get(cle) or "")) for cle in ("numero", "titre", "sous_titre", "valeur", "libelle", "texte", "auteur")}
+        if textes["numero"] in ("0", ""):
+            textes["numero"] = ""
+        cartes.append({"type": c["type"], "debut": debut, "duree": max(2.0, min(4.5, float(c["duree"]) or 3.0)), "textes": textes})
+        dernier = debut
+    return cartes[:nombre_max]
+
+
+SCHEMA_STYLE_REFERENCE = {
+    "type": "object",
+    "properties": {
+        "resume": {"type": "string"},
+        "sous_titres": {"type": "string", "enum": ["aucun", "classiques", "animes"]},
+        "pastille": {"type": "boolean"}, "cartes": {"type": "boolean"}, "barre_progression": {"type": "boolean"},
+        "titre_accroche": {"type": "boolean"}, "bruitages_probables": {"type": "boolean"},
+        "couleur_principale": {"type": "string"}, "couleur_accent": {"type": "string"},
+        "police": {"type": "string", "enum": ["Poppins", "Bebas Neue", "DM Serif Display", "Kalam"]},
+    },
+    "required": ["resume", "sous_titres", "pastille", "cartes", "barre_progression", "titre_accroche", "bruitages_probables",
+                 "couleur_principale", "couleur_accent", "police"],
+    "additionalProperties": False,
+}
+
+
+def decrire_style_reference(images: list, rythme: dict) -> dict:
+    """
+    Decrit le style de montage d'une video de reference a partir d'images extraites a intervalles reguliers (octets JPEG) et de son rythme
+    ({"nb_coupes", "duree_moyenne_plan"}) : sous-titres, pastilles sur les mots-cles, cartes graphiques, barre de progression, titre d'accroche,
+    palette et police les plus proches. Renvoie un dict conforme a SCHEMA_STYLE_REFERENCE.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    if not images:
+        raise RuntimeError("Aucune image exploitable dans cette vidéo.")
+    import base64
+    contenu = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(octets).decode()}} for octets in images[:8]]
+    contenu.append({"type": "text", "text": (
+        f"Ces {len(images)} images viennent d'une même courte vidéo de réseaux sociaux, prises à intervalles réguliers. Mesure : {rythme.get('nb_coupes', 0)} coupes, "
+        f"plan moyen de {rythme.get('duree_moyenne_plan', 0):.1f} s. Décris son style de montage pour pouvoir le reproduire : sous_titres ('aucun', 'classiques' "
+        "ou 'animes' si des mots s'animent ou se colorent un par un), pastille (un mot-clé est-il en surbrillance sur un fond coloré ?), cartes (des cartes "
+        "ou éléments graphiques dessinés apparaissent-ils ?), barre_progression, titre_accroche (un gros titre au début), bruitages_probables, "
+        "couleur_principale et couleur_accent (codes #rrggbb de la palette dominante des éléments graphiques), police (la plus proche parmi les "
+        "choix), et resume : 2 phrases en français sur ce qui fait son style. Réponds seulement d'après ce que tu vois.")})
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=900, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_STYLE_REFERENCE}}, messages=[{"role": "user", "content": contenu}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        return json.loads(bloc)
+    except json.JSONDecodeError as erreur:
         raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur

@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import secrets
 import threading
 import unicodedata
@@ -84,7 +85,11 @@ from . import (
     models,
     miniature_youtube,
     montage_editeur,
+    cartes_montage,
+    charte_montage,
     montage_parole,
+    style_reference,
+    regles_montage,
     montage_publication,
     sons,
     styles_montage,
@@ -7703,11 +7708,13 @@ def page_montage_video(request: Request, db: Session = Depends(obtenir_session))
         return redirection
     pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
     return templates.TemplateResponse(request, "montage_video.html", {"page_actuelle": "montage_video", "pistes": pistes,
-                                                                        "styles_json": json.dumps(styles_montage.lister(db)).replace("</", "<\\/")})
+                                                                        "styles_json": json.dumps(styles_montage.lister(db)).replace("</", "<\\/"),
+                                                                        "style_defaut": regles_montage.style_par_defaut(db)})
 
 
 def _options_montage(brut, dossier: str, db: Session) -> dict:
     """Options saisies sur la page, nettoyees ; telecharge la piste musicale choisie dans le dossier du montage."""
+    claude_generation.definir_regles_montage(regles_montage.textes(db))
     brut = brut if isinstance(brut, dict) else {}
     options = {
         "silences": bool(brut.get("silences", True)),
@@ -7720,11 +7727,13 @@ def _options_montage(brut, dossier: str, db: Session) -> dict:
         "style": "sobre" if brut.get("style") == "sobre" else "tendance",
         "effets": {cle: bool((brut.get("effets") or {}).get(cle, True)) for cle in montage_parole.EFFETS_DEFAUT},
         "bruitages": bool(brut.get("bruitages", brut.get("style") != "sobre")),
+        "pastille": bool(brut.get("pastille", brut.get("style") != "sobre")),
+        "charte": charte_montage.lire(db),
         "alterne": bool(brut.get("alterne", False)),
         "transition": brut.get("transition") if brut.get("transition") in styles_montage.TRANSITIONS_VALIDES else ("aucune" if brut.get("style") == "sobre" else "melange"),
     }
     try:
-        options["nb_shorts"] = max(1, min(int(brut.get("nb_shorts") or 3), 6))
+        options["nb_shorts"] = max(1, min(int(brut.get("nb_shorts") or 3), 10))
         options["duree_max_short"] = max(30, min(int(brut.get("duree_max_short") or 90), 180))
     except (TypeError, ValueError):
         options["nb_shorts"], options["duree_max_short"] = 3, 90
@@ -7732,6 +7741,8 @@ def _options_montage(brut, dossier: str, db: Session) -> dict:
     secondaires = couleurs_secondaires_client(client) if client else []
     if secondaires:
         options["accent"] = titre_photo._couleur_accent((0, 0, 0), secondaires)
+    else:
+        options["accent"] = charte_montage.rgb(options["charte"]["secondaire"])
     try:
         piste = db.get(models.PisteMusicale, int(brut.get("musique_id") or 0))
     except (TypeError, ValueError):
@@ -7855,6 +7866,90 @@ def montage_styles_supprimer(identifiant: str, request: Request, db: Session = D
     return JSONResponse({"styles": styles_montage.lister(db)})
 
 
+@app.post("/montage-video/styles/depuis-video")
+async def montage_style_depuis_video(request: Request, fichier: UploadFile = File(...), nom: str = Form(""), db: Session = Depends(obtenir_session)):
+    """
+    Copie le style d'une video de reference : mesure de son rythme, description par l'IA (sous-titres, pastilles, cartes, palette), puis
+    enregistrement d'un modele de style. Renvoie aussi les couleurs de charte proposees (non appliquees).
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    extension = fichier.filename.rsplit(".", 1)[-1].lower() if fichier.filename and "." in fichier.filename else ""
+    if extension not in style_reference.EXTENSIONS:
+        return JSONResponse({"erreur": "Format non pris en charge (MP4, MOV, M4V, WEBM ou MKV)."}, status_code=400)
+    nom = " ".join(nom.split())[:60] or "Style copié"
+    dossier = tempfile.mkdtemp(prefix="style_ref_")
+    chemin = os.path.join(dossier, f"reference.{extension}")
+    try:
+        taille = 0
+        with open(chemin, "wb") as sortie:
+            while True:
+                morceau = await fichier.read(1024 * 1024)
+                if not morceau:
+                    break
+                taille += len(morceau)
+                if taille > style_reference.TAILLE_MAX:
+                    return JSONResponse({"erreur": f"Vidéo trop lourde ({style_reference.TAILLE_MAX // (1024 * 1024)} Mo maximum)."}, status_code=400)
+                sortie.write(morceau)
+        try:
+            resultat = await run_in_threadpool(style_reference.analyser, chemin, _decrire_style_reference)
+        except (style_reference.ErreurStyle, montage_parole.ErreurMontage) as erreur:
+            return JSONResponse({"erreur": str(erreur)}, status_code=400)
+        except Exception as erreur:
+            return JSONResponse({"erreur": f"Analyse impossible : {str(erreur)[:200]}"}, status_code=502)
+    finally:
+        shutil.rmtree(dossier, ignore_errors=True)
+    try:
+        styles_montage.enregistrer(db, nom, resultat["reglages"])
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    liste = styles_montage.lister(db)
+    cree = next(x for x in liste if x["perso"] and x["nom"] == nom)
+    return JSONResponse({"styles": liste, "style": cree, "charte": resultat["charte"], "resume": resultat["resume"], "rythme": resultat["rythme"], "cartes": resultat["cartes"]})
+
+
+@app.post("/montage-video/styles/defaut")
+async def montage_style_par_defaut(request: Request, db: Session = Depends(obtenir_session)):
+    """Choisit le modele de style preselectionne a chaque nouveau montage (vide : le premier modele)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        identifiant = str((await request.json()).get("id") or "")
+    except (ValueError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if identifiant and identifiant not in {s["id"] for s in styles_montage.lister(db)}:
+        return JSONResponse({"erreur": "Style introuvable."}, status_code=404)
+    regles_montage.definir_style_par_defaut(db, identifiant)
+    return JSONResponse({"defaut": identifiant})
+
+
+@app.get("/montage-video/regles")
+def montage_regles_liste(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    return JSONResponse({"regles": regles_montage.lister(db)})
+
+
+@app.post("/montage-video/regles")
+async def montage_regles_ajouter(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        regles_montage.ajouter(db, (await request.json()).get("texte"))
+    except (ValueError, AttributeError) as erreur:
+        return JSONResponse({"erreur": str(erreur) or "Requête invalide."}, status_code=400)
+    return JSONResponse({"regles": regles_montage.lister(db)})
+
+
+@app.post("/montage-video/regles/{identifiant}/supprimer")
+def montage_regles_supprimer(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    if not regles_montage.supprimer(db, identifiant):
+        return JSONResponse({"erreur": "Préférence introuvable."}, status_code=404)
+    return JSONResponse({"regles": regles_montage.lister(db)})
+
+
 @app.get("/montage-video/sons/{nom}.wav")
 def montage_son(nom: str, request: Request):
     """Bruitage utilise par l'apercu de l'editeur (memes sons que le rendu)."""
@@ -7870,6 +7965,14 @@ def montage_son(nom: str, request: Request):
 def _generer_image_illustration(prompt: str, vertical: bool, plein: bool) -> bytes:
     ratio = ("9:16" if vertical else "16:9") if plein else "4:3"
     return gemini_images.generer_image(prompt, aspect_ratio=ratio)
+
+
+def _decrire_style_reference(images, rythme):
+    return claude_generation.decrire_style_reference(images, rythme)
+
+
+def _cartes_depuis_transcription(phrases, duree):
+    return claude_generation.cartes_depuis_transcription(phrases, duree)
 
 
 def _generer_plan_video(prompt: str, qualite: str, vertical: bool) -> bytes:
@@ -7999,6 +8102,75 @@ async def montage_editeur_generer_illustration(identifiant: str, numero: int, re
     return _reponse_editeur(identifiant, montage, sortie, resume=["Illustration créée par l'IA"], refus=[])
 
 
+@app.get("/montage-video/charte")
+def montage_charte_lire(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    return JSONResponse({"charte": charte_montage.lire(db), "polices": list(charte_montage.POLICES), "arrondis": list(charte_montage.ARRONDIS)})
+
+
+@app.post("/montage-video/charte")
+async def montage_charte_enregistrer(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        brut = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    return JSONResponse({"charte": charte_montage.enregistrer(db, brut)})
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/cartes/ajouter")
+async def montage_editeur_ajouter_carte(identifiant: str, numero: int, request: Request):
+    """Dessine une carte (etape, info, chiffre, citation, titre) aux couleurs de la charte et l'ajoute a la position demandee."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est en cours : attendez qu'il se termine."}, status_code=409)
+    try:
+        corps = await request.json()
+        debut, duree = float(corps.get("debut") or 0), float(corps.get("duree") or 3.5)
+        montage_editeur.ajouter_carte(montage, sortie, str(corps.get("type")), corps.get("textes"), debut, duree, str(corps.get("place") or "haut"))
+    except montage_editeur.ErreurEditeur as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    return _reponse_editeur(identifiant, montage, sortie, resume=["Carte ajoutée"], refus=[])
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/cartes/proposer")
+async def montage_editeur_proposer_cartes(identifiant: str, numero: int, request: Request, db: Session = Depends(obtenir_session)):
+    """L'IA propose des cartes a partir de ce qui est dit (etape, chiffre, citation...), les dessine et les place."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est en cours : attendez qu'il se termine."}, status_code=409)
+    claude_generation.definir_regles_montage(regles_montage.textes(db))
+    phrases_montage = montage_parole.phrases_sur_montage(sortie["phrases"], sortie["segments"])
+    try:
+        cartes = await run_in_threadpool(_cartes_depuis_transcription, phrases_montage, montage_parole.duree_montee(sortie["segments"]))
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"L'IA n'a pas pu proposer de cartes : {str(erreur)[:200]}"}, status_code=502)
+    resume, refus = [], []
+    for carte in cartes:
+        # La transcription fournie est celle du montage : on revient aux temps de la video d'origine, qui sont ceux de l'etat.
+        debut_source = montage_parole.montage_vers_source(carte["debut"], sortie["segments"])
+        try:
+            montage_editeur.ajouter_carte(montage, sortie, carte["type"], carte["textes"], debut_source, carte["duree"], "haut")
+            resume.append(f"Carte « {montage_parole._mmss(carte['debut'])} » : " + (carte["textes"].get("titre") or carte["textes"].get("valeur") or carte["textes"].get("texte") or "")[:50])
+        except montage_editeur.ErreurEditeur as erreur:
+            refus.append(str(erreur))
+    if not cartes:
+        refus.append("Aucun moment de la vidéo ne s'y prêtait : ajoutez une carte à la main.")
+    return _reponse_editeur(identifiant, montage, sortie, resume=resume, refus=refus)
+
+
 @app.post("/montage-video/{identifiant}/editeur/{numero}/plans-video/generer")
 async def montage_editeur_generer_plan_video(identifiant: str, numero: int, request: Request):
     """Cree un court plan video par IA (Veo, avec un cout reel) en tache de fond ; l'avancement est dans l'etat de l'editeur."""
@@ -8038,11 +8210,11 @@ def montage_editeur_fichier_illustration(identifiant: str, numero: int, illustra
     chemin = montage_editeur.fichier_illustration(sortie, illustration_id) if sortie else None
     if not chemin:
         return JSONResponse({"erreur": "Illustration introuvable."}, status_code=404)
-    return FileResponse(chemin, media_type="image/jpeg")
+    return FileResponse(chemin, media_type="image/png" if chemin.endswith(".png") else "image/jpeg")
 
 
 @app.post("/montage-video/{identifiant}/editeur/{numero}/commande")
-async def montage_editeur_commande(identifiant: str, numero: int, request: Request):
+async def montage_editeur_commande(identifiant: str, numero: int, request: Request, db: Session = Depends(obtenir_session)):
     """Commande en langage naturel (« retire les répétitions », « illustre les idées principales »...) traduite par l'IA en modifications."""
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
@@ -8057,6 +8229,7 @@ async def montage_editeur_commande(identifiant: str, numero: int, request: Reque
         return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
     if not commande:
         return JSONResponse({"erreur": "Écrivez une commande."}, status_code=400)
+    claude_generation.definir_regles_montage(regles_montage.textes(db))
     try:
         reponse_ia = await run_in_threadpool(_commande_editeur, commande, sortie["phrases"], sortie["segments"], montage["infos"]["duree"])
     except Exception as erreur:
@@ -8277,7 +8450,7 @@ def montage_editeur_apercu(identifiant: str, request: Request):
 
 
 @app.post("/montage-video/{identifiant}/reviser")
-async def montage_video_reviser(identifiant: str, request: Request):
+async def montage_video_reviser(identifiant: str, request: Request, db: Session = Depends(obtenir_session)):
     """
     Relecture : applique les notes de l'utilisateur (« a 0:12, zoom ici », « enleve cette phrase »...) a l'un des montages et le refait
     depuis la video d'origine, sans retranscrire. Corps : {"numero": int, "notes": [{"t": secondes sur le montage, "texte": str}]}.
@@ -8300,6 +8473,7 @@ async def montage_video_reviser(identifiant: str, request: Request):
         return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
     if not 1 <= len(notes) <= 20:
         return JSONResponse({"erreur": "Écrivez entre 1 et 20 notes."}, status_code=400)
+    claude_generation.definir_regles_montage(regles_montage.textes(db))
     montage_parole.lancer_revision(identifiant, numero, notes, _interpreter_annotations)
     return JSONResponse({"id": identifiant})
 

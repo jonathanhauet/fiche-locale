@@ -17,6 +17,7 @@ from io import BytesIO
 
 from PIL import Image
 
+from . import cartes_montage, charte_montage
 from . import montage_parole as mp
 from . import montage_publication as pub
 from . import styles_montage
@@ -26,7 +27,7 @@ TAILLE_MAX_IMAGE = 15 * 1024 * 1024
 NB_ILLUSTRATIONS_MAX = 40
 NB_ANNULATIONS_MAX = 30
 REGLAGES_ACTIFS = ("zooms", "mots", "accroche", "barre")
-MODES_ILLUSTRATION = ("incrust", "plein")
+MODES_ILLUSTRATION = ("incrust", "plein", "carte")
 SNAP_SILENCE = 0.4          # un bord de coupe a moins de 0,4 s d'un silence est cale dedans
 SNAP_MARGE = 0.1
 
@@ -88,11 +89,13 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
         "sons": [{"t": _source(e["t"], segments), "son": e["son"], "volume": e["volume"]} for e in plan["bruitages"]],
         "titres": [{"indice": i, "debut": d, "fin": f, "texte": t} for i, (d, f, t) in enumerate(effets["titres"])],
         "illustrations": [{"id": ill["id"], "debut": ill["debut"], "fin": ill["fin"], "mode": ill["mode"], "origine": ill.get("origine", ""),
-                           "prompt": ill.get("prompt", ""), "kind": ill.get("kind", "image"), "duree_clip": ill.get("duree_clip")} for ill in effets.get("illustrations", [])],
+                           "prompt": ill.get("prompt", ""), "kind": ill.get("kind", "image"), "duree_clip": ill.get("duree_clip"), "place": ill.get("place", "haut"),
+                           "carte": ill.get("carte")} for ill in effets.get("illustrations", [])],
+        "charte": charte_montage.nettoyer(effets.get("charte")),
         "plans": [{"id": p["id"], "prompt": p["prompt"], "etat": p["etat"], "erreur": p.get("erreur", ""), "qualite": p["qualite"]}
                   for p in sorted(montage.get("plans", {}).values(), key=lambda x: x["cree"])[-8:]],
         "mots_gros": sorted(set(effets["mots_gros"]) | {mp._normaliser(m) for m in effets["mots_cles"]}),
-        "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "bruitages": bool(effets.get("bruitages")),
+        "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "bruitages": bool(effets.get("bruitages")), "pastille": bool(effets.get("pastille")),
                      "transition": effets.get("transition", "aucune"), "sous_titres": bool(sortie["sous_titres"]), "style": effets["style"]},
         "accroche": effets["titre"], "peut_annuler": bool(sortie.get("annulations")), "peut_revenir": bool(sortie["historique"]),
         "non_rendu": pub.non_rendu(sortie),
@@ -253,6 +256,8 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
                 effets["alterne"] = valeur
             elif cle == "bruitages":
                 effets["bruitages"] = valeur
+            elif cle == "pastille":
+                effets["pastille"] = valeur
             elif cle == "sous_titres":
                 sortie["sous_titres"] = valeur
             elif cle == "transition":
@@ -274,10 +279,13 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
             for cle in REGLAGES_ACTIFS:
                 if cle in reglages:
                     effets["actif"][cle] = reglages[cle]
-            for cle in ("alterne", "bruitages", "transition", "style"):
+            for cle in ("alterne", "bruitages", "pastille", "transition", "style"):
                 if cle in reglages:
                     effets[cle] = reglages[cle]
             resume.append("Style appliqué" + (f" : {operation['nom']}" if operation.get("nom") else ""))
+        elif genre == "appliquer_charte":
+            effets["charte"] = charte_montage.nettoyer(operation.get("charte"))
+            resume.append("Charte graphique appliquée (les cartes déjà créées gardent leurs couleurs)")
         elif genre == "retirer_illustration":
             avant_nb = len(effets.get("illustrations", []))
             effets["illustrations"] = [i for i in effets.get("illustrations", []) if i["id"] != operation.get("id")]
@@ -292,8 +300,10 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
                 cible["debut"] = debut
             if operation.get("fin") is not None:
                 cible["fin"] = max(fin, cible["debut"] + 0.5)
-            if operation.get("mode") in MODES_ILLUSTRATION:
+            if operation.get("mode") in MODES_ILLUSTRATION and cible.get("kind") != "carte":
                 cible["mode"] = operation["mode"]
+            if operation.get("place") in cartes_montage.POSITIONS and cible.get("kind") == "carte":
+                cible["place"] = operation["place"]
             resume.append("Illustration modifiée")
         else:
             refus.append("Opération non reconnue.")
@@ -397,6 +407,35 @@ def lancer_plan_video(montage: dict, sortie: dict, prompt: str, debut: float, mo
 def fichier_video_illustration(sortie: dict, identifiant: str):
     cible = next((i for i in sortie["effets"].get("illustrations", []) if i["id"] == identifiant and i.get("kind") == "video"), None)
     return cible["fichier_video"] if cible and os.path.exists(cible["fichier_video"]) else None
+
+
+def ajouter_carte(montage: dict, sortie: dict, genre: str, textes: dict, debut: float, duree: float, place: str = "haut") -> str:
+    """Dessine une carte graphique (voir cartes_montage.py) aux couleurs de la charte du montage et l'ajoute a `debut` pour `duree` secondes."""
+    effets = sortie["effets"]
+    if len(effets.setdefault("illustrations", [])) >= NB_ILLUSTRATIONS_MAX:
+        raise ErreurEditeur(f"{NB_ILLUSTRATIONS_MAX} illustrations et cartes au maximum.")
+    if genre not in cartes_montage.TYPES:
+        raise ErreurEditeur("Type de carte inconnu.")
+    textes = cartes_montage.nettoyer_textes(textes)
+    if not any(textes[c] for c in ("titre", "valeur", "texte")):
+        raise ErreurEditeur("Écrivez le texte de la carte.")
+    png = cartes_montage.rendre_carte(genre, textes, effets.get("charte"), sortie["format"])
+    duree_source = montage["infos"]["duree"]
+    debut = dans_le_montage(max(0.0, min(float(debut), duree_source)), sortie["segments"])
+    duree = max(1.5, min(float(duree), 8.0))
+    identifiant = uuid.uuid4().hex[:10]
+    dossier = os.path.join(montage["dossier"], "illustrations")
+    os.makedirs(dossier, exist_ok=True)
+    chemin = os.path.join(dossier, f"{identifiant}.png")
+    with open(chemin, "wb") as fichier:
+        fichier.write(png)
+    with montage["verrou"]:
+        sortie["annulations"] = ((sortie.get("annulations") or []) + [_instantane(sortie)])[-NB_ANNULATIONS_MAX:]
+        effets["illustrations"].append({
+            "id": identifiant, "debut": debut, "fin": debut + duree, "mode": "carte", "kind": "carte", "fichier": chemin, "origine": "carte",
+            "prompt": "", "place": place if place in cartes_montage.POSITIONS else "haut", "carte": {"type": genre, "textes": textes},
+        })
+    return identifiant
 
 
 def fichier_illustration(sortie: dict, identifiant: str):
