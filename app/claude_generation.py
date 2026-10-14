@@ -3331,3 +3331,67 @@ def decrire_style_reference(images: list, rythme: dict) -> dict:
         return json.loads(bloc)
     except json.JSONDecodeError as erreur:
         raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+
+
+SCHEMA_MODELE_VISUEL = {
+    "type": "object",
+    "properties": {
+        "couverture": {"type": "object", "properties": {"titre": {"type": "string"}, "sous_titre": {"type": "string"}}, "required": ["titre", "sous_titre"], "additionalProperties": False},
+        "elements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {cle: {"type": "string"} for cle in ("mythe", "realite", "avant", "apres", "titre", "texte", "valeur", "libelle", "auteur", "soustexte")},
+                "required": ["mythe", "realite", "avant", "apres", "titre", "texte", "valeur", "libelle", "auteur", "soustexte"], "additionalProperties": False,
+            },
+        },
+        "cta": {"type": "object", "properties": {"titre": {"type": "string"}, "texte": {"type": "string"}, "bouton": {"type": "string"}}, "required": ["titre", "texte", "bouton"], "additionalProperties": False},
+    },
+    "required": ["couverture", "elements", "cta"], "additionalProperties": False,
+}
+CONSIGNES_MODELE_VISUEL = {
+    "mythe_realite": "Chaque élément oppose une idée reçue fréquente dans ce métier (mythe : une phrase courte, comme on la dit) à la réalité (realite : 1 à 2 phrases claires). Champs : mythe, realite.",
+    "avant_apres": "Chaque élément décrit une situation AVANT (avant : un problème concret, 1 phrase) et APRÈS (apres : la situation améliorée, 1 à 2 phrases). Champs : avant, apres. N'invente aucun résultat chiffré.",
+    "pas_a_pas": "Chaque élément est une étape d'une méthode, dans l'ordre. Champs : titre (4 à 8 mots, verbe d'action) et texte (1 à 2 phrases).",
+    "conseil_local": "Chaque élément est un conseil concret utile aux habitants de la zone de l'entreprise, sans citer de lieu qui n'est pas dans le contexte. Champs : titre (4 à 8 mots) et texte (1 à 2 phrases).",
+    "chiffre_cle": "Chaque élément met en avant UN chiffre réel, présent dans le texte de base ou le contexte (valeur : le chiffre court, comme « 137 % » ; libelle : ce qu'il mesure, 1 phrase). Si le texte ne contient aucun chiffre, renvoie une liste d'éléments vide : n'invente jamais un chiffre.",
+    "temoignage": "Chaque élément reprend un VRAI avis client présent dans le texte de base (texte : l'extrait le plus parlant, tel quel, 1 à 3 phrases ; auteur : prénom et initiale du nom, comme « Marie D. »). Si le texte ne contient aucun avis client, renvoie une liste d'éléments vide : n'invente jamais un témoignage.",
+    "post_typo": "Un seul élément : texte = une phrase forte et simple tirée du message (14 mots au maximum), soustexte = une précision courte (facultative, '' sinon).",
+}
+
+
+def contenu_modele_visuel(modele: str, texte_base: str, contexte: str, nb: int) -> dict:
+    """
+    Redige le contenu d'un modele de visuel (mythe ou realite, avant / apres, pas a pas...) a partir du texte de base du post, dans la voix de l'entreprise,
+    sans rien inventer (chiffres, resultats et avis uniquement s'ils sont dans le texte). Renvoie {"couverture", "elements", "cta"} (voir modeles_visuels).
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    consigne = CONSIGNES_MODELE_VISUEL.get(modele)
+    if not consigne:
+        raise RuntimeError("Modèle inconnu.")
+    prompt = (
+        f"Contexte sur l'entreprise (voix, activité, zone) :\n{(contexte or '')[:6000]}\n\n"
+        f"Texte de base du post :\n« {(texte_base or '').strip()[:3000]} »\n\n"
+        f"Prépare le contenu d'un visuel pour les réseaux sociaux, modèle « {modele} », avec {nb} élément(s). {consigne}\n"
+        "Couverture : titre accrocheur (8 mots au maximum) et sous-titre court (facultatif, '' sinon). Slide finale : titre court, texte d'une phrase, bouton "
+        "(2 à 3 mots, ex. « Prendre rendez-vous »). Pour le modèle post_typo, laisse couverture et cta vides. Mets '' dans les champs d'un élément non utilisés par le modèle. "
+        "Français correct, ton de l'entreprise, aucun fait, chiffre, résultat ni promesse absent du texte de base ou du contexte. Aucun emoji ni tiret cadratin."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=3000, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_MODELE_VISUEL}}, messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)
+    except json.JSONDecodeError as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+    nettoye = lambda valeur: _nettoyer_texte_genere(str(valeur or ""))
+    return {
+        "couverture": {c: nettoye(v) for c, v in brut["couverture"].items()}, "cta": {c: nettoye(v) for c, v in brut["cta"].items()},
+        "elements": [{c: nettoye(v) for c, v in e.items()} for e in brut["elements"]],
+    }

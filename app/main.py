@@ -87,6 +87,7 @@ from . import (
     montage_editeur,
     cartes_montage,
     charte_montage,
+    modeles_visuels,
     montage_parole,
     style_reference,
     regles_montage,
@@ -8792,6 +8793,7 @@ def _contexte_publication_multi(
         "origine_vocale": origine_vocale,
         "image_url_initial": image_url_initial,
         "video_url_initial": video_url_initial,
+        "modeles_visuels_json": json.dumps(modeles_visuels.description_pour_page()).replace("</", "<\\/"),
         "fiches_source_avis": _fiches_source_avis(db, client),
         "brouillons_whatsapp_en_attente": (
             db.query(models.BrouillonWhatsApp).filter_by(client_id=client.id).order_by(models.BrouillonWhatsApp.id).all()
@@ -9138,6 +9140,105 @@ async def publication_multi_carrousel_textes(client_id: int, request: Request, d
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la rédaction du carrousel : {erreur}"}, status_code=500)
     return JSONResponse({"slides": slides})
+
+
+def _contenu_modele_visuel(modele, texte_base, contexte, nb):
+    return claude_generation.contenu_modele_visuel(modele, texte_base, contexte, nb)
+
+
+@app.post("/publication-multi/{client_id}/modeles/remplir")
+async def publication_multi_modele_remplir(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Redige le contenu d'un modele de visuel (mythe ou realite, avant / apres, pas a pas...) a partir du texte de base."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+        modele = str(donnees.get("modele") or "")
+        texte_base = " ".join(str(donnees.get("texte_base") or "").split())
+    except (ValueError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if modele not in modeles_visuels.MODELES:
+        return JSONResponse({"erreur": "Modèle inconnu."}, status_code=400)
+    if not texte_base:
+        return JSONResponse({"erreur": "Écrivez d'abord le texte de base (le sujet du visuel)."}, status_code=400)
+    definition = modeles_visuels.MODELES[modele]
+    try:
+        nb = max(definition["nb"][0], min(int(donnees.get("nb") or definition["nb"][0] + 1), definition["nb"][1]))
+    except (TypeError, ValueError):
+        nb = definition["nb"][0]
+    try:
+        brut = await run_in_threadpool(_contenu_modele_visuel, modele, texte_base, _contexte_ia_client(client), nb)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de la rédaction : {str(erreur)[:200]}"}, status_code=500)
+    try:
+        contenu = modeles_visuels.valider_contenu(modele, brut)
+    except ValueError:
+        explication = {
+            "chiffre_cle": "Aucun chiffre réel dans votre texte de base : ajoutez les chiffres à mettre en avant (rien n'est inventé).",
+            "temoignage": "Aucun avis client dans votre texte de base : collez un vrai avis, ou utilisez le panneau « Avis ». Rien n'est inventé.",
+        }.get(modele, "L'IA n'a pas trouvé de quoi remplir ce modèle : précisez le sujet dans le texte de base.")
+        return JSONResponse({"erreur": explication}, status_code=422)
+    return JSONResponse({"contenu": contenu})
+
+
+@app.post("/publication-multi/{client_id}/modeles/rendu")
+async def publication_multi_modele_rendu(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Dessine un modele de visuel aux couleurs du client. mode "apercu" : images en base64 (rien n'est heberge) ; mode "final" : images JPEG hebergees
+    sur OVH (URLs renvoyees) ou, avec sortie "video", petite video animee verticale hebergee (URL renvoyee).
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+        modele = str(donnees.get("modele") or "")
+        contenu = modeles_visuels.valider_contenu(modele, donnees.get("contenu"))
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except AttributeError:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    couleur, secondaires = _couleurs_demandees(donnees, client)
+    decor, graine_decor = _decor_demande(donnees, client), client.id
+    logo_position, logo_style = _logo_position_demandee(donnees, client), _logo_style_demandee(donnees, client)
+    logo_couleur_fond = _logo_couleur_fond_demandee(donnees, client)
+    layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
+    final, en_video = donnees.get("mode") == "final", donnees.get("sortie") == "video"
+    nom_client = " ".join(str(donnees.get("nom_affiche") or "").split())[:60] or nom_affiche_carrousel(client)
+    logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
+
+    def fabriquer():
+        logo = None if sans_logo else _image_depuis_url_publique(logo_url)
+        images = modeles_visuels.construire(modele, contenu, layout, couleur, nom_client, logo, None, secondaires, decor, graine_decor, logo_position, logo_style, logo_couleur_fond)
+        if not final:
+            apercus = []
+            for image in images:
+                tampon = io.BytesIO()
+                image.resize((720, 900), Image.LANCZOS).save(tampon, format="JPEG", quality=80, subsampling=2)
+                apercus.append("data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode())
+            return {"images": apercus}
+        lot = uuid.uuid4().hex[:8]
+        if en_video:
+            octets = modeles_visuels.en_video(images, modeles_visuels.couleur_du_fond(layout, couleur))
+            return {"video": ovh_upload.envoyer_octets(octets, f"visuel-{lot}.mp4")}
+        sorties = []
+        for image in images:
+            tampon = io.BytesIO()
+            image.save(tampon, format="JPEG", quality=92, subsampling=0)
+            sorties.append(tampon.getvalue())
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            return {"images": list(pool.map(lambda ot: ovh_upload.envoyer_octets(ot[1], f"visuel-{lot}-{ot[0] + 1}.jpg"), enumerate(sorties)))}
+
+    try:
+        resultat = await run_in_threadpool(fabriquer)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec du dessin du visuel : {str(erreur)[:250]}"}, status_code=500)
+    return JSONResponse(resultat)
 
 
 @app.post("/publication-multi/{client_id}/carrousel/media")

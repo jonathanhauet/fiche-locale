@@ -300,6 +300,30 @@
     </div>
     <p id="carrousel-statut" class="texte-vide" hidden></p>
   </details>
+  <details class="options-visuel" id="panneau-modeles">
+    <summary>🧩 Modèles de visuels (mythe ou réalité, avant / après, chiffres clés…)</summary>
+    <p class="texte-discret">
+      Un visuel prêt à l'emploi, aux couleurs, au logo et au décor de la fiche (bloc « identité » ci-dessus). L'IA rédige à partir du texte de base, sans rien inventer :
+      chiffres et témoignages ne viennent que de votre texte. Vous pouvez tout corriger, puis l'utiliser en images ou en petite vidéo animée.
+    </p>
+    <div class="ligne-champs">
+      <label for="modeles-choix" class="texte-discret">Modèle</label>
+      <select id="modeles-choix" style="width:auto;"></select>
+      <label for="modeles-nb" class="texte-discret">Éléments</label>
+      <select id="modeles-nb" style="width:auto;"></select>
+      <button type="button" id="modeles-rediger" class="bouton-secondaire">✨ Rédiger avec l'IA</button>
+    </div>
+    <p id="modeles-description" class="texte-discret"></p>
+    <div id="modeles-edition" hidden></div>
+    <div id="modeles-apercu" class="carrousel-apercu"></div>
+    <div class="ligne-champs" id="modeles-actions" hidden>
+      <label for="modeles-sortie" class="texte-discret">Utiliser en</label>
+      <select id="modeles-sortie" style="width:auto;"><option value="images">Images (carrousel ou image seule)</option><option value="video">Petite vidéo animée (Reel, Short)</option></select>
+      <button type="button" id="modeles-actualiser" class="bouton-secondaire">🔄 Actualiser l'aperçu</button>
+      <button type="button" id="modeles-utiliser" class="bouton-secondaire">✅ Utiliser ce visuel</button>
+    </div>
+    <p id="modeles-statut" class="texte-vide" hidden></p>
+  </details>
   <details class="options-visuel" id="panneau-carrousel-bd">
     <summary>🎨 Carrousel de visuels IA (plusieurs scènes)</summary>
     <p class="texte-discret">
@@ -728,6 +752,7 @@
 })();
 </script>
 
+<script id="donnees-modeles-visuels" type="application/json">{{ modeles_visuels_json|safe }}</script>
 <script id="donnees-horaires-recommandes" type="application/json">{{ horaires_recommandes|tojson }}</script>
 <script id="donnees-noms-reseaux" type="application/json">{{ noms_reseaux|tojson }}</script>
 <script id="donnees-images-deja-utilisees" type="application/json">{{ images_deja_utilisees_json|safe }}</script>
@@ -1764,6 +1789,103 @@
         document.getElementById("identite-sec-hex-" + bouton.dataset.numero).value = "";
         modifiee();
       }));
+    })();
+
+    // ---- Modeles de visuels : contenu redige par l'IA (sans rien inventer), dessine par le serveur aux couleurs du client ----
+    (function () {
+      const base = "/publication-multi/{{ client.id }}/modeles";
+      const MODELES = JSON.parse(document.getElementById("donnees-modeles-visuels").textContent);
+      const $ = (id) => document.getElementById(id);
+      let contenu = null, occupe = false;
+      function message(texte) { const m = $("modeles-statut"); m.hidden = !texte; m.textContent = texte || ""; }
+      async function appeler(url, corps) {
+        const reponse = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+        let donnees = {}; try { donnees = await reponse.json(); } catch (e) { /* sans JSON */ }
+        if (!reponse.ok) throw new Error(donnees.erreur || "Échec (code " + reponse.status + ").");
+        return donnees;
+      }
+      Object.entries(MODELES).forEach(([id, m]) => { const o = document.createElement("option"); o.value = id; o.textContent = m.libelle; $("modeles-choix").appendChild(o); });
+      function majModele() {
+        const m = MODELES[$("modeles-choix").value]; $("modeles-description").textContent = m.description;
+        const nb = $("modeles-nb"); nb.textContent = "";
+        for (let i = m.nb[0]; i <= m.nb[1]; i++) { const o = document.createElement("option"); o.value = i; o.textContent = i; nb.appendChild(o); }
+        nb.value = Math.min(m.nb[1], Math.max(m.nb[0], 3)); nb.disabled = m.nb[0] === m.nb[1];
+        contenu = null; $("modeles-edition").hidden = true; $("modeles-actions").hidden = true; $("modeles-apercu").innerHTML = "";
+      }
+      $("modeles-choix").addEventListener("change", majModele); majModele();
+
+      function champ(valeur, libelle, long) {
+        const el = document.createElement(long ? "textarea" : "input"); if (long) el.rows = 2; else el.type = "text";
+        el.value = valeur || ""; el.placeholder = libelle; el.title = libelle; return el;
+      }
+      function construireEdition() {
+        const m = MODELES[$("modeles-choix").value], zone = $("modeles-edition"); zone.innerHTML = "";
+        const bloc = (titre, ...champs) => { const div = document.createElement("div"); div.className = "carrousel-slide-edition"; const t = document.createElement("strong"); t.textContent = titre; div.appendChild(t); champs.forEach((c) => div.appendChild(c)); zone.appendChild(div); return div; };
+        if (m.couverture) bloc("Couverture", champ(contenu.couverture.titre, "Titre"), champ(contenu.couverture.sous_titre, "Sous-titre"));
+        contenu.elements.forEach((e, i) => {
+          const div = bloc((m.couverture ? "Slide " + (i + 2) : "Visuel"), ...m.champs.map(([cle, libelle]) => champ(e[cle], libelle, ["texte", "realite", "apres", "mythe", "avant", "libelle"].includes(cle))));
+          if (m.nb[1] > 1 && contenu.elements.length > m.nb[0]) { const x = document.createElement("button"); x.type = "button"; x.className = "bouton-secondaire"; x.textContent = "✕ Retirer"; x.addEventListener("click", () => { lire(); contenu.elements.splice(i, 1); construireEdition(); actualiser(); }); div.appendChild(x); }
+        });
+        if (m.nb[1] > 1 && contenu.elements.length < m.nb[1]) { const plus = document.createElement("button"); plus.type = "button"; plus.className = "bouton-secondaire"; plus.textContent = "+ Ajouter un élément"; plus.addEventListener("click", () => { lire(); contenu.elements.push({}); construireEdition(); }); zone.appendChild(plus); }
+        if (m.couverture) bloc("Slide finale", champ(contenu.cta.titre, "Titre"), champ(contenu.cta.texte, "Texte"), champ(contenu.cta.bouton, "Texte du bouton"));
+        zone.hidden = false; $("modeles-actions").hidden = false;
+      }
+      function lire() {
+        const m = MODELES[$("modeles-choix").value], blocs = Array.from($("modeles-edition").querySelectorAll(".carrousel-slide-edition"));
+        const valeurs = (b) => Array.from(b.querySelectorAll("input, textarea")).map((c) => c.value.trim());
+        let k = 0; const resultat = { elements: [] };
+        if (m.couverture) { const [t, s] = valeurs(blocs[k++]); resultat.couverture = { titre: t, sous_titre: s }; }
+        contenu.elements.forEach(() => { const v = valeurs(blocs[k++]); const e = {}; m.champs.forEach(([cle], j) => { e[cle] = v[j]; }); resultat.elements.push(e); });
+        if (m.couverture) { const [t, x, b] = valeurs(blocs[k++]); resultat.cta = { titre: t, texte: x, bouton: b }; }
+        contenu = resultat; return resultat;
+      }
+      function corps(mode) {
+        const layout = document.querySelector('input[name="carrousel-layout"]:checked').value;
+        return {
+          modele: $("modeles-choix").value, contenu: lire(), layout, couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
+          decor: $("identite-decor").value, logo_position: $("identite-logo-position").value, logo_style: $("identite-logo-style").value,
+          logo_couleur_fond: $("identite-logo-couleur-fond-hex").value, nom_affiche: $("carrousel-nom-affiche").value, mode, sortie: $("modeles-sortie").value,
+        };
+      }
+      async function actualiser() {
+        if (!contenu || occupe) return; occupe = true; message("Dessin de l'aperçu...");
+        try {
+          const d = await appeler(base + "/rendu", corps("apercu")); const zone = $("modeles-apercu"); zone.innerHTML = "";
+          d.images.forEach((src, i) => { const img = document.createElement("img"); img.src = src; img.alt = "Slide " + (i + 1); zone.appendChild(img); });
+          message("Aperçu à jour. Corrigez un texte si besoin, puis « Utiliser ce visuel ».");
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      }
+      $("modeles-rediger").addEventListener("click", async () => {
+        const texteBase = document.getElementById("texte-base").value.trim();
+        if (!texteBase) { message("Écrivez d'abord le texte de base (le sujet du visuel)."); return; }
+        $("modeles-rediger").disabled = true; message("Rédaction en cours...");
+        try {
+          const d = await appeler(base + "/remplir", { modele: $("modeles-choix").value, texte_base: texteBase, nb: parseInt($("modeles-nb").value, 10) });
+          contenu = d.contenu; construireEdition();
+        } catch (e) { message(e.message); $("modeles-rediger").disabled = false; return; }
+        $("modeles-rediger").disabled = false; await actualiser();
+      });
+      $("modeles-actualiser").addEventListener("click", actualiser);
+      $("modeles-utiliser").addEventListener("click", async () => {
+        if (!contenu || occupe) return; occupe = true;
+        const video = $("modeles-sortie").value === "video";
+        message(video ? "Création de la vidéo animée (une à deux minutes)..." : "Création des images (quelques secondes)...");
+        try {
+          const d = await appeler(base + "/rendu", corps("final"));
+          if (d.video) {
+            champImageUrlIA.value = ""; document.getElementById("champ-est-carrousel").value = "0";
+            document.getElementById("video-partagee").value = ""; document.getElementById("champ-video-url-ia").value = d.video;
+            const apercuVideo = document.getElementById("apercu-video-ia"); apercuVideo.src = d.video; apercuVideo.hidden = false;
+            actualiserToutesLesApercusImage(); message("Vidéo animée prête : elle sera publiée avec votre post (aperçu dans le bloc vidéo plus bas).");
+          } else {
+            champImagePartagee.value = ""; champImageUrlIA.value = d.images.join("|");
+            document.getElementById("champ-est-carrousel").value = d.images.length > 1 ? "1" : "0";
+            document.getElementById("champ-titre-carrousel").value = (contenu.couverture && contenu.couverture.titre) || "";
+            actualiserToutesLesApercusImage(); message(d.images.length > 1 ? "Carrousel de " + d.images.length + " images prêt : il sera publié avec votre post." : "Image prête : elle sera publiée avec votre post.");
+          }
+        } catch (e) { message(e.message); } finally { occupe = false; }
+      });
+      document.addEventListener("identite-modifiee", actualiser);
     })();
 
     // ---- Carrousel IA : textes rediges par l'IA, dessines par le serveur (aperçu en base64, puis images hebergees) ----
