@@ -34,6 +34,7 @@
       <div class="ed-titre" id="ed-titre" hidden></div>
       <div class="ed-titre ed-accroche" id="ed-accroche" hidden></div>
       <div class="ed-sous" id="ed-sous"></div>
+      <div class="ed-flash" id="ed-flash"></div>
       <div class="ed-barre" id="ed-barre"><div></div></div>
       <div class="ed-attente" id="ed-attente">Préparation de l'aperçu…</div>
     </div>
@@ -76,12 +77,29 @@
 
     <div class="ed-panneau" id="panneau-effets" hidden>
       <div class="ed-groupe">
+        <strong>Modèle de style</strong>
+        <div class="ed-ligne">
+          <select id="ed-style"></select>
+          <button type="button" class="bouton-secondaire" id="ed-style-appliquer">Appliquer</button>
+          <button type="button" class="bouton-secondaire" id="ed-style-supprimer" hidden>Supprimer</button>
+        </div>
+        <span id="ed-style-description" class="texte-discret"></span>
+        <div class="ed-ligne"><button type="button" class="bouton-secondaire" id="ed-style-enregistrer">💾 Enregistrer mes réglages actuels comme style</button></div>
+      </div>
+      <div class="ed-groupe">
         <strong>Effets automatiques</strong>
         <label><input type="checkbox" data-reglage="zooms"> Zooms sur les moments forts</label>
         <label><input type="checkbox" data-reglage="alterne"> Cadrage alterné à chaque coupe (rythme « jump cut »)</label>
         <label><input type="checkbox" data-reglage="sous_titres"> Sous-titres</label>
         <label><input type="checkbox" data-reglage="mots"> Sous-titres animés mot par mot</label>
         <label><input type="checkbox" data-reglage="barre"> Barre de progression</label>
+        <label><input type="checkbox" data-reglage="bruitages"> Bruitages (whoosh, pop, impact), audibles dans l'aperçu</label>
+        <label>Transitions sur les coupes
+          <select id="ed-transition">
+            <option value="aucune">Aucune</option><option value="melange">Variées</option><option value="flash">Flash blanc</option>
+            <option value="zoom">Zoom-punch</option><option value="glitch">Glitch</option><option value="secousse">Secousse</option>
+          </select>
+        </label>
         <label><input type="checkbox" data-reglage="accroche"> Titre d'accroche au début</label>
       </div>
       <div class="ed-groupe">
@@ -157,6 +175,7 @@
   .ed-sous { word-spacing: .12em; }
   .ed-sous .actif { color: #ffd60a; display: inline-block; transform: scale(1.1); margin: 0 .05em; }
   .ed-sous .gros { color: #ffd60a; }
+  .ed-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
   .ed-barre { position: absolute; left: 0; right: 0; bottom: 0; height: 1%; min-height: 4px; }
   .ed-barre > div { height: 100%; width: 0; background: #ffd60a; }
   .ed-attente { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; color: #fff; background: rgba(0,0,0,.72); font-size: .95rem; }
@@ -234,6 +253,7 @@
     if (!sceneConfiguree) configurerScene();
     $("ed-annuler").disabled = !E.peut_annuler || enRendu;
     document.querySelectorAll("[data-reglage]").forEach((c) => { c.checked = !!E.reglages[c.dataset.reglage]; });
+    $("ed-transition").value = E.reglages.transition || "aucune";
     if (document.activeElement !== $("ed-accroche-texte")) $("ed-accroche-texte").value = E.accroche || "";
     dessinerTranscription(); dessinerListes(); dessinerFrise(); majSurimpressions();
     $("ed-temps").textContent = minutes(tempsMonte(video.currentTime || 0)) + " / " + minutes(E.duree_montee);
@@ -273,9 +293,16 @@
   }
 
   // ---------- lecture avec coupes et surimpressions
+  const sonsCache = {}; let dernierTemps = -1;
+  function jouerSon(nom, volume) {
+    if (!sonsCache[nom]) { sonsCache[nom] = new Audio("/montage-video/sons/" + nom + ".wav"); sonsCache[nom].preload = "auto"; }
+    const copie = sonsCache[nom].cloneNode(); copie.volume = Math.max(0, Math.min(1, volume)); copie.play().catch(() => {});
+  }
   function lectureBoucle() {
-    if (video.paused || video.ended) return;
+    if (video.paused || video.ended) { dernierTemps = -1; return; }
     const t = video.currentTime;
+    if (E.reglages.bruitages && dernierTemps >= 0 && t - dernierTemps < 0.5) (E.sons || []).forEach((x) => { if (x.t > dernierTemps && x.t <= t) jouerSon(x.son, x.volume); });
+    dernierTemps = t;
     if (!estGarde(t)) {
       const suivant = E.segments.find((s) => s[0] > t);
       if (suivant) video.currentTime = suivant[0];
@@ -301,7 +328,9 @@
     let facteur = 1;
     for (const z of E.zooms) {
       if (t < z.debut || t > z.fin) continue;
-      facteur += z.mode === "sec" ? z.amplitude : z.amplitude * Math.min(1, (t - z.debut) / 0.2) * Math.min(1, (z.fin - t) / 0.35);
+      if (z.mode === "sec") facteur += z.amplitude;
+      else if (z.mode === "punch") facteur += z.amplitude * Math.max(0, 1 - (t - z.debut) / Math.max(0.05, z.fin - z.debut));
+      else facteur += z.amplitude * Math.min(1, (t - z.debut) / 0.2) * Math.min(1, (z.fin - t) / 0.35);
     }
     return facteur;
   }
@@ -317,7 +346,17 @@
   function majSurimpressions() {
     if (!E) return;
     const t = video.currentTime || 0, tm = tempsMonte(t), visible = estGarde(t);
-    video.style.transform = "scale(" + fenetreZoom(t).toFixed(4) + ")";
+    let facteurZoom = fenetreZoom(t), dx = 0, dy = 0, filtre = "", flash = 0;
+    (E.transitions || []).forEach((x) => {
+      if (t < x.debut || t > x.fin) return;
+      const avance = (t - x.debut) / Math.max(0.05, x.fin - x.debut);
+      if (x.type === "flash") flash = 0.55;
+      else if (x.type === "secousse") { facteurZoom += 0.06; dx += 24 * Math.sin(70 * (t - x.debut)) * (1 - avance); dy += 18 * Math.cos(85 * (t - x.debut)) * (1 - avance); }
+      else if (x.type === "glitch") { filtre = "hue-rotate(50deg) saturate(2.2) contrast(1.15)"; dx += 8; }
+    });
+    const echelleScene = parseFloat(scene.style.getPropertyValue("--u")) || 0.2;
+    video.style.transform = "translate(" + (dx * echelleScene).toFixed(1) + "px," + (dy * echelleScene).toFixed(1) + "px) scale(" + facteurZoom.toFixed(4) + ")";
+    video.style.filter = filtre; $("ed-flash").style.opacity = flash;
     if (E.format === "vertical" && E.visage_x != null) video.style.objectPosition = Math.round(E.visage_x * 100) + "% 50%";
     $("ed-temps").textContent = minutes(tm) + " / " + minutes(E.duree_montee);
     // sous-titres
@@ -461,6 +500,39 @@
 
   // ---------- effets
   document.querySelectorAll("[data-reglage]").forEach((c) => c.addEventListener("change", () => operer([{ type: "reglage", cle: c.dataset.reglage, valeur: c.checked }])));
+  $("ed-transition").addEventListener("change", () => operer([{ type: "reglage", cle: "transition", valeur: $("ed-transition").value }]));
+
+  // ---------- modeles de style
+  let styles = [];
+  async function chargerStyles() {
+    try { styles = (await (await fetch("/montage-video/styles")).json()).styles || []; } catch (e) { return; }
+    const choix = $("ed-style"), actuel = choix.value; choix.textContent = "";
+    styles.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.nom + (m.perso ? " (à moi)" : ""); choix.appendChild(o); });
+    if (actuel && styles.some((m) => m.id === actuel)) choix.value = actuel;
+    majDescriptionStyle();
+  }
+  function styleChoisi() { return styles.find((m) => m.id === $("ed-style").value); }
+  function majDescriptionStyle() { const m = styleChoisi(); $("ed-style-description").textContent = m ? m.description : ""; $("ed-style-supprimer").hidden = !(m && m.perso); }
+  $("ed-style").addEventListener("change", majDescriptionStyle);
+  $("ed-style-appliquer").addEventListener("click", () => { const m = styleChoisi(); if (m) operer([{ type: "appliquer_style", reglages: m.reglages, nom: m.nom }]); });
+  $("ed-style-enregistrer").addEventListener("click", async () => {
+    const nom = window.prompt("Nom de ce style :"); if (!nom || !nom.trim()) return;
+    const r = E.reglages;
+    try {
+      const d = await envoyer_global("/montage-video/styles", { nom: nom.trim(), reglages: { style: r.style, zooms: r.zooms, mots: r.mots, accroche: r.accroche, barre: r.barre, bruitages: r.bruitages, transition: r.transition, alterne: r.alterne } });
+      styles = d.styles; await chargerStyles(); message("Style « " + nom.trim() + " » enregistré.");
+    } catch (e) { message(e.message, true); }
+  });
+  $("ed-style-supprimer").addEventListener("click", async () => {
+    const m = styleChoisi(); if (!m || !m.perso || !window.confirm("Supprimer le style « " + m.nom + " » ?")) return;
+    try { await envoyer_global("/montage-video/styles/" + m.id + "/supprimer", {}); await chargerStyles(); message("Style supprimé."); } catch (e) { message(e.message, true); }
+  });
+  async function envoyer_global(chemin, corps) {
+    const reponse = await fetch(chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+    let donnees = {}; try { donnees = await reponse.json(); } catch (e) { /* sans JSON */ }
+    if (!reponse.ok) throw new Error(donnees.erreur || "Erreur " + reponse.status);
+    return donnees;
+  }
   $("ed-accroche-ok").addEventListener("click", () => operer([{ type: "accroche", texte: $("ed-accroche-texte").value }]));
   $("ed-zoom-leger").addEventListener("click", () => operer([{ type: "zoom", debut: video.currentTime, fin: video.currentTime + 2.5, force: "leger" }]));
   $("ed-zoom-fort").addEventListener("click", () => operer([{ type: "zoom", debut: video.currentTime, fin: video.currentTime + 2.5, force: "fort" }]));
@@ -560,6 +632,7 @@
 
   // ---------- demarrage : etat, puis suivi de la preparation de l'apercu
   async function demarrer() {
+    chargerStyles();
     await charger();
     const surveiller = setInterval(async () => {
       if (apercuPret) { clearInterval(surveiller); return; }

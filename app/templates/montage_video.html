@@ -46,17 +46,25 @@
   </fieldset>
 
   <fieldset class="groupe-options-visuel">
-    <legend>Style</legend>
-    <label class="etiquette-chip-case"><input type="radio" name="montage-style" value="tendance" checked> Tendance (réseaux sociaux)</label>
-    <label class="etiquette-chip-case"><input type="radio" name="montage-style" value="sobre"> Sobre (sous-titres classiques)</label>
+    <legend>Modèle de style</legend>
+    <select id="montage-modele" style="width:auto;"></select>
+    <span id="montage-modele-description" class="texte-discret"></span>
   </fieldset>
   <fieldset class="groupe-options-visuel" id="montage-effets">
-    <legend>Effets du style tendance</legend>
+    <legend>Effets (réglés par le modèle, ajustables)</legend>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="zooms" checked> Zooms sur les moments forts</label>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="mots" checked> Sous-titres animés mot par mot, mots-clés en couleur</label>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="accroche" checked> Titre d'accroche au début</label>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="barre" checked> Barre de progression</label>
     <label class="etiquette-chip-case"><input type="checkbox" data-effet="visage" checked> Cadrage vertical centré sur mon visage</label>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-bruitages" checked> Bruitages (whoosh, pop, impact)</label>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-alterne"> Cadrage alterné à chaque coupe</label>
+    <label class="etiquette-chip-case">Transitions sur les coupes
+      <select id="montage-transition" style="width:auto;">
+        <option value="melange">Variées</option><option value="flash">Flash blanc</option><option value="zoom">Zoom-punch</option>
+        <option value="glitch">Glitch</option><option value="secousse">Secousse</option><option value="aucune">Aucune</option>
+      </select>
+    </label>
   </fieldset>
 
   <fieldset class="groupe-options-visuel">
@@ -93,6 +101,7 @@
   </p>
 </div>
 
+<script id="donnees-styles" type="application/json">{{ styles_json|safe }}</script>
 <style>
   .montage-barre { height: 10px; border-radius: 6px; background: rgba(128,128,140,.3); overflow: hidden; margin: .6rem 0 .3rem; }
   .montage-barre > div { height: 100%; width: 0; background: #5b7cff; transition: width .4s; }
@@ -124,14 +133,27 @@
         nb_shorts: parseInt($("montage-nb-shorts").value, 10), duree_max_short: parseInt($("montage-duree-short").value, 10),
         silences: $("montage-silences").checked, hesitations: $("montage-hesitations").checked, sous_titres: $("montage-sous-titres").checked,
         musique_id: $("montage-musique").value, consignes: $("montage-consignes").value.trim(),
-        style: document.querySelector('input[name="montage-style"]:checked').value,
+        style: styleBase,
         effets: Object.fromEntries(Array.from(document.querySelectorAll("#montage-effets input[data-effet]")).map((c) => [c.dataset.effet, c.checked])),
+        bruitages: $("montage-bruitages").checked, alterne: $("montage-alterne").checked, transition: $("montage-transition").value,
       };
     }
 
-    document.querySelectorAll('input[name="montage-style"]').forEach((r) => r.addEventListener("change", () => {
-      $("montage-effets").hidden = document.querySelector('input[name="montage-style"]:checked').value === "sobre";
-    }));
+    // Modeles de style : un choix regle d'un coup tous les effets ci-dessous (qui restent ajustables).
+    const MODELES = JSON.parse(document.getElementById("donnees-styles").textContent);
+    let styleBase = "tendance";
+    function appliquerModele(id) {
+      const modele = MODELES.find((m) => m.id === id); if (!modele) return;
+      const r = modele.reglages; styleBase = r.style || "tendance";
+      document.querySelectorAll("#montage-effets input[data-effet]").forEach((c) => { if (c.dataset.effet in r) c.checked = !!r[c.dataset.effet]; });
+      if ("bruitages" in r) $("montage-bruitages").checked = !!r.bruitages;
+      if ("alterne" in r) $("montage-alterne").checked = !!r.alterne;
+      if (r.transition) $("montage-transition").value = r.transition;
+      $("montage-modele-description").textContent = modele.description;
+    }
+    MODELES.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.nom + (m.perso ? " (à moi)" : ""); $("montage-modele").appendChild(o); });
+    $("montage-modele").addEventListener("change", () => appliquerModele($("montage-modele").value));
+    if (MODELES.length) appliquerModele(MODELES[0].id);
     const minutes = (t) => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
 
     // Shorts = vertical par defaut, montage complet = horizontal : l'utilisateur peut toujours changer ensuite.

@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
 
-from . import montage_video
+from . import montage_video, sons
 from .montage_video import FFMPEG, FFPROBE
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
@@ -499,18 +499,22 @@ def expression_zoom(zooms: list) -> str:
         a, b, amp = fenetre[:3]
         if len(fenetre) > 3 and fenetre[3] == "sec":
             termes.append(f"{amp:.3f}*between(t,{a:.2f},{b:.2f})")
+        elif len(fenetre) > 3 and fenetre[3] == "punch":
+            termes.append(f"{amp:.3f}*between(t,{a:.2f},{b:.2f})*max(0,1-(t-{a:.2f})/{max(0.05, b - a):.2f})")
         else:
             termes.append(f"{amp:.3f}*between(t,{a:.2f},{b:.2f})*min(1,(t-{a:.2f})/0.20)*min(1,({b:.2f}-t)/0.35)")
     return "1+" + "+".join(termes)
 
 
 def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie: str, fichier_ass: str = None,
-           musique: str = None, progression=None, zooms: list = None, visage_x: float = None, illustrations: list = None) -> None:
+           musique: str = None, progression=None, zooms: list = None, visage_x: float = None, illustrations: list = None,
+           transitions: dict = None, bruitages: list = None) -> None:
     """
     Assemble les segments de `source`, recadre (en vertical, centre sur le visage si visage_x est connu : 0 = bord gauche, 1 = bord
     droit), applique les zooms (debut, fin, amplitude) sur la chronologie du montage, incruste les illustrations
     (illustrations : [{"debut", "fin", "chemin", "mode"}], temps du montage, mode « plein » ecran ou « incrust » en cadre), puis les
-    sous-titres, mixe la musique (baisse sous la voix) et encode.
+    sous-titres, mixe la musique (baisse sous la voix) et encode. transitions : {"flash": [(debut, fin)], "glitch": [...], "secousse": [...]}
+    (temps du montage) appliquees sur les coupes ; bruitages : [{"t", "fichier", "volume"}] mixes par-dessus la voix.
     """
     if not segments:
         raise ErreurMontage("Il ne reste rien à monter (tout a été coupé).")
@@ -534,10 +538,21 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     else:
         recadrage = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=decrease,pad={largeur}:{hauteur}:(ow-iw)/2:(oh-ih)/2:black"
     filtre_video = f"[0:v]{recadrage},setsar=1,fps={FPS}"
-    if zooms:
-        facteur = expression_zoom(zooms)
+    transitions = transitions or {}
+    secousses = transitions.get("secousse") or []
+    zooms_effectifs = list(zooms or []) + [(a, b, 0.06, "sec") for a, b in secousses]      # une secousse a besoin d'un peu de marge d'image
+    if zooms_effectifs:
+        facteur = expression_zoom(zooms_effectifs)
+        decalage_x = decalage_y = ""
+        if secousses:
+            decalage_x = "+" + "+".join(f"between(t,{a:.2f},{b:.2f})*{24 if vertical else 30}*sin(70*(t-{a:.2f}))*(1-(t-{a:.2f})/{max(0.05, b - a):.2f})" for a, b in secousses)
+            decalage_y = "+" + "+".join(f"between(t,{a:.2f},{b:.2f})*{18 if vertical else 20}*cos(85*(t-{a:.2f}))*(1-(t-{a:.2f})/{max(0.05, b - a):.2f})" for a, b in secousses)
         filtre_video += (f",scale=w='trunc({largeur}*({facteur})/2)*2':h='trunc({hauteur}*({facteur})/2)*2':eval=frame:flags=bilinear,"
-                         f"crop={largeur}:{hauteur}")
+                         f"crop={largeur}:{hauteur}:x='(iw-ow)/2{decalage_x}':y='(ih-oh)/2{decalage_y}'")
+    if transitions.get("flash"):
+        filtre_video += ",drawbox=x=0:y=0:w=iw:h=ih:color=white@0.55:t=fill:enable='" + "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in transitions["flash"]) + "'"
+    if transitions.get("glitch"):
+        filtre_video += ",rgbashift=rh=-12:bh=12:rv=5:bv=-5:enable='" + "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in transitions["glitch"]) + "'"
     etiquette, parties = "v0", [filtre_video + "[v0]"]
     premiere_image = 2 if musique else 1
     images = []
@@ -569,16 +584,44 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
         commande += ["-stream_loop", "-1", "-i", musique]
     for chemin_image, duree_image in images:
         commande += ["-loop", "1", "-framerate", str(FPS), "-t", f"{duree_image:.3f}", "-i", chemin_image]
+    bruitages = bruitages or []
+    sons_distincts = sorted({b["fichier"] for b in bruitages})
+    premier_son = premiere_image + len(images)
+    for fichier_son in sons_distincts:
+        commande += ["-i", fichier_son]
+    etiquette_audio = "ab" if bruitages else "a"
+    # Avec des bruitages (stereo), la voix passe aussi en stereo AVANT la normalisation : sinon un son source mono perdrait 3 dB au mixage.
+    stereo = ",aformat=channel_layouts=stereo" if bruitages else ""
     if infos["audio"] and musique:
-        filtre_audio = ("[0:a]aresample=48000,asplit=2[v1][v2];[1:a]aresample=48000,volume=0.30[m];"
+        filtre_audio = (f"[0:a]aresample=48000{stereo},asplit=2[v1][v2];[1:a]aresample=48000,volume=0.30[m];"
                         "[m][v1]sidechaincompress=threshold=0.04:ratio=9:attack=30:release=600[md];"
-                        "[v2][md]amix=inputs=2:duration=first:dropout_transition=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]")
+                        f"[v2][md]amix=inputs=2:duration=first:dropout_transition=0,loudnorm=I=-16:TP=-1.5:LRA=11[{etiquette_audio}]")
     elif infos["audio"]:
-        filtre_audio = "[0:a]aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11[a]"
+        filtre_audio = f"[0:a]aresample=48000{stereo},loudnorm=I=-16:TP=-1.5:LRA=11[{etiquette_audio}]"
     elif musique:
-        filtre_audio = "[1:a]aresample=48000,volume=0.5[a]"
+        filtre_audio = f"[1:a]aresample=48000,volume=0.5[{etiquette_audio}]"
     else:
         filtre_audio = ""
+    if bruitages:
+        # Chaque bruitage est retarde a son instant puis mixe, sans changer le volume de la voix (normalisee avant).
+        parties_audio = [filtre_audio] if filtre_audio else []
+        emplois = {}
+        for i, b in enumerate(bruitages):
+            emplois.setdefault(b["fichier"], []).append(i)
+        etiquettes = []
+        for k, fichier_son in enumerate(sons_distincts):
+            n = len(emplois[fichier_son])
+            sources = [f"fx{k}_{j}" for j in range(n)]
+            entree = f"[{premier_son + k}:a]aresample=48000,aformat=channel_layouts=stereo"
+            parties_audio.append(entree + (f",asplit={n}" + "".join(f"[{x}]" for x in sources) if n > 1 else f"[{sources[0]}]"))
+            for j, i in enumerate(emplois[fichier_son]):
+                ms = int(max(0.0, bruitages[i]["t"]) * 1000)
+                parties_audio.append(f"[{sources[j]}]volume={bruitages[i]['volume']:.2f},adelay={ms}|{ms}[sx{i}]")
+                etiquettes.append(f"[sx{i}]")
+        base = "[ab]" if filtre_audio else ""
+        parties_audio.append(f"{base}{''.join(etiquettes)}amix=inputs={len(etiquettes) + (1 if filtre_audio else 0)}:duration={'first' if filtre_audio else 'longest'}:"
+                             "dropout_transition=0:normalize=0[a]")
+        filtre_audio = ";".join(parties_audio)
     graphe = filtre_video + (";" + filtre_audio if filtre_audio else "")
     commande += ["-filter_complex", graphe, "-map", "[v]"]
     if filtre_audio:
@@ -788,6 +831,56 @@ def appliquer_actions(sortie: dict, actions: list) -> tuple:
     return nouvel, resume, refus
 
 
+TRANSITIONS = {"aucune": "Aucune", "melange": "Variées (flash, zoom, glitch, secousse)", "flash": "Flash blanc", "zoom": "Zoom-punch", "glitch": "Glitch", "secousse": "Secousse"}
+_DUREE_TRANSITION = {"flash": 0.12, "zoom": 0.35, "glitch": 0.20, "secousse": 0.30}
+_ORDRE_MELANGE = ("flash", "zoom", "glitch", "secousse")
+ECART_MINI_TRANSITION = 1.5
+MAX_TRANSITIONS = 60
+VOLUMES_SONS = {"whoosh": 0.55, "pop": 0.70, "impact": 0.65, "clic": 0.60}
+
+
+def fenetres_transitions(segments: list, mode: str, duree: float) -> dict:
+    """
+    Fenetres (debut, fin) du montage ou placer un effet de transition sur une coupe : {"flash": [...], "zoom": [...], "glitch": [...],
+    "secousse": [...]}. Pas plus d'une transition toutes les ECART_MINI_TRANSITION secondes, pour ne pas surcharger.
+    """
+    resultat = {cle: [] for cle in _ORDRE_MELANGE}
+    if mode not in TRANSITIONS or mode == "aucune":
+        return resultat
+    cumul, derniere, total = 0.0, -10.0, 0
+    for rang, (debut, fin) in enumerate(segments):
+        if rang > 0 and cumul - derniere >= ECART_MINI_TRANSITION and total < MAX_TRANSITIONS and cumul < duree - 0.3:
+            genre = _ORDRE_MELANGE[total % len(_ORDRE_MELANGE)] if mode == "melange" else mode
+            resultat[genre].append((cumul, min(cumul + _DUREE_TRANSITION[genre], duree)))
+            derniere, total = cumul, total + 1
+        cumul += fin - debut
+    return resultat
+
+
+def evenements_sons(zooms: list, titres: list, illustrations: list, accroche: bool, fenetres: dict) -> list:
+    """
+    Bruitages a poser sur le montage : [{"t", "fichier", "volume", "son"}] (temps du montage). Un « whoosh » sur chaque zoom doux, un « pop »
+    sur chaque titre et illustration, un impact sur l'accroche, un son adapte a chaque transition. Au plus un son tous les 0,25 s.
+    """
+    brut = []
+    for fenetre in zooms:
+        if len(fenetre) == 3 or fenetre[3] == "doux":
+            brut.append((fenetre[0], "whoosh"))
+    brut += [(t[0], "pop") for t in titres]
+    brut += [(i["debut"], "pop") for i in illustrations]
+    if accroche:
+        brut.append((0.25, "impact"))
+    for genre, son in (("flash", "clic"), ("zoom", "whoosh"), ("glitch", "clic"), ("secousse", "impact")):
+        brut += [(a, son) for a, _ in fenetres.get(genre, [])]
+    evenements, dernier = [], -1.0
+    for t, nom in sorted(brut):
+        if t - dernier < 0.25:
+            continue
+        evenements.append({"t": round(t, 3), "son": nom, "fichier": sons.chemin_son(nom), "volume": VOLUMES_SONS[nom]})
+        dernier = t
+    return evenements[:80]
+
+
 def _instant_montage(instant: float, segments: list, duree: float) -> float:
     """Instant de la video d'origine -> instant du montage ; un instant dans une partie coupee tombe sur la jonction, apres la fin sur la duree."""
     resultat = _remapper(instant, segments, True)
@@ -825,10 +918,12 @@ def zooms_du_rendu(sortie: dict, phrases_montage: list, duree: float) -> list:
     return sorted(zooms)[:MAX_ZOOMS + 10]
 
 
-def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
-    """Rend (ou re-rend) une sortie depuis la video d'origine et son etat (segments, effets, phrases) : (chemin du fichier, duree)."""
-    infos, segments, effets = montage["infos"], sortie["segments"], sortie["effets"]
-    largeur, hauteur = (1080, 1920) if sortie["format"] == "vertical" else (1920, 1080)
+def plan_effets(sortie: dict) -> dict:
+    """
+    Tout ce qui est applique a une sortie, sur la chronologie du MONTAGE (apres coupes) : zooms (y compris les « punch » des transitions),
+    titres, illustrations, fenetres de transition, bruitages, et les reglages de sous-titres. Sert au rendu comme a l'apercu de l'editeur.
+    """
+    segments, effets = sortie["segments"], sortie["effets"]
     duree = duree_montee(segments)
     phrases_montage = phrases_sur_montage(sortie["phrases"], segments)
     zooms = zooms_du_rendu(sortie, phrases_montage, duree)
@@ -841,27 +936,39 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
     gros = {_normaliser(m) for m in list(effets["mots_cles"]) + list(effets["mots_gros"])} if pop else {_normaliser(m) for m in effets["mots_gros"]}
     barre = duree if effets["style"] == "tendance" and effets["actif"]["barre"] else 0.0
     titre = effets["titre"] if (effets["actif"]["accroche"] or sortie["mode"] == "shorts") else ""
-    dessiner = bool(phrases_montage and sortie["sous_titres"]) or bool(titres) or barre > 0 or (titre and sortie["sous_titres"])
-    fichier_ass = None
-    if dessiner:
-        fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
-        ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
-                   pop=pop, titres=titres, mots_gros=gros, barre=barre)
+    fenetres = fenetres_transitions(segments, effets.get("transition", "aucune"), duree)
+    zooms = sorted(list(zooms) + [(a, b, 0.10, "punch") for a, b in fenetres["zoom"]])
     illustrations = []
     for illustration in effets.get("illustrations", []):
         a, b = _instant_montage(illustration["debut"], segments, duree), _instant_montage(illustration["fin"], segments, duree)
         if b - a >= 0.5 and os.path.exists(illustration["fichier"]):
             illustrations.append({"debut": a, "fin": b, "chemin": illustration["fichier"], "mode": illustration.get("mode", "incrust")})
+    bruitages = evenements_sons(zooms, titres, illustrations, effets["actif"]["accroche"] and bool(effets["titre"]), fenetres) if effets.get("bruitages") else []
+    return {"duree": duree, "phrases": phrases_montage, "zooms": zooms, "titres": titres, "pop": pop, "gros": gros, "barre": barre, "titre": titre,
+            "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages}
+
+
+def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
+    """Rend (ou re-rend) une sortie depuis la video d'origine et son etat (segments, effets, phrases) : (chemin du fichier, duree)."""
+    infos, segments = montage["infos"], sortie["segments"]
+    largeur, hauteur = (1080, 1920) if sortie["format"] == "vertical" else (1920, 1080)
+    plan = plan_effets(sortie)
+    duree, phrases_montage, barre, titre = plan["duree"], plan["phrases"], plan["barre"], plan["titre"]
+    dessiner = bool(phrases_montage and sortie["sous_titres"]) or bool(plan["titres"]) or barre > 0 or (titre and sortie["sous_titres"])
+    fichier_ass = None
+    if dessiner:
+        fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
+        ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
+                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre)
     chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
+    options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"])
     try:
-        rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"),
-               illustrations=illustrations)
+        rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, **options)
     except ErreurMontage:
         if not fichier_ass:
             raise
         # Incrustation des sous-titres impossible sur ce serveur (ffmpeg sans libass...) : montage sans eux.
-        rendre(montage["source"], infos, segments, chemin, sortie["format"], None, sortie["musique"], suivi, zooms=zooms, visage_x=sortie.get("visage_x"),
-               illustrations=illustrations)
+        rendre(montage["source"], infos, segments, chemin, sortie["format"], None, sortie["musique"], suivi, **options)
         montage["avertissement"] = "Les sous-titres n'ont pas pu être incrustés sur ce serveur : montage livré sans sous-titres."
     return chemin, duree
 
@@ -1059,7 +1166,9 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                     "musique": options.get("musique"), "sous_titres": bool(options.get("sous_titres", True)), "visage_x": visage_x,
                     "segments": segments, "phrases": copy.deepcopy(phrases), "version": 1, "resume": [], "historique": [],
                     "effets": {"style": style, "actif": actifs, "titre": extrait["titre"] if options.get("mode") == "shorts" else accroche,
-                               "mots_cles": mots_cles, "mots_gros": [], "zoom_manuel": [], "sans_zoom": [], "titres": [], "illustrations": [], "alterne": False},
+                               "mots_cles": mots_cles, "mots_gros": [], "zoom_manuel": [], "sans_zoom": [], "titres": [], "illustrations": [],
+                               "alterne": bool(options.get("alterne", False)), "bruitages": bool(options.get("bruitages", style == "tendance")),
+                               "transition": options.get("transition") if options.get("transition") in TRANSITIONS else ("melange" if style == "tendance" else "aucune")},
                 }
                 suivi = lambda p, b=base, n=len(travaux): montage.__setitem__("progression", b + 0.5 * p / n)
                 chemin, duree = _rendre_sortie(montage, sortie, suivi)

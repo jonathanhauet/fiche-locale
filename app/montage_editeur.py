@@ -18,6 +18,7 @@ from io import BytesIO
 from PIL import Image
 
 from . import montage_parole as mp
+from . import styles_montage
 
 EXTENSIONS_IMAGE = {"png", "jpg", "jpeg", "webp"}
 TAILLE_MAX_IMAGE = 15 * 1024 * 1024
@@ -60,15 +61,21 @@ def _vers_source(zooms_montage: list, segments: list) -> list:
     return resultat
 
 
+def _source(instant: float, segments: list) -> float:
+    return round(mp.montage_vers_source(instant, segments), 3)
+
+
 def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
     """Tout ce dont la page a besoin : transcription par mots, parties gardees, effets et illustrations, en temps de la video d'origine."""
     segments, effets = sortie["segments"], sortie["effets"]
-    duree = mp.duree_montee(segments)
-    phrases_montage = mp.phrases_sur_montage(sortie["phrases"], segments)
-    zooms = _vers_source(mp.zooms_du_rendu(sortie, phrases_montage, duree), segments)
+    plan = mp.plan_effets(sortie)
+    duree = plan["duree"]
+    zooms = _vers_source(plan["zooms"], segments)
     for zoom in zooms:      # un zoom ajoute a la main : meme amplitude et fenetre qui recouvre la sienne (ses bords peuvent bouger avec les coupes)
         zoom["manuel"] = zoom["mode"] == "doux" and any(abs(zoom["amplitude"] - amp) < 1e-6 and zoom["debut"] < f + 0.01 and zoom["fin"] > d - 0.01
                                                          for d, f, amp in effets["zoom_manuel"])
+    transitions = [{"type": genre, "debut": _source(a, segments), "fin": _source(b, segments)}
+                   for genre in ("flash", "glitch", "secousse") for a, b in plan["fenetres"][genre]]
     return {
         "id": identifiant, "numero": sortie["numero"], "titre": sortie["titre"], "version": sortie["version"], "format": sortie["format"],
         "visage_x": sortie.get("visage_x"),
@@ -76,12 +83,14 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
         "segments": [[round(a, 3), round(b, 3)] for a, b in segments],
         "silences": [[round(a, 3), round(b, 3)] for a, b in (montage.get("silences") or [])],
         "phrases": [{"indice": i, "debut": p["debut"], "fin": p["fin"], "texte": p["texte"], "mots": mots_de_phrase(p)} for i, p in enumerate(sortie["phrases"])],
-        "zooms": zooms,
+        "zooms": zooms, "transitions": transitions,
+        "sons": [{"t": _source(e["t"], segments), "son": e["son"], "volume": e["volume"]} for e in plan["bruitages"]],
         "titres": [{"indice": i, "debut": d, "fin": f, "texte": t} for i, (d, f, t) in enumerate(effets["titres"])],
         "illustrations": [{"id": ill["id"], "debut": ill["debut"], "fin": ill["fin"], "mode": ill["mode"], "origine": ill.get("origine", ""),
                            "prompt": ill.get("prompt", "")} for ill in effets.get("illustrations", [])],
         "mots_gros": sorted(set(effets["mots_gros"]) | {mp._normaliser(m) for m in effets["mots_cles"]}),
-        "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "sous_titres": bool(sortie["sous_titres"]), "style": effets["style"]},
+        "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "bruitages": bool(effets.get("bruitages")),
+                     "transition": effets.get("transition", "aucune"), "sous_titres": bool(sortie["sous_titres"]), "style": effets["style"]},
         "accroche": effets["titre"], "peut_annuler": bool(sortie.get("annulations")), "peut_revenir": bool(sortie["historique"]),
         "apercu": montage.get("apercu", {"etat": "absent"}) | {"progression": montage.get("apercu", {}).get("progression", 0.0)},
     }
@@ -233,12 +242,33 @@ def appliquer_operations(montage: dict, sortie: dict, operations: list) -> tuple
                 effets["actif"][cle] = valeur
             elif cle == "alterne":
                 effets["alterne"] = valeur
+            elif cle == "bruitages":
+                effets["bruitages"] = valeur
             elif cle == "sous_titres":
                 sortie["sous_titres"] = valeur
+            elif cle == "transition":
+                if operation.get("valeur") not in styles_montage.TRANSITIONS_VALIDES:
+                    refus.append("Transition inconnue.")
+                    continue
+                effets["transition"] = operation["valeur"]
+                resume.append(f"Transition : {mp.TRANSITIONS[effets['transition']]}")
+                continue
             else:
                 refus.append("Réglage inconnu.")
                 continue
             resume.append(f"Réglage « {cle} » {'activé' if valeur else 'désactivé'}")
+        elif genre == "appliquer_style":
+            reglages = styles_montage.nettoyer_reglages(operation.get("reglages"))
+            if not reglages:
+                refus.append("Style vide.")
+                continue
+            for cle in REGLAGES_ACTIFS:
+                if cle in reglages:
+                    effets["actif"][cle] = reglages[cle]
+            for cle in ("alterne", "bruitages", "transition", "style"):
+                if cle in reglages:
+                    effets[cle] = reglages[cle]
+            resume.append("Style appliqué" + (f" : {operation['nom']}" if operation.get("nom") else ""))
         elif genre == "retirer_illustration":
             avant_nb = len(effets.get("illustrations", []))
             effets["illustrations"] = [i for i in effets.get("illustrations", []) if i["id"] != operation.get("id")]

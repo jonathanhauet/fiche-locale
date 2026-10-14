@@ -835,6 +835,17 @@ class ParametreSearchConsole(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class StyleMontage(Base):
+    """Modele de style du montage video enregistre par l'utilisateur (voir styles_montage.py) : un jeu de reglages applique en un clic."""
+
+    __tablename__ = "styles_montage"
+
+    id = Column(Integer, primary_key=True)
+    nom = Column(String, unique=True, nullable=False)
+    reglages_json = Column(Text, default="{}")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class ParametreGoogleSheets(Base):
     """
     Reporting mensuel envoye automatiquement dans UN Google Sheet (voir reporting_sheet.py) : connexion Google (scope spreadsheets,

@@ -85,6 +85,8 @@ from . import (
     miniature_youtube,
     montage_editeur,
     montage_parole,
+    sons,
+    styles_montage,
     montage_video,
     notifications,
     ovh_upload,
@@ -7699,7 +7701,8 @@ def page_montage_video(request: Request, db: Session = Depends(obtenir_session))
     if redirection:
         return redirection
     pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
-    return templates.TemplateResponse(request, "montage_video.html", {"page_actuelle": "montage_video", "pistes": pistes})
+    return templates.TemplateResponse(request, "montage_video.html", {"page_actuelle": "montage_video", "pistes": pistes,
+                                                                        "styles_json": json.dumps(styles_montage.lister(db)).replace("</", "<\\/")})
 
 
 def _options_montage(brut, dossier: str, db: Session) -> dict:
@@ -7715,6 +7718,9 @@ def _options_montage(brut, dossier: str, db: Session) -> dict:
         "musique": None,
         "style": "sobre" if brut.get("style") == "sobre" else "tendance",
         "effets": {cle: bool((brut.get("effets") or {}).get(cle, True)) for cle in montage_parole.EFFETS_DEFAUT},
+        "bruitages": bool(brut.get("bruitages", brut.get("style") != "sobre")),
+        "alterne": bool(brut.get("alterne", False)),
+        "transition": brut.get("transition") if brut.get("transition") in styles_montage.TRANSITIONS_VALIDES else ("aucune" if brut.get("style") == "sobre" else "melange"),
     }
     try:
         options["nb_shorts"] = max(1, min(int(brut.get("nb_shorts") or 3), 6))
@@ -7816,6 +7822,46 @@ async def montage_video_relancer(identifiant: str, request: Request, db: Session
     opts = await run_in_threadpool(_options_montage, brut, montage["dossier"], db)
     montage_parole.lancer_montage(identifiant, montage["dossier"], montage["source"], opts, _choisir_retouches, _choisir_extraits, _choisir_tendance)
     return JSONResponse({"id": identifiant})
+
+
+# --- Modeles de style et bruitages (voir styles_montage.py, sons.py) ------------------------------------------------
+
+@app.get("/montage-video/styles")
+def montage_styles_liste(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    return JSONResponse({"styles": styles_montage.lister(db)})
+
+
+@app.post("/montage-video/styles")
+async def montage_styles_enregistrer(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        corps = await request.json()
+        styles_montage.enregistrer(db, corps.get("nom"), corps.get("reglages"))
+    except (ValueError, AttributeError) as erreur:
+        return JSONResponse({"erreur": str(erreur) or "Requête invalide."}, status_code=400)
+    return JSONResponse({"styles": styles_montage.lister(db)})
+
+
+@app.post("/montage-video/styles/{identifiant}/supprimer")
+def montage_styles_supprimer(identifiant: str, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    if not styles_montage.supprimer(db, identifiant):
+        return JSONResponse({"erreur": "Style introuvable (les modèles prêts à l'emploi ne se suppriment pas)."}, status_code=404)
+    return JSONResponse({"styles": styles_montage.lister(db)})
+
+
+@app.get("/montage-video/sons/{nom}.wav")
+def montage_son(nom: str, request: Request):
+    """Bruitage utilise par l'apercu de l'editeur (memes sons que le rendu)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    if nom not in sons.GENERATEURS:
+        return JSONResponse({"erreur": "Son introuvable."}, status_code=404)
+    return FileResponse(sons.chemin_son(nom), media_type="audio/wav")
 
 
 # --- Editeur de montage (voir montage_editeur.py) ---------------------------------------------------------------
