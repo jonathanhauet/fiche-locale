@@ -9,8 +9,10 @@ Pour plusieurs dizaines de fiches, la lecture chez Google prend plusieurs minute
 HTTP unique depasserait le delai de l'hebergeur (« upstream error »).
 """
 
+import re
 import threading
 import time
+import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -22,13 +24,15 @@ from openpyxl.utils import get_column_letter
 from . import google_business, google_location, google_oauth, google_place_actions, google_reviews
 
 ENTETES = [
-    "Nom", "Nom sur Google", "Prénom", "Email", "Compte Google", "Étiquettes",
+    "Nom", "Nom affiché sur Google", "Nom saisi dans la fiche Google", "Nom différent du gestionnaire", "Prénom", "Email", "Compte Google", "Étiquettes",
     "Téléphone", "Site web", "Adresse", "Catégorie principale",
     "Statut d'ouverture", "Complétude infos (hors photos)", "Complétude infos + photos", "Éléments manquants (estimation)", "Note moyenne", "Nombre d'avis",
     "Photos sur la fiche", "Posts publiés (plateforme)",
     "Lien RDV / réservation présent", "Lien RDV / réservation", "Lien fiche Google", "Erreur",
 ]
-COLONNE_NOM_GOOGLE = ENTETES.index("Nom sur Google")
+COLONNE_NOM_GOOGLE = ENTETES.index("Nom affiché sur Google")
+COLONNE_NOM_SAISI = ENTETES.index("Nom saisi dans la fiche Google")
+COLONNE_NOM_DIFFERENT = ENTETES.index("Nom différent du gestionnaire")
 COLONNE_TELEPHONE = ENTETES.index("Téléphone")
 COLONNE_SITE = ENTETES.index("Site web")
 COLONNE_ADRESSE = ENTETES.index("Adresse")
@@ -47,6 +51,12 @@ COLONNE_RDV_LIEN = ENTETES.index("Lien RDV / réservation")
 TYPES_RDV = ("APPOINTMENT", "ONLINE_APPOINTMENT", "DINING_RESERVATION")
 NB_LECTURES_PARALLELES = 6
 DUREE_CONSERVATION = 2 * 3600
+
+
+def _forme_comparable(nom: str) -> str:
+    """Nom sans accents, majuscules, ponctuation ni espaces multiples (pour dire si deux noms sont les memes)."""
+    sans_accents = "".join(c for c in unicodedata.normalize("NFKD", nom or "") if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", sans_accents.lower()).split())
 
 
 def _adresse_lisible(infos: dict) -> str:
@@ -98,7 +108,8 @@ def _lire_google(travail: dict) -> list:
         manquants_champs = completude["manquants"]
         categorie_principale = ((infos.get("categories") or {}).get("primaryCategory") or {}).get("displayName", "")
         statut_ouverture = (infos.get("openInfo") or {}).get("status", "")
-        ligne[COLONNE_NOM_GOOGLE] = infos.get("title", "")          # nom de l'etablissement tel qu'affiche sur Google
+        ligne[COLONNE_NOM_SAISI] = infos.get("title", "")          # nom saisi dans la fiche par le proprietaire
+        ligne[COLONNE_NOM_GOOGLE] = ligne[COLONNE_NOM_SAISI]
         ligne[COLONNE_TELEPHONE] = (infos.get("phoneNumbers") or {}).get("primaryPhone", "")
         ligne[COLONNE_SITE] = infos.get("websiteUri", "")
         ligne[COLONNE_ADRESSE] = _adresse_lisible(infos)
@@ -109,6 +120,15 @@ def _lire_google(travail: dict) -> list:
         ligne[COLONNE_LIEN_FICHE] = (infos.get("metadata") or {}).get("mapsUri", "")
     except Exception as erreur:
         erreurs.append(f"Fiche : {erreur}")
+
+    try:
+        nom_affiche, _ = google_location.obtenir_nom_affiche(identifiants, travail["location_id"])
+        if nom_affiche:
+            ligne[COLONNE_NOM_GOOGLE] = nom_affiche
+    except Exception as erreur:
+        erreurs.append(f"Nom affiché : {erreur}")
+    if ligne[COLONNE_NOM_GOOGLE]:
+        ligne[COLONNE_NOM_DIFFERENT] = "Non" if _forme_comparable(ligne[COLONNE_NOM_GOOGLE]) == _forme_comparable(ligne[0]) else "Oui"
 
     try:
         liens_rdv = [l.get("uri", "") for l in google_place_actions.lister_liens(identifiants, travail["location_id"])

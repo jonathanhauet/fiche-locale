@@ -71,6 +71,22 @@ def obtenir_infos_fiche(identifiants, location_id: str) -> dict:
     return reponse.json()
 
 
+def obtenir_nom_affiche(identifiants, location_id: str) -> tuple:
+    """
+    Nom de l'etablissement tel que Google l'affiche : (nom, modifie_par_google). Google peut remplacer le nom saisi par le proprietaire (« title »
+    de la fiche) par sa propre version ; l'API la donne dans « getGoogleUpdated » (diffMask contient alors « title »). Sans modification de Google,
+    c'est le nom saisi. Renvoie ("", False) si Google ne repond pas.
+    """
+    url = f"https://mybusinessbusinessinformation.googleapis.com/v1/locations/{location_id}:getGoogleUpdated"
+    reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params={"readMask": "title"})
+    if reponse.status_code != 200:
+        raise ErreurLectureFiche(f"Lecture du nom affiche impossible (code {reponse.status_code}) : {reponse.text[:200]}", reponse.status_code)
+    donnees = reponse.json()
+    nom = ((donnees.get("location") or {}).get("title") or "").strip()
+    modifie = "title" in [m.strip() for m in (donnees.get("diffMask") or "").split(",")]
+    return nom, modifie
+
+
 def fiche_validee(infos: dict) -> bool:
     """
     "Voice of Merchant" Google : la fiche est verifiee et le controle en est
