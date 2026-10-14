@@ -22,12 +22,18 @@ from openpyxl.utils import get_column_letter
 from . import google_business, google_location, google_oauth, google_place_actions, google_reviews
 
 ENTETES = [
-    "Nom", "Prénom", "Email", "Compte Google", "Étiquettes",
+    "Nom", "Nom sur Google", "Prénom", "Email", "Compte Google", "Étiquettes",
     "Téléphone", "Site web", "Adresse", "Catégorie principale",
     "Statut d'ouverture", "Complétude infos (hors photos)", "Complétude infos + photos", "Éléments manquants (estimation)", "Note moyenne", "Nombre d'avis",
     "Photos sur la fiche", "Posts publiés (plateforme)",
     "Lien RDV / réservation présent", "Lien RDV / réservation", "Lien fiche Google", "Erreur",
 ]
+COLONNE_NOM_GOOGLE = ENTETES.index("Nom sur Google")
+COLONNE_TELEPHONE = ENTETES.index("Téléphone")
+COLONNE_SITE = ENTETES.index("Site web")
+COLONNE_ADRESSE = ENTETES.index("Adresse")
+COLONNE_CATEGORIE = ENTETES.index("Catégorie principale")
+COLONNE_OUVERTURE = ENTETES.index("Statut d'ouverture")
 COLONNE_LIEN_FICHE = ENTETES.index("Lien fiche Google")
 COLONNE_COMPLETUDE_INFOS = ENTETES.index("Complétude infos (hors photos)")
 COLONNE_COMPLETUDE_TOTALE = ENTETES.index("Complétude infos + photos")
@@ -60,8 +66,9 @@ def preparer(db, clients: list) -> list:
     for client in clients:
         nb_posts = sum(1 for p in client.posts if p.statut == "PUBLIE_LIVE")
         ligne = [""] * len(ENTETES)
-        ligne[:5] = [client.nom, client.prenom, client.email, client.compte_google.libelle if client.compte_google else "",
-                     ", ".join(e.nom for e in client.etiquettes)]
+        for colonne, valeur in (("Nom", client.nom), ("Prénom", client.prenom), ("Email", client.email),
+                                ("Compte Google", client.compte_google.libelle if client.compte_google else ""), ("Étiquettes", ", ".join(e.nom for e in client.etiquettes))):
+            ligne[ENTETES.index(colonne)] = valeur
         ligne[ENTETES.index("Posts publiés (plateforme)")] = nb_posts
         identifiants, lire = None, bool(client.account_id and client.location_id)
         if lire:
@@ -91,11 +98,12 @@ def _lire_google(travail: dict) -> list:
         manquants_champs = completude["manquants"]
         categorie_principale = ((infos.get("categories") or {}).get("primaryCategory") or {}).get("displayName", "")
         statut_ouverture = (infos.get("openInfo") or {}).get("status", "")
-        ligne[5] = (infos.get("phoneNumbers") or {}).get("primaryPhone", "")
-        ligne[6] = infos.get("websiteUri", "")
-        ligne[7] = _adresse_lisible(infos)
-        ligne[8] = categorie_principale
-        ligne[9] = google_location.LIBELLES_STATUT_OUVERTURE.get(statut_ouverture, statut_ouverture)
+        ligne[COLONNE_NOM_GOOGLE] = infos.get("title", "")          # nom de l'etablissement tel qu'affiche sur Google
+        ligne[COLONNE_TELEPHONE] = (infos.get("phoneNumbers") or {}).get("primaryPhone", "")
+        ligne[COLONNE_SITE] = infos.get("websiteUri", "")
+        ligne[COLONNE_ADRESSE] = _adresse_lisible(infos)
+        ligne[COLONNE_CATEGORIE] = categorie_principale
+        ligne[COLONNE_OUVERTURE] = google_location.LIBELLES_STATUT_OUVERTURE.get(statut_ouverture, statut_ouverture)
         ligne[COLONNE_COMPLETUDE_INFOS] = f"{completude['score']}/{completude['total']}"
         total_infos, score_infos = completude["total"], completude["score"]
         ligne[COLONNE_LIEN_FICHE] = (infos.get("metadata") or {}).get("mapsUri", "")
