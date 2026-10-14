@@ -536,8 +536,8 @@
     </select>
   </div>
   <p id="texte-statut-video-ia" class="texte-vide" hidden></p>
-  <video id="apercu-video-ia" controls hidden style="max-width:320px; display:block; margin-bottom:0.5rem;"></video>
-  <input type="hidden" name="video_url_ia" id="champ-video-url-ia" value="">
+  <video id="apercu-video-ia" controls {% if not video_url_initial %}hidden{% endif %} {% if video_url_initial %}src="{{ video_url_initial }}"{% endif %} style="max-width:320px; display:block; margin-bottom:0.5rem;"></video>
+  <input type="hidden" name="video_url_ia" id="champ-video-url-ia" value="{{ video_url_initial }}">
 
   <details class="options-visuel">
     <summary>🎬 Monter une vidéo (texte incrusté + musique)</summary>

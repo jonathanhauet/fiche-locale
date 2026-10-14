@@ -3146,3 +3146,55 @@ def commande_editeur(commande: str, phrases: list, segments: list, duree: float)
         return {"actions": actions, "reponse": _nettoyer_texte_genere(str(brut["reponse"]))}
     except (json.JSONDecodeError, KeyError, TypeError) as erreur:
         raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+
+
+SCHEMA_KIT_MONTAGE = {
+    "type": "object",
+    "properties": {
+        "titre": {"type": "string"}, "texte": {"type": "string"},
+        "hashtags": {"type": "array", "items": {"type": "string"}}, "accroches": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["titre", "texte", "hashtags", "accroches"], "additionalProperties": False,
+}
+
+
+def kit_publication_montage(phrases: list, accroche: str = "") -> dict:
+    """
+    Texte de publication d'une video montee (Reel, Short, TikTok, post de reseau) a partir de ce qui y est dit : titre court, legende,
+    hashtags et trois accroches de rechange. Rien d'invente. Renvoie {"titre", "texte", "hashtags", "accroches"}.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    transcription = " ".join(p["texte"] for p in phrases)[:7000]
+    if not transcription.strip():
+        raise RuntimeError("Aucune parole dans cette vidéo : rien à partir de quoi écrire une légende.")
+    prompt = (
+        "Voici ce qui est dit dans une courte vidéo face caméra de Jonathan (transcription) :\n\n"
+        f"« {transcription} »\n\n"
+        + (f"Accroche affichée au début de la vidéo : « {accroche} »\n\n" if accroche else "")
+        + "Prépare sa publication sur les réseaux, en français, à la première personne comme dans la vidéo :\n"
+        "- titre : 40 à 60 caractères, accrocheur et honnête, sans point final.\n"
+        "- texte : légende de 250 à 450 caractères, première ligne qui donne envie de regarder, une idée concrète tirée de la vidéo, "
+        "une invitation à réagir ou à contacter ; passe des lignes entre les idées ; pas de hashtag dans ce texte ; 2 emojis au plus.\n"
+        "- hashtags : 5 à 8 hashtags pertinents, sans le signe #, sans espace, en minuscules.\n"
+        "- accroches : 3 autres accroches possibles pour le début de la vidéo (3 à 8 mots chacune).\n"
+        "Aucun fait, chiffre ou promesse absent de la transcription. Aucun tiret cadratin."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=1500, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_KIT_MONTAGE}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)
+        hashtags = [re.sub(r"[^\w]", "", h.lstrip("#")).lower() for h in brut["hashtags"]]
+        return {
+            "titre": _nettoyer_texte_genere(brut["titre"]).strip(" ."), "texte": _nettoyer_texte_genere(brut["texte"]),
+            "hashtags": [h for h in hashtags if h][:8], "accroches": [_nettoyer_texte_genere(a).strip(" .") for a in brut["accroches"]][:3],
+        }
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur

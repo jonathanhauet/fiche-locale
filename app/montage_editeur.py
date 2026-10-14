@@ -18,6 +18,7 @@ from io import BytesIO
 from PIL import Image
 
 from . import montage_parole as mp
+from . import montage_publication as pub
 from . import styles_montage
 
 EXTENSIONS_IMAGE = {"png", "jpg", "jpeg", "webp"}
@@ -87,11 +88,14 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
         "sons": [{"t": _source(e["t"], segments), "son": e["son"], "volume": e["volume"]} for e in plan["bruitages"]],
         "titres": [{"indice": i, "debut": d, "fin": f, "texte": t} for i, (d, f, t) in enumerate(effets["titres"])],
         "illustrations": [{"id": ill["id"], "debut": ill["debut"], "fin": ill["fin"], "mode": ill["mode"], "origine": ill.get("origine", ""),
-                           "prompt": ill.get("prompt", "")} for ill in effets.get("illustrations", [])],
+                           "prompt": ill.get("prompt", ""), "kind": ill.get("kind", "image"), "duree_clip": ill.get("duree_clip")} for ill in effets.get("illustrations", [])],
+        "plans": [{"id": p["id"], "prompt": p["prompt"], "etat": p["etat"], "erreur": p.get("erreur", ""), "qualite": p["qualite"]}
+                  for p in sorted(montage.get("plans", {}).values(), key=lambda x: x["cree"])[-8:]],
         "mots_gros": sorted(set(effets["mots_gros"]) | {mp._normaliser(m) for m in effets["mots_cles"]}),
         "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "bruitages": bool(effets.get("bruitages")),
                      "transition": effets.get("transition", "aucune"), "sous_titres": bool(sortie["sous_titres"]), "style": effets["style"]},
         "accroche": effets["titre"], "peut_annuler": bool(sortie.get("annulations")), "peut_revenir": bool(sortie["historique"]),
+        "non_rendu": pub.non_rendu(sortie),
         "apercu": montage.get("apercu", {"etat": "absent"}) | {"progression": montage.get("apercu", {}).get("progression", 0.0)},
     }
 
@@ -154,6 +158,11 @@ def appliquer_operations(montage: dict, sortie: dict, operations: list) -> tuple
     Si rien n'a pu etre applique, l'etat reste intact. Operations : couper, restaurer, zoom, retirer_zoom, titre, retirer_titre,
     mot_en_gros, retirer_mot_en_gros, corriger_phrase, accroche, reglage, retirer_illustration, modifier_illustration.
     """
+    with montage["verrou"]:
+        return _appliquer_operations(montage, sortie, operations)
+
+
+def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tuple:
     avant = _instantane(sortie)
     duree_source = montage["infos"]["duree"]
     silences = montage.get("silences") or []
@@ -319,12 +328,75 @@ def ajouter_illustration(montage: dict, sortie: dict, octets: bytes, debut: floa
     os.makedirs(dossier, exist_ok=True)
     chemin = os.path.join(dossier, f"{identifiant}.jpg")
     image.save(chemin, format="JPEG", quality=92)
-    sortie["annulations"] = ((sortie.get("annulations") or []) + [_instantane(sortie)])[-NB_ANNULATIONS_MAX:]
-    sortie["effets"]["illustrations"].append({
-        "id": identifiant, "debut": debut, "fin": fin, "mode": mode if mode in MODES_ILLUSTRATION else "incrust",
-        "fichier": chemin, "origine": origine, "prompt": prompt[:300],
-    })
+    with montage["verrou"]:
+        sortie["annulations"] = ((sortie.get("annulations") or []) + [_instantane(sortie)])[-NB_ANNULATIONS_MAX:]
+        sortie["effets"]["illustrations"].append({
+            "id": identifiant, "debut": debut, "fin": fin, "mode": mode if mode in MODES_ILLUSTRATION else "incrust",
+            "fichier": chemin, "origine": origine, "prompt": prompt[:300],
+        })
     return identifiant
+
+
+# --------------------------------------------------------------------------- plans video IA (Veo)
+
+NB_PLANS_PAR_MONTAGE = 10
+NB_PLANS_SIMULTANES = 3
+DUREE_PLAN_MAX = 8.0
+COUT_PLAN = {"lite": "environ 0,40 $", "fast": "environ 0,80 $"}
+
+
+def lancer_plan_video(montage: dict, sortie: dict, prompt: str, debut: float, mode: str, qualite: str, generer) -> str:
+    """
+    Cree en tache de fond un court plan video par IA (generer(prompt, qualite, vertical) -> octets MP4 ; voir veo_video.generer_video, une a
+    quelques minutes et un cout reel) puis l'ajoute comme illustration a `debut`. Renvoie l'identifiant du plan ; l'avancement se lit dans
+    l'etat de l'editeur (cle « plans »).
+    """
+    prompt = " ".join(str(prompt or "").split())[:400]
+    if not prompt:
+        raise ErreurEditeur("Décrivez le plan à créer.")
+    plans = montage.setdefault("plans", {})
+    if len(plans) >= NB_PLANS_PAR_MONTAGE:
+        raise ErreurEditeur(f"{NB_PLANS_PAR_MONTAGE} plans vidéo au maximum par montage (chacun a un coût).")
+    if sum(1 for p in plans.values() if p["etat"] == "en_cours") >= NB_PLANS_SIMULTANES:
+        raise ErreurEditeur(f"{NB_PLANS_SIMULTANES} plans en cours de création au maximum : attendez qu'un se termine.")
+    identifiant = uuid.uuid4().hex[:10]
+    plan = {"id": identifiant, "prompt": prompt, "etat": "en_cours", "erreur": "", "qualite": qualite if qualite in COUT_PLAN else "lite", "cree": __import__("time").time()}
+    plans[identifiant] = plan
+    mode = mode if mode in MODES_ILLUSTRATION else "plein"
+    vertical = sortie["format"] == "vertical"
+
+    def travail():
+        try:
+            octets = generer(prompt, plan["qualite"], vertical)
+            dossier = os.path.join(montage["dossier"], "illustrations")
+            os.makedirs(dossier, exist_ok=True)
+            chemin_video = os.path.join(dossier, f"{identifiant}.mp4")
+            with open(chemin_video, "wb") as fichier:
+                fichier.write(octets)
+            infos = mp.sonde(chemin_video)
+            duree_clip = min(DUREE_PLAN_MAX, max(1.0, infos["duree"]))
+            vignette = os.path.join(dossier, f"{identifiant}.jpg")
+            resultat = mp._lancer([mp.FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-ss", "0.3", "-i", chemin_video, "-frames:v", "1", "-vf", "scale=1080:-2", vignette], 120)
+            if resultat.returncode != 0 or not os.path.exists(vignette):
+                raise ErreurEditeur("Plan vidéo illisible.")
+            with montage["verrou"]:
+                sortie["annulations"] = ((sortie.get("annulations") or []) + [_instantane(sortie)])[-NB_ANNULATIONS_MAX:]
+                debut_effectif = dans_le_montage(max(0.0, min(float(debut), montage["infos"]["duree"])), sortie["segments"])
+                sortie["effets"].setdefault("illustrations", []).append({
+                    "id": identifiant, "debut": debut_effectif, "fin": debut_effectif + duree_clip, "mode": mode, "fichier": vignette, "fichier_video": chemin_video,
+                    "kind": "video", "duree_clip": round(duree_clip, 1), "origine": "ia-video", "prompt": prompt[:300],
+                })
+            plan["etat"] = "pret"
+        except Exception as erreur:
+            plan.update(etat="erreur", erreur=str(erreur)[:300] or erreur.__class__.__name__)
+
+    threading.Thread(target=travail, daemon=True).start()
+    return identifiant
+
+
+def fichier_video_illustration(sortie: dict, identifiant: str):
+    cible = next((i for i in sortie["effets"].get("illustrations", []) if i["id"] == identifiant and i.get("kind") == "video"), None)
+    return cible["fichier_video"] if cible and os.path.exists(cible["fichier_video"]) else None
 
 
 def fichier_illustration(sortie: dict, identifiant: str):

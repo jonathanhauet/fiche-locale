@@ -30,7 +30,7 @@
   <div class="ed-gauche">
     <div class="ed-scene" id="ed-scene">
       <video id="ed-video" playsinline preload="auto"></video>
-      <div class="ed-ill" id="ed-ill" hidden><img alt=""></div>
+      <div class="ed-ill" id="ed-ill" hidden><img alt=""><video id="ed-ill-video" muted playsinline preload="auto" hidden></video></div>
       <div class="ed-titre" id="ed-titre" hidden></div>
       <div class="ed-titre ed-accroche" id="ed-accroche" hidden></div>
       <div class="ed-sous" id="ed-sous"></div>
@@ -62,6 +62,7 @@
       <button type="button" class="ed-onglet" data-onglet="effets">Effets</button>
       <button type="button" class="ed-onglet" data-onglet="illustrations">Illustrations</button>
       <button type="button" class="ed-onglet" data-onglet="ia">IA</button>
+      <button type="button" class="ed-onglet" data-onglet="publier">Publier</button>
     </div>
 
     <div class="ed-panneau" id="panneau-transcription">
@@ -130,7 +131,45 @@
         <div class="ed-ligne"><label class="bouton-secondaire ed-fichier">📁 Importer une image<input type="file" id="ed-ill-fichier" accept="image/*" hidden></label></div>
         <div class="ed-ligne"><input type="text" id="ed-ill-prompt" maxlength="400" placeholder="Décrivez l'image à créer (ex : un bijoutier qui pèse de l'or)"><button type="button" class="bouton-secondaire" id="ed-ill-generer">✨ Créer avec l'IA</button></div>
       </div>
+      <div class="ed-groupe">
+        <strong>🎬 Plan vidéo créé par l'IA (Veo)</strong>
+        <div class="ed-ligne">
+          <input type="text" id="ed-plan-prompt" maxlength="400" placeholder="Décrivez le plan (ex : un bijoutier pèse des lingots d'or, gros plan)">
+        </div>
+        <div class="ed-ligne">
+          <select id="ed-plan-qualite"><option value="lite">Économique (environ 0,40 $ le plan)</option><option value="fast">Rapide, plus soigné (environ 0,80 $)</option></select>
+          <button type="button" class="bouton-secondaire" id="ed-plan-generer">Créer le plan à la position de la lecture</button>
+        </div>
+        <p class="texte-discret" style="margin:0">Compte 8 secondes de plan, créé en une à quelques minutes ; vous pouvez continuer à monter pendant ce temps. Chaque plan a un coût réel : 10 au maximum par montage. Le son du plan n'est pas gardé.</p>
+        <ul id="ed-liste-plans" class="ed-liste"></ul>
+      </div>
       <ul id="ed-liste-illustrations" class="ed-liste"></ul>
+    </div>
+
+    <div class="ed-panneau" id="panneau-publier" hidden>
+      <div class="ed-groupe">
+        <strong>📣 Préparer la publication</strong>
+        <p class="texte-discret" style="margin:0">La plateforme héberge la vidéo rendue et écrit un titre, une légende et des hashtags à partir de ce qui y est dit. Rendez d'abord la vidéo avec vos dernières modifications.</p>
+        <p id="ed-pub-alerte" class="texte-vide" style="color:var(--attention)" hidden>Vous avez des modifications non rendues : cliquez sur « Rendre la vidéo » avant de publier.</p>
+        <div class="ed-ligne">
+          <input type="text" id="ed-pub-client" list="ed-pub-clients" placeholder="Fiche pour laquelle publier (tapez pour chercher)" autocomplete="off">
+          <datalist id="ed-pub-clients"></datalist>
+        </div>
+        <div class="ed-ligne"><button type="button" class="bouton" id="ed-pub-preparer">Préparer la publication</button></div>
+        <p id="ed-pub-statut" class="texte-discret" style="margin:0"></p>
+      </div>
+      <div class="ed-groupe" id="ed-pub-kit" hidden>
+        <strong>Texte de publication (modifiable)</strong>
+        <input type="text" id="ed-pub-titre" maxlength="150" placeholder="Titre">
+        <textarea id="ed-pub-texte" rows="7" maxlength="3000" placeholder="Légende"></textarea>
+        <input type="text" id="ed-pub-hashtags" placeholder="Hashtags">
+        <div id="ed-pub-accroches" class="ed-puces"></div>
+        <div class="ed-ligne">
+          <button type="button" class="bouton" id="ed-pub-composeur" disabled>Ouvrir dans le composeur</button>
+          <button type="button" class="bouton-secondaire" id="ed-pub-bibliotheque" disabled>📚 Garder dans la bibliothèque</button>
+          <a class="bouton-secondaire" href="/videos">Voir la bibliothèque</a>
+        </div>
+      </div>
     </div>
 
     <div class="ed-panneau" id="panneau-ia" hidden>
@@ -164,7 +203,9 @@
   .ed-scene.horizontal video { object-fit: contain; }
   .ed-ill { position: absolute; inset: 0; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
   .ed-ill img { max-width: 78%; max-height: 62%; margin-top: 10%; border: 4px solid #fff; border-radius: 2px; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+  .ed-ill video { max-width: 78%; max-height: 62%; margin-top: 10%; border: 4px solid #fff; border-radius: 2px; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
   .ed-ill.plein { align-items: stretch; }
+  .ed-ill.plein video { max-width: none; max-height: none; width: 100%; height: 100%; margin: 0; border: 0; object-fit: cover; box-shadow: none; }
   .ed-ill.plein img { max-width: none; max-height: none; width: 100%; height: 100%; margin: 0; border: 0; object-fit: cover; box-shadow: none; }
   .ed-titre { position: absolute; left: 6%; right: 6%; top: 9%; text-align: center; color: #fff; font-weight: 800; text-transform: uppercase; font-family: Poppins, system-ui, sans-serif;
     text-shadow: 0 0 6px #000, 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000; pointer-events: none; line-height: 1.12; }
@@ -380,7 +421,21 @@
     $("ed-accroche").hidden = !accroche; $("ed-accroche").textContent = accroche ? E.accroche : "";
     const ill = visible ? E.illustrations.find((x) => t >= x.debut && t < x.fin) : null;
     $("ed-ill").hidden = !ill;
-    if (ill) { $("ed-ill").className = "ed-ill" + (ill.mode === "plein" ? " plein" : ""); const img = $("ed-ill").querySelector("img"); const src = BASE + "/illustrations/" + ill.id; if (img.dataset.src !== src) { img.dataset.src = src; img.src = src; } }
+    const pv = $("ed-ill-video");
+    if (ill) {
+      $("ed-ill").className = "ed-ill" + (ill.mode === "plein" ? " plein" : "");
+      const img = $("ed-ill").querySelector("img"), src = BASE + "/illustrations/" + ill.id;
+      if (ill.kind === "video") {
+        img.hidden = true; pv.hidden = false;
+        const srcVideo = src + "/video"; if (pv.dataset.src !== srcVideo) { pv.dataset.src = srcVideo; pv.src = srcVideo; }
+        const decalage = Math.max(0, Math.min(t - ill.debut, (ill.duree_clip || 8) - 0.05));
+        if (Math.abs(pv.currentTime - decalage) > 0.4) pv.currentTime = decalage;
+        if (!video.paused && pv.paused) pv.play().catch(() => {}); else if (video.paused && !pv.paused) pv.pause();
+      } else {
+        pv.hidden = true; img.hidden = false; if (!pv.paused) pv.pause();
+        if (img.dataset.src !== src) { img.dataset.src = src; img.src = src; }
+      }
+    } else if (!pv.paused) pv.pause();
     $("ed-barre").hidden = !E.reglages.barre; $("ed-barre").firstElementChild.style.width = (E.duree_montee ? Math.min(100, tm / E.duree_montee * 100) : 0) + "%";
     // mot courant dans le texte + curseur de la frise
     if (phrase) { const i = phrase.mots.findIndex((m) => t >= m.debut && t < m.fin); const cle = phrase.indice + ":" + i; if (cle !== motCourant) { motCourant = cle; marquerMotCourant(phrase.indice, i); } }
@@ -546,11 +601,18 @@
       const t = document.createElement("span"); t.textContent = x.texte; const retirer = document.createElement("button"); retirer.type = "button"; retirer.className = "bouton-secondaire espace"; retirer.textContent = "✕"; retirer.addEventListener("click", () => operer([{ type: "retirer_titre", indice: x.indice }]));
       li.appendChild(bouton); li.appendChild(t); li.appendChild(retirer); titres.appendChild(li);
     });
+    const plans = $("ed-liste-plans"); plans.textContent = "";
+    (E.plans || []).forEach((pl) => {
+      const li = document.createElement("li"); const texte = document.createElement("span");
+      texte.textContent = (pl.etat === "en_cours" ? "⏳ En cours : " : pl.etat === "pret" ? "✅ Prêt : " : "⚠ Échec : ") + pl.prompt + (pl.erreur ? " (" + pl.erreur + ")" : "");
+      li.appendChild(texte); plans.appendChild(li);
+    });
+    surveillerPlans();
     const liste = $("ed-liste-illustrations"); liste.textContent = "";
     E.illustrations.forEach((x) => {
       const li = document.createElement("li"); const img = document.createElement("img"); img.src = BASE + "/illustrations/" + x.id; img.alt = "";
       const infos = document.createElement("div"); const quand = document.createElement("button"); quand.type = "button"; quand.className = "ed-horo"; quand.textContent = minutes(x.debut) + " (" + Math.round((x.fin - x.debut) * 10) / 10 + " s)"; quand.addEventListener("click", () => { video.currentTime = x.debut; });
-      const origine = document.createElement("div"); origine.className = "texte-discret"; origine.textContent = (x.origine === "ia" ? "Créée par l'IA" : "Importée") + (x.prompt ? " : " + x.prompt : "");
+      const origine = document.createElement("div"); origine.className = "texte-discret"; origine.textContent = (x.origine === "ia-video" ? "Plan vidéo IA" : x.origine === "ia" ? "Image créée par l'IA" : "Image importée") + (x.prompt ? " : " + x.prompt : "");
       infos.appendChild(quand); infos.appendChild(origine);
       const mode = document.createElement("select"); [["incrust", "En cadre"], ["plein", "Plein écran"]].forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; if (x.mode === v) o.selected = true; mode.appendChild(o); });
       mode.addEventListener("change", () => operer([{ type: "modifier_illustration", id: x.id, mode: mode.value }]));
@@ -579,6 +641,26 @@
     $("ed-ill-generer").disabled = false;
   });
 
+  // ---------- plans video IA
+  let minuteurPlans = null, plansEnCours = 0;
+  function surveillerPlans() {
+    const n = (E.plans || []).filter((p) => p.etat === "en_cours").length;
+    if (plansEnCours > n) message("Un plan vidéo est prêt : retrouvez-le dans la liste des illustrations.");
+    plansEnCours = n;
+    if (n && !minuteurPlans) minuteurPlans = setInterval(async () => { try { const d = await api("/etat"); if (!enRendu) appliquerEtat(d.etat); } catch (e) { /* on reessaie */ } }, 3500);
+    else if (!n && minuteurPlans) { clearInterval(minuteurPlans); minuteurPlans = null; }
+  }
+  $("ed-plan-generer").addEventListener("click", async () => {
+    const prompt = $("ed-plan-prompt").value.trim(); if (!prompt) { message("Décrivez le plan à créer.", true); return; }
+    const qualite = $("ed-plan-qualite").value, cout = qualite === "fast" ? "0,80 $" : "0,40 $";
+    if (!window.confirm("Créer ce plan vidéo avec l'IA ? Cela coûte environ " + cout + " (facturé par Google).")) return;
+    $("ed-plan-generer").disabled = true;
+    try {
+      const d = await envoyer("/plans-video/generer", { prompt, debut: video.currentTime || 0, mode: $("ed-ill-mode").value, qualite }); appliquerEtat(d.etat); annoncer(d); $("ed-plan-prompt").value = "";
+    } catch (err) { message(err.message, true); }
+    $("ed-plan-generer").disabled = false;
+  });
+
   // ---------- IA
   async function commandeIA(texte) {
     if (!texte.trim()) return;
@@ -593,11 +675,60 @@
   $("ed-ia-envoyer").addEventListener("click", () => commandeIA($("ed-ia-commande").value));
   document.querySelectorAll(".ed-puce").forEach((p) => p.addEventListener("click", () => { $("ed-ia-commande").value = p.textContent; commandeIA(p.textContent); }));
 
+  // ---------- publication : hebergement de la video, texte de publication, composeur, bibliotheque
+  let clientsPub = [], etatPub = null, minuteurPub = null;
+  async function ouvrirPublication() {
+    $("ed-pub-alerte").hidden = !E.non_rendu;
+    if (!clientsPub.length) {
+      try {
+        clientsPub = (await (await fetch("/montage-video/clients")).json()).clients || [];
+        const liste = $("ed-pub-clients"); liste.textContent = "";
+        clientsPub.forEach((c) => { const o = document.createElement("option"); o.value = c.nom; liste.appendChild(o); });
+      } catch (e) { /* liste facultative */ }
+    }
+    try { majPublication(await api("/publication/etat")); } catch (e) { /* pas encore prepare */ }
+  }
+  const clientChoisi = () => clientsPub.find((c) => c.nom.toLowerCase() === $("ed-pub-client").value.trim().toLowerCase());
+  function majPublication(etat) {
+    etatPub = etat; $("ed-pub-alerte").hidden = !etat.non_rendu;
+    const pret = etat.hebergement === "pret" && !etat.non_rendu;
+    const messages = { absent: "", en_cours: "Envoi de la vidéo sur l'hébergement…", pret: "Vidéo hébergée ✓", erreur: "" };
+    let texte = messages[etat.hebergement] || "";
+    if (etat.kit_etat === "en_cours") texte += (texte ? " · " : "") + "Rédaction du texte…";
+    if (etat.erreur) texte += (texte ? " · " : "") + etat.erreur;
+    $("ed-pub-statut").textContent = texte;
+    if (etat.kit && !$("ed-pub-kit").dataset.rempli) {
+      $("ed-pub-kit").dataset.rempli = "1"; $("ed-pub-kit").hidden = false;
+      $("ed-pub-titre").value = etat.kit.titre || ""; $("ed-pub-texte").value = etat.kit.texte || ""; $("ed-pub-hashtags").value = (etat.kit.hashtags || []).map((h) => "#" + h).join(" ");
+      const zone = $("ed-pub-accroches"); zone.textContent = "";
+      (etat.kit.accroches || []).forEach((a) => { const b = document.createElement("button"); b.type = "button"; b.className = "ed-puce"; b.textContent = "Accroche : " + a; b.title = "Utiliser comme titre d'accroche de la vidéo (demande un nouveau rendu)"; b.addEventListener("click", () => operer([{ type: "accroche", texte: a }])); zone.appendChild(b); });
+    }
+    if (etat.hebergement === "pret" || etat.kit) $("ed-pub-kit").hidden = false;
+    $("ed-pub-composeur").disabled = !pret; $("ed-pub-bibliotheque").disabled = !pret;
+    const enCours = etat.hebergement === "en_cours" || etat.kit_etat === "en_cours";
+    if (enCours && !minuteurPub) minuteurPub = setInterval(async () => { try { majPublication(await api("/publication/etat")); } catch (e) { /* on reessaie */ } }, 2500);
+    if (!enCours && minuteurPub) { clearInterval(minuteurPub); minuteurPub = null; }
+  }
+  $("ed-pub-preparer").addEventListener("click", async () => {
+    $("ed-pub-preparer").disabled = true;
+    try { majPublication(await envoyer("/publication/preparer")); } catch (e) { message(e.message, true); }
+    $("ed-pub-preparer").disabled = false;
+  });
+  const legendeComplete = () => ($("ed-pub-texte").value.trim() + ($("ed-pub-hashtags").value.trim() ? "\n\n" + $("ed-pub-hashtags").value.trim() : "")).trim();
+  $("ed-pub-composeur").addEventListener("click", async () => {
+    const client = clientChoisi(); if (!client) { message("Choisissez la fiche dans la liste (tapez son nom).", true); return; }
+    try { const d = await envoyer("/publication/composeur", { client_id: client.id, texte: legendeComplete() }); window.location.href = d.url; } catch (e) { message(e.message, true); }
+  });
+  $("ed-pub-bibliotheque").addEventListener("click", async () => {
+    try { const d = await envoyer("/publication/bibliotheque"); message(d.deja ? "Cette vidéo est déjà dans la bibliothèque." : "Vidéo gardée dans la bibliothèque."); } catch (e) { message(e.message, true); }
+  });
+
   // ---------- annuler, onglets, clavier
   $("ed-annuler").addEventListener("click", async () => { try { const d = await envoyer("/annuler"); appliquerEtat(d.etat); annoncer(d); } catch (e) { message(e.message, true); } });
   document.querySelectorAll(".ed-onglet").forEach((o) => o.addEventListener("click", () => {
     document.querySelectorAll(".ed-onglet").forEach((x) => x.classList.toggle("actif", x === o));
-    ["transcription", "effets", "illustrations", "ia"].forEach((n) => { $("panneau-" + n).hidden = n !== o.dataset.onglet; });
+    ["transcription", "effets", "illustrations", "ia", "publier"].forEach((n) => { $("panneau-" + n).hidden = n !== o.dataset.onglet; });
+    if (o.dataset.onglet === "publier") ouvrirPublication();
   }));
   document.addEventListener("keydown", (e) => {
     const champ = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");

@@ -559,15 +559,17 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     for k, illustration in enumerate(illustrations or []):
         debut_i, fin_i = illustration["debut"], illustration["fin"]
         duree_i = max(0.5, fin_i - debut_i)
-        images.append((illustration["chemin"], duree_i))
+        images.append((illustration["chemin"], duree_i, bool(illustration.get("video"))))
         if illustration.get("mode") == "plein":
             mise = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=increase,crop={largeur}:{hauteur}"
             x, y = "0", "0"
         else:
             mise = f"scale={int(largeur * 0.78)}:-2,pad=iw+16:ih+16:8:8:white"
             x, y = "(W-w)/2", ("H*0.10" if vertical else "H*0.08")
+        # Un plan video est coupe a la duree voulue, remis a zero puis decale a son instant ; une image fixe l'est par son -t d'entree.
+        depart = f"fps={FPS},trim=duration={duree_i:.3f},setpts=PTS-STARTPTS," if illustration.get("video") else ""
         parties.append(
-            f"[{premiere_image + k}:v]format=rgba,{mise},fade=t=in:st=0:d=0.25:alpha=1,fade=t=out:st={max(0.0, duree_i - 0.25):.2f}:d=0.25:alpha=1,"
+            f"[{premiere_image + k}:v]{depart}format=rgba,{mise},fade=t=in:st=0:d=0.25:alpha=1,fade=t=out:st={max(0.0, duree_i - 0.25):.2f}:d=0.25:alpha=1,"
             f"setpts=PTS+{debut_i:.3f}/TB[i{k}]"
         )
         parties.append(f"[{etiquette}][i{k}]overlay=x={x}:y={y}:enable='between(t,{debut_i:.3f},{fin_i:.3f})'[v{k + 1}]")
@@ -582,8 +584,11 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
                 "-f", "concat", "-safe", "0", "-i", liste]
     if musique:
         commande += ["-stream_loop", "-1", "-i", musique]
-    for chemin_image, duree_image in images:
-        commande += ["-loop", "1", "-framerate", str(FPS), "-t", f"{duree_image:.3f}", "-i", chemin_image]
+    for chemin_image, duree_image, est_video in images:
+        if est_video:
+            commande += ["-i", chemin_image]
+        else:
+            commande += ["-loop", "1", "-framerate", str(FPS), "-t", f"{duree_image:.3f}", "-i", chemin_image]
     bruitages = bruitages or []
     sons_distincts = sorted({b["fichier"] for b in bruitages})
     premier_son = premiere_image + len(images)
@@ -941,8 +946,9 @@ def plan_effets(sortie: dict) -> dict:
     illustrations = []
     for illustration in effets.get("illustrations", []):
         a, b = _instant_montage(illustration["debut"], segments, duree), _instant_montage(illustration["fin"], segments, duree)
-        if b - a >= 0.5 and os.path.exists(illustration["fichier"]):
-            illustrations.append({"debut": a, "fin": b, "chemin": illustration["fichier"], "mode": illustration.get("mode", "incrust")})
+        fichier = illustration.get("fichier_video") if illustration.get("kind") == "video" else illustration["fichier"]
+        if b - a >= 0.5 and fichier and os.path.exists(fichier):
+            illustrations.append({"debut": a, "fin": b, "chemin": fichier, "mode": illustration.get("mode", "incrust"), "video": illustration.get("kind") == "video"})
     bruitages = evenements_sons(zooms, titres, illustrations, effets["actif"]["accroche"] and bool(effets["titre"]), fenetres) if effets.get("bruitages") else []
     return {"duree": duree, "phrases": phrases_montage, "zooms": zooms, "titres": titres, "pop": pop, "gros": gros, "barre": barre, "titre": titre,
             "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages}
@@ -1088,7 +1094,7 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
     (Claude), pour garder ce module independant de l'IA.
     """
     montage = MONTAGES.setdefault(identifiant, {"cree": time.time(), "source": source, "dossier": dossier, "transcription": None,
-                                                "silences": None, "infos": None, "audio": None, "visage_x": "inconnu"})
+                                                "silences": None, "infos": None, "audio": None, "visage_x": "inconnu", "verrou": threading.RLock()})
     montage.update(etat="en_cours", etape="Analyse de la vidéo", progression=0.0, erreur="", sorties=[], avertissement="")
 
     def fixer(etape, progression=None):

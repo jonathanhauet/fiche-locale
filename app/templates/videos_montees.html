@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set page_actuelle = "videos" %}
+{% block titre %}Vidéos montées — Fiche Locale{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Vidéos montées</h1>
+  <div class="barre-outils-import-masse"><a class="bouton" href="/montage-video">🎞️ Nouveau montage</a></div>
+</div>
+<p class="texte-discret">
+  Les vidéos que vous avez gardées depuis l'éditeur (bouton « Garder dans la bibliothèque »), avec leur texte de publication. « Remonter » reprend une vidéo
+  comme nouvelle source de montage, avec les réglages par défaut. Elles sont conservées sur l'hébergement du site, pas seulement quelques heures.
+</p>
+{% if request.query_params.get('erreur') %}<p class="texte-vide" style="color:var(--danger)">Cette vidéo n'a pas pu être récupérée sur l'hébergement.</p>{% endif %}
+{% if not lignes %}
+<p class="texte-vide">Aucune vidéo gardée pour l'instant. Ouvrez un montage dans l'éditeur, puis « Préparer la publication » et « Garder dans la bibliothèque ».</p>
+{% endif %}
+<div class="videos-grille">
+  {% for ligne in lignes %}
+  <div class="video-carte">
+    <strong>{{ ligne.video.titre or "Sans titre" }}</strong>
+    <span class="texte-discret">{{ ligne.video.cree_le | heure_locale }} · {{ ligne.video.duree | round(0) | int }} s · {{ "Vertical" if ligne.video.format == "vertical" else "Horizontal" }}</span>
+    <video controls preload="metadata" src="{{ ligne.video.url }}"></video>
+    {% if ligne.legende %}
+    <details><summary>Texte de publication</summary><textarea readonly rows="7" style="width:100%">{{ ligne.legende }}</textarea></details>
+    {% endif %}
+    <div class="video-actions">
+      <a class="bouton-secondaire" href="{{ ligne.video.url }}" download>⬇ Télécharger</a>
+      <form method="post" action="/videos/{{ ligne.video.id }}/remonter"><button type="submit" class="bouton-secondaire">🎞️ Remonter</button></form>
+      <form method="post" action="/videos/{{ ligne.video.id }}/supprimer" onsubmit="return confirm('Retirer cette vidéo de la bibliothèque et de l\'hébergement ?');"><button type="submit" class="bouton-danger bouton-mini">Supprimer</button></form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<style>
+  .videos-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+  .video-carte { border: 1px solid var(--carte-bordure); background: var(--carte); border-radius: 12px; padding: .8rem; display: flex; flex-direction: column; gap: .5rem; }
+  .video-carte video { width: 100%; border-radius: 8px; background: #000; max-height: 420px; }
+  .video-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+</style>
+{% endblock %}

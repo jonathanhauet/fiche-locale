@@ -835,6 +835,21 @@ class ParametreSearchConsole(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class VideoMontee(Base):
+    """Video montee gardee dans la bibliotheque (voir /videos) : fichier heberge sur OVH, texte de publication, pour y revenir plus tard."""
+
+    __tablename__ = "videos_montees"
+
+    id = Column(Integer, primary_key=True)
+    titre = Column(String, default="")
+    url = Column(String, nullable=False)
+    nom_distant = Column(String, default="")             # nom du fichier sur l'hebergement (pour pouvoir le supprimer)
+    duree = Column(Float, default=0.0)
+    format = Column(String, default="")                  # vertical / horizontal
+    kit_json = Column(Text, default="")                  # {"titre", "texte", "hashtags", ...}
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class StyleMontage(Base):
     """Modele de style du montage video enregistre par l'utilisateur (voir styles_montage.py) : un jeu de reglages applique en un clic."""
 

@@ -57,3 +57,26 @@ def envoyer_octets(octets: bytes, nom_fichier_distant: str) -> str:
     ftp.quit()
 
     return f"{URL_PUBLIQUE_BASE}/{nom_fichier_distant}"
+
+
+def supprimer_fichier(nom_fichier_distant: str) -> None:
+    """Supprime un fichier du dossier OVH configure (sans erreur s'il n'existe plus)."""
+    if not (FTP_HOTE and FTP_UTILISATEUR and FTP_MOTDEPASSE) or "/" in nom_fichier_distant or not nom_fichier_distant:
+        return
+    try:
+        ftp = FTP_TLS()
+        ftp.connect(FTP_HOTE, 21, timeout=30)
+        ftp.login(FTP_UTILISATEUR, FTP_MOTDEPASSE)
+        ftp.prot_p()
+    except Exception:
+        ftp = FTP()
+        ftp.connect(FTP_HOTE, 21, timeout=30)
+        ftp.login(FTP_UTILISATEUR, FTP_MOTDEPASSE)
+    try:
+        if FTP_DOSSIER:
+            ftp.cwd(FTP_DOSSIER)
+        ftp.delete(nom_fichier_distant)
+    except Exception:
+        pass
+    finally:
+        ftp.quit()

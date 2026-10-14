@@ -85,6 +85,7 @@ from . import (
     miniature_youtube,
     montage_editeur,
     montage_parole,
+    montage_publication,
     sons,
     styles_montage,
     montage_video,
@@ -7871,6 +7872,10 @@ def _generer_image_illustration(prompt: str, vertical: bool, plein: bool) -> byt
     return gemini_images.generer_image(prompt, aspect_ratio=ratio)
 
 
+def _generer_plan_video(prompt: str, qualite: str, vertical: bool) -> bytes:
+    return veo_video.generer_video(prompt, qualite, None, "9:16" if vertical else "16:9")
+
+
 def _commande_editeur(commande, phrases, segments, duree):
     return claude_generation.commande_editeur(commande, phrases, segments, duree)
 
@@ -7994,6 +7999,37 @@ async def montage_editeur_generer_illustration(identifiant: str, numero: int, re
     return _reponse_editeur(identifiant, montage, sortie, resume=["Illustration créée par l'IA"], refus=[])
 
 
+@app.post("/montage-video/{identifiant}/editeur/{numero}/plans-video/generer")
+async def montage_editeur_generer_plan_video(identifiant: str, numero: int, request: Request):
+    """Cree un court plan video par IA (Veo, avec un cout reel) en tache de fond ; l'avancement est dans l'etat de l'editeur."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    try:
+        corps = await request.json()
+        debut = float(corps.get("debut") or 0)
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    try:
+        montage_editeur.lancer_plan_video(montage, sortie, corps.get("prompt"), debut, corps.get("mode"), corps.get("qualite"), _generer_plan_video)
+    except montage_editeur.ErreurEditeur as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    return _reponse_editeur(identifiant, montage, sortie, resume=["Création du plan vidéo lancée (une à quelques minutes)"], refus=[])
+
+
+@app.get("/montage-video/{identifiant}/editeur/{numero}/illustrations/{illustration_id}/video")
+def montage_editeur_video_illustration(identifiant: str, numero: int, illustration_id: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    chemin = montage_editeur.fichier_video_illustration(sortie, illustration_id) if sortie else None
+    if not chemin:
+        return JSONResponse({"erreur": "Plan vidéo introuvable."}, status_code=404)
+    return FileResponse(chemin, media_type="video/mp4")
+
+
 @app.get("/montage-video/{identifiant}/editeur/{numero}/illustrations/{illustration_id}")
 def montage_editeur_fichier_illustration(identifiant: str, numero: int, illustration_id: str, request: Request):
     if not utilisateur_connecte(request):
@@ -8057,6 +8093,163 @@ async def montage_editeur_commande(identifiant: str, numero: int, request: Reque
             except montage_editeur.ErreurEditeur as erreur:
                 refus.append(str(erreur))
     return _reponse_editeur(identifiant, montage, sortie, resume=resume, refus=refus, reponse=reponse_ia["reponse"])
+
+
+def _heberger_video(octets: bytes, nom: str) -> str:
+    return ovh_upload.envoyer_octets(octets, nom)
+
+
+def _kit_publication_montage(phrases, accroche):
+    return claude_generation.kit_publication_montage(phrases, accroche)
+
+
+@app.get("/montage-video/clients")
+def montage_liste_clients(request: Request, db: Session = Depends(obtenir_session)):
+    """Fiches proposees pour publier une video montee : [{"id", "nom"}]."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    clients = db.query(models.Client).order_by(models.Client.favori_publication_multi.desc(), models.Client.nom).all()
+    return JSONResponse({"clients": [{"id": c.id, "nom": c.nom} for c in clients]})
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/publication/preparer")
+def montage_publication_preparer(identifiant: str, numero: int, request: Request):
+    """Heberge la video rendue et prepare son texte de publication (en arriere-plan) ; suivi avec .../publication/etat."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    try:
+        etat = montage_publication.lancer_preparation(montage, sortie, numero, _heberger_video, _kit_publication_montage)
+    except montage_publication.ErreurPublication as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    return JSONResponse({**etat, "non_rendu": montage_publication.non_rendu(sortie)})
+
+
+@app.get("/montage-video/{identifiant}/editeur/{numero}/publication/etat")
+def montage_publication_etat(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    return JSONResponse({**montage_publication.etat_publication(montage, numero, sortie["version"]), "non_rendu": montage_publication.non_rendu(sortie)})
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/publication/composeur")
+async def montage_publication_vers_composeur(identifiant: str, numero: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Envoie la video hebergee et son texte au composeur multi-reseaux de la fiche choisie (brouillon garde dans la session)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    try:
+        corps = await request.json()
+        client = db.get(models.Client, int(corps.get("client_id")))
+        texte = str(corps.get("texte") or "")[:3000]
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if not client:
+        return JSONResponse({"erreur": "Choisissez la fiche pour laquelle publier."}, status_code=400)
+    etat = montage_publication.etat_publication(montage, numero, sortie["version"])
+    if etat["hebergement"] != "pret":
+        return JSONResponse({"erreur": "La vidéo n'est pas encore prête à être publiée : lancez la préparation."}, status_code=409)
+    request.session["brouillon_vocal"] = {"client_id": client.id, "texte": texte, "video_url": etat["url"]}
+    return JSONResponse({"url": f"/publication-multi?client_id={client.id}"})
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/publication/bibliotheque")
+async def montage_publication_vers_bibliotheque(identifiant: str, numero: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Garde la video hebergee (et son texte) dans la bibliotheque /videos."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    etat = montage_publication.etat_publication(montage, numero, sortie["version"])
+    if etat["hebergement"] != "pret":
+        return JSONResponse({"erreur": "La vidéo n'est pas encore hébergée : lancez la préparation."}, status_code=409)
+    existante = db.query(models.VideoMontee).filter(models.VideoMontee.url == etat["url"]).first()
+    if existante:
+        return JSONResponse({"id": existante.id, "deja": True})
+    courant = montage["publication"][numero]
+    ligne = models.VideoMontee(
+        titre=((etat["kit"] or {}).get("titre") or sortie["titre"])[:150], url=etat["url"], nom_distant=courant.get("nom_distant", ""),
+        duree=sortie["duree"], format=sortie["format"], kit_json=json.dumps(etat["kit"] or {}, ensure_ascii=False),
+    )
+    db.add(ligne)
+    db.commit()
+    return JSONResponse({"id": ligne.id, "deja": False})
+
+
+@app.get("/videos", response_class=HTMLResponse)
+def bibliotheque_videos(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    videos = db.query(models.VideoMontee).order_by(models.VideoMontee.cree_le.desc()).all()
+    lignes = []
+    for v in videos:
+        try:
+            kit = json.loads(v.kit_json or "{}")
+        except ValueError:
+            kit = {}
+        lignes.append({"video": v, "kit": kit, "legende": ((kit.get("texte") or "") + ("\n\n" + " ".join("#" + h for h in kit.get("hashtags", [])) if kit.get("hashtags") else "")).strip()})
+    return templates.TemplateResponse(request, "videos_montees.html", {"page_actuelle": "videos", "lignes": lignes})
+
+
+@app.post("/videos/{video_id}/supprimer")
+def bibliotheque_supprimer(video_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    video = db.get(models.VideoMontee, video_id)
+    if video:
+        nom_distant = video.nom_distant
+        db.delete(video)
+        db.commit()
+        if nom_distant:
+            try:
+                ovh_upload.supprimer_fichier(nom_distant)
+            except Exception:
+                pass
+    return RedirectResponse("/videos", status_code=303)
+
+
+@app.post("/videos/{video_id}/remonter")
+async def bibliotheque_remonter(video_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Reprend une video de la bibliotheque comme nouvelle video source (telechargee depuis l'hebergement), avec les reglages par defaut."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    video = db.get(models.VideoMontee, video_id)
+    if not video:
+        return RedirectResponse("/videos", status_code=303)
+    identifiant, dossier = montage_parole.nouveau_dossier_montage()
+    source = os.path.join(dossier, "source.mp4")
+
+    def telecharger():
+        taille = 0
+        with requests.get(video.url, stream=True, timeout=60) as reponse:
+            reponse.raise_for_status()
+            with open(source, "wb") as sortie:
+                for morceau in reponse.iter_content(1024 * 1024):
+                    taille += len(morceau)
+                    if taille > montage_parole.TAILLE_MAX_SOURCE:
+                        raise RuntimeError("Vidéo trop lourde.")
+                    sortie.write(morceau)
+        montage_parole.sonde(source)
+
+    try:
+        await run_in_threadpool(telecharger)
+    except Exception:
+        shutil.rmtree(dossier, ignore_errors=True)
+        return RedirectResponse("/videos?erreur=1", status_code=303)
+    opts = await run_in_threadpool(_options_montage, {}, dossier, db)
+    montage_parole.lancer_montage(identifiant, dossier, source, opts, _choisir_retouches, _choisir_extraits, _choisir_tendance)
+    return RedirectResponse(f"/montage-video?id={identifiant}", status_code=303)
 
 
 @app.post("/montage-video/{identifiant}/editeur/{numero}/rendre")
@@ -8401,7 +8594,7 @@ def _images_deja_utilisees(db: Session, client: "models.Client", limite: int = N
 def _contexte_publication_multi(
     db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
     variantes: dict = None, erreur: str = None, resultat: str = None,
-    prompt_image_initial: str = "", origine_vocale: bool = False, image_url_initial: str = "",
+    prompt_image_initial: str = "", origine_vocale: bool = False, image_url_initial: str = "", video_url_initial: str = "",
 ) -> dict:
     return {
         "client": client,
@@ -8424,6 +8617,7 @@ def _contexte_publication_multi(
         "options_appel_action": google_publish.OPTIONS_APPEL_ACTION,
         "origine_vocale": origine_vocale,
         "image_url_initial": image_url_initial,
+        "video_url_initial": video_url_initial,
         "fiches_source_avis": _fiches_source_avis(db, client),
         "brouillons_whatsapp_en_attente": (
             db.query(models.BrouillonWhatsApp).filter_by(client_id=client.id).order_by(models.BrouillonWhatsApp.id).all()
@@ -8482,7 +8676,7 @@ def publication_multi_choix_client(request: Request, client_id: int = None, db: 
             _contexte_publication_multi(
                 db, client, texte_base=brouillon_vocal.get("texte", ""),
                 prompt_image_initial=brouillon_vocal.get("prompt_image", ""), origine_vocale=True,
-                image_url_initial=brouillon_vocal.get("image_url") or "",
+                image_url_initial=brouillon_vocal.get("image_url") or "", video_url_initial=brouillon_vocal.get("video_url") or "",
             ),
         )
 
