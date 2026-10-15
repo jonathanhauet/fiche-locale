@@ -422,7 +422,7 @@ def ajouter_carte(montage: dict, sortie: dict, genre: str, textes: dict, debut: 
     if genre not in cartes_montage.TYPES:
         raise ErreurEditeur("Type de carte inconnu.")
     textes = cartes_montage.nettoyer_textes(textes)
-    if not any(textes[c] for c in ("titre", "valeur", "texte")):
+    if not any(textes[c] for c in ("titre", "valeur", "texte", "mot", "elements")):
         raise ErreurEditeur("Écrivez le texte de la carte.")
     png = cartes_montage.rendre_carte(genre, textes, effets.get("charte"), sortie["format"])
     duree_source = montage["infos"]["duree"]

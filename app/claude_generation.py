@@ -3224,12 +3224,12 @@ SCHEMA_CARTES = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string", "enum": ["etape", "info", "chiffre", "citation", "titre"]},
+                    "type": {"type": "string", "enum": ["etape", "info", "chiffre", "citation", "titre", "checklist", "appel_action", "evolution"]},
                     "debut": {"type": "number"}, "duree": {"type": "number"}, "numero": {"type": "string"},
                     "titre": {"type": "string"}, "sous_titre": {"type": "string"}, "valeur": {"type": "string"}, "libelle": {"type": "string"},
-                    "texte": {"type": "string"}, "auteur": {"type": "string"},
+                    "texte": {"type": "string"}, "auteur": {"type": "string"}, "avant": {"type": "string"}, "mot": {"type": "string"}, "elements": {"type": "string"},
                 },
-                "required": ["type", "debut", "duree", "numero", "titre", "sous_titre", "valeur", "libelle", "texte", "auteur"], "additionalProperties": False,
+                "required": ["type", "debut", "duree", "numero", "titre", "sous_titre", "valeur", "libelle", "texte", "auteur", "avant", "mot", "elements"], "additionalProperties": False,
             },
         },
     },
@@ -3252,10 +3252,13 @@ def cartes_depuis_transcription(phrases: list, duree: float, nombre_max: int = 6
         f"Voici la transcription horodatée (secondes) d'une vidéo face caméra de {duree:.0f} s :\n\n{transcription}\n\n"
         f"Propose au plus {nombre_max} cartes graphiques à afficher à l'écran pendant la vidéo, uniquement là où la personne dit quelque chose de "
         "concret qui gagne à être montré : un numéro d'étape (type etape), une information à retenir (info), un chiffre clé (chiffre), une phrase "
-        "forte (citation) ou un titre de partie (titre). Pas plus d'une carte toutes les 8 secondes, jamais pendant les 2 premières secondes ; "
+        "forte (citation), un titre de partie (titre), une liste de 3 ou 4 points énumérés à voix haute (checklist), un mot à écrire en commentaire "
+        "(« commente X », « écris X en commentaire » : appel_action) ou un passage d'une valeur à une autre (« je suis passé de A à B » : evolution). Pas plus d'une carte toutes les 8 secondes, jamais pendant les 2 premières secondes ; "
         "debut = début de la phrase concernée, duree entre 2,5 et 4 secondes. Textes courts, repris de ce qui est dit, sans rien inventer : "
         "etape (numero, titre 4 à 7 mots, sous_titre facultatif), info (titre, sous_titre facultatif), chiffre (valeur comme « 137 % » ou « 3 », "
-        "libelle), citation (texte, auteur laissé vide), titre (titre). Mets '' dans les champs non utilisés, et '0' dans numero sauf pour etape. "
+        "libelle), citation (texte, auteur laissé vide), titre (titre), "
+        "checklist (titre de la liste, elements = 3 ou 4 points courts séparés par « | », repris tels que dits), appel_action (mot = le mot demandé, en minuscules), "
+        "evolution (libelle ce qui change, avant = ancienne valeur, valeur = nouvelle valeur, comme dits). Mets '' dans les champs non utilisés, et '0' dans numero sauf pour etape. "
         "Si rien ne s'y prête, renvoie une liste vide."
     )
     prompt += _bloc_regles()
@@ -3276,7 +3279,7 @@ def cartes_depuis_transcription(phrases: list, duree: float, nombre_max: int = 6
         debut = float(c["debut"])
         if debut < 2.0 or debut - dernier < 8.0 or debut > duree - 1.0:
             continue
-        textes = {cle: _nettoyer_texte_genere(str(c.get(cle) or "")) for cle in ("numero", "titre", "sous_titre", "valeur", "libelle", "texte", "auteur")}
+        textes = {cle: _nettoyer_texte_genere(str(c.get(cle) or "")) for cle in ("numero", "titre", "sous_titre", "valeur", "libelle", "texte", "auteur", "avant", "mot", "elements")}
         if textes["numero"] in ("0", ""):
             textes["numero"] = ""
         cartes.append({"type": c["type"], "debut": debut, "duree": max(2.0, min(4.5, float(c["duree"]) or 3.0)), "textes": textes})

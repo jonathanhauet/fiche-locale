@@ -185,17 +185,22 @@
           <select id="ed-carte-type">
             <option value="etape">Étape numérotée</option><option value="info">Information</option><option value="chiffre">Chiffre clé</option>
             <option value="citation">Citation</option><option value="titre">Titre</option>
+            <option value="checklist">Liste à cocher</option><option value="appel_action">Appel à l'action (commente MOT)</option><option value="evolution">Avant → après</option>
+            <option value="chat">Fenêtre de chat</option><option value="notification">Notification</option><option value="sticker">Sticker de titre</option><option value="badge">Badge compteur</option>
           </select>
           <select id="ed-carte-place"><option value="haut">En haut</option><option value="centre">Au centre</option><option value="bas">En bas</option><option value="partage">Écran coupé (vous en bas)</option></select>
           <label>Durée <input type="number" id="ed-carte-duree" value="3.5" min="1.5" max="8" step="0.5" style="width:5rem"> s</label>
         </div>
         <input type="text" id="ed-carte-numero" maxlength="2" placeholder="Numéro (1, 2, 3…)" data-champ="etape">
-        <input type="text" id="ed-carte-titre" maxlength="60" placeholder="Titre" data-champ="etape info titre">
-        <input type="text" id="ed-carte-sous-titre" maxlength="90" placeholder="Précision (facultatif)" data-champ="etape info">
-        <input type="text" id="ed-carte-valeur" maxlength="12" placeholder="Chiffre (ex : 137 %)" data-champ="chiffre">
-        <input type="text" id="ed-carte-libelle" maxlength="60" placeholder="Ce que mesure ce chiffre" data-champ="chiffre">
-        <input type="text" id="ed-carte-texte" maxlength="140" placeholder="La phrase à mettre en avant" data-champ="citation">
-        <input type="text" id="ed-carte-auteur" maxlength="40" placeholder="Auteur (facultatif)" data-champ="citation">
+        <input type="text" id="ed-carte-titre" maxlength="60" placeholder="Titre" data-champ="etape info titre checklist chat evolution sticker">
+        <input type="text" id="ed-carte-sous-titre" maxlength="90" placeholder="Précision (facultatif)" data-champ="etape info checklist">
+        <input type="text" id="ed-carte-valeur" maxlength="12" placeholder="Chiffre (ex : 137 %)" data-champ="chiffre evolution badge">
+        <input type="text" id="ed-carte-avant" maxlength="12" placeholder="Ancienne valeur (ex : 1:42)" data-champ="evolution">
+        <input type="text" id="ed-carte-elements" maxlength="170" placeholder="Points séparés par | (ex : Blancs coupés | Sous-titres posés)" data-champ="checklist">
+        <input type="text" id="ed-carte-mot" maxlength="20" placeholder="Le mot à commenter (ex : studio)" data-champ="appel_action">
+        <input type="text" id="ed-carte-libelle" maxlength="60" placeholder="Ce que mesure ce chiffre" data-champ="chiffre evolution">
+        <input type="text" id="ed-carte-texte" maxlength="140" placeholder="La phrase à mettre en avant" data-champ="citation chat notification">
+        <input type="text" id="ed-carte-auteur" maxlength="40" placeholder="Auteur (facultatif)" data-champ="citation notification">
         <div class="ed-ligne">
           <button type="button" class="bouton-secondaire" id="ed-carte-ajouter">Ajouter à la position de la lecture</button>
           <button type="button" class="bouton" id="ed-carte-proposer">✨ Proposer des cartes avec l'IA</button>
@@ -758,7 +763,8 @@
   $("ed-carte-type").addEventListener("change", majChampsCarte); majChampsCarte();
   $("ed-carte-ajouter").addEventListener("click", async () => {
     const textes = { numero: $("ed-carte-numero").value, titre: $("ed-carte-titre").value, sous_titre: $("ed-carte-sous-titre").value, valeur: $("ed-carte-valeur").value,
-      libelle: $("ed-carte-libelle").value, texte: $("ed-carte-texte").value, auteur: $("ed-carte-auteur").value };
+      libelle: $("ed-carte-libelle").value, texte: $("ed-carte-texte").value, auteur: $("ed-carte-auteur").value,
+      avant: $("ed-carte-avant").value, elements: $("ed-carte-elements").value, mot: $("ed-carte-mot").value };
     try {
       const d = await envoyer("/cartes/ajouter", { type: $("ed-carte-type").value, textes, debut: video.currentTime || 0, duree: parseFloat($("ed-carte-duree").value) || 3.5, place: $("ed-carte-place").value });
       appliquerEtat(d.etat); annoncer(d);

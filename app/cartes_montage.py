@@ -12,8 +12,11 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from . import charte_montage
 
 DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "polices")
-TYPES = {"etape": "Étape numérotée", "info": "Information", "chiffre": "Chiffre clé", "citation": "Citation", "titre": "Titre"}
-LIMITES = {"numero": 2, "titre": 60, "sous_titre": 90, "valeur": 12, "libelle": 60, "texte": 140, "auteur": 40}
+TYPES = {"etape": "Étape numérotée", "info": "Information", "chiffre": "Chiffre clé", "citation": "Citation", "titre": "Titre",
+         "chat": "Fenêtre de chat", "checklist": "Liste à cocher", "notification": "Notification", "evolution": "Avant → après",
+         "appel_action": "Appel à l'action (commente MOT)", "badge": "Badge compteur", "sticker": "Sticker de titre"}
+TYPES_INTERFACE = ("chat", "checklist", "notification", "evolution", "appel_action", "badge", "sticker")      # dessines par cartes_interface.py
+LIMITES = {"numero": 2, "titre": 60, "sous_titre": 90, "valeur": 12, "libelle": 60, "texte": 140, "auteur": 40, "avant": 12, "mot": 20, "elements": 170}
 LARGEUR_CARTE = {"vertical": 0.84, "horizontal": 0.40}          # part de la largeur de l'image video
 POSITIONS = {"haut": "En haut", "centre": "Au centre", "bas": "En bas", "partage": "Écran coupé (vous en bas)"}
 
@@ -65,6 +68,9 @@ def rendre_carte(genre: str, textes: dict, charte: dict, format_video: str = "ve
     """Image PNG (transparente) d'une carte. genre : etape, info, chiffre, citation ou titre ; textes : voir LIMITES."""
     if genre not in TYPES:
         raise ValueError("Type de carte inconnu.")
+    if genre in TYPES_INTERFACE:
+        from . import cartes_interface
+        return cartes_interface.rendre(genre, textes, charte, format_video)
     charte = charte_montage.nettoyer(charte)
     textes = nettoyer_textes(textes)
     largeur_video = 1080 if format_video == "vertical" else 1920
