@@ -395,29 +395,32 @@ def _coupure_pop(mots_groupe: list, max_car: int):
     return meilleur
 
 
-def _lignes_titre(debut: float, fin: float, texte: str, vertical: bool) -> str:
+def _lignes_titre(debut: float, fin: float, texte: str, vertical: bool, classique: bool = False) -> str:
     # Pas de retour a la ligne automatique (WrapStyle 2) : le titre est coupe ici, sur 3 lignes au plus.
-    lignes = textwrap.wrap(_echapper_ass(texte).upper(), width=18 if vertical else 34)[:3]
+    texte = _echapper_ass(texte)
+    lignes = textwrap.wrap(texte.upper() if classique else texte, width=18 if vertical else 34)[:3]
     return f"Dialogue: 1,{_horodatage_ass(debut)},{_horodatage_ass(fin)},Titre,,0,0,0,,{{\\fad(250,350)}}" + "\\N".join(lignes)
 
 
 POLICE_SERIF = "DM Serif Display"
 
 
-def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastille: tuple = None, contour: int = 8, editorial: bool = False) -> list:
+def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastille: tuple = None, contour: int = 8, editorial: bool = False, classique: bool = False) -> list:
     """
     Sous-titres « pop » : 1 a 3 mots a la fois, en majuscules, le mot prononce grossit et prend la couleur d'accent ; les mots
     importants restent en couleur et plus gros. Un evenement par mot, calé sur la voix (duree repartie selon la longueur des mots).
     editorial=True : style « magazine » (minuscules, mots importants en serif italique, sans pastille ni couleur d'accent).
+    Par defaut, rendu moderne : minuscules, contour fin et doux, petite ombre. classique=True : l'ancien rendu (majuscules, gros contour noir).
     """
     couleur_accent = _couleur_ass(accent)
     couleur_pastille = _couleur_ass(pastille) if pastille else None
     # Une « pastille » est le contour epais, arrondi, de la couleur de la charte : le mot reste en blanc par-dessus.
     contour_pastille = int(contour * 2.4)
-    normal = f"\\3c&H00000000&\\bord{contour}"
+    normal = f"\\3c&H00000000&\\bord{contour}" if classique else "\\3c&H00000000&\\3a&H70&\\bord3\\blur1.5\\shad2\\4c&H00000000&\\4a&H80&"
+    gros_scale = "\\fscx122\\fscy122" if classique else "\\fscx110\\fscy110"
     sorties = []
     for p in phrases:
-        mots = _mots_pop(p["texte"], majuscules=not editorial)
+        mots = _mots_pop(p["texte"], majuscules=classique and not editorial)
         if not mots:
             continue
         poids = [len(m) + 1 for m in mots]
@@ -443,11 +446,12 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastil
                             balise = f"{{\\fnPoppins\\i0\\c&H00FFFFFF&{normal}{taille}}}"
                     elif cle and couleur_pastille:
                         taille = "\\fscx82\\fscy82\\t(0,90,\\fscx118\\fscy118)\\t(90,190,\\fscx108\\fscy108)" if j == rang else "\\fscx108\\fscy108"
-                        balise = f"{{\\c&H00FFFFFF&\\3c{couleur_pastille}\\bord{contour_pastille}{taille}}}"
+                        reglage_pastille = "" if classique else "\\3a&H00&\\blur0\\shad0"       # la pastille est pleine et nette, sans le flou du contour
+                        balise = f"{{\\c&H00FFFFFF&\\3c{couleur_pastille}{reglage_pastille}\\bord{contour_pastille}{taille}}}"
                     elif j == rang:
                         balise = f"{{\\c{couleur_accent}{normal}\\fscx82\\fscy82\\t(0,90,\\fscx118\\fscy118)\\t(90,190,\\fscx108\\fscy108)}}"
                     elif cle:
-                        balise = f"{{\\c{couleur_accent}{normal}\\fscx122\\fscy122}}"
+                        balise = f"{{\\c{couleur_accent}{normal}{gros_scale}}}"
                     else:
                         balise = f"{{\\c&H00FFFFFF&{normal}\\fscx100\\fscy100}}"
                     if j:
@@ -459,7 +463,7 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastil
 
 
 def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: tuple = (255, 214, 10), titre: str = "",
-               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0, pastille: tuple = None, editorial: bool = False) -> None:
+               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0, pastille: tuple = None, editorial: bool = False, classique: bool = False) -> None:
     """
     Sous-titres, titre d'accroche, titres ajoutes a la main (titres : [(debut, fin, texte)]) et barre de progression (barre : duree
     totale en secondes, 0 = pas de barre). Par defaut sous-titres « karaoke » : les mots se colorent au rythme de la voix ;
@@ -467,7 +471,7 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
     """
     vertical = hauteur > largeur
     taille = 84 if vertical else 60
-    taille_pop = 94 if vertical else 66
+    taille_pop = (94 if vertical else 66) if classique else (84 if vertical else 60)
     contour = 7 if vertical else 5
     marge_v = 430 if vertical else 80
     max_car = 20 if vertical else 38
@@ -479,17 +483,17 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
         "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Sous,Poppins,{taille},{_couleur_ass(accent)},&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour},2,2,60,60,{marge_v},1",
-        f"Style: Pop,Poppins,{taille_pop},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour + 1},3,2,50,50,{marge_v},1",
-        f"Style: Titre,Poppins,{int(taille * 0.9)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour},2,8,70,70,{int(hauteur * 0.09)},1",
+        f"Style: Pop,Poppins,{taille_pop},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour + 1 if classique else 3},{3 if classique else 2},2,50,50,{marge_v},1",
+        f"Style: Titre,Poppins,{int(taille * 0.9)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour if classique else 3},2,8,70,70,{int(hauteur * 0.09)},1",
         f"Style: Barre,Poppins,20,{_couleur_ass(accent)},&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     if titre:
-        lignes.append(_lignes_titre(0.2, 3.6, titre, vertical))
+        lignes.append(_lignes_titre(0.2, 3.6, titre, vertical, classique))
     for debut, fin, texte in (titres or []):
-        lignes.append(_lignes_titre(debut, fin, texte, vertical))
+        lignes.append(_lignes_titre(debut, fin, texte, vertical, classique))
     if pop:
-        lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set(), pastille, contour + 1, editorial)
+        lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set(), pastille, contour + 1, editorial, classique)
     else:
         for p in phrases:
             mots = _echapper_ass(p["texte"]).split()
@@ -1033,7 +1037,7 @@ def plan_effets(sortie: dict) -> dict:
     fond, texte = charte_montage.rgb(charte["fond"]), charte_montage.rgb(charte["texte"])
     panneau = tuple(int(round(f + (t - f) * 0.06)) for f, t in zip(fond, texte))      # fond de la charte, tres legerement teinte : les cartes blanches ressortent
     return {"duree": duree, "phrases": phrases_montage, "zooms": zooms, "titres": titres, "pop": pop, "gros": gros, "barre": barre, "titre": titre, "pastille": pastille,
-            "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages, "panneau": panneau, "editorial": bool(pop and effets.get("editorial"))}
+            "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages, "panneau": panneau, "editorial": bool(pop and effets.get("editorial")), "classique": bool(effets.get("classique"))}
 
 
 def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
@@ -1047,7 +1051,7 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
     if dessiner:
         fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
         ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
-                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"], editorial=plan["editorial"])
+                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"], editorial=plan["editorial"], classique=plan["classique"])
     chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
     options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"], panneau=plan["panneau"])
     try:

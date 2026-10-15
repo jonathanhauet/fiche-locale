@@ -98,7 +98,7 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
                   for p in sorted(montage.get("plans", {}).values(), key=lambda x: x["cree"])[-8:]],
         "mots_gros": sorted(set(effets["mots_gros"]) | {mp._normaliser(m) for m in effets["mots_cles"]}),
         "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "bruitages": bool(effets.get("bruitages")), "pastille": bool(effets.get("pastille")),
-                     "editorial": bool(effets.get("editorial")), "partage": bool(effets.get("partage")),
+                     "editorial": bool(effets.get("editorial")), "partage": bool(effets.get("partage")), "classique": bool(effets.get("classique")),
                      "panneau": "#%02x%02x%02x" % plan["panneau"],
                      "transition": effets.get("transition", "aucune"), "sous_titres": bool(sortie["sous_titres"]), "style": effets["style"]},
         "accroche": effets["titre"], "peut_annuler": bool(sortie.get("annulations")), "peut_revenir": bool(sortie["historique"]),
@@ -262,7 +262,7 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
                 effets["bruitages"] = valeur
             elif cle == "pastille":
                 effets["pastille"] = valeur
-            elif cle in ("editorial", "partage"):
+            elif cle in ("editorial", "partage", "classique"):
                 effets[cle] = valeur
             elif cle == "sous_titres":
                 sortie["sous_titres"] = valeur

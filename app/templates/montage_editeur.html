@@ -97,7 +97,8 @@
         <label><input type="checkbox" data-reglage="sous_titres"> Sous-titres</label>
         <label><input type="checkbox" data-reglage="mots"> Sous-titres animés mot par mot</label>
         <label><input type="checkbox" data-reglage="pastille"> Mots-clés des sous-titres en pastille colorée</label>
-        <label><input type="checkbox" data-reglage="editorial"> Sous-titres « magazine » : minuscules, mots-clés en serif italique</label>
+        <label><input type="checkbox" data-reglage="editorial"> Sous-titres « magazine » : mots-clés en serif italique</label>
+        <label><input type="checkbox" data-reglage="classique"> Sous-titres à l'ancienne : majuscules et gros contour noir</label>
         <label><input type="checkbox" data-reglage="partage"> Écran coupé : cartes et illustrations en haut, vous en bas (vidéo verticale)</label>
         <label><input type="checkbox" data-reglage="barre"> Barre de progression</label>
         <label><input type="checkbox" data-reglage="bruitages"> Bruitages (whoosh, pop, impact), audibles dans l'aperçu</label>
@@ -284,6 +285,7 @@
   .ed-scene.partage video#ed-video { clip-path: inset(13% 0 37% 0); }
   .ed-ill.partage:not(.carte) { bottom: 50%; align-items: center; }
   .ed-ill.partage:not(.carte) img, .ed-ill.partage:not(.carte) video { max-width: 86%; max-height: 84%; margin-top: 0; }
+  .ed-sous.moderne { text-transform: none; font-weight: 700; text-shadow: 0 0 2px rgba(0,0,0,.85), 0 1px 3px rgba(0,0,0,.7), 0 2px 5px rgba(0,0,0,.45); }
   .ed-sous.magazine { text-transform: none; font-weight: 700; }
   .ed-sous.magazine .cle { font-family: "DM Serif Display", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400; font-size: 1.18em; }
   .ed-sous.magazine .actif { color: #fff; }
@@ -476,6 +478,7 @@
     $("ed-temps").textContent = minutes(tm) + " / " + minutes(E.duree_montee);
     // sous-titres
     const sous = $("ed-sous"); sous.textContent = ""; sous.classList.toggle("magazine", !!(E.reglages.editorial && E.reglages.mots));
+    sous.classList.toggle("moderne", !!(E.reglages.mots && !E.reglages.classique));
     const phrase = visible && E.reglages.sous_titres ? E.phrases.find((p) => t >= p.debut && t < p.fin) : null;
     const gros = new Set(E.mots_gros || []);
     if (phrase) {
