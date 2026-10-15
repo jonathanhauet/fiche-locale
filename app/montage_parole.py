@@ -90,6 +90,19 @@ def sonde(chemin: str) -> dict:
     return {"duree": duree, "largeur": largeur, "hauteur": hauteur, "audio": any(s.get("codec_type") == "audio" for s in flux)}
 
 
+def normaliser_enregistrement(source: str) -> str:
+    """
+    Enregistrement fait dans le navigateur (webm de MediaRecorder : ni duree ni index, images a cadence variable) -> mp4 classique a
+    30 images/s, que le reste du montage sait decouper precisement. Renvoie le chemin du nouveau fichier.
+    """
+    sortie = os.path.splitext(source)[0] + "-norm.mp4"
+    resultat = _lancer([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", source, "-vf", "fps=30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", sortie], 1800)
+    if resultat.returncode != 0 or not os.path.exists(sortie):
+        raise ErreurMontage("L'enregistrement n'a pas pu être converti : " + (resultat.stderr or "")[-200:].strip())
+    return sortie
+
+
 def extraire_audio(video: str, sortie_wav: str) -> None:
     """WAV mono 16 kHz : sans dependance a un codec particulier, et lisible directement par Gemini."""
     resultat = _lancer([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", video, "-vn", "-ac", "1", "-ar", "16000",
@@ -1165,6 +1178,8 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
     montage = MONTAGES.setdefault(identifiant, {"cree": time.time(), "source": source, "dossier": dossier, "transcription": None,
                                                 "silences": None, "infos": None, "audio": None, "visage_x": "inconnu", "verrou": threading.RLock()})
     montage.update(etat="en_cours", etape="Analyse de la vidéo", progression=0.0, erreur="", sorties=[], avertissement="")
+    if options.get("libelle"):
+        montage["libelle"] = str(options["libelle"])[:120]
 
     def fixer(etape, progression=None):
         montage["etape"] = etape
@@ -1172,7 +1187,11 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
             montage["progression"] = progression
 
     def travail():
+        nonlocal source
         try:
+            if source.lower().endswith(".webm"):
+                fixer("Préparation de l'enregistrement", 0.01)
+                source = montage["source"] = normaliser_enregistrement(source)
             if montage["infos"] is None:
                 montage["infos"] = sonde(source)
             infos = montage["infos"]

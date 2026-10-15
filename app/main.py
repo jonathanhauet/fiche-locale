@@ -7809,7 +7809,13 @@ def _options_montage(brut, dossier: str, db: Session) -> dict:
     """Options saisies sur la page, nettoyees ; telecharge la piste musicale choisie dans le dossier du montage."""
     claude_generation.definir_regles_montage(regles_montage.textes(db))
     brut = brut if isinstance(brut, dict) else {}
+    modele = next((m for m in styles_montage.lister(db) if m["id"] == str(brut.get("modele") or "")), None)
+    if modele:      # un modele de style (par son identifiant) fournit les reglages par defaut ; ce qui est precise explicitement l'emporte
+        r = modele["reglages"]
+        brut = {**{cle: r[cle] for cle in ("style", "bruitages", "pastille", "alterne", "transition", "editorial", "partage") if cle in r},
+                "effets": {cle: r[cle] for cle in montage_parole.EFFETS_DEFAUT if cle in r}, **brut}
     options = {
+        "libelle": " ".join(str(brut.get("libelle") or "").split())[:120],
         "silences": bool(brut.get("silences", True)),
         "hesitations": bool(brut.get("hesitations", True)),
         "sous_titres": bool(brut.get("sous_titres", True)),
@@ -7890,6 +7896,18 @@ def _preparer_sortie_auto(montage, sortie):
             continue
 
 
+@app.get("/montage-video/recents")
+def montage_video_recents(request: Request):
+    """Montages en memoire du plus recent au plus ancien (pour enchainer plusieurs videos et revenir sur chacune)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    lignes = sorted(montage_parole.MONTAGES.items(), key=lambda x: x[1].get("cree", 0), reverse=True)[:12]
+    return JSONResponse({"montages": [
+        {"id": i, "libelle": m.get("libelle") or "Montage sans titre", "etat": m.get("etat"), "etape": m.get("etape"), "progression": round(m.get("progression") or 0.0, 2),
+         "erreur": m.get("erreur") or "", "cree": m.get("cree"), "nb_sorties": len(m.get("sorties") or [])}
+        for i, m in lignes]})
+
+
 @app.post("/montage-video/lancer")
 async def montage_video_lancer(
     request: Request, fichier: UploadFile = File(...), options: str = Form("{}"), db: Session = Depends(obtenir_session),
@@ -7919,11 +7937,12 @@ async def montage_video_lancer(
                 shutil.rmtree(dossier, ignore_errors=True)
                 return JSONResponse({"erreur": f"Vidéo trop lourde ({montage_parole.TAILLE_MAX_SOURCE // (1024 * 1024)} Mo maximum) : compressez-la avant l'envoi."}, status_code=400)
             sortie.write(morceau)
-    try:
-        await run_in_threadpool(montage_parole.sonde, source)
-    except montage_parole.ErreurMontage as erreur:
-        shutil.rmtree(dossier, ignore_errors=True)
-        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    if extension != "webm":         # un enregistrement du navigateur (webm) est converti puis verifie dans la tache de fond
+        try:
+            await run_in_threadpool(montage_parole.sonde, source)
+        except montage_parole.ErreurMontage as erreur:
+            shutil.rmtree(dossier, ignore_errors=True)
+            return JSONResponse({"erreur": str(erreur)}, status_code=400)
 
     opts = await run_in_threadpool(_options_montage, brut, dossier, db)
     montage_parole.lancer_montage(identifiant, dossier, source, opts, _choisir_retouches, _choisir_extraits, _choisir_tendance, _aligner_script, _preparer_sortie_auto)

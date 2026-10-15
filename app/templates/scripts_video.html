@@ -85,9 +85,32 @@
   <p class="texte-vide" id="historique-vide" {% if historique %}hidden{% endif %}>Aucun script enregistré pour l'instant.</p>
 </div>
 
+<div class="formulaire kit-bloc" id="montages-recents" hidden>
+  <div class="kit-entete"><strong>🎞️ Mes montages</strong></div>
+  <ul class="liste-montages-recents" id="liste-montages"></ul>
+</div>
+
+<style>
+  .pr-camera { position: absolute; top: 74px; right: 14px; width: 190px; border-radius: 10px; background: #000; transform: scaleX(-1); z-index: 6; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  .pr-rec { border: 0; cursor: pointer; position: absolute; top: 74px; left: 14px; z-index: 6; background: #c4161c; color: #fff; padding: .25rem .7rem; border-radius: 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pr-revue { position: absolute; inset: 0; z-index: 20; background: rgba(8,9,14,.97); color: #fff; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow: auto; }
+  .pr-revue-bloc { display: flex; flex-direction: column; gap: .7rem; width: min(560px, 100%); }
+  .pr-revue-bloc video { width: 100%; max-height: 46vh; background: #000; border-radius: 10px; }
+  .pr-revue-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .pr-revue-style { display: flex; gap: .5rem; align-items: center; }
+  .pr-revue-style select { flex: 1; }
+  #pr-select-camera, #pr-select-micro { max-width: 150px; }
+  .montage-barre { height: 10px; border-radius: 6px; background: rgba(128,128,140,.3); overflow: hidden; }
+  .montage-barre > div { height: 100%; width: 0; background: #5b7cff; transition: width .4s; }
+  .liste-montages-recents { list-style: none; margin: .4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+  .liste-montages-recents li { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; border: 1px solid var(--carte-bordure); border-radius: 8px; padding: .4rem .6rem; }
+  .liste-montages-recents .etat { margin-left: auto; font-size: .85rem; color: var(--texte-discret); }
+</style>
 <div id="prompteur" class="prompteur" hidden>
   <div class="prompteur-barre" id="prompteur-barre">
-    <button type="button" id="pr-lecture" class="bouton">▶ Lecture</button>
+    <button type="button" id="pr-enregistrer" class="bouton">🔴 Enregistrer</button>
+    <button type="button" id="pr-lecture" class="bouton-secondaire">▶ Lecture</button>
+    <select id="pr-select-camera" title="Caméra" hidden></select><select id="pr-select-micro" title="Micro" hidden></select>
     <button type="button" id="pr-recommencer" class="bouton-secondaire">⏮ Début</button>
     <label>Vitesse <input type="range" id="pr-vitesse" min="1" max="12" step="0.5" value="6"> <span id="pr-vitesse-val">6</span></label>
     <label>Taille <input type="range" id="pr-taille" min="28" max="110" step="2" value="52"></label>
@@ -102,6 +125,31 @@
     <div class="prompteur-defile" id="pr-defile"><div class="prompteur-texte" id="pr-texte"></div></div>
   </div>
   <div class="prompteur-compte" id="pr-compte" hidden></div>
+  <video id="pr-camera" class="pr-camera" muted playsinline hidden></video>
+  <button type="button" id="pr-rec" class="pr-rec" hidden title="Terminer la prise">● REC <span id="pr-rec-temps">0:00</span> · ⏹ Terminer</button>
+  <div id="pr-revue" class="pr-revue" hidden>
+    <div id="pr-revue-prise" class="pr-revue-bloc">
+      <strong>Votre prise</strong>
+      <video id="pr-revue-video" controls playsinline></video>
+      <label class="pr-revue-style">Style du montage <select id="pr-revue-style"></select></label>
+      <p class="texte-discret" style="margin:0;color:#c9ccd6">Le montage retire vos prises ratées d'après le script, corrige les sous-titres, ajoute cartes, zooms et bruitages, puis prépare la publication.</p>
+      <div class="pr-revue-actions">
+        <button type="button" id="pr-revue-monter" class="bouton">✅ Monter cette prise</button>
+        <button type="button" id="pr-revue-refaire" class="bouton-secondaire">🔁 Refaire une prise</button>
+        <button type="button" id="pr-revue-telecharger" class="bouton-secondaire">⬇ Garder le fichier</button>
+      </div>
+      <div class="montage-barre" id="pr-revue-barre" hidden><div id="pr-revue-barre-remplissage"></div></div>
+      <p id="pr-revue-statut" class="texte-discret" style="margin:0;color:#c9ccd6" hidden></p>
+    </div>
+    <div id="pr-revue-fin" class="pr-revue-bloc" hidden>
+      <strong>✅ Montage lancé</strong>
+      <p style="margin:0">Il se fait en arrière-plan : vous pouvez enchaîner une autre vidéo tout de suite. Les montages terminés apparaissent dans « Mes montages » sous le script.</p>
+      <div class="pr-revue-actions">
+        <button type="button" id="pr-revue-nouvelle" class="bouton">➕ Nouvelle vidéo</button>
+        <a id="pr-revue-suivre" class="bouton-secondaire" href="/montage-video" target="_blank" rel="noopener">Suivre ce montage</a>
+      </div>
+    </div>
+  </div>
 </div>
 <style>
   .prompteur { position: fixed; inset: 0; z-index: 9999; background: #000; color: #fff; display: flex; flex-direction: column; }
@@ -199,6 +247,31 @@
 
 
 
+    // ----- Mes montages : suivi des videos envoyees pour enchainer sans attendre -----
+    const zoneMontages = document.getElementById("montages-recents"), listeMontages = document.getElementById("liste-montages");
+    let minuteurMontages = null;
+    async function rafraichirMontages() {
+      clearTimeout(minuteurMontages);
+      try {
+        const reponse = await fetch("/montage-video/recents"); const donnees = await reponse.json();
+        if (!reponse.ok) return;
+        const montages = donnees.montages || [];
+        zoneMontages.hidden = !montages.length; listeMontages.textContent = "";
+        montages.forEach((m) => {
+          const li = document.createElement("li");
+          const nom = document.createElement("strong"); nom.textContent = m.libelle; li.appendChild(nom);
+          const etat = document.createElement("span"); etat.className = "etat";
+          etat.textContent = m.etat === "en_cours" ? (m.etape || "En cours") + " (" + Math.round(m.progression * 100) + " %)" : m.etat === "termine" ? "Prêt" : "Échec : " + (m.erreur || "erreur");
+          li.appendChild(etat);
+          const lien = document.createElement("a"); lien.className = m.etat === "termine" ? "bouton" : "bouton-secondaire"; lien.href = "/montage-video?id=" + m.id; lien.target = "_blank"; lien.rel = "noopener";
+          lien.textContent = m.etat === "termine" ? "Ouvrir et publier" : "Suivre"; li.appendChild(lien);
+          listeMontages.appendChild(li);
+        });
+        if (montages.some((m) => m.etat === "en_cours")) minuteurMontages = setTimeout(rafraichirMontages, 4000);
+      } catch (e) { minuteurMontages = setTimeout(rafraichirMontages, 8000); }
+    }
+    rafraichirMontages();
+
     // ----- Prompteur : texte qui defile pour lire le script face camera -----
     (function () {
       const racine = document.getElementById("prompteur");
@@ -254,11 +327,11 @@
       function demarrerAvecCompteARebours() {
         if (lecture) { definirLecture(false); return; }
         if (minuteurCompte) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; return; }
-        let n = 3;
+        let n = armee ? 5 : 3;          // enregistrement : un peu plus de temps pour regarder l'objectif
         compte.hidden = false; compte.textContent = n;
         minuteurCompte = setInterval(() => {
           n -= 1;
-          if (n <= 0) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; definirLecture(true); }
+          if (n <= 0) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; definirLecture(true); if (armee && !enregistreur) demarrerEnregistrement(); }
           else compte.textContent = n;
         }, 1000);
       }
@@ -275,6 +348,9 @@
         requestAnimationFrame(image);
       }
       function fermer() {
+        if (enregistreur) { if (!confirm("Une prise est en cours : l'arrêter et la garder ?")) return; arreterEnregistrement(); return; }
+        if (!priseEnvoyee && prise && !confirm("Votre prise n'est pas encore envoyée. Quitter quand même ?")) return;
+        armee = false; fermerCamera(); revue.hidden = true;
         definirLecture(false);
         if (minuteurCompte) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; }
         racine.hidden = true;
@@ -286,6 +362,159 @@
         clearTimeout(minuteurImmersif);
         if (lecture) minuteurImmersif = setTimeout(() => racine.classList.add("immersif"), 2500);
       }
+
+      // ----- Enregistrement direct (webcam + micro) : la prise part ensuite dans le montage automatique -----
+      const camera = document.getElementById("pr-camera"), badgeRec = document.getElementById("pr-rec"), tempsRec = document.getElementById("pr-rec-temps");
+      const boutonRec = document.getElementById("pr-enregistrer"), revue = document.getElementById("pr-revue");
+      const selectCamera = document.getElementById("pr-select-camera"), selectMicro = document.getElementById("pr-select-micro");
+      const CLE_PERIPH = "fiche-locale-peripheriques", CLE_MODELE_PRISE = "fiche-locale-modele-prise";
+      let flux = null, enregistreur = null, morceaux = [], prise = null, armee = false, debutPrise = 0, minuteurRec = null, priseEnvoyee = true, urlPrise = null;
+
+      function lirePref(cle) { try { return JSON.parse(localStorage.getItem(cle) || "{}"); } catch (e) { return {}; } }
+      function ecrirePref(cle, valeur) { try { localStorage.setItem(cle, JSON.stringify(valeur)); } catch (e) { /* ignore */ } }
+      function messageRec(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
+
+      function fermerCamera() {
+        if (flux) flux.getTracks().forEach((t) => t.stop());
+        flux = null; camera.srcObject = null; camera.hidden = true; selectCamera.hidden = selectMicro.hidden = true;
+      }
+      async function remplirPeripheriques() {
+        try {
+          const liste = await navigator.mediaDevices.enumerateDevices();
+          const pref = lirePref(CLE_PERIPH);
+          const remplir = (select, genre, choisi) => {
+            select.textContent = "";
+            liste.filter((d) => d.kind === genre).forEach((d, i) => {
+              const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || (genre === "videoinput" ? "Caméra " : "Micro ") + (i + 1);
+              if (choisi && choisi === d.deviceId) o.selected = true; select.appendChild(o);
+            });
+            select.hidden = select.options.length < 2;
+          };
+          remplir(selectCamera, "videoinput", pref.camera); remplir(selectMicro, "audioinput", pref.micro);
+        } catch (e) { /* liste indisponible : on garde les peripheriques par defaut */ }
+      }
+      async function ouvrirCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+          throw new Error("Ce navigateur ne sait pas enregistrer : utilisez Chrome, Edge ou un Safari récent.");
+        }
+        fermerCamera();
+        const pref = lirePref(CLE_PERIPH);
+        const contraintes = (avecPref) => ({
+          video: Object.assign({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, avecPref && pref.camera ? { deviceId: { exact: pref.camera } } : { facingMode: "user" }),
+          audio: Object.assign({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }, avecPref && pref.micro ? { deviceId: { exact: pref.micro } } : {}),
+        });
+        try {
+          try { flux = await navigator.mediaDevices.getUserMedia(contraintes(true)); }
+          catch (e) { if (e.name === "OverconstrainedError" || e.name === "NotFoundError") flux = await navigator.mediaDevices.getUserMedia(contraintes(false)); else throw e; }
+        } catch (e) {
+          if (e.name === "NotAllowedError") throw new Error("Autorisez la caméra et le micro dans votre navigateur (icône à gauche de l'adresse), puis recommencez.");
+          if (e.name === "NotFoundError") throw new Error("Aucune caméra ou aucun micro détecté.");
+          if (e.name === "NotReadableError") throw new Error("La caméra ou le micro est déjà utilisé par une autre application.");
+          throw e;
+        }
+        camera.srcObject = flux; camera.hidden = false; try { await camera.play(); } catch (e) { /* lecture auto refusee : sans importance */ }
+        remplirPeripheriques();
+      }
+      selectCamera.addEventListener("change", async () => { const p = lirePref(CLE_PERIPH); p.camera = selectCamera.value; ecrirePref(CLE_PERIPH, p); if (!enregistreur) { try { await ouvrirCamera(); } catch (e) { messageRec(e.message); } } });
+      selectMicro.addEventListener("change", async () => { const p = lirePref(CLE_PERIPH); p.micro = selectMicro.value; ecrirePref(CLE_PERIPH, p); if (!enregistreur) { try { await ouvrirCamera(); } catch (e) { messageRec(e.message); } } });
+
+      function formatTemps(s) { return Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0"); }
+      function typeEnregistrement() {
+        return ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+      }
+      function demarrerEnregistrement() {
+        morceaux = []; priseEnvoyee = false;
+        const type = typeEnregistrement();
+        enregistreur = new MediaRecorder(flux, Object.assign(type ? { mimeType: type } : {}, { videoBitsPerSecond: 8000000, audioBitsPerSecond: 128000 }));
+        enregistreur.ondataavailable = (e) => { if (e.data && e.data.size) morceaux.push(e.data); };
+        enregistreur.onstop = finPrise;
+        enregistreur.start(1000);
+        debutPrise = performance.now(); badgeRec.hidden = false; tempsRec.textContent = "0:00";
+        minuteurRec = setInterval(() => { tempsRec.textContent = formatTemps((performance.now() - debutPrise) / 1000); }, 500);
+        boutonRec.textContent = "⏹ Terminer la prise";
+      }
+      function arreterEnregistrement() {
+        if (enregistreur && enregistreur.state !== "inactive") enregistreur.stop();
+      }
+      function finPrise() {
+        clearInterval(minuteurRec); badgeRec.hidden = true; boutonRec.textContent = "🔴 Enregistrer";
+        const duree = (performance.now() - debutPrise) / 1000;
+        const type = (enregistreur && enregistreur.mimeType) || typeEnregistrement() || "video/webm";
+        enregistreur = null; armee = false; definirLecture(false); fermerCamera();
+        if (duree < 3 || !morceaux.length) { messageRec("Prise trop courte : recommencez."); priseEnvoyee = true; return; }
+        prise = new Blob(morceaux, { type: type.split(";")[0] });
+        if (urlPrise) URL.revokeObjectURL(urlPrise);
+        urlPrise = URL.createObjectURL(prise);
+        const video = document.getElementById("pr-revue-video"); video.src = urlPrise;
+        document.getElementById("pr-revue-prise").hidden = false; document.getElementById("pr-revue-fin").hidden = true;
+        document.getElementById("pr-revue-barre").hidden = true; document.getElementById("pr-revue-statut").hidden = true;
+        document.getElementById("pr-revue-monter").disabled = false; document.getElementById("pr-revue-refaire").disabled = false;
+        revue.hidden = false;
+        if (document.fullscreenElement) document.exitFullscreen();
+      }
+
+      badgeRec.addEventListener("click", arreterEnregistrement);
+      boutonRec.addEventListener("click", async () => {
+        if (enregistreur) { arreterEnregistrement(); return; }
+        if (armee) { armee = false; fermerCamera(); if (minuteurCompte) { clearInterval(minuteurCompte); minuteurCompte = null; compte.hidden = true; } boutonRec.textContent = "🔴 Enregistrer"; return; }
+        messageRec("");
+        try { await ouvrirCamera(); } catch (e) { messageRec(e.message || "Impossible d'ouvrir la caméra."); racine.hidden = true; document.body.style.overflow = ""; return; }
+        armee = true; decalage = 0; appliquer(); boutonRec.textContent = "✖ Annuler";
+        demarrerAvecCompteARebours();
+      });
+
+      // Revue de la prise puis envoi au montage
+      const selectStyle = document.getElementById("pr-revue-style");
+      fetch("/montage-video/styles").then((r) => r.json()).then((d) => {
+        (d.styles || []).forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.nom + (m.perso ? " (à moi)" : ""); selectStyle.appendChild(o); });
+        selectStyle.value = lirePref(CLE_MODELE_PRISE).id || "editorial"; if (!selectStyle.value && selectStyle.options.length) selectStyle.selectedIndex = 0;
+      }).catch(() => { /* liste indisponible : le style par defaut du serveur sera utilise */ });
+      selectStyle.addEventListener("change", () => ecrirePref(CLE_MODELE_PRISE, { id: selectStyle.value }));
+
+      document.getElementById("pr-revue-refaire").addEventListener("click", () => {
+        revue.hidden = true; prise = null; priseEnvoyee = true; decalage = 0; appliquer(); messageRec("");
+      });
+      document.getElementById("pr-revue-telecharger").addEventListener("click", () => {
+        if (!prise) return;
+        const lien = document.createElement("a"); lien.href = urlPrise; lien.download = "prise." + (prise.type.includes("mp4") ? "mp4" : "webm");
+        document.body.appendChild(lien); lien.click(); lien.remove();
+      });
+      document.getElementById("pr-revue-monter").addEventListener("click", () => {
+        if (!prise) return;
+        const bouton = document.getElementById("pr-revue-monter"), etat = document.getElementById("pr-revue-statut"), barre = document.getElementById("pr-revue-barre");
+        bouton.disabled = true; document.getElementById("pr-revue-refaire").disabled = true;
+        const formulaire = new FormData();
+        formulaire.append("fichier", prise, "prise." + (prise.type.includes("mp4") ? "mp4" : "webm"));
+        formulaire.append("options", JSON.stringify({
+          mode: "montage", format: "vertical", modele: selectStyle.value, script: champTexte.value.trim(), cartes_auto: true,
+          silences: true, hesitations: true, sous_titres: true, libelle: champSujet.value.trim() || "Script sans titre",
+        }));
+        const requete = new XMLHttpRequest();
+        requete.open("POST", "/montage-video/lancer");
+        barre.hidden = false; etat.hidden = false; etat.textContent = "Envoi de la prise…";
+        requete.upload.onprogress = (e) => {
+          if (!e.lengthComputable) return;
+          const p = Math.round(e.loaded / e.total * 100);
+          document.getElementById("pr-revue-barre-remplissage").style.width = p + "%"; etat.textContent = "Envoi de la prise : " + p + " %";
+        };
+        requete.onload = () => {
+          let donnees = {}; try { donnees = JSON.parse(requete.responseText); } catch (e) { /* reponse non JSON */ }
+          if (requete.status !== 200) {
+            etat.textContent = (donnees.erreur || "Échec de l'envoi (code " + requete.status + ").") + " Votre prise est conservée : réessayez ou gardez le fichier.";
+            bouton.disabled = false; document.getElementById("pr-revue-refaire").disabled = false; return;
+          }
+          priseEnvoyee = true; prise = null;
+          document.getElementById("pr-revue-prise").hidden = true; document.getElementById("pr-revue-fin").hidden = false;
+          document.getElementById("pr-revue-suivre").href = "/montage-video?id=" + donnees.id;
+          rafraichirMontages();
+        };
+        requete.onerror = () => { etat.textContent = "Erreur réseau : votre prise est conservée, réessayez."; bouton.disabled = false; document.getElementById("pr-revue-refaire").disabled = false; };
+        requete.send(formulaire);
+      });
+      document.getElementById("pr-revue-nouvelle").addEventListener("click", () => {
+        revue.hidden = true; fermer(); window.scrollTo(0, 0); champSujet.focus();
+      });
+      window.addEventListener("beforeunload", (e) => { if (!priseEnvoyee) { e.preventDefault(); e.returnValue = ""; } });
 
       document.getElementById("script-prompteur").addEventListener("click", ouvrir);
       document.getElementById("pr-fermer").addEventListener("click", fermer);
