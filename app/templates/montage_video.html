@@ -71,6 +71,8 @@
     <label class="etiquette-chip-case"><input type="checkbox" id="montage-pastille" checked> Mots-clés en pastille colorée</label>
     <label class="etiquette-chip-case"><input type="checkbox" id="montage-bruitages" checked> Bruitages (whoosh, pop, impact)</label>
     <label class="etiquette-chip-case"><input type="checkbox" id="montage-alterne"> Cadrage alterné à chaque coupe</label>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-editorial"> Sous-titres « magazine » (minuscules, mots-clés en serif italique)</label>
+    <label class="etiquette-chip-case"><input type="checkbox" id="montage-partage"> Écran coupé : illustrations et cartes en haut, moi en bas</label>
     <label class="etiquette-chip-case">Transitions sur les coupes
       <select id="montage-transition" style="width:auto;">
         <option value="melange">Variées</option><option value="flash">Flash blanc</option><option value="zoom">Zoom-punch</option>
@@ -148,7 +150,7 @@
         musique_id: $("montage-musique").value, consignes: $("montage-consignes").value.trim(),
         style: styleBase,
         effets: Object.fromEntries(Array.from(document.querySelectorAll("#montage-effets input[data-effet]")).map((c) => [c.dataset.effet, c.checked])),
-        bruitages: $("montage-bruitages").checked, pastille: $("montage-pastille").checked, alterne: $("montage-alterne").checked, transition: $("montage-transition").value,
+        bruitages: $("montage-bruitages").checked, pastille: $("montage-pastille").checked, alterne: $("montage-alterne").checked, editorial: $("montage-editorial").checked, partage: $("montage-partage").checked, transition: $("montage-transition").value,
       };
     }
 
@@ -162,6 +164,8 @@
       if ("bruitages" in r) $("montage-bruitages").checked = !!r.bruitages;
       if ("pastille" in r) $("montage-pastille").checked = !!r.pastille;
       if ("alterne" in r) $("montage-alterne").checked = !!r.alterne;
+      if ("editorial" in r) $("montage-editorial").checked = !!r.editorial;
+      if ("partage" in r) $("montage-partage").checked = !!r.partage;
       if (r.transition) $("montage-transition").value = r.transition;
       $("montage-modele-description").textContent = modele.description;
     }

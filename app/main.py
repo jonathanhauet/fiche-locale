@@ -7791,6 +7791,8 @@ def _options_montage(brut, dossier: str, db: Session) -> dict:
         "pastille": bool(brut.get("pastille", brut.get("style") != "sobre")),
         "charte": charte_montage.lire(db),
         "alterne": bool(brut.get("alterne", False)),
+        "editorial": bool(brut.get("editorial", False)),
+        "partage": bool(brut.get("partage", False)),
         "transition": brut.get("transition") if brut.get("transition") in styles_montage.TRANSITIONS_VALIDES else ("aucune" if brut.get("style") == "sobre" else "melange"),
     }
     try:

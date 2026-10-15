@@ -8,7 +8,7 @@ import json
 from . import models
 
 TRANSITIONS_VALIDES = ("aucune", "melange", "flash", "zoom", "glitch", "secousse")
-CLES_BOOLEENNES = ("zooms", "mots", "accroche", "barre", "visage", "bruitages", "alterne", "pastille")
+CLES_BOOLEENNES = ("zooms", "mots", "accroche", "barre", "visage", "bruitages", "alterne", "pastille", "editorial", "partage")
 
 STYLES_PREDEFINIS = [
     {"id": "dynamique", "nom": "Dynamique", "description": "Zooms, sous-titres animés, bruitages et transitions variées : le style réseaux sociaux complet.",
@@ -17,6 +17,9 @@ STYLES_PREDEFINIS = [
      "reglages": {"style": "tendance", "zooms": False, "mots": True, "accroche": True, "barre": True, "visage": True, "bruitages": True, "transition": "flash", "alterne": True, "pastille": True}},
     {"id": "storytelling", "nom": "Storytelling", "description": "Zooms doux et sous-titres animés, sans bruitage ni transition : posé, pour raconter.",
      "reglages": {"style": "tendance", "zooms": True, "mots": True, "accroche": True, "barre": False, "visage": True, "bruitages": False, "transition": "aucune", "alterne": False, "pastille": True}},
+    {"id": "editorial", "nom": "Éditorial (écran coupé)", "description": "Écran coupé en deux : illustrations et cartes en haut, vous en bas. Sous-titres en minuscules avec mots-clés en serif italique, transitions sobres.",
+     "reglages": {"style": "tendance", "zooms": True, "mots": True, "accroche": True, "barre": False, "visage": True, "bruitages": True, "transition": "flash", "alterne": False,
+                  "pastille": False, "editorial": True, "partage": True}},
     {"id": "sobre_pro", "nom": "Sobre pro", "description": "Sous-titres classiques, aucun effet : pour une vidéo institutionnelle.",
      "reglages": {"style": "sobre", "zooms": False, "mots": False, "accroche": False, "barre": False, "visage": True, "bruitages": False, "transition": "aucune", "alterne": False, "pastille": False}},
 ]

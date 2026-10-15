@@ -27,7 +27,7 @@ TAILLE_MAX_IMAGE = 15 * 1024 * 1024
 NB_ILLUSTRATIONS_MAX = 40
 NB_ANNULATIONS_MAX = 30
 REGLAGES_ACTIFS = ("zooms", "mots", "accroche", "barre")
-MODES_ILLUSTRATION = ("incrust", "plein", "carte")
+MODES_ILLUSTRATION = ("incrust", "plein", "carte", "partage")
 SNAP_SILENCE = 0.4          # un bord de coupe a moins de 0,4 s d'un silence est cale dedans
 SNAP_MARGE = 0.1
 
@@ -76,6 +76,7 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
     for zoom in zooms:      # un zoom ajoute a la main : meme amplitude et fenetre qui recouvre la sienne (ses bords peuvent bouger avec les coupes)
         zoom["manuel"] = zoom["mode"] == "doux" and any(abs(zoom["amplitude"] - amp) < 1e-6 and zoom["debut"] < f + 0.01 and zoom["fin"] > d - 0.01
                                                          for d, f, amp in effets["zoom_manuel"])
+    partages = {i["id"] for i in plan["illustrations"] if i.get("partage")}
     transitions = [{"type": genre, "debut": _source(a, segments), "fin": _source(b, segments)}
                    for genre in ("flash", "glitch", "secousse") for a, b in plan["fenetres"][genre]]
     return {
@@ -90,12 +91,14 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
         "titres": [{"indice": i, "debut": d, "fin": f, "texte": t} for i, (d, f, t) in enumerate(effets["titres"])],
         "illustrations": [{"id": ill["id"], "debut": ill["debut"], "fin": ill["fin"], "mode": ill["mode"], "origine": ill.get("origine", ""),
                            "prompt": ill.get("prompt", ""), "kind": ill.get("kind", "image"), "duree_clip": ill.get("duree_clip"), "place": ill.get("place", "haut"),
-                           "carte": ill.get("carte")} for ill in effets.get("illustrations", [])],
+                           "carte": ill.get("carte"), "partage": ill["id"] in partages} for ill in effets.get("illustrations", [])],
         "charte": charte_montage.nettoyer(effets.get("charte")),
         "plans": [{"id": p["id"], "prompt": p["prompt"], "etat": p["etat"], "erreur": p.get("erreur", ""), "qualite": p["qualite"]}
                   for p in sorted(montage.get("plans", {}).values(), key=lambda x: x["cree"])[-8:]],
         "mots_gros": sorted(set(effets["mots_gros"]) | {mp._normaliser(m) for m in effets["mots_cles"]}),
         "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "bruitages": bool(effets.get("bruitages")), "pastille": bool(effets.get("pastille")),
+                     "editorial": bool(effets.get("editorial")), "partage": bool(effets.get("partage")),
+                     "panneau": "#%02x%02x%02x" % plan["panneau"],
                      "transition": effets.get("transition", "aucune"), "sous_titres": bool(sortie["sous_titres"]), "style": effets["style"]},
         "accroche": effets["titre"], "peut_annuler": bool(sortie.get("annulations")), "peut_revenir": bool(sortie["historique"]),
         "non_rendu": pub.non_rendu(sortie),
@@ -258,6 +261,8 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
                 effets["bruitages"] = valeur
             elif cle == "pastille":
                 effets["pastille"] = valeur
+            elif cle in ("editorial", "partage"):
+                effets[cle] = valeur
             elif cle == "sous_titres":
                 sortie["sous_titres"] = valeur
             elif cle == "transition":
@@ -279,7 +284,7 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
             for cle in REGLAGES_ACTIFS:
                 if cle in reglages:
                     effets["actif"][cle] = reglages[cle]
-            for cle in ("alterne", "bruitages", "pastille", "transition", "style"):
+            for cle in ("alterne", "bruitages", "pastille", "transition", "style", "editorial", "partage"):
                 if cle in reglages:
                     effets[cle] = reglages[cle]
             resume.append("Style appliqué" + (f" : {operation['nom']}" if operation.get("nom") else ""))

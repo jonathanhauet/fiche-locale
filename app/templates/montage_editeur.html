@@ -30,6 +30,7 @@
   <div class="ed-gauche">
     <div class="ed-scene" id="ed-scene">
       <video id="ed-video" playsinline preload="auto"></video>
+      <div class="ed-panneau-partage" id="ed-panneau-partage" hidden></div>
       <div class="ed-ill" id="ed-ill" hidden><img alt=""><video id="ed-ill-video" muted playsinline preload="auto" hidden></video></div>
       <div class="ed-titre" id="ed-titre" hidden></div>
       <div class="ed-titre ed-accroche" id="ed-accroche" hidden></div>
@@ -96,6 +97,8 @@
         <label><input type="checkbox" data-reglage="sous_titres"> Sous-titres</label>
         <label><input type="checkbox" data-reglage="mots"> Sous-titres animés mot par mot</label>
         <label><input type="checkbox" data-reglage="pastille"> Mots-clés des sous-titres en pastille colorée</label>
+        <label><input type="checkbox" data-reglage="editorial"> Sous-titres « magazine » : minuscules, mots-clés en serif italique</label>
+        <label><input type="checkbox" data-reglage="partage"> Écran coupé : cartes et illustrations en haut, vous en bas (vidéo verticale)</label>
         <label><input type="checkbox" data-reglage="barre"> Barre de progression</label>
         <label><input type="checkbox" data-reglage="bruitages"> Bruitages (whoosh, pop, impact), audibles dans l'aperçu</label>
         <label>Transitions sur les coupes
@@ -128,7 +131,7 @@
         <div class="ed-ligne">
           <label>Durée <input type="number" id="ed-ill-duree" value="3" min="1" max="10" step="0.5" style="width:5rem"> s</label>
           <label>Affichage
-            <select id="ed-ill-mode"><option value="incrust">En cadre sur la vidéo</option><option value="plein">Plein écran</option></select>
+            <select id="ed-ill-mode"><option value="incrust">En cadre sur la vidéo</option><option value="plein">Plein écran</option><option value="partage">Écran coupé (vous en bas)</option></select>
           </label>
         </div>
         <div class="ed-ligne"><label class="bouton-secondaire ed-fichier">📁 Importer une image<input type="file" id="ed-ill-fichier" accept="image/*" hidden></label></div>
@@ -183,7 +186,7 @@
             <option value="etape">Étape numérotée</option><option value="info">Information</option><option value="chiffre">Chiffre clé</option>
             <option value="citation">Citation</option><option value="titre">Titre</option>
           </select>
-          <select id="ed-carte-place"><option value="haut">En haut</option><option value="centre">Au centre</option><option value="bas">En bas</option></select>
+          <select id="ed-carte-place"><option value="haut">En haut</option><option value="centre">Au centre</option><option value="bas">En bas</option><option value="partage">Écran coupé (vous en bas)</option></select>
           <label>Durée <input type="number" id="ed-carte-duree" value="3.5" min="1.5" max="8" step="0.5" style="width:5rem"> s</label>
         </div>
         <input type="text" id="ed-carte-numero" maxlength="2" placeholder="Numéro (1, 2, 3…)" data-champ="etape">
@@ -271,6 +274,13 @@
   .ed-sous .actif { color: #ffd60a; display: inline-block; transform: scale(1.1); margin: 0 .05em; }
   .ed-sous .gros { color: #ffd60a; }
   .ed-sous .pastille { color: #fff; background: var(--pastille, #2f5eff); border-radius: .35em; padding: 0 .22em; }
+  .ed-panneau-partage { position: absolute; left: 0; right: 0; top: 0; height: 50%; background: var(--panneau, #f3f1ec); }
+  .ed-scene.partage video#ed-video { clip-path: inset(13% 0 37% 0); }
+  .ed-ill.partage:not(.carte) { bottom: 50%; align-items: center; }
+  .ed-ill.partage:not(.carte) img, .ed-ill.partage:not(.carte) video { max-width: 86%; max-height: 84%; margin-top: 0; }
+  .ed-sous.magazine { text-transform: none; font-weight: 700; }
+  .ed-sous.magazine .cle { font-family: "DM Serif Display", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400; font-size: 1.18em; }
+  .ed-sous.magazine .actif { color: #fff; }
   .ed-ill.carte { display: block; }
   .ed-ill.carte img { position: absolute; left: 50%; max-width: none; max-height: none; border: 0; box-shadow: none; margin: 0; width: 91.4%; }
   .ed-scene.horizontal .ed-ill.carte img { width: 43.4%; }
@@ -459,7 +469,7 @@
     if (E.format === "vertical" && E.visage_x != null) video.style.objectPosition = Math.round(E.visage_x * 100) + "% 50%";
     $("ed-temps").textContent = minutes(tm) + " / " + minutes(E.duree_montee);
     // sous-titres
-    const sous = $("ed-sous"); sous.textContent = "";
+    const sous = $("ed-sous"); sous.textContent = ""; sous.classList.toggle("magazine", !!(E.reglages.editorial && E.reglages.mots));
     const phrase = visible && E.reglages.sous_titres ? E.phrases.find((p) => t >= p.debut && t < p.fin) : null;
     const gros = new Set(E.mots_gros || []);
     if (phrase) {
@@ -468,7 +478,8 @@
         if (c) c.groupe.forEach((i, rang) => {
           const span = document.createElement("span"); span.textContent = phrase.mots[i].texte.replace(/[,;:.]+$/, "").toUpperCase();
           const motCle = gros.has(normaliser(phrase.mots[i].texte));
-          if (motCle && E.reglages.pastille) span.className = "pastille" + (i === c.courant ? " actif" : "");
+          if (E.reglages.editorial) { span.textContent = span.textContent.toLowerCase(); span.className = (motCle ? "cle" : "") + (i === c.courant ? " actif" : ""); }
+          else if (motCle && E.reglages.pastille) span.className = "pastille" + (i === c.courant ? " actif" : "");
           else if (i === c.courant) span.className = "actif"; else if (motCle) span.className = "gros";
           sous.appendChild(span); if (rang < c.groupe.length - 1) sous.appendChild(document.createTextNode(" "));
         });
@@ -481,20 +492,26 @@
     $("ed-accroche").hidden = !accroche; $("ed-accroche").textContent = accroche ? E.accroche : "";
     const ill = visible ? E.illustrations.find((x) => t >= x.debut && t < x.fin) : null;
     $("ed-ill").hidden = !ill;
+    const enPartage = !!(ill && ill.partage && E.format === "vertical");
+    scene.classList.toggle("partage", enPartage); $("ed-panneau-partage").hidden = !enPartage;
+    scene.style.setProperty("--panneau", E.reglages.panneau || "#f3f1ec");
+    if (enPartage) video.style.transform = "translateY(36.98%) scale(" + facteurZoom.toFixed(4) + ")";
     const pv = $("ed-ill-video");
     scene.style.setProperty("--pastille", (E.charte || {}).principale || "#2f5eff");
     if (ill) {
-      $("ed-ill").className = "ed-ill" + (ill.mode === "plein" ? " plein" : ill.mode === "carte" ? " carte" : "");
+      $("ed-ill").className = "ed-ill" + (ill.mode === "plein" ? " plein" : ill.mode === "carte" ? " carte" : "") + (enPartage ? " partage" : "");
       const img = $("ed-ill").querySelector("img"), src = BASE + "/illustrations/" + ill.id;
       if (ill.mode === "carte") {
         pv.hidden = true; img.hidden = false; if (!pv.paused) pv.pause();
         if (img.dataset.src !== src) { img.dataset.src = src; img.src = src; }
         const f = 0.82 + 0.18 * Math.min(1, Math.max(0, (t - ill.debut) / 0.28));
         const bas = E.format === "vertical" ? "35%" : "18%";
-        img.style.top = ill.place === "haut" ? "7%" : ill.place === "centre" ? "50%" : "auto";
-        img.style.bottom = ill.place === "bas" ? bas : "auto";
-        img.style.transformOrigin = ill.place === "haut" ? "50% 0" : ill.place === "centre" ? "50% 50%" : "50% 100%";
-        img.style.transform = "translate(-50%," + (ill.place === "centre" ? "-50%" : "0") + ") scale(" + f.toFixed(3) + ")";
+        img.style.top = enPartage ? "25%" : ill.place === "haut" ? "7%" : ill.place === "centre" ? "50%" : "auto";
+        img.style.bottom = !enPartage && ill.place === "bas" ? bas : "auto";
+        const centre = enPartage || ill.place === "centre";
+        img.style.transformOrigin = centre ? "50% 50%" : ill.place === "haut" ? "50% 0" : "50% 100%";
+        img.style.transform = "translate(-50%," + (centre ? "-50%" : "0") + ") scale(" + f.toFixed(3) + ")";
+        img.style.height = enPartage ? "45.8%" : ""; img.style.objectFit = enPartage ? "contain" : ""; img.style.width = enPartage ? "92.6%" : "";
       } else if (ill.kind === "video") {
         img.hidden = true; pv.hidden = false;
         const srcVideo = src + "/video"; if (pv.dataset.src !== srcVideo) { pv.dataset.src = srcVideo; pv.src = srcVideo; }
@@ -644,7 +661,7 @@
     const nom = window.prompt("Nom de ce style :"); if (!nom || !nom.trim()) return;
     const r = E.reglages;
     try {
-      const d = await envoyer_global("/montage-video/styles", { nom: nom.trim(), reglages: { style: r.style, zooms: r.zooms, mots: r.mots, accroche: r.accroche, barre: r.barre, bruitages: r.bruitages, pastille: r.pastille, transition: r.transition, alterne: r.alterne } });
+      const d = await envoyer_global("/montage-video/styles", { nom: nom.trim(), reglages: { style: r.style, zooms: r.zooms, mots: r.mots, accroche: r.accroche, barre: r.barre, bruitages: r.bruitages, pastille: r.pastille, transition: r.transition, alterne: r.alterne, editorial: r.editorial, partage: r.partage } });
       styles = d.styles; await chargerStyles(); message("Style « " + nom.trim() + " » enregistré.");
     } catch (e) { message(e.message, true); }
   });
@@ -706,7 +723,7 @@
       const origine = document.createElement("div"); origine.className = "texte-discret"; origine.textContent = estCarte ? "Carte " + ((x.carte || {}).type || "") + " : " + (tx.titre || tx.valeur || tx.texte || "") : (x.origine === "ia-video" ? "Plan vidéo IA" : x.origine === "ia" ? "Image créée par l'IA" : "Image importée") + (x.prompt ? " : " + x.prompt : "");
       infos.appendChild(quand); infos.appendChild(origine);
       const mode = document.createElement("select");
-      (estCarte ? [["haut", "En haut"], ["centre", "Au centre"], ["bas", "En bas"]] : [["incrust", "En cadre"], ["plein", "Plein écran"]]).forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; if ((estCarte ? x.place : x.mode) === v) o.selected = true; mode.appendChild(o); });
+      (estCarte ? [["haut", "En haut"], ["centre", "Au centre"], ["bas", "En bas"], ["partage", "Écran coupé"]] : [["incrust", "En cadre"], ["plein", "Plein écran"], ["partage", "Écran coupé"]]).forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; if ((estCarte ? x.place : x.mode) === v) o.selected = true; mode.appendChild(o); });
       mode.addEventListener("change", () => operer([estCarte ? { type: "modifier_illustration", id: x.id, place: mode.value } : { type: "modifier_illustration", id: x.id, mode: mode.value }]));
       const duree = document.createElement("input"); duree.type = "number"; duree.min = "1"; duree.max = "10"; duree.step = "0.5"; duree.value = Math.round((x.fin - x.debut) * 10) / 10; duree.style.width = "4.5rem";
       duree.addEventListener("change", () => operer([{ type: "modifier_illustration", id: x.id, fin: x.debut + Math.max(0.5, parseFloat(duree.value) || 3) }]));

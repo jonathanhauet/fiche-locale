@@ -15,7 +15,7 @@ DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stat
 TYPES = {"etape": "Étape numérotée", "info": "Information", "chiffre": "Chiffre clé", "citation": "Citation", "titre": "Titre"}
 LIMITES = {"numero": 2, "titre": 60, "sous_titre": 90, "valeur": 12, "libelle": 60, "texte": 140, "auteur": 40}
 LARGEUR_CARTE = {"vertical": 0.84, "horizontal": 0.40}          # part de la largeur de l'image video
-POSITIONS = {"haut": "En haut", "centre": "Au centre", "bas": "En bas"}
+POSITIONS = {"haut": "En haut", "centre": "Au centre", "bas": "En bas", "partage": "Écran coupé (vous en bas)"}
 
 
 def nettoyer_textes(textes) -> dict:

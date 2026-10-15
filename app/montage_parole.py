@@ -343,9 +343,9 @@ def _normaliser(mot: str) -> str:
     return re.sub(r"[^a-z0-9]", "", sans_accents.lower())
 
 
-def _mots_pop(texte: str) -> list:
+def _mots_pop(texte: str, majuscules: bool = True) -> list:
     mots = [re.sub(r"[,;:.]+$", "", m) for m in _echapper_ass(texte).split()]
-    return [m.upper() for m in mots if m]
+    return [(m.upper() if majuscules else m.lower()) for m in mots if m]
 
 
 def _groupes_pop(mots: list, max_car: int) -> list:
@@ -385,10 +385,14 @@ def _lignes_titre(debut: float, fin: float, texte: str, vertical: bool) -> str:
     return f"Dialogue: 1,{_horodatage_ass(debut)},{_horodatage_ass(fin)},Titre,,0,0,0,,{{\\fad(250,350)}}" + "\\N".join(lignes)
 
 
-def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastille: tuple = None, contour: int = 8) -> list:
+POLICE_SERIF = "DM Serif Display"
+
+
+def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastille: tuple = None, contour: int = 8, editorial: bool = False) -> list:
     """
     Sous-titres « pop » : 1 a 3 mots a la fois, en majuscules, le mot prononce grossit et prend la couleur d'accent ; les mots
     importants restent en couleur et plus gros. Un evenement par mot, calé sur la voix (duree repartie selon la longueur des mots).
+    editorial=True : style « magazine » (minuscules, mots importants en serif italique, sans pastille ni couleur d'accent).
     """
     couleur_accent = _couleur_ass(accent)
     couleur_pastille = _couleur_ass(pastille) if pastille else None
@@ -397,7 +401,7 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastil
     normal = f"\\3c&H00000000&\\bord{contour}"
     sorties = []
     for p in phrases:
-        mots = _mots_pop(p["texte"])
+        mots = _mots_pop(p["texte"], majuscules=not editorial)
         if not mots:
             continue
         poids = [len(m) + 1 for m in mots]
@@ -414,7 +418,14 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastil
                 morceaux = []
                 for j, mot in enumerate(mots_groupe):
                     cle = _normaliser(mot) in gros
-                    if cle and couleur_pastille:
+                    if editorial:
+                        if cle:
+                            taille = "\\fscx90\\fscy90\\t(0,90,\\fscx132\\fscy132)\\t(90,190,\\fscx120\\fscy120)" if j == rang else "\\fscx118\\fscy118"
+                            balise = f"{{\\fn{POLICE_SERIF}\\i1\\c&H00FFFFFF&{normal}{taille}}}"
+                        else:
+                            taille = "\\fscx86\\fscy86\\t(0,90,\\fscx112\\fscy112)\\t(90,190,\\fscx102\\fscy102)" if j == rang else "\\fscx100\\fscy100"
+                            balise = f"{{\\fnPoppins\\i0\\c&H00FFFFFF&{normal}{taille}}}"
+                    elif cle and couleur_pastille:
                         taille = "\\fscx82\\fscy82\\t(0,90,\\fscx118\\fscy118)\\t(90,190,\\fscx108\\fscy108)" if j == rang else "\\fscx108\\fscy108"
                         balise = f"{{\\c&H00FFFFFF&\\3c{couleur_pastille}\\bord{contour_pastille}{taille}}}"
                     elif j == rang:
@@ -432,7 +443,7 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastil
 
 
 def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: tuple = (255, 214, 10), titre: str = "",
-               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0, pastille: tuple = None) -> None:
+               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0, pastille: tuple = None, editorial: bool = False) -> None:
     """
     Sous-titres, titre d'accroche, titres ajoutes a la main (titres : [(debut, fin, texte)]) et barre de progression (barre : duree
     totale en secondes, 0 = pas de barre). Par defaut sous-titres « karaoke » : les mots se colorent au rythme de la voix ;
@@ -462,7 +473,7 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
     for debut, fin, texte in (titres or []):
         lignes.append(_lignes_titre(debut, fin, texte, vertical))
     if pop:
-        lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set(), pastille, contour + 1)
+        lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set(), pastille, contour + 1, editorial)
     else:
         for p in phrases:
             mots = _echapper_ass(p["texte"]).split()
@@ -516,12 +527,13 @@ def expression_zoom(zooms: list) -> str:
 
 def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie: str, fichier_ass: str = None,
            musique: str = None, progression=None, zooms: list = None, visage_x: float = None, illustrations: list = None,
-           transitions: dict = None, bruitages: list = None) -> None:
+           transitions: dict = None, bruitages: list = None, panneau: tuple = None) -> None:
     """
     Assemble les segments de `source`, recadre (en vertical, centre sur le visage si visage_x est connu : 0 = bord gauche, 1 = bord
     droit), applique les zooms (debut, fin, amplitude) sur la chronologie du montage, incruste les illustrations
     (illustrations : [{"debut", "fin", "chemin", "mode"}], temps du montage, mode « plein » ecran ou « incrust » en cadre), puis les
-    sous-titres, mixe la musique (baisse sous la voix) et encode. transitions : {"flash": [(debut, fin)], "glitch": [...], "secousse": [...]}
+    sous-titres, mixe la musique (baisse sous la voix) et encode. Une illustration marquee « partage » passe en ecran coupe (vertical) :
+    panneau uni de couleur `panneau` en haut (la ou s'affiche l'illustration), vous en bas, recadre sur le haut du corps. transitions : {"flash": [(debut, fin)], "glitch": [...], "secousse": [...]}
     (temps du montage) appliquees sur les coupes ; bruitages : [{"t", "fichier", "volume"}] mixes par-dessus la voix.
     """
     if not segments:
@@ -562,6 +574,19 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     if transitions.get("glitch"):
         filtre_video += ",rgbashift=rh=-12:bh=12:rv=5:bv=-5:enable='" + "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in transitions["glitch"]) + "'"
     etiquette, parties = "v0", [filtre_video + "[v0]"]
+    partages = [(i["debut"], i["fin"]) for i in (illustrations or []) if i.get("partage")] if vertical else []
+    demi = hauteur // 2
+    if partages:
+        activation = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in partages)
+        couleur_panneau = "0x%02X%02X%02X" % tuple(panneau or (243, 241, 236))
+        parties += [
+            "[v0]split=2[vp][vq]",
+            f"[vq]crop={largeur}:{demi}:0:{int(hauteur * PART_HAUT_PARTAGE)}[vb]",
+            f"color=c={couleur_panneau}:s={largeur}x{demi}:r={FPS}:d={duree_montee(segments):.3f}[pn]",
+            f"[vp][pn]overlay=x=0:y=0:enable='{activation}'[vs1]",
+            f"[vs1][vb]overlay=x=0:y={demi}:enable='{activation}'[vs]",
+        ]
+        etiquette = "vs"
     premiere_image = 2 if musique else 1
     images = []
     for k, illustration in enumerate(illustrations or []):
@@ -569,12 +594,19 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
         duree_i = max(0.5, fin_i - debut_i)
         images.append((illustration["chemin"], duree_i, bool(illustration.get("video"))))
         carte = illustration.get("mode") == "carte"
+        partage = bool(illustration.get("partage")) and vertical
         if carte:
             # Carte graphique (PNG transparent a sa taille) : elle « pope » a l'arrivee (de 82 a 100 % en 0,28 s) avant le fondu.
             mise = "scale=w='trunc(iw*(0.82+0.18*min(1,t/0.28))/2)*2':h=-2:eval=frame:flags=bilinear"
             x = "(W-w)/2"
             fraction_bas = 0.65 if vertical else 0.82
             y = {"haut": "H*0.07", "centre": "(H-h)/2", "bas": f"H*{fraction_bas}-h"}.get(illustration.get("place"), "H*0.07")
+            if partage:      # centree dans la moitie haute, reduite si elle est plus haute que le panneau
+                mise = f"scale='min(iw,{int(largeur * 0.926)})':'min(ih,{int(hauteur * 0.458)})':force_original_aspect_ratio=decrease," + mise
+                y = f"({demi}-h)/2"
+        elif partage:
+            mise = f"scale={int(largeur * 0.86)}:{int(hauteur * 0.42)}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=iw+16:ih+16:8:8:white"
+            x, y = "(W-w)/2", f"({demi}-h)/2"
         elif illustration.get("mode") == "plein":
             mise = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=increase,crop={largeur}:{hauteur}"
             x, y = "0", "0"
@@ -679,6 +711,7 @@ DUREE_ZOOM = 2.4
 AMPLITUDES_ZOOM = (0.10, 0.17)  # alternance : zoom leger, puis plus marque
 FORCE_ZOOM = {"leger": 0.10, "fort": 0.20}
 EFFETS_DEFAUT = {"zooms": True, "mots": True, "accroche": True, "barre": True, "visage": True}
+PART_HAUT_PARTAGE = 0.13        # en ecran coupe, la moitie basse montre le cadre vertical a partir de 13 % de sa hauteur (visage et epaules)
 
 
 def calculer_zooms(phrases: list, duree: float, mots_cles=()) -> list:
@@ -959,17 +992,26 @@ def plan_effets(sortie: dict) -> dict:
     fenetres = fenetres_transitions(segments, effets.get("transition", "aucune"), duree)
     zooms = sorted(list(zooms) + [(a, b, 0.10, "punch") for a, b in fenetres["zoom"]])
     illustrations = []
+    vertical = sortie["format"] == "vertical"
     for illustration in effets.get("illustrations", []):
         a, b = _instant_montage(illustration["debut"], segments, duree), _instant_montage(illustration["fin"], segments, duree)
         fichier = illustration.get("fichier_video") if illustration.get("kind") == "video" else illustration["fichier"]
         if b - a >= 0.5 and fichier and os.path.exists(fichier):
-            illustrations.append({"debut": a, "fin": b, "chemin": fichier, "mode": illustration.get("mode", "incrust"), "video": illustration.get("kind") == "video",
-                                  "place": illustration.get("place", "haut")})
+            mode, place = illustration.get("mode", "incrust"), illustration.get("place", "haut")
+            partage = vertical and mode != "plein" and (bool(effets.get("partage")) or mode == "partage" or place == "partage")
+            if mode == "partage":
+                mode = "incrust"
+            if place == "partage":
+                place = "haut"
+            illustrations.append({"id": illustration.get("id"), "debut": a, "fin": b, "chemin": fichier, "mode": mode, "video": illustration.get("kind") == "video",
+                                  "place": place, "partage": partage})
     bruitages = evenements_sons(zooms, titres, illustrations, effets["actif"]["accroche"] and bool(effets["titre"]), fenetres) if effets.get("bruitages") else []
     charte = charte_montage.nettoyer(effets.get("charte"))
     pastille = charte_montage.rgb(charte["principale"]) if pop and effets.get("pastille") else None
+    fond, texte = charte_montage.rgb(charte["fond"]), charte_montage.rgb(charte["texte"])
+    panneau = tuple(int(round(f + (t - f) * 0.06)) for f, t in zip(fond, texte))      # fond de la charte, tres legerement teinte : les cartes blanches ressortent
     return {"duree": duree, "phrases": phrases_montage, "zooms": zooms, "titres": titres, "pop": pop, "gros": gros, "barre": barre, "titre": titre, "pastille": pastille,
-            "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages}
+            "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages, "panneau": panneau, "editorial": bool(pop and effets.get("editorial"))}
 
 
 def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
@@ -983,9 +1025,9 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
     if dessiner:
         fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
         ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
-                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"])
+                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"], editorial=plan["editorial"])
     chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
-    options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"])
+    options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"], panneau=plan["panneau"])
     try:
         rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, **options)
     except ErreurMontage:
@@ -1193,6 +1235,7 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                                "mots_cles": mots_cles, "mots_gros": [], "zoom_manuel": [], "sans_zoom": [], "titres": [], "illustrations": [],
                                "alterne": bool(options.get("alterne", False)), "bruitages": bool(options.get("bruitages", style == "tendance")),
                                "pastille": bool(options.get("pastille", style == "tendance")), "charte": charte_montage.nettoyer(options.get("charte")),
+                               "editorial": bool(options.get("editorial", False)), "partage": bool(options.get("partage", False)),
                                "transition": options.get("transition") if options.get("transition") in TRANSITIONS else ("melange" if style == "tendance" else "aucune")},
                 }
                 suivi = lambda p, b=base, n=len(travaux): montage.__setitem__("progression", b + 0.5 * p / n)
