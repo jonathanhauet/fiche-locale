@@ -98,6 +98,7 @@ from . import (
     notifications,
     ovh_upload,
     qr_generateur,
+    performance_articles,
     rank_tracking,
     rapport_donnees,
     google_sheets,
@@ -669,6 +670,11 @@ planificateur.add_job(
     timezone="Europe/Brussels",
     id="reporting_sheet_mensuel",
 )
+# Suivi des articles WordPress (voir performance_articles.suivi_quotidien) : une fois par jour, au calme.
+planificateur.add_job(
+    lambda: performance_articles.suivi_quotidien(SessionLocal, _question_visee_article),
+    "cron", hour=6, minute=40, timezone="Europe/Brussels", id="suivi_articles_wordpress",
+)
 planificateur.start()
 
 
@@ -812,6 +818,119 @@ async def generer_qr_code(request: Request):
     nom = f"qr-code.{genre}"
     return Response(content=octets, media_type="image/svg+xml" if genre == "svg" else "image/png",
                     headers={"Content-Disposition": f'attachment; filename="{nom}"', "Cache-Control": "no-store"})
+
+
+# --- Performance des articles WordPress (voir performance_articles.py) -----------------------------------------------
+
+def _question_visee_article(post, client):
+    return claude_generation.question_visee_article(post.titre, post.texte, client.nom)
+
+
+def _donnees_suivi_article(db: Session, post, client) -> dict:
+    suivi = db.query(models.SuiviArticle).filter_by(post_id=post.id).first()
+    avant = performance_articles._json(suivi.mesure_avant_json) if suivi else None
+    apres = performance_articles._json(suivi.mesure_apres_json) if suivi else None
+    maintenant = datetime.now()
+    return {
+        "id": post.id, "titre": post.titre, "lien": post.lien, "client_id": client.id, "client": client.nom,
+        "publie_le": post.publier_le.strftime("%d/%m/%Y"), "age": performance_articles.age_jours(post), "publie": performance_articles.est_publie(post, maintenant),
+        "question": suivi.question if suivi else "", "mot_cle": suivi.mot_cle if suivi else "",
+        "avant": avant, "apres": apres, "resume_ia": performance_articles.resume_ia(avant, apres) if suivi else "",
+        "search_console": bool(client.search_console_site),
+    }
+
+
+@app.get("/performance-articles", response_class=HTMLResponse)
+def page_performance_articles(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    try:
+        client_id = int(request.query_params.get("client_id") or 0)
+    except ValueError:
+        client_id = 0
+    requete = db.query(models.PostWordPress).filter(models.PostWordPress.lien != "")
+    if client_id:
+        requete = requete.filter(models.PostWordPress.client_id == client_id)
+    articles = []
+    for post in requete.order_by(models.PostWordPress.publier_le.desc()).limit(150).all():
+        client = db.get(models.Client, post.client_id)
+        if client:
+            articles.append(_donnees_suivi_article(db, post, client))
+    clients = db.query(models.Client).join(models.PostWordPress, models.PostWordPress.client_id == models.Client.id).order_by(models.Client.nom).distinct().all()
+    return templates.TemplateResponse(request, "performance_articles.html", {
+        "page_actuelle": "performance_articles", "articles_json": json.dumps(articles, ensure_ascii=False).replace("</", "<\\/"),
+        "clients": clients, "client_id": client_id, "nb_articles": len(articles), "modeles_ia": geo_score.modeles_actifs(),
+    })
+
+
+def _article_ou_erreur(db: Session, request: Request, post_id: int):
+    if not utilisateur_connecte(request):
+        return None, None, JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    post = db.get(models.PostWordPress, post_id)
+    client = db.get(models.Client, post.client_id) if post else None
+    if not post or not client:
+        return None, None, JSONResponse({"erreur": "Article introuvable."}, status_code=404)
+    return post, client, None
+
+
+@app.get("/performance-articles/{post_id}/google")
+async def performance_article_google(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    post, client, erreur = _article_ou_erreur(db, request, post_id)
+    if erreur:
+        return erreur
+    if not performance_articles.est_publie(post):
+        return JSONResponse({"etat": "programme", "message": "Article programmé : pas encore publié."})
+    return JSONResponse(await run_in_threadpool(performance_articles.mesures_google, db, post, client))
+
+
+@app.post("/performance-articles/{post_id}/question")
+async def performance_article_question(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    post, client, erreur = _article_ou_erreur(db, request, post_id)
+    if erreur:
+        return erreur
+    try:
+        corps = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    question, mot_cle = " ".join(str(corps.get("question") or "").split()), " ".join(str(corps.get("mot_cle") or "").split())
+    if not question:
+        return JSONResponse({"erreur": "Écrivez la question visée par l'article."}, status_code=400)
+    suivi = performance_articles.creer_suivi(db, post, question, mot_cle)
+    suivi.mot_cle = mot_cle[:120]
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/performance-articles/{post_id}/proposer")
+async def performance_article_proposer(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    post, client, erreur = _article_ou_erreur(db, request, post_id)
+    if erreur:
+        return erreur
+    try:
+        proposition = await run_in_threadpool(_question_visee_article, post, client)
+    except Exception as e:
+        return JSONResponse({"erreur": f"L'IA n'a pas pu proposer de question : {str(e)[:200]}"}, status_code=502)
+    return JSONResponse(proposition)
+
+
+@app.post("/performance-articles/{post_id}/tester-ia")
+async def performance_article_tester_ia(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Pose la question visee aux assistants IA et garde le resultat : « au lancement » si c'est le premier test, sinon « maintenant »."""
+    post, client, erreur = _article_ou_erreur(db, request, post_id)
+    if erreur:
+        return erreur
+    suivi = db.query(models.SuiviArticle).filter_by(post_id=post.id).first()
+    if not suivi or not suivi.question:
+        return JSONResponse({"erreur": "Enregistrez d'abord la question visée par l'article."}, status_code=400)
+    if not geo_score.modeles_actifs():
+        return JSONResponse({"erreur": "Aucun assistant IA n'est configuré (clés API)."}, status_code=400)
+    mesure = await run_in_threadpool(performance_articles.mesurer_ia, db, client, post, suivi.question)
+    phase = "avant" if not suivi.mesure_avant_json else "apres"
+    setattr(suivi, f"mesure_{phase}_json", json.dumps(mesure, ensure_ascii=False))
+    db.commit()
+    avant, apres = performance_articles._json(suivi.mesure_avant_json), performance_articles._json(suivi.mesure_apres_json)
+    return JSONResponse({"phase": phase, "avant": avant, "apres": apres, "resume_ia": performance_articles.resume_ia(avant, apres)})
 
 
 @app.get("/leads", response_class=HTMLResponse)

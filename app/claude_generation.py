@@ -3360,6 +3360,42 @@ def cartes_depuis_transcription(phrases: list, duree: float, nombre_max: int = 6
     return cartes[:nombre_max]
 
 
+SCHEMA_QUESTION_ARTICLE = {
+    "type": "object",
+    "properties": {"question": {"type": "string"}, "mot_cle": {"type": "string"}},
+    "required": ["question", "mot_cle"], "additionalProperties": False,
+}
+
+
+def question_visee_article(titre: str, texte: str, client_nom: str = "") -> dict:
+    """
+    Question que l'article cherche a couvrir (celle qu'un habitant poserait a Google ou a un assistant IA) et son mot-cle local principal,
+    pour mesurer ensuite si l'article fonctionne. Renvoie {"question", "mot_cle"}.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    prompt = (
+        f"Voici un article de blog publié pour l'entreprise locale « {client_nom} ».\n\nTitre : {titre}\n\n{(texte or '')[:5000]}\n\n"
+        "1) question : la question précise, en français, qu'un habitant poserait à un assistant IA (ChatGPT, Gemini) ou à Google et à laquelle "
+        "cet article répond le mieux, avec la ville ou le quartier si l'article en parle, 6 à 16 mots, sans nom d'entreprise.\n"
+        "2) mot_cle : le mot-clé local principal de recherche Google (2 à 4 mots, par exemple « garage vidange Marseille »), sans nom d'entreprise."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=500, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_QUESTION_ARTICLE}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    try:
+        brut = json.loads(bloc)
+        return {"question": _nettoyer_texte_genere(str(brut["question"])).strip(" \"«»"), "mot_cle": _nettoyer_texte_genere(str(brut["mot_cle"])).strip(" \"«»")}
+    except (json.JSONDecodeError, KeyError) as erreur:
+        raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+
+
 SCHEMA_STYLE_REFERENCE = {
     "type": "object",
     "properties": {

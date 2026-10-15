@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% set page_actuelle = "performance_articles" %}
+{% block titre %}Performance des articles — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+<div class="barre-titre"><h1>Performance des articles WordPress</h1></div>
+
+<p class="texte-vide">
+  Pour chaque article publié depuis la plateforme : ce que Google en fait (indexation, impressions, clics, position, requêtes) et ce que les IA
+  en font (le client est-il cité quand on pose la question visée par l'article, et l'article est-il utilisé comme source ?), mesuré au lancement
+  puis environ 30 jours plus tard. Vue interne : tous les chiffres sont affichés, y compris les baisses. Comptez 3 à 6 semaines avant de juger un article.
+</p>
+
+<form method="get" class="ligne-champs" style="margin:.6rem 0 1rem;">
+  <label class="texte-discret" for="filtre-client">Client</label>
+  <select id="filtre-client" name="client_id" style="width:auto;max-width:22rem;" onchange="this.form.submit()">
+    <option value="">Tous les clients</option>
+    {% for c in clients %}<option value="{{ c.id }}" {% if c.id == client_id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+  </select>
+  <span class="texte-discret">{{ nb_articles }} article{{ "s" if nb_articles != 1 else "" }}</span>
+</form>
+{% if not modeles_ia %}<p class="message-attention">Aucun assistant IA n'est configuré (clés API ChatGPT / Gemini) : seuls les chiffres Google sont disponibles.</p>{% endif %}
+
+<div id="perf-liste" class="perf-liste"></div>
+<p id="perf-vide" class="texte-vide" hidden>Aucun article publié depuis la plateforme pour l'instant. Rédigez-en un depuis la <a href="/publication-multi">publication multi-réseaux</a>.</p>
+
+<script id="donnees-articles" type="application/json">{{ articles_json|safe }}</script>
+<style>
+  .perf-liste { display: flex; flex-direction: column; gap: 1rem; }
+  .perf-carte { border: 1px solid var(--carte-bordure); background: var(--carte); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: .8rem; }
+  .perf-tete { display: flex; flex-wrap: wrap; gap: .3rem .8rem; align-items: baseline; }
+  .perf-tete h2 { font-size: 1.05rem; margin: 0; }
+  .perf-blocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+  .perf-bloc { border: 1px solid var(--carte-bordure); border-radius: 10px; padding: .8rem; display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
+  .perf-bloc h3 { font-size: .95rem; margin: 0; }
+  .perf-chiffres { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; text-align: center; }
+  .perf-chiffres div { background: var(--accent-clair); border-radius: 8px; padding: .4rem .2rem; }
+  .perf-chiffres strong { display: block; font-size: 1.15rem; }
+  .perf-chiffres span { font-size: .75rem; color: var(--texte-discret); }
+  .perf-requetes { width: 100%; font-size: .85rem; border-collapse: collapse; }
+  .perf-requetes th, .perf-requetes td { text-align: left; padding: .2rem .3rem; border-bottom: 1px solid var(--carte-bordure); }
+  .perf-requetes td:nth-child(n+2), .perf-requetes th:nth-child(n+2) { text-align: right; white-space: nowrap; }
+  .perf-verdict { margin: 0; font-weight: 600; font-size: .9rem; }
+  .perf-ia-mesures { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .perf-ia-mesures > div { background: var(--accent-clair); border-radius: 8px; padding: .5rem; font-size: .85rem; }
+  .perf-ia-mesures ul { list-style: none; margin: .3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .2rem; }
+  .perf-champs { display: flex; flex-direction: column; gap: .4rem; }
+  .perf-champs input { width: 100%; }
+  .perf-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .perf-note { font-size: .82rem; color: var(--texte-discret); margin: 0; }
+  @media (max-width: 560px) { .perf-ia-mesures { grid-template-columns: 1fr; } .perf-chiffres { grid-template-columns: repeat(2, 1fr); } }
+</style>
+<script>
+(function () {
+  const ARTICLES = JSON.parse(document.getElementById("donnees-articles").textContent);
+  const liste = document.getElementById("perf-liste");
+  if (!ARTICLES.length) document.getElementById("perf-vide").hidden = false;
+
+  function el(balise, attributs, texte) {
+    const e = document.createElement(balise);
+    Object.keys(attributs || {}).forEach((k) => { if (k === "class") e.className = attributs[k]; else e.setAttribute(k, attributs[k]); });
+    if (texte !== undefined) e.textContent = texte;
+    return e;
+  }
+  async function appeler(url, corps) {
+    const reponse = await fetch(url, corps === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+    let donnees = {}; try { donnees = await reponse.json(); } catch (e) { /* reponse vide */ }
+    if (!reponse.ok) throw new Error(donnees.erreur || "Échec (code " + reponse.status + ").");
+    return donnees;
+  }
+  const formatDate = (iso) => { const p = (iso || "").split("-"); return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : ""; };
+
+  // ---------- Google
+  function dessinerGoogle(zone, d) {
+    zone.textContent = "";
+    if (d.etat !== "ok") { zone.appendChild(el("p", { class: "perf-note" }, d.message || "Indisponible.")); return; }
+    const ins = d.inspection || {};
+    const etat = el("p", { class: "perf-verdict" }, ins.inconnue ? "Indexation : inconnue (" + (ins.message || "inspection impossible") + ")" : ins.indexee ? "✅ Indexé par Google" + (ins.etat ? " · " + ins.etat : "") : "⚠ Pas encore indexé" + (ins.etat ? " · " + ins.etat : ""));
+    zone.appendChild(etat);
+    const p = d.page || {}, grille = el("div", { class: "perf-chiffres" });
+    [[p.impressions, "impressions"], [p.clics, "clics"], [p.position ? p.position.toFixed(1) : "–", "position moyenne"], [((p.ctr || 0) * 100).toFixed(1) + " %", "taux de clic"]].forEach(([v, l]) => {
+      const c = el("div"); c.appendChild(el("strong", {}, String(v === undefined ? 0 : v))); c.appendChild(el("span", {}, l)); grille.appendChild(c);
+    });
+    zone.appendChild(grille);
+    zone.appendChild(el("p", { class: "perf-note" }, "Du " + formatDate(d.periode.debut) + " au " + formatDate(d.periode.fin) + " (Google a 2 à 3 jours de retard)."));
+    if ((p.requetes || []).length) {
+      const t = el("table", { class: "perf-requetes" }), tete = el("tr");
+      ["Requête", "Impr.", "Clics", "Pos."].forEach((h) => tete.appendChild(el("th", {}, h))); t.appendChild(tete);
+      p.requetes.forEach((r) => { const l = el("tr"); [r.requete, r.impressions, r.clics, r.position].forEach((v) => l.appendChild(el("td", {}, String(v)))); t.appendChild(l); });
+      zone.appendChild(t);
+    }
+    if (d.site) zone.appendChild(el("p", { class: "perf-note" }, "Clics du site entier : " + d.site.clics_avant + " les 28 jours avant la publication, " + d.site.clics_apres + " les 28 jours après."));
+    zone.appendChild(el("p", { class: "perf-verdict" }, d.verdict || ""));
+  }
+
+  // ---------- IA
+  function mesureIA(titre, m) {
+    const boite = el("div"); boite.appendChild(el("strong", {}, titre + (m ? " · " + formatDate(m.date) : "")));
+    if (!m) { boite.appendChild(el("div", { class: "perf-note" }, "Pas encore mesuré.")); return boite; }
+    const ul = el("ul");
+    (m.modeles || []).forEach((x) => {
+      const morceaux = x.erreur ? ["indisponible"] : [x.client_cite ? "✅ cité" + (x.position ? " (n°" + x.position + ")" : "") : "❌ pas cité"];
+      if (!x.erreur && x.site_en_source) morceaux.push("site en source");
+      if (!x.erreur && x.article_en_source) morceaux.push("article en source");
+      ul.appendChild(el("li", {}, x.libelle + " : " + morceaux.join(" · ")));
+    });
+    boite.appendChild(ul); return boite;
+  }
+  function dessinerMesuresIA(zone, a) {
+    zone.textContent = "";
+    zone.appendChild(mesureIA("Au lancement", a.avant)); zone.appendChild(mesureIA(a.apres ? "Dernier test" : "30 jours plus tard", a.apres));
+  }
+
+  ARTICLES.forEach((a) => {
+    const carte = el("article", { class: "perf-carte" });
+    const tete = el("div", { class: "perf-tete" });
+    const titre = el("h2"); const lien = el("a", { href: a.lien, target: "_blank", rel: "noopener" }, a.titre || "(sans titre)"); titre.appendChild(lien);
+    tete.appendChild(titre); tete.appendChild(el("span", { class: "texte-discret" }, a.client + " · publié le " + a.publie_le + (a.publie ? " (il y a " + a.age + " j)" : " · programmé")));
+    carte.appendChild(tete);
+    const blocs = el("div", { class: "perf-blocs" });
+
+    const google = el("div", { class: "perf-bloc" }); google.appendChild(el("h3", {}, "📈 Sur Google"));
+    const zoneGoogle = el("div"); zoneGoogle.appendChild(el("p", { class: "perf-note" }, a.publie ? "Chargement…" : "Article programmé : pas encore publié."));
+    google.appendChild(zoneGoogle);
+    if (!a.search_console) { zoneGoogle.textContent = ""; zoneGoogle.appendChild(el("p", { class: "perf-note" }, "La Search Console n'est pas rattachée à ce client (fiche client, bloc « Search Console »).")); }
+    else if (a.publie) appeler("/performance-articles/" + a.id + "/google").then((d) => dessinerGoogle(zoneGoogle, d)).catch((e) => { zoneGoogle.textContent = e.message; });
+
+    const ia = el("div", { class: "perf-bloc" }); ia.appendChild(el("h3", {}, "🤖 Dans les IA"));
+    const champs = el("div", { class: "perf-champs" });
+    const question = el("input", { type: "text", maxlength: "300", placeholder: "Question visée (ex : quel garage choisir à Marseille pour une vidange ?)" }); question.value = a.question || "";
+    const motCle = el("input", { type: "text", maxlength: "120", placeholder: "Mot-clé local visé (ex : garage vidange Marseille)" }); motCle.value = a.mot_cle || "";
+    champs.appendChild(question); champs.appendChild(motCle); ia.appendChild(champs);
+    const actions = el("div", { class: "perf-actions" });
+    const bProposer = el("button", { type: "button", class: "bouton-secondaire" }, "✨ Proposer");
+    const bEnregistrer = el("button", { type: "button", class: "bouton-secondaire" }, "💾 Enregistrer");
+    const bTester = el("button", { type: "button", class: "bouton" }, "🤖 Tester dans les IA");
+    [bProposer, bEnregistrer, bTester].forEach((b) => actions.appendChild(b)); ia.appendChild(actions);
+    const message = el("p", { class: "perf-note" }); ia.appendChild(message);
+    const mesures = el("div", { class: "perf-ia-mesures" }); dessinerMesuresIA(mesures, a); ia.appendChild(mesures);
+    const resume = el("p", { class: "perf-verdict" }, a.resume_ia || ""); ia.appendChild(resume);
+
+    bProposer.addEventListener("click", async () => {
+      bProposer.disabled = true; message.textContent = "L'IA propose une question…";
+      try { const d = await appeler("/performance-articles/" + a.id + "/proposer", {}); question.value = d.question; motCle.value = d.mot_cle; message.textContent = "Proposition à relire, puis enregistrez."; }
+      catch (e) { message.textContent = e.message; }
+      bProposer.disabled = false;
+    });
+    async function enregistrer() { await appeler("/performance-articles/" + a.id + "/question", { question: question.value, mot_cle: motCle.value }); }
+    bEnregistrer.addEventListener("click", async () => { try { await enregistrer(); message.textContent = "Enregistré."; } catch (e) { message.textContent = e.message; } });
+    bTester.addEventListener("click", async () => {
+      bTester.disabled = true; message.textContent = "Test en cours dans les IA (environ une minute)…";
+      try {
+        await enregistrer();
+        const d = await appeler("/performance-articles/" + a.id + "/tester-ia", {});
+        a.avant = d.avant; a.apres = d.apres; dessinerMesuresIA(mesures, a); resume.textContent = d.resume_ia;
+        message.textContent = d.phase === "avant" ? "Premier test enregistré (« au lancement »)." : "Test enregistré.";
+      } catch (e) { message.textContent = e.message; }
+      bTester.disabled = false;
+    });
+
+    blocs.appendChild(google); blocs.appendChild(ia); carte.appendChild(blocs);
+    if (a.publie) carte.appendChild(el("p", { class: "perf-note" }, "Les IA citent rarement un article avant plusieurs semaines : comparez le test « au lancement » avec celui d'un mois plus tard."));
+    liste.appendChild(carte);
+  });
+})();
+</script>
+{% endblock %}

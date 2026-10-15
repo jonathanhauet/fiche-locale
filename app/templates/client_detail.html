@@ -472,6 +472,7 @@
 
 <details class="bloc-repliable" id="search-console-client" {% if client.search_console_site %}open{% endif %}>
   <summary>Search Console (site web) {% if client.search_console_site %}(rattaché : {{ client.search_console_site }}){% else %}(non rattaché){% endif %}</summary>
+  <p class="texte-discret" style="margin:.3rem 0"><a href="/performance-articles?client_id={{ client.id }}">📝 Voir la performance des articles WordPress de ce client</a></p>
   {% if not search_console_connecte %}
   <p class="texte-vide">La Search Console n'est pas connectée pour l'agence : <a href="/google/comptes">Comptes Google</a>.</p>
   {% else %}

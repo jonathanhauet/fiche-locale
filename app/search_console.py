@@ -74,6 +74,58 @@ def _requete(identifiants, site: str, debut: date, fin: date, dimensions: list[s
     return donnees.get("rows", [])
 
 
+URL_INSPECTION = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect"
+
+
+def _variantes_url(url: str) -> list[str]:
+    """L'adresse telle quelle puis avec/sans barre finale : la Search Console compare l'adresse exacte."""
+    url = (url or "").strip()
+    return [url, url[:-1] if url.endswith("/") else url + "/"] if url else []
+
+
+def _requete_page(identifiants, site: str, url: str, debut: date, fin: date, dimensions: list[str] = None, limite: int = 10) -> list[dict]:
+    corps = {"startDate": debut.isoformat(), "endDate": fin.isoformat(), "rowLimit": limite,
+             "dimensionFilterGroups": [{"filters": [{"dimension": "page", "operator": "equals", "expression": url}]}]}
+    if dimensions:
+        corps["dimensions"] = dimensions
+    return _appeler(identifiants, "POST", f"/sites/{quote(site, safe='')}/searchAnalytics/query", json=corps).get("rows", [])
+
+
+def performance_page(identifiants, site: str, url: str, debut: date, fin: date, nb_requetes: int = 8) -> dict:
+    """
+    Une page precise : {"clics", "impressions", "ctr", "position", "requetes": [{"requete", "clics", "impressions", "position"}]} sur la
+    periode (zeros si Google ne l'a jamais affichee).
+    """
+    for variante in _variantes_url(url):
+        totaux = _requete_page(identifiants, site, variante, debut, fin)
+        if totaux:
+            requetes = _requete_page(identifiants, site, variante, debut, fin, ["query"], limite=25)
+            requetes.sort(key=lambda l: (l.get("impressions", 0), l.get("clicks", 0)), reverse=True)
+            ligne = totaux[0]
+            return {
+                "clics": int(ligne.get("clicks", 0)), "impressions": int(ligne.get("impressions", 0)),
+                "ctr": float(ligne.get("ctr", 0.0)), "position": float(ligne.get("position", 0.0)) or None, "url": variante,
+                "requetes": [{"requete": l["keys"][0], "clics": int(l.get("clicks", 0)), "impressions": int(l.get("impressions", 0)),
+                              "position": round(float(l.get("position", 0.0)), 1)} for l in requetes[:nb_requetes]],
+            }
+    return {"clics": 0, "impressions": 0, "ctr": 0.0, "position": None, "url": url, "requetes": []}
+
+
+def inspecter_url(identifiants, site: str, url: str) -> dict:
+    """Etat d'indexation d'une adresse chez Google : {"indexee": bool, "etat": "...", "derniere_exploration": "...", "canonique": "..."}."""
+    reponse = requests.post(
+        URL_INSPECTION, headers={"Authorization": f"Bearer {identifiants.token}"}, timeout=DELAI_SECONDES,
+        json={"inspectionUrl": url, "siteUrl": site, "languageCode": "fr"},
+    )
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Inspection d'URL impossible (code {reponse.status_code}) : {reponse.text[:200]}")
+    statut = (reponse.json().get("inspectionResult") or {}).get("indexStatusResult") or {}
+    return {
+        "indexee": statut.get("verdict") == "PASS", "etat": statut.get("coverageState", ""),
+        "derniere_exploration": statut.get("lastCrawlTime", ""), "canonique": statut.get("googleCanonical", ""),
+    }
+
+
 def resume_periode(identifiants, site: str, debut: date, fin: date, nb_top: int = 5) -> dict:
     """{"clics", "impressions", "top_requetes": [{"requete", "clics"}], "top_pages": [{"page", "clics"}]} pour la periode."""
     totaux = _requete(identifiants, site, debut, fin)

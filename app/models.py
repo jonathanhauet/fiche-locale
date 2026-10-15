@@ -819,6 +819,25 @@ class ParametreGoogleAds(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
+class SuiviArticle(Base):
+    """
+    Suivi d'un article WordPress publie depuis la plateforme (voir performance_articles.py) : la question que l'article vise (celle qu'un
+    habitant poserait a Google ou a une IA), son mot-cle local, et les deux mesures IA (JSON) faites au lancement puis environ 30 jours
+    plus tard. Les chiffres Google, eux, sont lus en direct dans la Search Console.
+    """
+
+    __tablename__ = "suivis_articles"
+
+    id = Column(Integer, primary_key=True)
+    post_id = Column(Integer, ForeignKey("posts_wordpress.id"), nullable=False, unique=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    question = Column(String, default="")
+    mot_cle = Column(String, default="")
+    mesure_avant_json = Column(Text, default="")
+    mesure_apres_json = Column(Text, default="")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class ParametreSearchConsole(Base):
     """
     Connexion Google Search Console (scope webmasters.readonly, distinct de celui
