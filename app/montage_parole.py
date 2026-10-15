@@ -592,7 +592,8 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     for k, illustration in enumerate(illustrations or []):
         debut_i, fin_i = illustration["debut"], illustration["fin"]
         duree_i = max(0.5, fin_i - debut_i)
-        images.append((illustration["chemin"], duree_i, bool(illustration.get("video"))))
+        genre_entree = "video" if illustration.get("video") else "sequence" if illustration.get("sequence") else "image"
+        images.append((illustration["sequence"] if genre_entree == "sequence" else illustration["chemin"], duree_i, genre_entree))
         carte = illustration.get("mode") == "carte"
         partage = bool(illustration.get("partage")) and vertical
         if carte:
@@ -615,6 +616,8 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
             x, y = "(W-w)/2", ("H*0.10" if vertical else "H*0.08")
         # Un plan video est coupe a la duree voulue, remis a zero puis decale a son instant ; une image fixe l'est par son -t d'entree.
         depart = f"fps={FPS},trim=duration={duree_i:.3f},setpts=PTS-STARTPTS," if illustration.get("video") else ""
+        if genre_entree == "sequence":      # carte animee : ses images s'enchainent puis la derniere reste affichee jusqu'a la fin
+            depart = f"fps={FPS},tpad=stop_mode=clone:stop_duration={duree_i:.3f},trim=duration={duree_i:.3f},setpts=PTS-STARTPTS,"
         parties.append(
             f"[{premiere_image + k}:v]{depart}format=rgba,{mise},fade=t=in:st=0:d=0.25:alpha=1,fade=t=out:st={max(0.0, duree_i - 0.25):.2f}:d=0.25:alpha=1,"
             f"setpts=PTS+{debut_i:.3f}/TB[i{k}]"
@@ -631,8 +634,10 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
                 "-f", "concat", "-safe", "0", "-i", liste]
     if musique:
         commande += ["-stream_loop", "-1", "-i", musique]
-    for chemin_image, duree_image, est_video in images:
-        if est_video:
+    for chemin_image, duree_image, genre_entree in images:
+        if genre_entree == "sequence":
+            commande += ["-f", "concat", "-safe", "0", "-i", chemin_image]
+        elif genre_entree == "video":
             commande += ["-i", chemin_image]
         else:
             commande += ["-loop", "1", "-framerate", str(FPS), "-t", f"{duree_image:.3f}", "-i", chemin_image]
@@ -1003,8 +1008,9 @@ def plan_effets(sortie: dict) -> dict:
                 mode = "incrust"
             if place == "partage":
                 place = "haut"
+            sequence = illustration.get("sequence")
             illustrations.append({"id": illustration.get("id"), "debut": a, "fin": b, "chemin": fichier, "mode": mode, "video": illustration.get("kind") == "video",
-                                  "place": place, "partage": partage})
+                                  "place": place, "partage": partage, "sequence": sequence if sequence and os.path.exists(sequence) else None})
     bruitages = evenements_sons(zooms, titres, illustrations, effets["actif"]["accroche"] and bool(effets["titre"]), fenetres) if effets.get("bruitages") else []
     charte = charte_montage.nettoyer(effets.get("charte"))
     pastille = charte_montage.rgb(charte["principale"]) if pop and effets.get("pastille") else None

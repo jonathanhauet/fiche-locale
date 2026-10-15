@@ -18,6 +18,7 @@ from io import BytesIO
 from PIL import Image
 
 from . import cartes_montage, charte_montage
+from . import cartes_montage as cm
 from . import montage_parole as mp
 from . import montage_publication as pub
 from . import styles_montage
@@ -91,7 +92,7 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
         "titres": [{"indice": i, "debut": d, "fin": f, "texte": t} for i, (d, f, t) in enumerate(effets["titres"])],
         "illustrations": [{"id": ill["id"], "debut": ill["debut"], "fin": ill["fin"], "mode": ill["mode"], "origine": ill.get("origine", ""),
                            "prompt": ill.get("prompt", ""), "kind": ill.get("kind", "image"), "duree_clip": ill.get("duree_clip"), "place": ill.get("place", "haut"),
-                           "carte": ill.get("carte"), "partage": ill["id"] in partages} for ill in effets.get("illustrations", [])],
+                           "carte": ill.get("carte"), "partage": ill["id"] in partages, "anime": bool(ill.get("sequence"))} for ill in effets.get("illustrations", [])],
         "charte": charte_montage.nettoyer(effets.get("charte")),
         "plans": [{"id": p["id"], "prompt": p["prompt"], "etat": p["etat"], "erreur": p.get("erreur", ""), "qualite": p["qualite"]}
                   for p in sorted(montage.get("plans", {}).values(), key=lambda x: x["cree"])[-8:]],
@@ -414,8 +415,29 @@ def fichier_video_illustration(sortie: dict, identifiant: str):
     return cible["fichier_video"] if cible and os.path.exists(cible["fichier_video"]) else None
 
 
-def ajouter_carte(montage: dict, sortie: dict, genre: str, textes: dict, debut: float, duree: float, place: str = "haut") -> str:
-    """Dessine une carte graphique (voir cartes_montage.py) aux couleurs de la charte du montage et l'ajoute a `debut` pour `duree` secondes."""
+def _ecrire_sequence(dossier: str, identifiant: str, genre: str, textes: dict, charte: dict, format_video: str):
+    """Carte animee : une image par etat (voir cartes_montage.etats_animation) et une liste ffmpeg (concat) qui les enchaine ; None si rien a animer."""
+    etats = cm.etats_animation(genre, textes)
+    if not etats:
+        return None
+    repertoire = os.path.join(dossier, f"{identifiant}_seq")
+    os.makedirs(repertoire, exist_ok=True)
+    lignes, dernier = ["ffconcat version 1.0"], None
+    for rang, (progres, duree_etat) in enumerate(etats):
+        chemin = os.path.join(repertoire, f"e{rang:02d}.png")
+        with open(chemin, "wb") as fichier:
+            fichier.write(cm.rendre_carte(genre, textes, charte, format_video, progres=progres))
+        dernier = chemin.replace(os.sep, "/")
+        lignes += [f"file '{dernier}'", f"duration {duree_etat:.3f}"]
+    lignes.append(f"file '{dernier}'")          # le dernier fichier doit etre repete pour que sa duree soit respectee
+    liste = os.path.join(repertoire, "sequence.txt")
+    with open(liste, "w", encoding="utf-8") as fichier:
+        fichier.write("\n".join(lignes) + "\n")
+    return liste
+
+
+def ajouter_carte(montage: dict, sortie: dict, genre: str, textes: dict, debut: float, duree: float, place: str = "haut", anime: bool = True) -> str:
+    """Dessine une carte graphique (voir cartes_montage.py) aux couleurs de la charte du montage et l'ajoute a `debut` pour `duree` secondes (animee si le type s'y prete)."""
     effets = sortie["effets"]
     if len(effets.setdefault("illustrations", [])) >= NB_ILLUSTRATIONS_MAX:
         raise ErreurEditeur(f"{NB_ILLUSTRATIONS_MAX} illustrations et cartes au maximum.")
@@ -434,11 +456,13 @@ def ajouter_carte(montage: dict, sortie: dict, genre: str, textes: dict, debut: 
     chemin = os.path.join(dossier, f"{identifiant}.png")
     with open(chemin, "wb") as fichier:
         fichier.write(png)
+    sequence = _ecrire_sequence(dossier, identifiant, genre, textes, effets.get("charte"), sortie["format"]) if anime else None
     with montage["verrou"]:
         sortie["annulations"] = ((sortie.get("annulations") or []) + [_instantane(sortie)])[-NB_ANNULATIONS_MAX:]
         effets["illustrations"].append({
             "id": identifiant, "debut": debut, "fin": debut + duree, "mode": "carte", "kind": "carte", "fichier": chemin, "origine": "carte",
             "prompt": "", "place": place if place in cartes_montage.POSITIONS else "haut", "carte": {"type": genre, "textes": textes},
+            **({"sequence": sequence} if sequence else {}),
         })
     return identifiant
 

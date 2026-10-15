@@ -190,6 +190,7 @@
           </select>
           <select id="ed-carte-place"><option value="haut">En haut</option><option value="centre">Au centre</option><option value="bas">En bas</option><option value="partage">Écran coupé (vous en bas)</option></select>
           <label>Durée <input type="number" id="ed-carte-duree" value="3.5" min="1.5" max="8" step="0.5" style="width:5rem"> s</label>
+          <label title="Mot tapé lettre par lettre, chiffre qui défile, points de liste cochés un par un, avant → après en deux temps. L'aperçu montre l'état final."><input type="checkbox" id="ed-carte-anime" checked> Animer</label>
         </div>
         <input type="text" id="ed-carte-numero" maxlength="2" placeholder="Numéro (1, 2, 3…)" data-champ="etape">
         <input type="text" id="ed-carte-titre" maxlength="60" placeholder="Titre" data-champ="etape info titre checklist chat evolution sticker">
@@ -766,7 +767,7 @@
       libelle: $("ed-carte-libelle").value, texte: $("ed-carte-texte").value, auteur: $("ed-carte-auteur").value,
       avant: $("ed-carte-avant").value, elements: $("ed-carte-elements").value, mot: $("ed-carte-mot").value };
     try {
-      const d = await envoyer("/cartes/ajouter", { type: $("ed-carte-type").value, textes, debut: video.currentTime || 0, duree: parseFloat($("ed-carte-duree").value) || 3.5, place: $("ed-carte-place").value });
+      const d = await envoyer("/cartes/ajouter", { type: $("ed-carte-type").value, textes, debut: video.currentTime || 0, duree: parseFloat($("ed-carte-duree").value) || 3.5, place: $("ed-carte-place").value, anime: $("ed-carte-anime").checked });
       appliquerEtat(d.etat); annoncer(d);
       document.querySelectorAll("#panneau-cartes input[type=text]").forEach((c) => { c.value = ""; });
     } catch (err) { message(err.message, true); }

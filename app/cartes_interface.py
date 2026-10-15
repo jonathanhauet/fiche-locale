@@ -37,7 +37,7 @@ def _fleche_haut(d, cx, cy, r, couleur, largeur):
     d.line([(cx - r * 0.8, cy - r * 0.2), (cx, cy - r), (cx + r * 0.8, cy - r * 0.2)], fill=couleur, width=largeur, joint="curve")
 
 
-def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical") -> bytes:
+def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical", progres: float = 1.0) -> bytes:
     """Image PNG (transparente, avec ombre) d'une carte « maquette ». textes : voir cartes_montage.LIMITES."""
     if genre not in TYPES:
         raise ValueError("Type de carte inconnu.")
@@ -97,16 +97,20 @@ def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical
         h_ligne = int(78 * e)
         hauteur_corps = int(24 * e) + (int(60 * e) if textes["sous_titre"] else 0) + len(lignes) * h_ligne + int(10 * e)
 
+        faits = int(progres * len(lignes) + 1e-6)          # lignes deja cochees : une de plus a chaque etape de l'animation
+
         def dessiner_liste(d, y):
             courant = y + 24 * e
             if textes["sous_titre"]:
                 d.text((marge, courant + 20 * e), textes["sous_titre"], font=cm._police(charte, 36 * e), fill=couleur_texte, anchor="lm")
                 courant += 60 * e
-            for ligne in lignes:
+            for rang, ligne in enumerate(lignes):
                 cy = courant + h_ligne / 2
-                d.ellipse((marge, cy - 24 * e, marge + 48 * e, cy + 24 * e), fill=principale)
-                _coche(d, marge + 24 * e, cy, 11 * e, (255, 255, 255), max(3, int(5 * e)))
-                d.text((marge + 74 * e, cy), ligne, font=police_item, fill=couleur_texte, anchor="lm")
+                fait = rang < faits
+                d.ellipse((marge, cy - 24 * e, marge + 48 * e, cy + 24 * e), fill=principale if fait else gris_clair)
+                if fait:
+                    _coche(d, marge + 24 * e, cy, 11 * e, (255, 255, 255), max(3, int(5 * e)))
+                d.text((marge + 74 * e, cy), ligne, font=police_item, fill=couleur_texte if fait else gris, anchor="lm")
                 courant += h_ligne
         corps.append((hauteur_corps, dessiner_liste))
 
@@ -145,11 +149,13 @@ def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical
             avant = textes["avant"] or "1:42"
             d.text((x, cy), avant, font=police_avant, fill=gris, anchor="lm")
             largeur_avant = d.textlength(avant, font=police_avant)
-            d.line([(x - 4 * e, cy + 4 * e), (x + largeur_avant + 4 * e, cy + 4 * e)], fill=gris, width=max(3, int(6 * e)))          # valeur barree
+            if progres >= 0.5:
+                d.line([(x - 4 * e, cy + 4 * e), (x + largeur_avant + 4 * e, cy + 4 * e)], fill=gris, width=max(3, int(6 * e)))      # valeur barree
             x += largeur_avant + 30 * e
-            d.line([(x, cy), (x + 56 * e, cy)], fill=couleur_texte, width=max(4, int(8 * e)))                                          # fleche
-            d.line([(x + 34 * e, cy - 22 * e), (x + 58 * e, cy), (x + 34 * e, cy + 22 * e)], fill=couleur_texte, width=max(4, int(8 * e)), joint="curve")
-            d.text((x + 84 * e, cy), textes["valeur"] or "0:48", font=police_apres, fill=couleur_texte, anchor="lm")
+            if progres >= 1.0:
+                d.line([(x, cy), (x + 56 * e, cy)], fill=couleur_texte, width=max(4, int(8 * e)))                                      # fleche
+                d.line([(x + 34 * e, cy - 22 * e), (x + 58 * e, cy), (x + 34 * e, cy + 22 * e)], fill=couleur_texte, width=max(4, int(8 * e)), joint="curve")
+                d.text((x + 84 * e, cy), textes["valeur"] or "0:48", font=police_apres, fill=couleur_texte, anchor="lm")
         corps.append((hauteur_corps, dessiner_evolution))
 
     elif genre == "appel_action":
@@ -161,8 +167,9 @@ def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical
 
         def dessiner_appel(d, y):
             d.rounded_rectangle((marge, y, marge + interieur, y + h_saisie), radius=int(18 * e), fill=fond, outline=gris_clair, width=max(2, int(3 * e)))
-            d.text((marge + 36 * e, y + h_saisie / 2), mot, font=police_saisie, fill=couleur_texte, anchor="lm")
-            x_curseur = marge + 36 * e + d.textlength(mot, font=police_saisie) + 8 * e
+            ecrit = mot[:int(round(len(mot) * progres))]
+            d.text((marge + 36 * e, y + h_saisie / 2), ecrit, font=police_saisie, fill=couleur_texte, anchor="lm")
+            x_curseur = marge + 36 * e + d.textlength(ecrit, font=police_saisie) + 8 * e
             d.line([(x_curseur, y + h_saisie * 0.25), (x_curseur, y + h_saisie * 0.75)], fill=couleur_texte, width=max(3, int(5 * e)))
             yb = y + h_saisie + 60 * e
             d.rounded_rectangle((marge, yb, marge + interieur, yb + h_bouton), radius=int(26 * e), fill=principale)
@@ -182,7 +189,7 @@ def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical
         def dessiner_badge(d, y):
             cy = y + hauteur_corps / 2
             d.ellipse((marge, cy - 12 * e, marge + 24 * e, cy + 12 * e), fill=secondaire)
-            d.text((marge + 48 * e, cy), valeur, font=police_valeur, fill=secondaire, anchor="lm")
+            d.text((marge + 48 * e, cy), cm.valeur_comptee(valeur, progres), font=police_valeur, fill=secondaire, anchor="lm")
         corps.append((hauteur_corps, dessiner_badge))
 
     else:  # sticker : un bloc blanc arrondi par ligne, legerement incline

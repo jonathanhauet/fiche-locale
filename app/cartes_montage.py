@@ -5,6 +5,7 @@ une image PNG transparente, avec ombre portee.
 """
 
 import os
+import re
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -19,6 +20,46 @@ TYPES_INTERFACE = ("chat", "checklist", "notification", "evolution", "appel_acti
 LIMITES = {"numero": 2, "titre": 60, "sous_titre": 90, "valeur": 12, "libelle": 60, "texte": 140, "auteur": 40, "avant": 12, "mot": 20, "elements": 170}
 LARGEUR_CARTE = {"vertical": 0.84, "horizontal": 0.40}          # part de la largeur de l'image video
 POSITIONS = {"haut": "En haut", "centre": "Au centre", "bas": "En bas", "partage": "Écran coupé (vous en bas)"}
+
+
+_COMPTABLE = re.compile(r"(\D*?)(\d{1,6})(\D*)")
+ANIMEES = ("chiffre", "badge", "appel_action", "checklist", "evolution")
+
+
+def valeur_comptee(valeur: str, progres: float) -> str:
+    """Valeur affichee pendant un decompte : « 137 % » devient 0 %, 40 %, 110 %... jusqu'a 137 % (progres de 0 a 1, ralenti a l'arrivee)."""
+    m = _COMPTABLE.fullmatch(valeur.strip())
+    if not m or int(m[2]) == 0 or progres >= 1:
+        return valeur
+    return f"{m[1]}{round(int(m[2]) * (1 - (1 - max(0.0, progres)) ** 3))}{m[3]}"
+
+
+def nb_elements(textes: dict) -> int:
+    return len([e for e in str(textes.get("elements") or "").split("|") if e.strip()][:4]) or 3
+
+
+def etats_animation(genre: str, textes) -> list:
+    """
+    Images successives d'une carte animee : [(progres de 0 a 1, duree en secondes)], la derniere etant l'etat final (qui reste affiche) ;
+    None si la carte n'a rien a animer (type fixe, ou chiffre non comptable). Rendues avec rendre_carte(..., progres=...).
+    """
+    textes = nettoyer_textes(textes)
+    if genre in ("chiffre", "badge"):
+        valeur = textes["valeur"] or ("100 %" if genre == "chiffre" else "0 s")
+        m = _COMPTABLE.fullmatch(valeur.strip())
+        if not m or int(m[2]) == 0:
+            return None
+        n = 14
+        return [(k / n, 0.085) for k in range(n)] + [(1.0, 0.3)]
+    if genre == "appel_action":
+        n = len(textes["mot"] or "studio")
+        return [(0.0, 0.4)] + [(k / n, 0.13) for k in range(1, n)] + [(1.0, 0.4)]
+    if genre == "checklist":
+        n = nb_elements(textes)
+        return [(k / n, 0.5) for k in range(n)] + [(1.0, 0.4)]
+    if genre == "evolution":
+        return [(0.0, 0.5), (0.5, 0.7), (1.0, 0.4)]
+    return None
 
 
 def nettoyer_textes(textes) -> dict:
@@ -64,13 +105,13 @@ def _hauteur_texte(dessin, texte: str, police, largeur_max: int, interligne: flo
     return len(_lignes(dessin, texte, police, largeur_max)) * int(police.size * interligne)
 
 
-def rendre_carte(genre: str, textes: dict, charte: dict, format_video: str = "vertical") -> bytes:
-    """Image PNG (transparente) d'une carte. genre : etape, info, chiffre, citation ou titre ; textes : voir LIMITES."""
+def rendre_carte(genre: str, textes: dict, charte: dict, format_video: str = "vertical", progres: float = 1.0) -> bytes:
+    """Image PNG (transparente) d'une carte. genre : voir TYPES ; textes : voir LIMITES ; progres (0 a 1) : avancement d'une carte animee (voir etats_animation)."""
     if genre not in TYPES:
         raise ValueError("Type de carte inconnu.")
     if genre in TYPES_INTERFACE:
         from . import cartes_interface
-        return cartes_interface.rendre(genre, textes, charte, format_video)
+        return cartes_interface.rendre(genre, textes, charte, format_video, progres)
     charte = charte_montage.nettoyer(charte)
     textes = nettoyer_textes(textes)
     largeur_video = 1080 if format_video == "vertical" else 1920
@@ -130,7 +171,7 @@ def rendre_carte(genre: str, textes: dict, charte: dict, format_video: str = "ve
 
     elif genre == "chiffre":
         police_valeur, police_libelle = _police(charte, 170 * echelle), _police(charte, 44 * echelle, False)
-        valeur = textes["valeur"] or "100 %"
+        valeur = valeur_comptee(textes["valeur"] or "100 %", progres)
         h_valeur = int(police_valeur.size * 1.05)
         h_libelle = _hauteur_texte(mesure, textes["libelle"], police_libelle, interieur) if textes["libelle"] else 0
         hauteur_contenu = h_valeur + (h_libelle + int(10 * echelle) if h_libelle else 0)

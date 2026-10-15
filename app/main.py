@@ -8196,7 +8196,7 @@ async def montage_editeur_ajouter_carte(identifiant: str, numero: int, request: 
     try:
         corps = await request.json()
         debut, duree = float(corps.get("debut") or 0), float(corps.get("duree") or 3.5)
-        montage_editeur.ajouter_carte(montage, sortie, str(corps.get("type")), corps.get("textes"), debut, duree, str(corps.get("place") or "haut"))
+        montage_editeur.ajouter_carte(montage, sortie, str(corps.get("type")), corps.get("textes"), debut, duree, str(corps.get("place") or "haut"), bool(corps.get("anime", True)))
     except montage_editeur.ErreurEditeur as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
     except (ValueError, TypeError, AttributeError):
