@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block titre %}Créer un QR code gratuit{% endblock %}
+{% block tete_supplementaire %}
+<meta name="description" content="Créez gratuitement un QR code personnalisé : lien, avis Google, Wi-Fi, contact, WhatsApp... Couleurs, logo, téléchargement PNG ou SVG. Sans inscription, sans expiration.">
+<style>
+  .qr-page { min-height: 100vh; background: radial-gradient(circle at 12% 8%, var(--accent-clair), transparent 42%), var(--fond); padding: 1.5rem 1rem 3rem; }
+  .qr-conteneur { max-width: 1020px; margin: 0 auto; }
+  .qr-entete { text-align: center; margin: 0.5rem 0 1.6rem; }
+  .qr-entete .marque { justify-content: center; margin-bottom: 0.8rem; }
+  .qr-entete .marque-texte { color: var(--texte); }
+  .qr-entete h1 { font-size: 1.8rem; margin: 0 0 0.3rem; }
+  .qr-entete p { margin: 0 auto; max-width: 560px; color: var(--texte-discret); }
+  .qr-grille { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1.2rem; align-items: start; }
+  .qr-carte { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.3rem; }
+  .qr-carte h2 { font-size: 1rem; margin: 0 0 0.7rem; }
+  .qr-carte + .qr-carte { margin-top: 1rem; }
+  .qr-types { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+  .qr-type { border: 1px solid var(--carte-bordure); background: var(--carte); color: var(--texte); border-radius: 999px; padding: 0.4rem 0.85rem; font: inherit; font-size: 0.88rem; cursor: pointer; }
+  .qr-type:hover { border-color: var(--accent); }
+  .qr-type[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .qr-champs { display: flex; flex-direction: column; gap: 0.8rem; }
+  .qr-champs label, .qr-style label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.86rem; font-weight: 500; }
+  .qr-champs input, .qr-champs textarea, .qr-champs select { font: inherit; padding: 0.55rem 0.7rem; border: 1px solid var(--carte-bordure); border-radius: var(--rayon-petit); background: var(--carte); color: var(--texte); }
+  .qr-aide { font-size: 0.8rem; color: var(--texte-discret); margin: 0.1rem 0 0; font-weight: 400; }
+  .qr-style { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+  .qr-style .pleine { grid-column: 1 / -1; }
+  .qr-couleur { display: flex; align-items: center; gap: 0.5rem; }
+  .qr-couleur input[type="color"] { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--carte-bordure); border-radius: var(--rayon-petit); background: var(--carte); cursor: pointer; }
+  .qr-pastilles { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+  .qr-pastilles button { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--carte-bordure); cursor: pointer; padding: 0; }
+  .qr-formes { display: flex; gap: 0.45rem; }
+  .qr-formes button { flex: 1; border: 1px solid var(--carte-bordure); background: var(--carte); color: var(--texte); border-radius: var(--rayon-petit); padding: 0.45rem; font: inherit; font-size: 0.85rem; cursor: pointer; }
+  .qr-formes button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-clair); color: var(--accent-fonce); font-weight: 600; }
+  .qr-case { flex-direction: row !important; align-items: center; gap: 0.5rem !important; font-weight: 400 !important; }
+  .qr-apercu { position: sticky; top: 1rem; text-align: center; }
+  .qr-image { background: #fff; border: 1px solid var(--carte-bordure); border-radius: var(--rayon); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .qr-image img { width: 100%; height: 100%; display: block; }
+  .qr-vide { color: #6b7280; font-size: 0.88rem; padding: 1rem; }
+  .qr-alerte { margin: 0.7rem 0 0; padding: 0.55rem 0.7rem; border-radius: var(--rayon-petit); font-size: 0.82rem; text-align: left; }
+  .qr-alerte.erreur { background: var(--danger-clair); color: var(--danger); }
+  .qr-alerte.attention { background: var(--attention-clair); color: var(--attention); }
+  .qr-telechargements { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; }
+  .qr-telechargements .ligne { display: flex; gap: 0.5rem; }
+  .qr-telechargements button, .qr-telechargements select { font: inherit; border-radius: var(--rayon-petit); padding: 0.6rem 0.8rem; }
+  .qr-telechargements button { flex: 1; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  .qr-telechargements button.secondaire { background: var(--carte); color: var(--accent); }
+  .qr-telechargements button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .qr-telechargements select { border: 1px solid var(--carte-bordure); background: var(--carte); color: var(--texte); }
+  .qr-conseils { margin-top: 1.4rem; font-size: 0.85rem; color: var(--texte-discret); line-height: 1.55; }
+  .qr-conseils strong { color: var(--texte); }
+  .qr-pied { text-align: center; margin-top: 1.6rem; font-size: 0.82rem; color: var(--texte-discret); }
+  .qr-pied a { color: var(--accent); }
+  @media (max-width: 820px) { .qr-grille { grid-template-columns: 1fr; } .qr-apercu { position: static; } .qr-style { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block corps %}
+<div class="qr-page">
+  <div class="qr-conteneur">
+    <header class="qr-entete">
+      <div class="marque"><span class="marque-icone">FL</span><span class="marque-texte">Fiche Locale</span></div>
+      <h1>Créez votre QR code gratuit</h1>
+      <p>Lien, avis Google, Wi-Fi, WhatsApp, carte de visite... Personnalisez les couleurs, ajoutez votre logo et téléchargez-le. Sans inscription, et il ne s'éteint jamais.</p>
+    </header>
+
+    <div class="qr-grille">
+      <div>
+        <section class="qr-carte">
+          <h2>1. Que doit faire votre QR code ?</h2>
+          <div class="qr-types" id="qr-types"></div>
+        </section>
+        <section class="qr-carte">
+          <h2>2. Votre contenu</h2>
+          <div class="qr-champs" id="qr-champs"></div>
+        </section>
+        <section class="qr-carte">
+          <h2>3. Son apparence</h2>
+          <div class="qr-style">
+            <label>Couleur du code
+              <span class="qr-couleur"><input type="color" id="qr-couleur" value="#111827"><span class="qr-pastilles" id="qr-pastilles-couleur"></span></span>
+            </label>
+            <label>Couleur du fond
+              <span class="qr-couleur"><input type="color" id="qr-fond" value="#ffffff"></span>
+            </label>
+            <div class="pleine">
+              <span style="font-size:0.86rem;font-weight:500;">Forme</span>
+              <div class="qr-formes" id="qr-formes" style="margin-top:0.25rem;">
+                <button type="button" data-forme="carre" aria-pressed="true">Carrée</button>
+                <button type="button" data-forme="arrondi" aria-pressed="false">Arrondie</button>
+                <button type="button" data-forme="point" aria-pressed="false">Points</button>
+              </div>
+            </div>
+            <label class="pleine">Logo au centre (facultatif)
+              <input type="file" id="qr-logo" accept="image/png,image/jpeg,image/webp">
+              <span class="qr-aide">PNG ou JPG, 2 Mo maximum. Le code reste lisible grâce à une correction d'erreur renforcée.</span>
+            </label>
+            <label class="qr-case pleine"><input type="checkbox" id="qr-transparent"> Fond transparent (pour incruster dans un visuel)</label>
+          </div>
+        </section>
+      </div>
+
+      <aside class="qr-carte qr-apercu">
+        <h2>Aperçu</h2>
+        <div class="qr-image" id="qr-image"><span class="qr-vide">Remplissez le contenu pour voir votre QR code.</span></div>
+        <div id="qr-messages"></div>
+        <div class="qr-telechargements">
+          <div class="ligne">
+            <button type="button" id="qr-telecharger-png" disabled>Télécharger PNG</button>
+            <select id="qr-taille" aria-label="Taille du PNG">
+              <option value="600">600 px</option>
+              <option value="1200" selected>1200 px</option>
+              <option value="2400">2400 px</option>
+            </select>
+          </div>
+          <button type="button" class="secondaire" id="qr-telecharger-svg" disabled>Télécharger SVG (impression, vectoriel)</button>
+        </div>
+      </aside>
+    </div>
+
+    <div class="qr-conseils">
+      <p><strong>Avant d'imprimer :</strong> scannez toujours votre QR code avec votre téléphone. Gardez un code foncé sur fond clair, et prévoyez au moins 2 cm de côté sur le support imprimé.</p>
+      <p><strong>Pour les avis Google :</strong> il vous faut l'identifiant de votre lieu (Place ID, il commence par « ChIJ »). Vous le trouvez avec l'<a href="https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder" target="_blank" rel="noopener">outil officiel de Google</a> en tapant le nom de votre établissement. Le QR code ouvre directement la fenêtre pour laisser un avis.</p>
+      <p>Les QR codes créés ici sont statiques : rien n'est enregistré sur nos serveurs et ils fonctionneront aussi longtemps que le lien qu'ils contiennent.</p>
+    </div>
+    <p class="qr-pied">Outil proposé par Fiche Locale · <a href="/audit-gratuit">Recevoir un audit gratuit de votre fiche Google</a></p>
+  </div>
+</div>
+
+<script id="donnees-types-qr" type="application/json">{{ types_json|safe }}</script>
+<script>
+(function () {
+  var TYPES = JSON.parse(document.getElementById('donnees-types-qr').textContent);
+  var etat = { type: 'lien', forme: 'carre' };
+  var conteneurTypes = document.getElementById('qr-types');
+  var conteneurChamps = document.getElementById('qr-champs');
+  var zoneImage = document.getElementById('qr-image');
+  var zoneMessages = document.getElementById('qr-messages');
+  var boutonPng = document.getElementById('qr-telecharger-png');
+  var boutonSvg = document.getElementById('qr-telecharger-svg');
+  var minuteur = null, requete = 0;
+
+  function creer(balise, attributs, texte) {
+    var e = document.createElement(balise);
+    Object.keys(attributs || {}).forEach(function (k) { e.setAttribute(k, attributs[k]); });
+    if (texte) e.textContent = texte;
+    return e;
+  }
+
+  function afficherTypes() {
+    conteneurTypes.textContent = '';
+    TYPES.forEach(function (t) {
+      var b = creer('button', { type: 'button', 'class': 'qr-type', 'aria-pressed': String(t.code === etat.type) }, t.libelle);
+      b.addEventListener('click', function () { etat.type = t.code; afficherTypes(); afficherChamps(); planifier(); });
+      conteneurTypes.appendChild(b);
+    });
+  }
+
+  function typeCourant() { return TYPES.filter(function (t) { return t.code === etat.type; })[0]; }
+
+  function afficherChamps() {
+    conteneurChamps.textContent = '';
+    typeCourant().champs.forEach(function (c) {
+      var etiquette = creer('label', {}, c.libelle + (c.obligatoire ? '' : ''));
+      var champ;
+      if (c.nom === 'securite') {
+        champ = creer('select', { 'data-champ': c.nom });
+        [['WPA', 'WPA / WPA2 (le plus courant)'], ['WEP', 'WEP'], ['aucune', 'Aucune (réseau ouvert)']].forEach(function (o) { champ.appendChild(creer('option', { value: o[0] }, o[1])); });
+      } else if (c.nom === 'texte' || c.nom === 'message') {
+        champ = creer('textarea', { 'data-champ': c.nom, rows: c.nom === 'texte' ? '4' : '2', placeholder: c.exemple || '' });
+      } else {
+        champ = creer('input', { 'data-champ': c.nom, type: c.nom === 'email' ? 'email' : 'text', placeholder: c.exemple || '', autocomplete: 'off' });
+      }
+      champ.addEventListener('input', planifier);
+      champ.addEventListener('change', planifier);
+      etiquette.appendChild(champ);
+      conteneurChamps.appendChild(etiquette);
+    });
+  }
+
+  function formulaire(sortie) {
+    var fd = new FormData();
+    fd.append('type', etat.type);
+    conteneurChamps.querySelectorAll('[data-champ]').forEach(function (c) { fd.append('c_' + c.getAttribute('data-champ'), c.value); });
+    fd.append('forme', etat.forme);
+    fd.append('couleur', document.getElementById('qr-couleur').value);
+    fd.append('fond', document.getElementById('qr-fond').value);
+    if (document.getElementById('qr-transparent').checked) fd.append('transparent', '1');
+    var logo = document.getElementById('qr-logo').files[0];
+    if (logo) fd.append('logo', logo);
+    fd.append('sortie', sortie);
+    if (sortie === 'png') fd.append('taille', document.getElementById('qr-taille').value);
+    return fd;
+  }
+
+  function message(classe, texte) {
+    var p = creer('p', { 'class': 'qr-alerte ' + classe }, texte);
+    zoneMessages.appendChild(p);
+  }
+
+  function rafraichir() {
+    var numero = ++requete;
+    var rempli = Array.prototype.some.call(conteneurChamps.querySelectorAll('[data-champ]'), function (c) { return c.value.trim() && c.tagName !== 'SELECT'; });
+    zoneMessages.textContent = '';
+    if (!rempli) {
+      zoneImage.textContent = '';
+      zoneImage.appendChild(creer('span', { 'class': 'qr-vide' }, 'Remplissez le contenu pour voir votre QR code.'));
+      boutonPng.disabled = boutonSvg.disabled = true;
+      return;
+    }
+    fetch('/qr-code/generer', { method: 'POST', body: formulaire('apercu') })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, donnees: j }; }); })
+      .then(function (res) {
+        if (numero !== requete) return;
+        zoneMessages.textContent = '';
+        if (!res.ok) { boutonPng.disabled = boutonSvg.disabled = true; message('erreur', res.donnees.erreur || 'Erreur.'); return; }
+        zoneImage.textContent = '';
+        zoneImage.appendChild(creer('img', { src: res.donnees.image, alt: 'Votre QR code' }));
+        (res.donnees.avertissements || []).forEach(function (a) { message('attention', a); });
+        boutonPng.disabled = boutonSvg.disabled = false;
+      })
+      .catch(function () { if (numero === requete) { zoneMessages.textContent = ''; message('erreur', 'Connexion impossible, réessayez.'); } });
+  }
+
+  function planifier() { clearTimeout(minuteur); minuteur = setTimeout(rafraichir, 350); }
+
+  function telecharger(sortie, nom) {
+    fetch('/qr-code/generer', { method: 'POST', body: formulaire(sortie) })
+      .then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(function (blob) {
+        var lien = creer('a', { href: URL.createObjectURL(blob), download: nom });
+        document.body.appendChild(lien); lien.click(); lien.remove();
+        setTimeout(function () { URL.revokeObjectURL(lien.href); }, 2000);
+      })
+      .catch(function () { zoneMessages.textContent = ''; message('erreur', 'Le téléchargement a échoué, réessayez.'); });
+  }
+
+  boutonPng.addEventListener('click', function () { telecharger('png', 'qr-code.png'); });
+  boutonSvg.addEventListener('click', function () { telecharger('svg', 'qr-code.svg'); });
+
+  document.querySelectorAll('#qr-formes button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      etat.forme = b.getAttribute('data-forme');
+      document.querySelectorAll('#qr-formes button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      planifier();
+    });
+  });
+  ['qr-couleur', 'qr-fond', 'qr-logo', 'qr-transparent'].forEach(function (id) { document.getElementById(id).addEventListener('input', planifier); document.getElementById(id).addEventListener('change', planifier); });
+  ['#111827', '#1d4ed8', '#047857', '#b91c1c', '#7c3aed', '#000000'].forEach(function (c) {
+    var b = creer('button', { type: 'button', title: c, 'aria-label': 'Couleur ' + c });
+    b.style.background = c;
+    b.addEventListener('click', function () { document.getElementById('qr-couleur').value = c; planifier(); });
+    document.getElementById('qr-pastilles-couleur').appendChild(b);
+  });
+
+  afficherTypes();
+  afficherChamps();
+})();
+</script>
+{% endblock %}

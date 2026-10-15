@@ -97,6 +97,7 @@ from . import (
     montage_video,
     notifications,
     ovh_upload,
+    qr_generateur,
     rank_tracking,
     rapport_donnees,
     google_sheets,
@@ -752,6 +753,65 @@ async def soumettre_audit_gratuit(request: Request, db: Session = Depends(obteni
             pass  # ne bloque jamais la confirmation au visiteur si la notification echoue
 
     return templates.TemplateResponse(request, "audit_gratuit.html", {"erreur": None, "envoye": True, "valeurs": {}})
+
+
+_demandes_qr = {}  # adresse -> horodatages recents (limite anti-abus de la page publique /qr-code)
+MAX_QR_PAR_MINUTE = 40
+
+
+def _qr_limite_atteinte(request: Request) -> bool:
+    adresse = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (request.client.host if request.client else "?")
+    maintenant = monotonic()
+    recentes = [t for t in _demandes_qr.get(adresse, []) if maintenant - t < 60]
+    if len(_demandes_qr) > 5000:
+        _demandes_qr.clear()
+    if len(recentes) >= MAX_QR_PAR_MINUTE:
+        _demandes_qr[adresse] = recentes
+        return True
+    recentes.append(maintenant)
+    _demandes_qr[adresse] = recentes
+    return False
+
+
+@app.get("/qr-code", response_class=HTMLResponse)
+def page_qr_code(request: Request):
+    """Page publique (sans connexion) : createur de QR codes gratuits et permanents, utilisable aussi par les clients."""
+    return templates.TemplateResponse(request, "qr_code.html", {"types_json": json.dumps(qr_generateur.description_types(), ensure_ascii=False)})
+
+
+@app.post("/qr-code/generer")
+async def generer_qr_code(request: Request):
+    """Apercu (JSON) ou telechargement (PNG / SVG) d'un QR code ; rien n'est enregistre cote serveur."""
+    if _qr_limite_atteinte(request):
+        return JSONResponse({"erreur": "Trop de demandes en peu de temps : patientez une minute puis réessayez."}, status_code=429)
+    formulaire = await request.form()
+    type_qr = str(formulaire.get("type") or "lien")
+    champs = {cle[2:]: str(valeur) for cle, valeur in formulaire.multi_items() if cle.startswith("c_") and isinstance(valeur, str)}
+    logo = formulaire.get("logo")
+    octets_logo = await logo.read() if logo is not None and hasattr(logo, "read") else b""
+    sortie = str(formulaire.get("sortie") or "apercu")
+    options = dict(
+        forme=str(formulaire.get("forme") or "carre"), couleur=str(formulaire.get("couleur") or "#000000"), fond=str(formulaire.get("fond") or "#ffffff"),
+        octets_logo=octets_logo or None, transparent=str(formulaire.get("transparent") or "") in ("1", "true", "on"),
+    )
+
+    def produire():
+        contenu = qr_generateur.construire_contenu(type_qr, champs)
+        if sortie == "svg":
+            svg, avertissements = qr_generateur.generer_svg(contenu, **options)
+            return "svg", svg.encode("utf-8"), avertissements, contenu
+        png, avertissements = qr_generateur.generer_png(contenu, taille=700 if sortie == "apercu" else formulaire.get("taille"), **options)
+        return "png", png, avertissements, contenu
+
+    try:
+        genre, octets, avertissements, contenu = await run_in_threadpool(produire)
+    except qr_generateur.ErreurQR as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=422)
+    if sortie == "apercu":
+        return JSONResponse({"image": qr_generateur.apercu_data_uri(octets), "avertissements": avertissements, "contenu": contenu})
+    nom = f"qr-code.{genre}"
+    return Response(content=octets, media_type="image/svg+xml" if genre == "svg" else "image/png",
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"', "Cache-Control": "no-store"})
 
 
 @app.get("/leads", response_class=HTMLResponse)
