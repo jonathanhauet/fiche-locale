@@ -38,10 +38,13 @@ def normaliser_url(url: str) -> str:
 
 def _appeler(methode: str, url_site: str, chemin: str, utilisateur: str, mot_de_passe: str, **kwargs):
     base = normaliser_url(url_site)
+    # Beaucoup d'hebergeurs (nginx, pare-feu) refusent en 403 les requetes qui se presentent comme « python-requests » avant meme
+    # WordPress : on s'identifie avec un User-Agent de navigateur, comme pour la lecture du style du site.
+    en_tetes = {**wordpress_style.EN_TETES, **(kwargs.pop("headers", None) or {})}
     try:
         reponse = requests.request(
             methode, f"{base}/wp-json/wp/v2/{chemin}", auth=(utilisateur.strip(), mot_de_passe.strip()),
-            timeout=DELAI_SECONDES, **kwargs,
+            timeout=DELAI_SECONDES, headers=en_tetes, **kwargs,
         )
     except requests.RequestException as erreur:
         raise RuntimeError(
@@ -56,6 +59,11 @@ def _appeler(methode: str, url_site: str, chemin: str, utilisateur: str, mot_de_
             raise RuntimeError(MESSAGE_MOTS_DE_PASSE_DESACTIVES)
         raise RuntimeError("Identifiants refusés : vérifiez l'identifiant et le mot de passe d'application.")
     if reponse.status_code == 403:
+        if "json" not in (reponse.headers.get("Content-Type") or "").lower():
+            raise RuntimeError(
+                "Le serveur du site (pare-feu de l'hébergeur ou plugin de sécurité) bloque la requête avant même WordPress "
+                "(page 403 sans réponse de l'API). Demandez à l'hébergeur d'autoriser l'accès à /wp-json/ depuis l'extérieur."
+            )
         raise RuntimeError(
             "Accès refusé par le site (droits insuffisants pour cet utilisateur, ou un plugin de sécurité bloque l'API)."
         )

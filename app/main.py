@@ -11208,7 +11208,7 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 if urls_wordpress:
                     image_id = wordpress_publish.envoyer_image(
                         client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
-                        requests.get(urls_wordpress[0], timeout=30).content,
+                        requests.get(urls_wordpress[0], headers=wordpress_style.EN_TETES, timeout=30).content,
                     )
                 article_cree = wordpress_publish.creer_article(
                     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
