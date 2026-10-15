@@ -91,7 +91,7 @@
 </div>
 
 <style>
-  .pr-camera { position: absolute; top: 74px; right: 14px; width: 190px; border-radius: 10px; background: #000; transform: scaleX(-1); z-index: 6; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  .pr-camera { object-fit: contain; max-height: 260px; position: absolute; top: 74px; right: 14px; width: 190px; border-radius: 10px; background: #000; transform: scaleX(-1); z-index: 6; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
   .pr-rec { border: 0; cursor: pointer; position: absolute; top: 74px; left: 14px; z-index: 6; background: #c4161c; color: #fff; padding: .25rem .7rem; border-radius: 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .pr-revue { position: absolute; inset: 0; z-index: 20; background: rgba(8,9,14,.97); color: #fff; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow: auto; }
   .pr-revue-bloc { display: flex; flex-direction: column; gap: .7rem; width: min(560px, 100%); }
@@ -99,7 +99,7 @@
   .pr-revue-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
   .pr-revue-style { display: flex; gap: .5rem; align-items: center; }
   .pr-revue-style select { flex: 1; }
-  #pr-select-camera, #pr-select-micro { max-width: 150px; }
+  #pr-select-camera, #pr-select-micro, #pr-rotation { max-width: 170px; }
   .montage-barre { height: 10px; border-radius: 6px; background: rgba(128,128,140,.3); overflow: hidden; }
   .montage-barre > div { height: 100%; width: 0; background: #5b7cff; transition: width .4s; }
   .liste-montages-recents { list-style: none; margin: .4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
@@ -111,6 +111,9 @@
     <button type="button" id="pr-enregistrer" class="bouton">🔴 Enregistrer</button>
     <button type="button" id="pr-lecture" class="bouton-secondaire">▶ Lecture</button>
     <select id="pr-select-camera" title="Caméra" hidden></select><select id="pr-select-micro" title="Micro" hidden></select>
+    <select id="pr-rotation" title="Image couchée ou à l'envers ? Tournez-la ici">
+      <option value="0">Image droite</option><option value="90">Tourner à droite (90°)</option><option value="270">Tourner à gauche (90°)</option><option value="180">Retourner (180°)</option>
+    </select>
     <button type="button" id="pr-recommencer" class="bouton-secondaire">⏮ Début</button>
     <label>Vitesse <input type="range" id="pr-vitesse" min="1" max="12" step="0.5" value="6"> <span id="pr-vitesse-val">6</span></label>
     <label>Taille <input type="range" id="pr-taille" min="28" max="110" step="2" value="52"></label>
@@ -368,15 +371,37 @@
       const boutonRec = document.getElementById("pr-enregistrer"), revue = document.getElementById("pr-revue");
       const selectCamera = document.getElementById("pr-select-camera"), selectMicro = document.getElementById("pr-select-micro");
       const CLE_PERIPH = "fiche-locale-peripheriques", CLE_MODELE_PRISE = "fiche-locale-modele-prise";
+      const selectRotation = document.getElementById("pr-rotation");
+      let fluxBrut = null, arretRotation = null;
       let flux = null, enregistreur = null, morceaux = [], prise = null, armee = false, debutPrise = 0, minuteurRec = null, priseEnvoyee = true, urlPrise = null;
 
       function lirePref(cle) { try { return JSON.parse(localStorage.getItem(cle) || "{}"); } catch (e) { return {}; } }
       function ecrirePref(cle, valeur) { try { localStorage.setItem(cle, JSON.stringify(valeur)); } catch (e) { /* ignore */ } }
       function messageRec(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
 
+      // Webcam dont l'image arrive couchee ou a l'envers : on la redessine tournee (canvas) et c'est ce flux qui est enregistre.
+      function fluxTourne(brut, angle) {
+        const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.srcObject = new MediaStream(brut.getVideoTracks());
+        const c = document.createElement("canvas"), g = c.getContext("2d"), quart = angle === 90 || angle === 270;
+        c.width = quart ? 720 : 1280; c.height = quart ? 1280 : 720;
+        let actif = true, l = 0, h = 0;
+        v.play().catch(() => { /* lecture automatique refusee : sans importance */ });
+        function dessiner() {
+          if (!actif) return;
+          if (v.videoWidth && (v.videoWidth !== l || v.videoHeight !== h)) { l = v.videoWidth; h = v.videoHeight; c.width = quart ? h : l; c.height = quart ? l : h; }
+          if (l) { g.setTransform(1, 0, 0, 1, 0, 0); g.translate(c.width / 2, c.height / 2); g.rotate(angle * Math.PI / 180); g.drawImage(v, -l / 2, -h / 2, l, h); }
+          requestAnimationFrame(dessiner);
+        }
+        requestAnimationFrame(dessiner);
+        const sortie = c.captureStream(30);
+        brut.getAudioTracks().forEach((t) => sortie.addTrack(t));
+        return { flux: sortie, arreter: () => { actif = false; v.srcObject = null; } };
+      }
       function fermerCamera() {
-        if (flux) flux.getTracks().forEach((t) => t.stop());
-        flux = null; camera.srcObject = null; camera.hidden = true; selectCamera.hidden = selectMicro.hidden = true;
+        if (arretRotation) { arretRotation(); arretRotation = null; }
+        if (fluxBrut) fluxBrut.getTracks().forEach((t) => t.stop());
+        if (flux && flux !== fluxBrut) flux.getVideoTracks().forEach((t) => t.stop());
+        flux = fluxBrut = null; camera.srcObject = null; camera.hidden = true; selectCamera.hidden = selectMicro.hidden = true;
       }
       async function remplirPeripheriques() {
         try {
@@ -412,9 +437,17 @@
           if (e.name === "NotReadableError") throw new Error("La caméra ou le micro est déjà utilisé par une autre application.");
           throw e;
         }
+        fluxBrut = flux;
+        const angle = parseInt(selectRotation.value, 10) || 0;
+        if (angle) { const tourne = fluxTourne(flux, angle); flux = tourne.flux; arretRotation = tourne.arreter; }
         camera.srcObject = flux; camera.hidden = false; try { await camera.play(); } catch (e) { /* lecture auto refusee : sans importance */ }
         remplirPeripheriques();
       }
+      selectRotation.value = String(lirePref(CLE_PERIPH).rotation || 0);
+      selectRotation.addEventListener("change", async () => {
+        const p = lirePref(CLE_PERIPH); p.rotation = parseInt(selectRotation.value, 10) || 0; ecrirePref(CLE_PERIPH, p);
+        if (flux && !enregistreur) { try { await ouvrirCamera(); } catch (e) { messageRec(e.message); } }
+      });
       selectCamera.addEventListener("change", async () => { const p = lirePref(CLE_PERIPH); p.camera = selectCamera.value; ecrirePref(CLE_PERIPH, p); if (!enregistreur) { try { await ouvrirCamera(); } catch (e) { messageRec(e.message); } } });
       selectMicro.addEventListener("change", async () => { const p = lirePref(CLE_PERIPH); p.micro = selectMicro.value; ecrirePref(CLE_PERIPH, p); if (!enregistreur) { try { await ouvrirCamera(); } catch (e) { messageRec(e.message); } } });
 
