@@ -18,6 +18,21 @@
   de la vidéo pour le montage, plus la transcription.
 </p>
 
+{% if script %}
+<div class="formulaire" id="montage-script" style="border-left:4px solid var(--accent);">
+  <strong>📜 Montage à partir de votre script : « {{ script.sujet }} »</strong>
+  <p class="texte-discret" style="margin:.3rem 0">
+    Envoyez la vidéo où vous lisez ce script. La plateforme corrige les sous-titres d'après le script (noms, accents), retire vos prises ratées
+    et vos « on la refait », ajoute des cartes (étapes, chiffres, listes, appel à l'action), un titre d'accroche, des zooms et des bruitages,
+    puis vous propose le texte de publication. Vous gardez la main dans l'éditeur ensuite.
+  </p>
+  <label class="etiquette-chip-case"><input type="checkbox" id="montage-script-actif" checked> Caler les sous-titres sur mon script et retirer mes prises ratées</label>
+  <label class="etiquette-chip-case"><input type="checkbox" id="montage-cartes-auto" checked> Ajouter automatiquement des cartes (étapes, chiffres, listes à cocher, appel à l'action)</label>
+  <details><summary>Voir le script</summary><pre id="montage-script-texte" style="white-space:pre-wrap;font-family:inherit;margin:.4rem 0 0;max-height:16rem;overflow:auto;"></pre></details>
+</div>
+<script id="donnee-script" type="application/json">{{ script|tojson }}</script>
+{% endif %}
+
 <div class="formulaire" id="montage-formulaire">
   <label for="montage-fichier">Vidéo (MP4, MOV, M4V, WEBM ou MKV, 900 Mo maximum, 75 minutes maximum)</label>
   <input type="file" id="montage-fichier" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv">
@@ -141,6 +156,9 @@
 
     function message(texte) { statut.hidden = !texte; statut.textContent = texte || ""; }
 
+    const elementScript = document.getElementById("donnee-script");
+    const SCRIPT = elementScript ? JSON.parse(elementScript.textContent) : null;
+    if (SCRIPT) $("montage-script-texte").textContent = SCRIPT.texte;
     function options() {
       return {
         mode: document.querySelector('input[name="montage-mode"]:checked').value,
@@ -149,6 +167,8 @@
         silences: $("montage-silences").checked, hesitations: $("montage-hesitations").checked, sous_titres: $("montage-sous-titres").checked,
         musique_id: $("montage-musique").value, consignes: $("montage-consignes").value.trim(),
         style: styleBase,
+        script: SCRIPT && $("montage-script-actif") && $("montage-script-actif").checked ? SCRIPT.texte : "",
+        cartes_auto: !!($("montage-cartes-auto") && $("montage-cartes-auto").checked),
         effets: Object.fromEntries(Array.from(document.querySelectorAll("#montage-effets input[data-effet]")).map((c) => [c.dataset.effet, c.checked])),
         bruitages: $("montage-bruitages").checked, pastille: $("montage-pastille").checked, alterne: $("montage-alterne").checked, editorial: $("montage-editorial").checked, partage: $("montage-partage").checked, transition: $("montage-transition").value,
       };
@@ -196,8 +216,10 @@
     MODELES.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.nom + (m.perso ? " (à moi)" : ""); $("montage-modele").appendChild(o); });
     $("montage-modele").addEventListener("change", () => appliquerModele($("montage-modele").value));
     const STYLE_DEFAUT = JSON.parse(document.getElementById("donnee-style-defaut").textContent);
-    const premier = MODELES.find((m) => m.id === STYLE_DEFAUT) || MODELES[0];
+    // Depuis un script : format vertical et modele « Editorial » (ecran coupe, cartes) par defaut, ajustables.
+    const premier = (SCRIPT && MODELES.find((m) => m.id === "editorial")) || MODELES.find((m) => m.id === STYLE_DEFAUT) || MODELES[0];
     if (premier) { $("montage-modele").value = premier.id; appliquerModele(premier.id); }
+    if (SCRIPT) document.querySelector('input[name="montage-format"][value="vertical"]').checked = true;
     const minutes = (t) => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
 
     // Shorts = vertical par defaut, montage complet = horizontal : l'utilisateur peut toujours changer ensuite.
@@ -232,7 +254,10 @@
         const editeur = document.createElement("a");
         editeur.className = "bouton"; editeur.textContent = "🎬 Ouvrir dans l'éditeur (coupes, effets, illustrations)";
         editeur.href = "/montage-video/" + identifiant + "/editeur/" + i;
-        carte.appendChild(titre); carte.appendChild(video); carte.appendChild(editeur); carte.appendChild(lien);
+        const publier = document.createElement("a");
+        publier.className = "bouton"; publier.textContent = "📣 Préparer la publication (texte, hashtags, envoi aux réseaux)";
+        publier.href = "/montage-video/" + identifiant + "/editeur/" + i + "#publier";
+        carte.appendChild(titre); carte.appendChild(video); carte.appendChild(publier); carte.appendChild(editeur); carte.appendChild(lien);
         carte.appendChild(panneauRevision(carte, video, i, sortie));
         zone.appendChild(carte);
       });

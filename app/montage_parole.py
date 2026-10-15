@@ -1150,14 +1150,17 @@ def fichier_sortie(identifiant: str, numero: int):
     return chemin if os.path.exists(chemin) else None
 
 
-def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, choisir_retouches, choisir_extraits, choisir_tendance=None) -> None:
+def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, choisir_retouches, choisir_extraits, choisir_tendance=None,
+                   aligner_script=None, preparer_sortie=None) -> None:
     """
     Demarre (ou relance) un montage en tache de fond. options : silences, hesitations, sous_titres, format ("vertical" /
     "horizontal"), musique (chemin ou None), mode ("montage" / "shorts"), nb_shorts, duree_max_short, consignes, accent, style
     ("tendance" / "sobre"), effets (zooms, mots, accroche, barre, visage : booleens, tous actifs par defaut).
     choisir_retouches(phrases, consignes) -> [(debut, fin)] a retirer ; choisir_extraits(phrases, nb, duree_min, duree_max)
     -> [{"debut", "fin", "titre"}] ; choisir_tendance(phrases) -> {"accroche", "mots_cles"} (style tendance) : fournis par main.py
-    (Claude), pour garder ce module independant de l'IA.
+    (Claude), pour garder ce module independant de l'IA. Script lie (options["script"]) : aligner_script(phrases, script) ->
+    {"textes", "retirer", "avertissement"} corrige les sous-titres d'apres le script et retire les prises ratees ; preparer_sortie(montage, sortie)
+    est appele sur chaque sortie avant son rendu (options["cartes_auto"] : cartes proposees par l'IA).
     """
     montage = MONTAGES.setdefault(identifiant, {"cree": time.time(), "source": source, "dossier": dossier, "transcription": None,
                                                 "silences": None, "infos": None, "audio": None, "visage_x": "inconnu", "verrou": threading.RLock()})
@@ -1189,11 +1192,36 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                 montage["transcription"] = transcrire(
                     montage["audio"], infos["duree"], montage["silences"], lambda p: fixer("Transcription de votre voix", 0.12 + 0.28 * p),
                 )
+            script = (options.get("script") or "").strip()
+            if montage.get("transcription_brute") is not None and montage.get("script_cle") != script:
+                montage["transcription"] = copy.deepcopy(montage["transcription_brute"])        # un autre script (ou plus de script) : on repart de la transcription brute
+                montage["script_cle"], montage["retirer_script"], montage["avert_script"] = None, [], ""
             phrases = montage["transcription"]
             if not phrases:
                 montage["avertissement"] = "Aucune parole détectée : montage sans sous-titres."
-
             retirer = []
+            if script and phrases and aligner_script:
+                if montage.get("script_cle") != script:
+                    fixer("Alignement sur votre script", 0.41)
+                    brute = montage.get("transcription_brute")
+                    if brute is None:
+                        brute = montage["transcription_brute"] = copy.deepcopy(phrases)
+                    try:
+                        alignement = aligner_script(brute, script)
+                        corrigees = copy.deepcopy(brute)
+                        for p, texte in zip(corrigees, alignement["textes"]):
+                            p["texte"] = texte
+                        montage["transcription"] = corrigees
+                        montage["retirer_script"] = [(brute[i]["debut"], brute[i]["fin"]) for i in alignement["retirer"] if 0 <= i < len(brute)]
+                        montage["avert_script"] = alignement.get("avertissement") or ""
+                        montage["script_cle"] = script
+                    except Exception:
+                        montage["avert_script"] = "Le script n'a pas pu être utilisé (l'IA n'a pas répondu) : montage fait sans lui."
+                phrases = montage["transcription"]
+                retirer += montage.get("retirer_script") or []
+                if montage.get("avert_script"):
+                    montage["avertissement"] = montage["avert_script"]
+
             if options.get("hesitations"):
                 retirer += [(p["debut"], p["fin"]) for p in phrases if p.get("hesitation")]
             if (options.get("consignes") or "").strip() and phrases:
@@ -1244,6 +1272,12 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                                "editorial": bool(options.get("editorial", False)), "partage": bool(options.get("partage", False)),
                                "transition": options.get("transition") if options.get("transition") in TRANSITIONS else ("melange" if style == "tendance" else "aucune")},
                 }
+                if options.get("cartes_auto") and preparer_sortie:
+                    fixer("Création des cartes", base)
+                    try:
+                        preparer_sortie(montage, sortie)
+                    except Exception:
+                        montage["avertissement"] = (montage.get("avertissement") or "") + " Les cartes automatiques n'ont pas pu être créées : ajoutez-les depuis l'éditeur."
                 suivi = lambda p, b=base, n=len(travaux): montage.__setitem__("progression", b + 0.5 * p / n)
                 chemin, duree = _rendre_sortie(montage, sortie, suivi)
                 sortie.update(chemin=chemin, duree=round(duree, 1), annulations=[])

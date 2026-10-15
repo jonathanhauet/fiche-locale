@@ -56,7 +56,9 @@
     <div class="ligne-champs">
       <button type="button" id="script-copier" class="bouton-secondaire">📋 Copier</button>
       <button type="button" id="script-prompteur" class="bouton-secondaire">📜 Prompteur</button>
+      <button type="button" id="script-monter" class="bouton">🎬 Je l'ai lu : monter ma vidéo</button>
     </div>
+    <p id="script-monter-statut" class="texte-vide" hidden></p>
 
     <div class="ligne-champs">
       <button type="button" id="kit-generer" class="bouton">
@@ -442,6 +444,24 @@
       });
       blocMiniatures.insertBefore(creer, statutMiniatures);
     }
+
+    document.getElementById("script-monter").addEventListener("click", async () => {
+      const statutMonter = document.getElementById("script-monter-statut");
+      const script = champTexte.value.trim();
+      statutMonter.hidden = false;
+      if (!script) { statutMonter.textContent = "Générez ou collez d'abord un script."; return; }
+      statutMonter.textContent = "Enregistrement du script…";
+      try {
+        const reponse = await fetch("/scripts-video/enregistrer", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ script: script, script_id: scriptIdCourant, sujet: champSujet.value.trim() }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { statutMonter.textContent = donnees.erreur || "Enregistrement impossible."; return; }
+        scriptIdCourant = donnees.id;
+        window.location.href = "/montage-video?script_id=" + donnees.id;
+      } catch (erreur) { statutMonter.textContent = "Erreur réseau."; }
+    });
 
     boutonKit.addEventListener("click", async () => {
       const script = champTexte.value.trim();

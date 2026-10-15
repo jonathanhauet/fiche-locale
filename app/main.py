@@ -7540,6 +7540,31 @@ def scripts_video_ouvrir(script_id: int, request: Request, db: Session = Depends
     return JSONResponse({"id": v.id, "sujet": v.sujet, "script": v.script, "kit": kit})
 
 
+@app.post("/scripts-video/enregistrer")
+async def scripts_video_enregistrer(request: Request, db: Session = Depends(obtenir_session)):
+    """Enregistre (ou met a jour) le script affiche pour pouvoir le relier a un montage : renvoie son identifiant."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    script = str(donnees.get("script") or "").strip()
+    if not script:
+        return JSONResponse({"erreur": "Générez ou collez d'abord un script."}, status_code=400)
+    try:
+        ligne = db.get(models.ScriptVideo, int(donnees.get("script_id") or 0))
+    except (TypeError, ValueError):
+        ligne = None
+    if ligne:
+        ligne.script = script
+    else:
+        ligne = models.ScriptVideo(sujet=(str(donnees.get("sujet") or "").strip() or "(script collé)")[:300], script=script)
+        db.add(ligne)
+    db.commit()
+    return JSONResponse({"id": ligne.id})
+
+
 @app.post("/scripts-video/{script_id}/supprimer")
 def scripts_video_supprimer(script_id: int, request: Request, db: Session = Depends(obtenir_session)):
     if not utilisateur_connecte(request):
@@ -7768,7 +7793,14 @@ def page_montage_video(request: Request, db: Session = Depends(obtenir_session))
     if redirection:
         return redirection
     pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
-    return templates.TemplateResponse(request, "montage_video.html", {"page_actuelle": "montage_video", "pistes": pistes,
+    script = None
+    try:
+        ligne = db.get(models.ScriptVideo, int(request.query_params.get("script_id") or 0))
+    except (TypeError, ValueError):
+        ligne = None
+    if ligne and (ligne.script or "").strip():
+        script = {"id": ligne.id, "sujet": ligne.sujet, "texte": ligne.script}
+    return templates.TemplateResponse(request, "montage_video.html", {"page_actuelle": "montage_video", "pistes": pistes, "script": script,
                                                                         "styles_json": json.dumps(styles_montage.lister(db)).replace("</", "<\\/"),
                                                                         "style_defaut": regles_montage.style_par_defaut(db)})
 
@@ -7791,6 +7823,8 @@ def _options_montage(brut, dossier: str, db: Session) -> dict:
         "pastille": bool(brut.get("pastille", brut.get("style") != "sobre")),
         "charte": charte_montage.lire(db),
         "alterne": bool(brut.get("alterne", False)),
+        "script": str(brut.get("script") or "").strip()[:12000],
+        "cartes_auto": bool(brut.get("cartes_auto", False)),
         "editorial": bool(brut.get("editorial", False)),
         "partage": bool(brut.get("partage", False)),
         "transition": brut.get("transition") if brut.get("transition") in styles_montage.TRANSITIONS_VALIDES else ("aucune" if brut.get("style") == "sobre" else "melange"),
@@ -7840,6 +7874,22 @@ def _interpreter_annotations(notes, phrases, duree):
     return claude_generation.actions_depuis_annotations(notes, phrases, duree)
 
 
+def _aligner_script(phrases, script):
+    return claude_generation.aligner_sur_script(phrases, script)
+
+
+def _preparer_sortie_auto(montage, sortie):
+    """Montage a partir d'un script : l'IA propose des cartes (etapes, chiffres, listes, appels a l'action) a partir de ce qui est dit, ajoutees avant le rendu."""
+    phrases_montage = montage_parole.phrases_sur_montage(sortie["phrases"], sortie["segments"])
+    cartes = _cartes_depuis_transcription(phrases_montage, montage_parole.duree_montee(sortie["segments"]))
+    for carte in cartes:
+        debut_source = montage_parole.montage_vers_source(carte["debut"], sortie["segments"])
+        try:
+            montage_editeur.ajouter_carte(montage, sortie, carte["type"], carte["textes"], debut_source, carte["duree"], "haut")
+        except montage_editeur.ErreurEditeur:
+            continue
+
+
 @app.post("/montage-video/lancer")
 async def montage_video_lancer(
     request: Request, fichier: UploadFile = File(...), options: str = Form("{}"), db: Session = Depends(obtenir_session),
@@ -7876,7 +7926,7 @@ async def montage_video_lancer(
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
 
     opts = await run_in_threadpool(_options_montage, brut, dossier, db)
-    montage_parole.lancer_montage(identifiant, dossier, source, opts, _choisir_retouches, _choisir_extraits, _choisir_tendance)
+    montage_parole.lancer_montage(identifiant, dossier, source, opts, _choisir_retouches, _choisir_extraits, _choisir_tendance, _aligner_script, _preparer_sortie_auto)
     return JSONResponse({"id": identifiant})
 
 
@@ -7895,7 +7945,7 @@ async def montage_video_relancer(identifiant: str, request: Request, db: Session
     except ValueError:
         brut = {}
     opts = await run_in_threadpool(_options_montage, brut, montage["dossier"], db)
-    montage_parole.lancer_montage(identifiant, montage["dossier"], montage["source"], opts, _choisir_retouches, _choisir_extraits, _choisir_tendance)
+    montage_parole.lancer_montage(identifiant, montage["dossier"], montage["source"], opts, _choisir_retouches, _choisir_extraits, _choisir_tendance, _aligner_script, _preparer_sortie_auto)
     return JSONResponse({"id": identifiant})
 
 

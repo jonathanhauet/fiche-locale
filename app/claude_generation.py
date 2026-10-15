@@ -3011,6 +3011,79 @@ def tendance_depuis_transcription(phrases: list) -> dict:
     return {"accroche": accroche, "mots_cles": [m.strip() for m in mots_cles if isinstance(m, str) and m.strip() and " " not in m.strip()][:14]}
 
 
+SCHEMA_ALIGNEMENT_SCRIPT = {
+    "type": "object",
+    "properties": {
+        "phrases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"indice": {"type": "integer"}, "texte": {"type": "string"}, "retirer": {"type": "boolean"}},
+                "required": ["indice", "texte", "retirer"], "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["phrases"], "additionalProperties": False,
+}
+TAILLE_LOT_ALIGNEMENT = 80
+PART_MAX_RETIREE = 0.6
+
+
+def aligner_sur_script(phrases: list, script: str) -> dict:
+    """
+    Compare la transcription d'une video lue face camera au script prepare : corrige l'orthographe des mots mal entendus (noms, termes
+    techniques, accents) en reprenant celle du script, et repere les phrases a retirer (prises ratees deja reprises ensuite, faux departs,
+    remarques hors script comme « on la refait »). Ne rajoute jamais un mot qui n'a pas ete prononce. Renvoie
+    {"textes": [str par phrase], "retirer": [indices], "avertissement": str}.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    textes = [p["texte"] for p in phrases]
+    retirer = set()
+    client = Anthropic(api_key=CLE_API)
+    for debut in range(0, len(phrases), TAILLE_LOT_ALIGNEMENT):
+        lot = list(range(debut, min(len(phrases), debut + TAILLE_LOT_ALIGNEMENT)))
+        transcription = "\n".join(f"[{i}] {phrases[i]['texte']}" for i in lot)
+        prompt = (
+            f"Script prévu (la personne le lit face caméra) :\n\n{script.strip()[:12000]}\n\n"
+            f"Transcription automatique de sa prise vidéo, phrase par phrase (extrait {lot[0]} à {lot[-1]}) :\n\n{transcription}\n\n"
+            "Pour chaque phrase de la transcription, renvoie : indice (le numéro entre crochets), texte (ce qui a été prononcé, avec l'orthographe "
+            "exacte du script pour les mots mal transcrits : noms propres, termes techniques, accents ; ne change pas le sens, ne rajoute jamais "
+            "un mot qui n'a pas été prononcé, ne complète pas avec le script), retirer (true si la phrase est une prise ratée à supprimer : "
+            "début de phrase abandonné, phrase répétée ensuite en meilleure version, remarque hors script comme « on la refait », « attends », "
+            "« je recommence » ; false pour toute phrase utile, y compris si elle s'écarte légèrement du script). Quand une phrase du script a "
+            "été dite plusieurs fois, garde la dernière prise complète et retire les précédentes. Dans le doute, ne retire pas."
+        )
+        prompt += _bloc_regles()
+        reponse = client.messages.create(
+            model=MODELE_CLAUDE, max_tokens=8000, thinking={"type": "disabled"},
+            output_config={"format": {"type": "json_schema", "schema": SCHEMA_ALIGNEMENT_SCRIPT}},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+        if not bloc:
+            raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+        try:
+            brut = json.loads(bloc)["phrases"]
+        except (json.JSONDecodeError, KeyError, TypeError) as erreur:
+            raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
+        for element in brut:
+            i = element.get("indice")
+            if not isinstance(i, int) or i not in lot:
+                continue
+            nouveau = " ".join(str(element.get("texte") or "").split())
+            ancien = textes[i]
+            # Garde-fou : un texte qui s'allonge beaucoup serait du script recopie, pas ce qui a ete dit.
+            if nouveau and len(nouveau) <= len(ancien) * 1.5 + 12:
+                textes[i] = nouveau
+            if element.get("retirer") is True:
+                retirer.add(i)
+    avertissement = ""
+    if phrases and len(retirer) > PART_MAX_RETIREE * len(phrases):
+        retirer, avertissement = set(), "L'IA voulait retirer trop de phrases : aucune coupe n'a été faite d'après le script."
+    return {"textes": textes, "retirer": sorted(retirer), "avertissement": avertissement}
+
+
 ACTIONS_REVISION = ("couper", "zoom", "sans_zoom", "titre", "mot_en_gros", "corriger_texte")
 SCHEMA_REVISION = {
     "type": "object",

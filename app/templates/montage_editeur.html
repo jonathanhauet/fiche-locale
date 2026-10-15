@@ -880,6 +880,7 @@
     if (o.dataset.onglet === "cartes") remplirCharte();
     if (o.dataset.onglet === "publier") ouvrirPublication();
   }));
+  if (window.location.hash === "#publier") { const onglet = document.querySelector('.ed-onglet[data-onglet="publier"]'); if (onglet) onglet.click(); }
   document.addEventListener("keydown", (e) => {
     const champ = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
     if (champ || !E) return;
