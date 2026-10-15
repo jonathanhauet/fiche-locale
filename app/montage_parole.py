@@ -116,7 +116,10 @@ def detecter_silences(audio_wav: str) -> list:
     niveau = _lancer([FFMPEG, "-hide_banner", "-i", audio_wav, "-af", "volumedetect", "-f", "null", "-"], 600).stderr
     correspondance = re.search(r"mean_volume:\s*(-?[\d.]+) dB", niveau)
     moyen = float(correspondance.group(1)) if correspondance else -25.0
-    seuil = max(-45.0, min(-26.0, moyen - 14.0))
+    if moyen < -70.0:
+        raise ErreurMontage("Le son de la vidéo est vide (micro muet ou non autorisé ?) : vérifiez le micro puis refaites une prise.")
+    # Niveau normal : seuil entre -45 et -26 dB ; enregistrement tres faible (micro peu sensible) : seuil relatif, jusqu'a -70 dB.
+    seuil = max(-70.0, min(-26.0, moyen - 14.0)) if moyen < -31.0 else max(-45.0, min(-26.0, moyen - 14.0))
     sortie = _lancer([FFMPEG, "-hide_banner", "-i", audio_wav, "-af", f"silencedetect=noise={seuil}dB:d=0.4", "-f", "null", "-"], 600).stderr
     silences, debut = [], None
     for ligne in sortie.splitlines():
@@ -1218,7 +1221,7 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
             phrases = montage["transcription"]
             if not phrases:
                 montage["avertissement"] = "Aucune parole détectée : montage sans sous-titres."
-            retirer = []
+            coupes_script = []
             if script and phrases and aligner_script:
                 if montage.get("script_cle") != script:
                     fixer("Alignement sur votre script", 0.41)
@@ -1233,19 +1236,45 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                         montage["transcription"] = corrigees
                         montage["retirer_script"] = [(brute[i]["debut"], brute[i]["fin"]) for i in alignement["retirer"] if 0 <= i < len(brute)]
                         montage["avert_script"] = alignement.get("avertissement") or ""
+                        parole = sum(p["fin"] - p["debut"] for p in brute)
+                        if parole and sum(b - a for a, b in montage["retirer_script"]) > 0.6 * parole:      # garde-fou en duree, en plus de celui par nombre de phrases
+                            montage["retirer_script"] = []
+                            montage["avert_script"] = "L'IA voulait retirer l'essentiel de votre prise d'après le script : aucune coupe n'a été faite."
                         montage["script_cle"] = script
                     except Exception:
                         montage["avert_script"] = "Le script n'a pas pu être utilisé (l'IA n'a pas répondu) : montage fait sans lui."
                 phrases = montage["transcription"]
-                retirer += montage.get("retirer_script") or []
+                coupes_script = list(montage.get("retirer_script") or [])
                 if montage.get("avert_script"):
                     montage["avertissement"] = montage["avert_script"]
 
+            coupes_hesitations, coupes_consignes = [], []
             if options.get("hesitations"):
-                retirer += [(p["debut"], p["fin"]) for p in phrases if p.get("hesitation")]
+                coupes_hesitations = [(p["debut"], p["fin"]) for p in phrases if p.get("hesitation")]
             if (options.get("consignes") or "").strip() and phrases:
                 fixer("Application de vos consignes", 0.42)
-                retirer += choisir_retouches(phrases, options["consignes"].strip())
+                coupes_consignes = list(choisir_retouches(phrases, options["consignes"].strip()))
+
+            def calculer_segments(debut=0.0, fin=None):
+                """Parties gardees ; si les coupes automatiques retirent toute la prise, on les ecarte une a une (script, silences, « euh ») plutot que d'echouer."""
+                essais = [
+                    (coupes_script + coupes_hesitations + coupes_consignes, True, ""),
+                    (coupes_hesitations + coupes_consignes, True, "Les coupes d'après le script retiraient toute la prise : elles ont été ignorées."),
+                    (coupes_hesitations + coupes_consignes, False, "Les silences retiraient toute la prise (son très faible ?) : ils n'ont pas été coupés."),
+                    (coupes_consignes, False, "Les coupes des « euh » retiraient toute la prise : elles ont été ignorées."),
+                ]
+                precedent = None
+                for liste, couper, avert in essais:
+                    couper = couper and bool(options.get("silences", True))
+                    if (liste, couper) == precedent:
+                        continue
+                    precedent = (liste, couper)
+                    gardes = segments_a_garder(infos["duree"], montage["silences"], couper, liste, debut, fin)
+                    if gardes:
+                        if avert:
+                            montage["avertissement"] = (montage.get("avertissement") or "").strip() + (" " if montage.get("avertissement") else "") + avert
+                        return gardes
+                return []
 
             sorties = []
             format_sortie = options.get("format", "vertical")
@@ -1258,9 +1287,9 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                 extraits = choisir_extraits(phrases, int(options.get("nb_shorts") or 3), 25.0, float(options.get("duree_max_short") or 90))
                 if not extraits:
                     raise ErreurMontage("Aucun extrait exploitable n'a été trouvé dans cette vidéo.")
-                travaux = [(e, segments_a_garder(infos["duree"], montage["silences"], options.get("silences", True), retirer, e["debut"], e["fin"])) for e in extraits]
+                travaux = [(e, calculer_segments(e["debut"], e["fin"])) for e in extraits]
             else:
-                travaux = [({"titre": "Montage complet"}, segments_a_garder(infos["duree"], montage["silences"], options.get("silences", True), retirer))]
+                travaux = [({"titre": "Montage complet"}, calculer_segments())]
 
             visage_x = None
             if style == "tendance" and actifs["visage"] and format_sortie == "vertical" and infos["largeur"] > infos["hauteur"]:

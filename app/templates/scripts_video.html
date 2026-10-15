@@ -91,7 +91,12 @@
 </div>
 
 <style>
-  .pr-camera { object-fit: contain; max-height: 260px; position: absolute; top: 74px; right: 14px; width: 190px; border-radius: 10px; background: #000; transform: scaleX(-1); z-index: 6; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  .pr-coin { position: absolute; top: 74px; right: 14px; width: 190px; z-index: 6; display: flex; flex-direction: column; gap: 6px; }
+  .pr-camera { object-fit: contain; max-height: 260px; width: 100%; border-radius: 10px; background: #000; transform: scaleX(-1); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  .pr-niveau { background: rgba(10,10,15,.85); border-radius: 8px; padding: 6px 8px; font-size: .78rem; line-height: 1.25; }
+  .pr-niveau-barre { height: 10px; border-radius: 5px; background: rgba(255,255,255,.18); overflow: hidden; margin-bottom: 4px; }
+  #pr-niveau-rempli { height: 100%; width: 0; background: #2ecc71; transition: width .08s linear; }
+  .prompteur-texte .dit { opacity: .35; }
   .pr-rec { border: 0; cursor: pointer; position: absolute; top: 74px; left: 14px; z-index: 6; background: #c4161c; color: #fff; padding: .25rem .7rem; border-radius: 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .pr-revue { position: absolute; inset: 0; z-index: 20; background: rgba(8,9,14,.97); color: #fff; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow: auto; }
   .pr-revue-bloc { display: flex; flex-direction: column; gap: .7rem; width: min(560px, 100%); }
@@ -109,7 +114,9 @@
 <div id="prompteur" class="prompteur" hidden>
   <div class="prompteur-barre" id="prompteur-barre">
     <button type="button" id="pr-enregistrer" class="bouton">🔴 Enregistrer</button>
+    <button type="button" id="pr-tester" class="bouton-secondaire" title="Vérifier la caméra et le niveau du micro avant de lancer la prise">🎚 Tester micro et caméra</button>
     <button type="button" id="pr-lecture" class="bouton-secondaire">▶ Lecture</button>
+    <label class="pr-case" title="Le texte avance tout seul quand vous parlez (Chrome ou Edge)"><input type="checkbox" id="pr-voix"> 🎤 Suivre ma voix <span id="pr-voix-etat" class="texte-discret"></span></label>
     <select id="pr-select-camera" title="Caméra" hidden></select><select id="pr-select-micro" title="Micro" hidden></select>
     <select id="pr-rotation" title="Image couchée ou à l'envers ? Tournez-la ici">
       <option value="0">Image droite</option><option value="90">Tourner à droite (90°)</option><option value="270">Tourner à gauche (90°)</option><option value="180">Retourner (180°)</option>
@@ -128,12 +135,16 @@
     <div class="prompteur-defile" id="pr-defile"><div class="prompteur-texte" id="pr-texte"></div></div>
   </div>
   <div class="prompteur-compte" id="pr-compte" hidden></div>
-  <video id="pr-camera" class="pr-camera" muted playsinline hidden></video>
+  <div id="pr-coin" class="pr-coin" hidden>
+    <video id="pr-camera" class="pr-camera" muted playsinline></video>
+    <div class="pr-niveau"><div class="pr-niveau-barre"><div id="pr-niveau-rempli"></div></div><span id="pr-niveau-texte">Parlez : la barre doit bouger</span></div>
+  </div>
   <button type="button" id="pr-rec" class="pr-rec" hidden title="Terminer la prise">● REC <span id="pr-rec-temps">0:00</span> · ⏹ Terminer</button>
   <div id="pr-revue" class="pr-revue" hidden>
     <div id="pr-revue-prise" class="pr-revue-bloc">
       <strong>Votre prise</strong>
       <video id="pr-revue-video" controls playsinline></video>
+      <p id="pr-revue-son" style="margin:0;font-weight:600"></p>
       <label class="pr-revue-style">Style du montage <select id="pr-revue-style"></select></label>
       <p class="texte-discret" style="margin:0;color:#c9ccd6">Le montage retire vos prises ratées d'après le script, corrige les sous-titres, ajoute cartes, zooms et bruitages, puis prépare la publication.</p>
       <div class="pr-revue-actions">
@@ -290,6 +301,11 @@
       const compte = document.getElementById("pr-compte");
       const CLE = "fiche-locale-prompteur";
       let decalage = 0, lecture = false, dernier = 0, minuteurCompte = null, minuteurImmersif = null;
+      let motsEls = [], motsNorm = [], posVoix = 0, voixActive = false, voixIndisponible = false, reconnaissance = null;
+      const caseVoix = document.getElementById("pr-voix"), etatVoix = document.getElementById("pr-voix-etat"), ligneLecture = racine.querySelector(".prompteur-ligne");
+      const ReconnaissanceVocale = window.SpeechRecognition || window.webkitSpeechRecognition;
+      function norm(m) { return m.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, ""); }
+      function suitVoix() { return !!(caseVoix.checked && ReconnaissanceVocale && !voixIndisponible); }
 
       try {
         const pref = JSON.parse(localStorage.getItem(CLE) || "{}");
@@ -314,10 +330,19 @@
         boutonLecture.textContent = lecture ? "⏸ Pause" : "▶ Lecture";
         racine.classList.toggle("immersif", lecture);
         if (lecture) dernier = performance.now();
+        if (lecture) demarrerVoix(); else arreterVoix();
       }
       function image(maintenant) {
         if (!racine.hidden) {
-          if (lecture) {
+          if (lecture && suitVoix()) {
+            // le texte se cale doucement sur le dernier mot reconnu : ce mot vient se placer sur la ligne rouge
+            const cible = motsEls[Math.min(posVoix, motsEls.length - 1)];
+            if (cible) {
+              const delta = cible.getBoundingClientRect().top - ligneLecture.getBoundingClientRect().top;
+              decalage = Math.max(0, Math.min(maximum(), decalage + delta * 0.12));
+            }
+            dernier = maintenant; appliquer();
+          } else if (lecture) {
             const dt = Math.min(0.1, (maintenant - dernier) / 1000);
             dernier = maintenant;
             decalage += parseFloat(curseurVitesse.value) * parseFloat(curseurTaille.value) * 0.08 * dt;
@@ -341,9 +366,16 @@
       function ouvrir() {
         const script = champTexte.value.trim();
         if (!script) { statut.hidden = false; statut.textContent = "Générez ou collez d'abord un script."; return; }
-        texteEl.innerHTML = "";
+        texteEl.innerHTML = ""; motsEls = []; motsNorm = []; posVoix = 0;
         script.split(/\n+/).filter((l) => l.trim()).forEach((ligne) => {
-          const p = document.createElement("p"); p.textContent = ligne.trim(); texteEl.appendChild(p);
+          const p = document.createElement("p");
+          ligne.trim().split(/\s+/).forEach((mot, i, tous) => {
+            const espace = i < tous.length - 1 ? " " : "";
+            if (!norm(mot) && p.lastChild) { p.lastChild.textContent += mot + espace; return; }          // ponctuation isolee (« : », « - ») : collee au mot precedent
+            const span = document.createElement("span"); span.textContent = mot + espace; p.appendChild(span);
+            motsEls.push(span); motsNorm.push(norm(mot));
+          });
+          texteEl.appendChild(p);
         });
         racine.hidden = false;
         document.body.style.overflow = "hidden";
@@ -365,6 +397,67 @@
         clearTimeout(minuteurImmersif);
         if (lecture) minuteurImmersif = setTimeout(() => racine.classList.add("immersif"), 2500);
       }
+
+      // ----- Le prompteur suit la voix : reconnaissance vocale du navigateur, comparee au script -----
+      function proche(a, b) {
+        if (a === b) return true;
+        if (!a || !b || Math.min(a.length, b.length) < 5 || Math.abs(a.length - b.length) > 1) return false;
+        let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+        if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);       // une lettre differente
+        return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);       // une lettre en plus ou en moins
+      }
+      function marquerDits() { motsEls.forEach((el, i) => el.classList.toggle("dit", i < posVoix)); }
+      function placerVoix(texte) {
+        const dits = texte.split(/\s+/).map(norm).filter(Boolean);
+        if (!dits.length || !motsNorm.length) return;
+        const debutFenetre = Math.max(0, posVoix - 30), finFenetre = Math.min(motsNorm.length, posVoix + 60);
+        for (let k = Math.min(5, dits.length); k >= 1; k--) {
+          const fin = dits.slice(-k); let meilleur = -1, ecart = 1e9;
+          for (let j = debutFenetre + k - 1; j < finFenetre; j++) {
+            let ok = true;
+            for (let t = 0; t < k; t++) { if (!proche(motsNorm[j - k + 1 + t], fin[t])) { ok = false; break; } }
+            if (!ok) continue;
+            const e = Math.abs(j + 1 - posVoix) + (j + 1 < posVoix ? 3 : 0);          // on prefere la suite du texte, mais une reprise en arriere reste possible
+            if (e < ecart) { ecart = e; meilleur = j; }
+          }
+          if (meilleur >= 0 && (k >= 2 || (fin[0].length >= 5 && meilleur + 1 >= posVoix && meilleur + 1 <= posVoix + 8))) { posVoix = meilleur + 1; marquerDits(); return; }
+        }
+        // Perdu (un passage saute, une longue digression) : on cherche une suite de 3 mots ou plus dans tout le texte pour se resynchroniser.
+        for (let k = Math.min(5, dits.length); k >= 3; k--) {
+          const fin = dits.slice(-k); let meilleur = -1, ecart = 1e9;
+          for (let j = k - 1; j < motsNorm.length; j++) {
+            let ok = true;
+            for (let t = 0; t < k; t++) { if (!proche(motsNorm[j - k + 1 + t], fin[t])) { ok = false; break; } }
+            if (ok && Math.abs(j + 1 - posVoix) < ecart) { ecart = Math.abs(j + 1 - posVoix); meilleur = j; }
+          }
+          if (meilleur >= 0) { posVoix = meilleur + 1; marquerDits(); return; }
+        }
+      }
+      function demarrerVoix() {
+        if (!suitVoix() || voixActive) return;
+        voixActive = true; etatVoix.textContent = "· j'écoute…";
+        const lancer = () => {
+          if (!voixActive) return;
+          const r = reconnaissance = new ReconnaissanceVocale();
+          r.lang = "fr-FR"; r.continuous = true; r.interimResults = true;
+          r.onresult = (e) => { const dernier = e.results[e.results.length - 1]; if (dernier && dernier[0]) placerVoix(dernier[0].transcript); };
+          r.onerror = (e) => {
+            if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "audio-capture") {
+              voixIndisponible = true; voixActive = false; etatVoix.textContent = "· reconnaissance impossible : le texte défile à la vitesse réglée";
+            }
+          };
+          r.onend = () => { if (voixActive) setTimeout(lancer, 150); };       // le navigateur coupe l'ecoute apres un moment : on la relance
+          try { r.start(); } catch (e) { /* deja demarree */ }
+        };
+        lancer();
+      }
+      function arreterVoix() {
+        voixActive = false;
+        if (reconnaissance) { reconnaissance.onend = null; try { reconnaissance.stop(); } catch (e) { /* deja arretee */ } reconnaissance = null; }
+        if (!voixIndisponible) etatVoix.textContent = caseVoix.checked ? "· en pause" : "";
+      }
+      if (!ReconnaissanceVocale) { caseVoix.disabled = true; etatVoix.textContent = "(Chrome ou Edge requis)"; }
+      caseVoix.addEventListener("change", () => { if (!caseVoix.checked) { arreterVoix(); etatVoix.textContent = ""; } else if (lecture) demarrerVoix(); });
 
       // ----- Enregistrement direct (webcam + micro) : la prise part ensuite dans le montage automatique -----
       const camera = document.getElementById("pr-camera"), badgeRec = document.getElementById("pr-rec"), tempsRec = document.getElementById("pr-rec-temps");
@@ -397,8 +490,47 @@
         brut.getAudioTracks().forEach((t) => sortie.addTrack(t));
         return { flux: sortie, arreter: () => { actif = false; v.srcObject = null; } };
       }
+      // ----- Vumetre du micro : on voit tout de suite si le son est pris en compte -----
+      const coin = document.getElementById("pr-coin"), niveauRempli = document.getElementById("pr-niveau-rempli"), niveauTexte = document.getElementById("pr-niveau-texte");
+      let contexteAudio = null, rafNiveau = null, plusFortPrise = 0, mesures = [];
+      function arreterNiveau() {
+        if (rafNiveau) cancelAnimationFrame(rafNiveau); rafNiveau = null;
+        if (contexteAudio) { try { contexteAudio.close(); } catch (e) { /* deja ferme */ } contexteAudio = null; }
+      }
+      function demarrerNiveau(fluxAudio) {
+        arreterNiveau();
+        const pistes = fluxAudio.getAudioTracks();
+        if (!pistes.length) { niveauTexte.textContent = "🔇 Aucun micro détecté"; return; }
+        const Contexte = window.AudioContext || window.webkitAudioContext;
+        contexteAudio = new Contexte(); contexteAudio.resume();
+        const analyseur = contexteAudio.createAnalyser(); analyseur.fftSize = 1024;
+        contexteAudio.createMediaStreamSource(new MediaStream(pistes)).connect(analyseur);
+        const donnees = new Float32Array(analyseur.fftSize); mesures = [];
+        const boucle = () => {
+          analyseur.getFloatTimeDomainData(donnees);
+          let somme = 0; for (let i = 0; i < donnees.length; i++) somme += donnees[i] * donnees[i];
+          const db = 20 * Math.log10(Math.sqrt(somme / donnees.length) || 1e-6);
+          const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100));        // 0 % = -60 dB, 100 % = 0 dB
+          const t = performance.now(); mesures.push([t, pct]); while (mesures.length && t - mesures[0][0] > 2000) mesures.shift();
+          const recent = Math.max(...mesures.map((m) => m[1]));
+          if (enregistreur) plusFortPrise = Math.max(plusFortPrise, pct);
+          niveauRempli.style.width = pct + "%";
+          niveauRempli.style.background = recent < 30 ? "#e67e22" : recent > 95 ? "#e74c3c" : "#2ecc71";
+          niveauTexte.textContent = recent < 8 ? "🔇 Aucun son : micro muet ou mal réglé ?" : recent < 30 ? "🔉 Son faible : parlez plus fort ou rapprochez le micro" : recent > 95 ? "⚠ Son saturé : éloignez le micro" : "🔊 Son correct";
+          rafNiveau = requestAnimationFrame(boucle);
+        };
+        rafNiveau = requestAnimationFrame(boucle);
+      }
+      document.getElementById("pr-tester").addEventListener("click", async () => {
+        if (enregistreur || armee) return;
+        if (flux) { fermerCamera(); document.getElementById("pr-tester").textContent = "🎚 Tester micro et caméra"; return; }
+        messageRec("");
+        try { await ouvrirCamera(); document.getElementById("pr-tester").textContent = "⏹ Arrêter le test"; } catch (e) { messageRec(e.message || "Impossible d'ouvrir la caméra."); }
+      });
+
       function fermerCamera() {
         if (arretRotation) { arretRotation(); arretRotation = null; }
+        arreterNiveau(); coin.hidden = true;
         if (fluxBrut) fluxBrut.getTracks().forEach((t) => t.stop());
         if (flux && flux !== fluxBrut) flux.getVideoTracks().forEach((t) => t.stop());
         flux = fluxBrut = null; camera.srcObject = null; camera.hidden = true; selectCamera.hidden = selectMicro.hidden = true;
@@ -440,7 +572,7 @@
         fluxBrut = flux;
         const angle = parseInt(selectRotation.value, 10) || 0;
         if (angle) { const tourne = fluxTourne(flux, angle); flux = tourne.flux; arretRotation = tourne.arreter; }
-        camera.srcObject = flux; camera.hidden = false; try { await camera.play(); } catch (e) { /* lecture auto refusee : sans importance */ }
+        camera.srcObject = flux; camera.hidden = false; coin.hidden = false; demarrerNiveau(fluxBrut); try { await camera.play(); } catch (e) { /* lecture auto refusee : sans importance */ }
         remplirPeripheriques();
       }
       selectRotation.value = String(lirePref(CLE_PERIPH).rotation || 0);
@@ -456,7 +588,7 @@
         return ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
       }
       function demarrerEnregistrement() {
-        morceaux = []; priseEnvoyee = false;
+        morceaux = []; priseEnvoyee = false; plusFortPrise = 0;
         const type = typeEnregistrement();
         enregistreur = new MediaRecorder(flux, Object.assign(type ? { mimeType: type } : {}, { videoBitsPerSecond: 8000000, audioBitsPerSecond: 128000 }));
         enregistreur.ondataavailable = (e) => { if (e.data && e.data.size) morceaux.push(e.data); };
@@ -479,6 +611,11 @@
         if (urlPrise) URL.revokeObjectURL(urlPrise);
         urlPrise = URL.createObjectURL(prise);
         const video = document.getElementById("pr-revue-video"); video.src = urlPrise;
+        const son = document.getElementById("pr-revue-son");
+        son.textContent = plusFortPrise < 8 ? "⚠ Aucun son n'a été enregistré : vérifiez le micro (réglages Windows), puis refaites la prise."
+          : plusFortPrise < 30 ? "⚠ Le son est très faible : rapprochez le micro ou parlez plus fort, sinon le montage risque de couper trop."
+          : "✅ Son bien enregistré.";
+        son.style.color = plusFortPrise < 30 ? "#ffb04a" : "#6fe09a";
         document.getElementById("pr-revue-prise").hidden = false; document.getElementById("pr-revue-fin").hidden = true;
         document.getElementById("pr-revue-barre").hidden = true; document.getElementById("pr-revue-statut").hidden = true;
         document.getElementById("pr-revue-monter").disabled = false; document.getElementById("pr-revue-refaire").disabled = false;
@@ -514,6 +651,7 @@
       });
       document.getElementById("pr-revue-monter").addEventListener("click", () => {
         if (!prise) return;
+        if (plusFortPrise < 8 && !confirm("Aucun son n'a été enregistré : le montage va échouer. Monter quand même ?")) return;
         const bouton = document.getElementById("pr-revue-monter"), etat = document.getElementById("pr-revue-statut"), barre = document.getElementById("pr-revue-barre");
         bouton.disabled = true; document.getElementById("pr-revue-refaire").disabled = true;
         const formulaire = new FormData();
@@ -551,7 +689,7 @@
 
       document.getElementById("script-prompteur").addEventListener("click", ouvrir);
       document.getElementById("pr-fermer").addEventListener("click", fermer);
-      document.getElementById("pr-recommencer").addEventListener("click", () => { decalage = 0; appliquer(); });
+      document.getElementById("pr-recommencer").addEventListener("click", () => { decalage = 0; posVoix = 0; marquerDits(); appliquer(); });
       boutonLecture.addEventListener("click", demarrerAvecCompteARebours);
       curseurVitesse.addEventListener("input", () => { majVitesse(); enregistrerPreferences(); });
       curseurTaille.addEventListener("input", () => { majTaille(); enregistrerPreferences(); });
