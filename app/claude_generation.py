@@ -1914,13 +1914,15 @@ def adapter_post_multi_reseaux(
     return resultat
 
 
-def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", texte_cta_impose: bool = False) -> str:
+def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", texte_cta_impose: bool = False,
+                         mot_cle: str = "", ville: str = "", pages: list = None) -> str:
     """
     Article de blog complet (markdown : "# Titre", puis "## " pour les
     sous-titres) a partir d'un sujet ou d'un texte de base, pour publication
     sur le WordPress du client (voir wordpress_publish.py). contexte : contenu
     du site du client, avec sa "voix" en tete s'il y en a une (voir
-    main._contexte_ia_client).
+    main._contexte_ia_client). mot_cle / ville : mot-cle principal et zone visee (repartis dans le titre, l'introduction, un sous-titre
+    et la conclusion) ; pages : [{"titre", "url"}] du site du client, seules adresses que l'article peut utiliser pour ses liens internes.
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
@@ -1928,6 +1930,20 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
         raise RuntimeError("Aucun sujet fourni.")
 
     bloc_contexte = f"\nContexte sur l'entreprise (site web, voix de l'auteur) :\n{contexte.strip()[:7000]}\n" if contexte.strip() else ""
+    consignes_seo = ""
+    if (mot_cle or "").strip():
+        consignes_seo += (f"\n- Mot-cle principal : « {mot_cle.strip()} ». Il figure dans le titre (au debut), dans les 100 premiers mots, dans au moins un "
+                          "sous-titre « ## » et dans la conclusion, de facon naturelle (5 fois au maximum dans tout l'article).")
+    if (ville or "").strip():
+        consignes_seo += (f"\n- Ville ou zone ciblee : « {ville.strip()} ». Cite-la dans le titre si la longueur le permet, dans l'introduction et dans la "
+                          "conclusion, sans bourrage.")
+    if pages:
+        liste_pages = "\n".join(f"  * {p['titre']} : {p['url']}" for p in pages[:40])
+        consignes_seo += ("\n- Liens internes : ajoute 2 ou 3 liens vers les pages ci-dessous quand ils aident vraiment le lecteur, au format "
+                          "[texte d'ancre naturel](adresse) dans le corps des paragraphes (jamais dans un titre ni dans l'encadre « A retenir », jamais deux fois "
+                          "la meme page, ancre descriptive et jamais « cliquez ici »). N'invente aucune adresse : utilise uniquement celles de cette liste.\n"
+                          f"Pages du site :\n{liste_pages}")
+    phrase_autres_liens = "Hors des liens internes autorises, n'utilise aucun autre lien." if pages else "N'utilise aucun autre lien."
     prompt = (
         f"Nous sommes le {date.today().strftime('%d/%m/%Y')} (repere temporel reel, n'ecris jamais une annee "
         "anterieure par reflexe).\n"
@@ -1940,9 +1956,10 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
         "50 caracteres MAXIMUM (espaces compris, jamais plus de 55 : il s'affiche dans Google avec le nom du site), avec le "
         "mot-cle principal en premier. Ensuite une introduction (sans titre) dont les deux premieres phrases forment a "
         "elles seules un resume de 130 a 155 caracteres, car elles servent de description dans les resultats Google, puis "
-        "3 a 5 sections avec des sous-titres « ## ». Termine par une courte "
+        "3 a 5 sections avec des sous-titres « ## », puis une section « ## Questions frequentes » avec 3 ou 4 questions que les clients se posent "
+        "vraiment (chacune en sous-titre « ### Question ? » suivi d'une reponse de 2 a 3 phrases, factuelle, sans affirmation inventee). Termine par une courte "
         "conclusion avec un appel a l'action (contacter l'entreprise), sans numero de telephone invente.\n"
-        "- Longueur : 800 a 1200 mots. Paragraphes courts (2 a 4 phrases), listes a puces quand elles aident. "
+        "- Longueur : 800 a 1300 mots (FAQ comprise). Paragraphes courts (2 a 4 phrases), listes a puces quand elles aident. "
         "Gras (**mot**) avec moderation.\n"
         "- Ajoute UN SEUL encadre « A retenir » (2 a 3 phrases qui resument l'essentiel), place apres "
         "la section la plus importante, sous la forme de lignes commencant par « > » (ex. « > **A retenir :** ... »).\n"
@@ -1955,6 +1972,7 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
         "sa personne grammaticale. A defaut, « nous » pour une entreprise, « je » pour un independant seul.\n"
         "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique (ex. « le cabinet reçoit au cabinet »). Relis-toi avant de conclure : la derniere phrase doit etre claire, naturelle et utile.\n"
         "- Pas de tiret cadratin (—), pas d'emoji, aucun commentaire autour : uniquement l'article."
+        + consignes_seo
         + (
             "\n- Le bouton d'appel a l'action est ajoute automatiquement apres ton texte : n'en ecris pas."
             if texte_cta_impose else
@@ -1963,7 +1981,7 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
                 "le texte (2 a 4 mots) invite a contacter l'entreprise, a la personne grammaticale de l'auteur "
                 "(« Me contacter » si l'auteur est un independant qui dit « je », « Nous contacter » pour une equipe), "
                 "ou plus precis si le sujet s'y prete (« Demander un devis », « Prendre rendez-vous »). "
-                "N'utilise aucun autre lien."
+                + phrase_autres_liens
                 if lien_cta else ""
             )
         )

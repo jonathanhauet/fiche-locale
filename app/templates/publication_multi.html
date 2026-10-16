@@ -623,6 +623,14 @@
           « - » les listes. La première image devient l'image mise en avant. Publié tout de suite, ou programmé
           par WordPress à la date choisie.
         </p>
+        <div class="ligne-champs" id="champs-seo-wordpress">
+          <label>Mot-clé principal <input type="text" id="seo-mot-cle" maxlength="120" placeholder="ex : garage vidange Marseille"></label>
+          <label>Ville ou zone <input type="text" id="seo-ville" maxlength="80" value="{{ client.localisation_ville or '' }}" placeholder="ex : Marseille"></label>
+        </div>
+        <input type="hidden" name="mot_cle_wordpress" id="seo-mot-cle-envoi">
+        <p class="texte-discret" style="margin:.2rem 0">À remplir avant « Rédiger » : l'article place le mot-clé et la ville aux bons endroits, ajoute des liens vers de vraies pages du site (récupérées automatiquement), une FAQ et un bloc « Où nous trouver » avec la fiche Google.</p>
+        <div class="ligne-champs"><button type="button" class="bouton-secondaire" id="seo-controler">🔍 Contrôle SEO de l'article</button></div>
+        <div id="seo-resultat" class="seo-resultat" hidden></div>
         {% endif %}
         {% if reseau == "youtube" %}
         <p class="texte-discret">
@@ -2637,6 +2645,42 @@
       spinnerAdapter.hidden = true;
     });
 
+    function imageChoisie() {
+      const fichiers = document.getElementById("image-partagee");
+      return !!((fichiers && fichiers.files && fichiers.files.length) || (document.getElementById("champ-image-url-ia").value || "").trim());
+    }
+    function afficherControleSeo(controle, doublons, nbPages) {
+      const zone = document.getElementById("seo-resultat"); zone.textContent = ""; zone.hidden = false;
+      const titre = document.createElement("strong"); titre.textContent = "Contrôle SEO : " + controle.score + " / 100"; zone.appendChild(titre);
+      const liste = document.createElement("ul"); liste.style.cssText = "list-style:none;margin:.4rem 0;padding:0;display:flex;flex-direction:column;gap:.2rem;font-size:.88rem;";
+      controle.controles.forEach((c) => {
+        const li = document.createElement("li");
+        li.textContent = (c.statut === "ok" ? "✅ " : c.statut === "erreur" ? "❌ " : c.statut === "info" ? "ℹ️ " : "⚠️ ") + c.libelle + (c.detail ? " : " + c.detail : "");
+        liste.appendChild(li);
+      });
+      zone.appendChild(liste);
+      if (doublons && doublons.length) {
+        const p = document.createElement("p"); p.style.cssText = "margin:.3rem 0;font-size:.88rem;";
+        p.textContent = "⚠️ Le site a déjà un contenu proche de ce sujet (risque de concurrence entre deux pages pour la même recherche) : ";
+        doublons.forEach((d, i) => { const a = document.createElement("a"); a.href = d.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = d.titre; p.appendChild(a); if (i < doublons.length - 1) p.appendChild(document.createTextNode(" · ")); });
+        zone.appendChild(p);
+      }
+      if (nbPages !== undefined) { const n = document.createElement("p"); n.className = "texte-discret"; n.style.margin = "0"; n.textContent = nbPages ? nbPages + " pages du site utilisées pour les liens internes." : "Aucune page du site n'a pu être récupérée : pas de liens internes."; zone.appendChild(n); }
+    }
+    document.getElementById("seo-mot-cle").addEventListener("input", (e) => { document.getElementById("seo-mot-cle-envoi").value = e.target.value; });
+    document.getElementById("seo-controler").addEventListener("click", async () => {
+      const bouton = document.getElementById("seo-controler"); bouton.disabled = true;
+      try {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/controle_seo", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texte: document.getElementById("texte-wordpress").value, mot_cle: document.getElementById("seo-mot-cle").value, ville: document.getElementById("seo-ville").value, avec_image: imageChoisie() }),
+        });
+        const donnees = await reponse.json();
+        if (!reponse.ok) { texteStatut.hidden = false; texteStatut.textContent = donnees.erreur || "Contrôle impossible."; }
+        else afficherControleSeo(donnees);
+      } catch (e) { texteStatut.hidden = false; texteStatut.textContent = "Erreur réseau pendant le contrôle."; }
+      bouton.disabled = false;
+    });
     async function genererArticle({ onStatut, onFinally }) {
       const texteBase = document.getElementById("texte-base").value.trim();
       if (!texteBase) { onStatut("Écrivez d'abord le sujet ou le texte de base."); onFinally(); return; }
@@ -2645,13 +2689,14 @@
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_article", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texte_base: texteBase }),
+          body: JSON.stringify({ texte_base: texteBase, mot_cle: document.getElementById("seo-mot-cle").value, ville: document.getElementById("seo-ville").value, avec_image: imageChoisie() }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) { onStatut(donnees.erreur || "Échec de la génération de l'article."); return; }
         const zone = document.getElementById("texte-wordpress");
         zone.value = donnees.article;
         rendreApercuTexte("wordpress", donnees.article);
+        if (donnees.controle) afficherControleSeo(donnees.controle, donnees.doublons, donnees.nb_pages);
         onStatut("Article rédigé : relisez-le avant de publier.");
       } catch (erreur) {
         onStatut("Erreur réseau lors de la rédaction de l'article.");

@@ -99,6 +99,7 @@ from . import (
     ovh_upload,
     qr_generateur,
     performance_articles,
+    seo_article,
     rank_tracking,
     rapport_donnees,
     google_sheets,
@@ -9164,16 +9165,71 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
     if not sujet:
         return JSONResponse({"erreur": "Écrivez d'abord le sujet ou le texte de base."}, status_code=400)
 
+    mot_cle = " ".join(str(donnees.get("mot_cle") or "").split())[:120]
+    ville = " ".join(str(donnees.get("ville") or "").split())[:80] or (client.localisation_ville or "")
+    # Pages du site recuperees automatiquement (API WordPress, sinon plan du site) : les seules adresses autorisees pour les liens internes.
+    pages = await run_in_threadpool(seo_article.pages_du_site, client.wordpress_url) if client.wordpress_url else []
     try:
         article = claude_generation.generer_article_blog(
             sujet, _contexte_ia_client(client), client.wordpress_lien_cta, bool(client.wordpress_texte_cta),
+            mot_cle=mot_cle, ville=ville, pages=pages,
         )
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la génération de l'article : {erreur}"}, status_code=500)
+    article, liens = seo_article.liens_internes_valides(article, pages)
     # Bouton d'appel a l'action final vers la page contact / devis du client : texte choisi par
     # l'IA selon l'entreprise (ou impose par le reglage), lien toujours celui du client.
     article = wordpress_publish.assurer_bouton(article, client.wordpress_lien_cta, client.wordpress_texte_cta)
-    return JSONResponse({"article": article})
+    article = seo_article.inserer_avant_bouton(article, await run_in_threadpool(_bloc_local_client, db, client))
+    controle = seo_article.controle_seo(article, mot_cle, ville, client.wordpress_url, bool(donnees.get("avec_image")))
+    return JSONResponse({"article": article, "controle": controle, "liens": liens, "nb_pages": len(pages),
+                         "doublons": seo_article.sujets_proches(mot_cle or sujet, pages)})
+
+
+def _bloc_local_client(db: Session, client) -> str:
+    """Section « Ou nous trouver » a partir de la fiche Google reliee du client (adresse, telephone, lien de la fiche) ; vide si indisponible."""
+    if not (client.compte_google_id and client.location_id):
+        return ""
+    try:
+        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+        if not identifiants:
+            return ""
+        infos = google_location.obtenir_infos_fiche(identifiants, client.location_id)
+        return seo_article.bloc_local(infos.get("title") or client.nom, infos)
+    except Exception:
+        return ""
+
+
+@app.post("/publication-multi/{client_id}/controle_seo")
+async def publication_multi_controle_seo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Verifications SEO de l'article tel qu'il est dans le composeur (a relancer apres chaque modification)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    texte = str(donnees.get("texte") or "")
+    if not texte.strip():
+        return JSONResponse({"erreur": "Rédigez ou collez d'abord l'article."}, status_code=400)
+    return JSONResponse(seo_article.controle_seo(
+        texte, " ".join(str(donnees.get("mot_cle") or "").split())[:120], " ".join(str(donnees.get("ville") or "").split())[:80],
+        client.wordpress_url, bool(donnees.get("avec_image")),
+    ))
+
+
+@app.get("/clients/{client_id}/wordpress/seo")
+def wordpress_seo_statut(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Le site accepte-t-il que la plateforme renseigne la description et le mot-cle SEO (Yoast / Rank Math) ? Sinon, le code a y ajouter."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Non connecté."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client or not client.wordpress_url:
+        return JSONResponse({"ok": False, "message": "Connectez d'abord le blog WordPress de ce client."}, status_code=400)
+    return JSONResponse({"ok": True, "exposees": seo_article.meta_exposee(client.wordpress_url), "snippet": seo_article.SNIPPET_META})
 
 
 # ---------------------------------------------------------------------------
@@ -11328,11 +11384,15 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     image_id = wordpress_publish.envoyer_image(
                         client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
                         requests.get(urls_wordpress[0], headers=wordpress_style.EN_TETES, timeout=30).content,
+                        alt_text=seo_article.texte_alternatif(titre_article, client.nom),
                     )
+                extrait_article = wordpress_publish.extrait_depuis_corps(corps_article)
+                mot_cle_seo = " ".join(str(formulaire.get("mot_cle_wordpress") or "").split())[:120]
                 article_cree = wordpress_publish.creer_article(
                     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
                     titre_article, wordpress_publish.markdown_vers_html(corps_article, couleur_marque_client(client)),
-                    publier_le_reseau, image_id, wordpress_publish.extrait_depuis_corps(corps_article),
+                    publier_le_reseau, image_id, extrait_article,
+                    meta=seo_article.meta_seo(client.wordpress_url, extrait_article, mot_cle_seo) or None,
                 )
                 # Trace locale, pour que l'article apparaisse dans le resume et l'historique des publications.
                 try:

@@ -347,6 +347,29 @@
         Utilisateurs &gt; Profil, la section « Mots de passe d'application » doit apparaître.
       </p>
     </details>
+    <details class="bloc-repliable" id="wp-seo-meta">
+      <summary>Description et mot-clé SEO renseignés automatiquement (Yoast / Rank Math)</summary>
+      <p class="texte-discret">
+        Par défaut, WordPress refuse que la plateforme écrive ces champs : l'article est publié, mais sans mot-clé principal ni description
+        dans l'extension SEO. Pour les autoriser, ajoutez le petit code ci-dessous au site (extension « Code Snippets » : Ajouter, coller, activer), puis cliquez sur Vérifier.
+      </p>
+      <div class="actions-avis"><button type="button" class="bouton-secondaire" id="wp-seo-verifier">Vérifier</button></div>
+      <p id="wp-seo-etat" class="texte-vide" hidden></p>
+      <pre id="wp-seo-snippet" style="white-space:pre-wrap;font-size:.8rem;background:var(--accent-clair);padding:.6rem;border-radius:8px;" hidden></pre>
+      <script>
+      document.getElementById("wp-seo-verifier").addEventListener("click", async () => {
+        const etat = document.getElementById("wp-seo-etat"), code = document.getElementById("wp-seo-snippet");
+        etat.hidden = false; etat.textContent = "Vérification…";
+        try {
+          const d = await (await fetch("/clients/{{ client.id }}/wordpress/seo")).json();
+          if (!d.ok) { etat.textContent = d.message || "Vérification impossible."; return; }
+          const ok = Object.keys(d.exposees || {}).length > 0;
+          etat.textContent = ok ? "✅ Le site accepte la description et le mot-clé SEO : ils seront renseignés à chaque publication." : "Le site n'expose pas encore ces champs : ajoutez le code ci-dessous.";
+          code.textContent = d.snippet; code.hidden = ok;
+        } catch (e) { etat.textContent = "Erreur réseau."; }
+      });
+      </script>
+    </details>
     <label>
       Identifiant WordPress
       <input type="text" name="utilisateur" value="{{ client.wordpress_utilisateur }}" autocomplete="off">

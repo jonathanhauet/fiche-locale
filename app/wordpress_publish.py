@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from . import wordpress_style
+from . import seo_article, wordpress_style
 
 MESSAGE_MOTS_DE_PASSE_DESACTIVES = (
     "Les mots de passe d'application sont désactivés sur ce site WordPress. Causes fréquentes : le site est configuré "
@@ -255,7 +255,8 @@ def markdown_vers_html(texte: str, couleur: str = "") -> str:
             f'padding:1em 1.25em;margin:1.5em 0;border-radius:4px;"><strong>Sommaire</strong>'
             f'<ol style="margin:.5em 0 0 1.2em;">{entrees}</ol></nav>',
         )
-    return '<div class="fl-article">\n' + "\n".join(blocs) + "\n</div>"
+    faq = seo_article.json_ld_faq(seo_article.faq_depuis_markdown(texte))        # donnees structurees de la section « Questions frequentes »
+    return '<div class="fl-article">\n' + "\n".join(blocs) + "\n</div>" + ("\n" + faq if faq else "")
 
 
 TEXTE_BOUTON_NEUTRE = "Prendre contact"  # repli : convient aussi bien a un "je" qu'a un "nous"
@@ -317,20 +318,26 @@ def extrait_depuis_corps(texte: str, longueur: int = 158, minimum: int = 120) ->
     return coupe.rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
-def envoyer_image(url_site: str, utilisateur: str, mot_de_passe: str, octets: bytes, nom_fichier: str = "article.jpg") -> int:
-    """Televerse l'image dans la mediatheque WordPress et renvoie son identifiant (image mise en avant)."""
+def envoyer_image(url_site: str, utilisateur: str, mot_de_passe: str, octets: bytes, nom_fichier: str = "article.jpg", alt_text: str = "") -> int:
+    """Televerse l'image dans la mediatheque WordPress (avec son texte alternatif) et renvoie son identifiant (image mise en avant)."""
     reponse = _appeler(
         "POST", url_site, "media", utilisateur, mot_de_passe, data=octets,
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"', "Content-Type": "image/jpeg"},
     )
     if reponse.status_code not in (200, 201):
         raise RuntimeError(f"Échec de l'envoi de l'image sur WordPress (code {reponse.status_code}) : {reponse.text[:300]}")
-    return reponse.json()["id"]
+    identifiant = reponse.json()["id"]
+    if alt_text:
+        try:      # le texte alternatif est un plus : son echec ne doit pas empecher la publication
+            _appeler("POST", url_site, f"media/{identifiant}", utilisateur, mot_de_passe, json={"alt_text": alt_text, "title": alt_text[:100]})
+        except RuntimeError:
+            pass
+    return identifiant
 
 
 def creer_article(
     url_site: str, utilisateur: str, mot_de_passe: str, titre: str, contenu_html: str,
-    publier_le: datetime = None, image_id: int = None, extrait: str = "",
+    publier_le: datetime = None, image_id: int = None, extrait: str = "", meta: dict = None,
 ) -> dict:
     """
     Cree l'article : publie tout de suite, ou programme (statut "future", gere par
@@ -347,7 +354,12 @@ def creer_article(
         corps["featured_media"] = image_id
     if extrait:
         corps["excerpt"] = extrait
+    if meta:
+        corps["meta"] = meta          # description et mot-cle SEO (Yoast / Rank Math), seulement si le site les expose (voir seo_article.meta_seo)
     reponse = _appeler("POST", url_site, "posts", utilisateur, mot_de_passe, json=corps)
+    if meta and reponse.status_code == 400:
+        corps.pop("meta")             # le site refuse ces champs : on publie sans eux plutot que d'echouer
+        reponse = _appeler("POST", url_site, "posts", utilisateur, mot_de_passe, json=corps)
     if reponse.status_code not in (200, 201):
         raise RuntimeError(f"Échec de la création de l'article (code {reponse.status_code}) : {reponse.text[:300]}")
     donnees = reponse.json()
