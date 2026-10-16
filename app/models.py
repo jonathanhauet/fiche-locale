@@ -1110,6 +1110,10 @@ class BrouillonWhatsApp(Base):
     texte = Column(Text, default="")
     prompt_image = Column(Text, default="")
     image_url = Column(String, nullable=True)
+    # Question posee et transcription COMPLETE du vocal du client : les faits reels (cas, prix, delais, materiel) qui servent ensuite a
+    # rediger l'article WordPress, la ou le post court ci-dessus les a deja resumes.
+    transcription = Column(Text, default="")
+    question = Column(Text, default="")
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="brouillons_whatsapp")

@@ -94,6 +94,33 @@
 
   <label for="texte-base">Texte de base</label>
   <textarea id="texte-base" name="texte_base" rows="10">{{ texte_base }}</textarea>
+  <details id="bloc-faits-client" class="bloc-repliable" {% if faits_client %}open{% endif %}>
+    <summary>🎙️ Paroles du client : faits réels pour l'article{% if faits_client %} (reçues par WhatsApp){% endif %}</summary>
+    {% if question_client %}<p class="texte-discret"><strong>Question posée :</strong> {{ question_client }}</p>{% endif %}
+    <textarea id="faits-client" rows="7" placeholder="Transcription d'un vocal du client, ou vos notes : un cas réel, un prix, un délai, le matériel utilisé, le lieu…">{{ faits_client }}</textarea>
+    <div class="ligne-champs" id="zone-reponses-client" hidden>
+      <select id="select-reponses-client" style="max-width:100%;"></select>
+      <button type="button" class="bouton-secondaire" id="bouton-reponse-client">Utiliser cette réponse</button>
+    </div>
+    <p class="texte-discret">
+      Ces paroles servent uniquement à rédiger l'article WordPress : il reprend ses exemples concrets (cas, prix, délais, matériel) sans rien ajouter.
+      Rien n'est généré tant que vous ne cliquez pas sur « Rédiger » pour un réseau coché. Les vocaux reçus restent toujours retrouvables dans la liste ci-dessus.
+    </p>
+  </details>
+  <script id="donnees-reponses-client" type="application/json">{{ reponses_client_json|safe }}</script>
+  <script>
+    (function () {
+      const reponses = JSON.parse(document.getElementById("donnees-reponses-client").textContent);
+      if (!reponses.length) return;
+      const select = document.getElementById("select-reponses-client");
+      reponses.forEach((r, i) => { const o = document.createElement("option"); o.value = i; o.textContent = r.date + " · " + (r.question || "(sans question)").slice(0, 90); select.appendChild(o); });
+      document.getElementById("zone-reponses-client").hidden = false;
+      document.getElementById("bouton-reponse-client").addEventListener("click", () => {
+        document.getElementById("faits-client").value = reponses[parseInt(select.value, 10)].texte;
+        document.getElementById("bloc-faits-client").open = true;
+      });
+    })();
+  </script>
   <script>
     // Hauteur ajustee au contenu (jamais de petit cadre qui tronque un texte deja long) : reajustee a chaque
     // frappe, et exposee globalement pour les endroits qui remplissent ce champ par JS (IA, brouillons...).
@@ -2689,7 +2716,7 @@
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_article", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texte_base: texteBase, mot_cle: document.getElementById("seo-mot-cle").value, ville: document.getElementById("seo-ville").value, avec_image: imageChoisie() }),
+          body: JSON.stringify({ texte_base: texteBase, mot_cle: document.getElementById("seo-mot-cle").value, ville: document.getElementById("seo-ville").value, avec_image: imageChoisie(), faits: document.getElementById("faits-client").value }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) { onStatut(donnees.erreur || "Échec de la génération de l'article."); return; }

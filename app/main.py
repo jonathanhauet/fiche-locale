@@ -285,6 +285,11 @@ def _migrer_vers_multi_comptes():
             colonnes_posts_wordpress = {c["name"] for c in inspecteur.get_columns("posts_wordpress")}
             if "verifie" not in colonnes_posts_wordpress:
                 connexion.execute(text("ALTER TABLE posts_wordpress ADD COLUMN verifie BOOLEAN DEFAULT FALSE"))
+        if inspecteur.has_table("brouillons_whatsapp"):
+            colonnes_brouillons = {c["name"] for c in inspecteur.get_columns("brouillons_whatsapp")}
+            for nom_colonne in ("transcription", "question"):
+                if nom_colonne not in colonnes_brouillons:
+                    connexion.execute(text(f"ALTER TABLE brouillons_whatsapp ADD COLUMN {nom_colonne} TEXT DEFAULT ''"))
         if inspecteur.has_table("parametre_google_sheets") and "etiquette_ids" not in {c["name"] for c in inspecteur.get_columns("parametre_google_sheets")}:
             connexion.execute(text("ALTER TABLE parametre_google_sheets ADD COLUMN etiquette_ids VARCHAR DEFAULT ''"))
         _colonnes_clients_logo = {c["name"] for c in inspecteur.get_columns("clients")}
@@ -9021,9 +9026,16 @@ def _contexte_publication_multi(
     db: Session, client: "models.Client", texte_base: str = "", reseaux_coches: list = None,
     variantes: dict = None, erreur: str = None, resultat: str = None,
     prompt_image_initial: str = "", origine_vocale: bool = False, image_url_initial: str = "", video_url_initial: str = "",
+    faits_client: str = "", question_client: str = "",
 ) -> dict:
+    reponses_client = [
+        {"id": r.id, "question": r.question or "", "date": r.cree_le.strftime("%d/%m/%Y") if r.cree_le else "", "texte": (r.reponse_transcrite or "")[:4000]}
+        for r in _reponses_interview_recentes(client, 10)
+    ]
     return {
         "client": client,
+        "faits_client": faits_client, "question_client": question_client,
+        "reponses_client_json": json.dumps(reponses_client, ensure_ascii=False).replace("</", "<\\/"),
         "reseaux_disponibles": _reseaux_disponibles_client(client),
         "texte_base": texte_base,
         "reseaux_coches": reseaux_coches or [],
@@ -9104,6 +9116,7 @@ def publication_multi_choix_client(request: Request, client_id: int = None, db: 
                 db, client, texte_base=brouillon_vocal.get("texte", ""),
                 prompt_image_initial=brouillon_vocal.get("prompt_image", ""), origine_vocale=True,
                 image_url_initial=brouillon_vocal.get("image_url") or "", video_url_initial=brouillon_vocal.get("video_url") or "",
+                faits_client=brouillon_vocal.get("transcription") or "", question_client=brouillon_vocal.get("question") or "",
             ),
         )
 
@@ -9167,12 +9180,14 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
 
     mot_cle = " ".join(str(donnees.get("mot_cle") or "").split())[:120]
     ville = " ".join(str(donnees.get("ville") or "").split())[:80] or (client.localisation_ville or "")
+    faits = str(donnees.get("faits") or "").strip()[:6000]
+    options_faits = {"faits": faits} if faits else {}
     # Pages du site recuperees automatiquement (API WordPress, sinon plan du site) : les seules adresses autorisees pour les liens internes.
     pages = await run_in_threadpool(seo_article.pages_du_site, client.wordpress_url) if client.wordpress_url else []
     try:
         article = claude_generation.generer_article_blog(
             sujet, _contexte_ia_client(client), client.wordpress_lien_cta, bool(client.wordpress_texte_cta),
-            mot_cle=mot_cle, ville=ville, pages=pages,
+            mot_cle=mot_cle, ville=ville, pages=pages, **options_faits,
         )
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la génération de l'article : {erreur}"}, status_code=500)
@@ -10700,7 +10715,7 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
             )
             db.add(models.BrouillonWhatsApp(
                 client_id=client.id, texte=post["texte"], prompt_image=post.get("prompt_image", ""),
-                image_url=etat.image_url,
+                image_url=etat.image_url, transcription=transcription, question=etat.question_choisie,
             ))
             db.add(models.ReponseInterviewClient(
                 client_id=client.id, question=etat.question_choisie, reponse_transcrite=transcription,
@@ -10797,7 +10812,7 @@ def publication_multi_charger_brouillon_whatsapp(
     if brouillon and brouillon.client_id == client_id:
         request.session["brouillon_vocal"] = {
             "client_id": client_id, "texte": brouillon.texte, "prompt_image": brouillon.prompt_image,
-            "image_url": brouillon.image_url,
+            "image_url": brouillon.image_url, "transcription": brouillon.transcription or "", "question": brouillon.question or "",
         }
         db.delete(brouillon)
         db.commit()

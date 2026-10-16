@@ -1915,14 +1915,15 @@ def adapter_post_multi_reseaux(
 
 
 def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", texte_cta_impose: bool = False,
-                         mot_cle: str = "", ville: str = "", pages: list = None) -> str:
+                         mot_cle: str = "", ville: str = "", pages: list = None, faits: str = "") -> str:
     """
     Article de blog complet (markdown : "# Titre", puis "## " pour les
     sous-titres) a partir d'un sujet ou d'un texte de base, pour publication
     sur le WordPress du client (voir wordpress_publish.py). contexte : contenu
     du site du client, avec sa "voix" en tete s'il y en a une (voir
     main._contexte_ia_client). mot_cle / ville : mot-cle principal et zone visee (repartis dans le titre, l'introduction, un sous-titre
-    et la conclusion) ; pages : [{"titre", "url"}] du site du client, seules adresses que l'article peut utiliser pour ses liens internes.
+    et la conclusion) ; pages : [{"titre", "url"}] du site du client, seules adresses que l'article peut utiliser pour ses liens internes ;
+    faits : transcription brute d'un vocal du client (cas, prix, delais, materiel), seule source de faits reels de l'article.
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
@@ -1943,6 +1944,13 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
                           "[texte d'ancre naturel](adresse) dans le corps des paragraphes (jamais dans un titre ni dans l'encadre « A retenir », jamais deux fois "
                           "la meme page, ancre descriptive et jamais « cliquez ici »). N'invente aucune adresse : utilise uniquement celles de cette liste.\n"
                           f"Pages du site :\n{liste_pages}")
+    bloc_faits = ""
+    if (faits or "").strip():
+        bloc_faits = ("\nPAROLES DU CLIENT (transcription brute d'un message vocal : c'est la SEULE source de faits reels de cet article) :\n"
+                      f'"""\n{faits.strip()[:6000]}\n"""\n')
+        consignes_seo += ("\n- Appuie l'article sur ces paroles du client : reprends ses exemples concrets (cas, prix, delais, materiel, lieux) tels qu'il les a dits, "
+                          "au bon endroit, comme preuves d'experience, a la personne grammaticale de l'auteur. N'ajoute aucun autre fait precis. Ignore les hesitations "
+                          "et les repetitions. N'inclus aucun nom de client final, numero de telephone ni plaque d'immatriculation cites dans ces paroles.")
     phrase_autres_liens = "Hors des liens internes autorises, n'utilise aucun autre lien." if pages else "N'utilise aucun autre lien."
     prompt = (
         f"Nous sommes le {date.today().strftime('%d/%m/%Y')} (repere temporel reel, n'ecris jamais une annee "
@@ -1950,7 +1958,7 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
         "Redige un article de blog complet, en francais, pour le site de l'entreprise decrite ci-dessous, a "
         "partir de ce sujet ou de ce texte de base :\n\n"
         f"\"{sujet.strip()}\"\n"
-        f"{bloc_contexte}\n"
+        f"{bloc_contexte}{bloc_faits}\n"
         "Consignes :\n"
         "- Format markdown : la toute premiere ligne est le titre, sous la forme « # Titre » : accrocheur, "
         "50 caracteres MAXIMUM (espaces compris, jamais plus de 55 : il s'affiche dans Google avec le nom du site), avec le "
