@@ -456,8 +456,15 @@
         if (reconnaissance) { reconnaissance.onend = null; try { reconnaissance.stop(); } catch (e) { /* deja arretee */ } reconnaissance = null; }
         if (!voixIndisponible) etatVoix.textContent = caseVoix.checked ? "· en pause" : "";
       }
-      if (!ReconnaissanceVocale) { caseVoix.disabled = true; etatVoix.textContent = "(Chrome ou Edge requis)"; }
-      caseVoix.addEventListener("change", () => { if (!caseVoix.checked) { arreterVoix(); etatVoix.textContent = ""; } else if (lecture) demarrerVoix(); });
+      if (!ReconnaissanceVocale) caseVoix.parentElement.title = "Ce navigateur ne sait pas écouter la voix : ouvrez le prompteur dans Google Chrome ou Microsoft Edge (Firefox et Safari ne le proposent pas).";
+      caseVoix.addEventListener("change", () => {
+        if (caseVoix.checked && !ReconnaissanceVocale) {
+          caseVoix.checked = false;
+          etatVoix.textContent = "· indisponible sur ce navigateur : utilisez Chrome ou Edge";
+          return;
+        }
+        if (!caseVoix.checked) { arreterVoix(); etatVoix.textContent = ""; } else if (lecture) demarrerVoix();
+      });
 
       // ----- Enregistrement direct (webcam + micro) : la prise part ensuite dans le montage automatique -----
       const camera = document.getElementById("pr-camera"), badgeRec = document.getElementById("pr-rec"), tempsRec = document.getElementById("pr-rec-temps");
