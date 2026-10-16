@@ -41,17 +41,7 @@ class ErreurEditeur(RuntimeError):
 
 def mots_de_phrase(phrase: dict) -> list:
     """Mots d'une phrase avec leur instant estime (duree repartie selon la longueur des mots, comme pour les sous-titres)."""
-    mots = phrase["texte"].split()
-    if not mots:
-        return []
-    poids = [len(m) + 1 for m in mots]
-    total, duree = sum(poids), max(0.05, phrase["fin"] - phrase["debut"])
-    resultat, cumul = [], 0.0
-    for mot, poids_mot in zip(mots, poids):
-        debut = phrase["debut"] + duree * cumul / total
-        cumul += poids_mot
-        resultat.append({"texte": mot, "debut": round(debut, 3), "fin": round(phrase["debut"] + duree * cumul / total, 3)})
-    return resultat
+    return [{"texte": m["texte"], "debut": round(m["debut"], 3), "fin": round(m["fin"], 3)} for m in mp.mots_chronometres(phrase)]
 
 
 def _vers_source(zooms_montage: list, segments: list) -> list:
@@ -245,7 +235,7 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
             if not isinstance(indice, int) or not 0 <= indice < len(sortie["phrases"]) or not texte:
                 refus.append("Correction de sous-titre invalide.")
                 continue
-            sortie["phrases"][indice]["texte"] = texte[:300]
+            mp.appliquer_texte(sortie["phrases"][indice], texte[:300])
             resume.append("Sous-titre corrigé")
         elif genre == "accroche":
             texte = " ".join(str(operation.get("texte") or "").split())[:90]

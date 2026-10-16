@@ -10,6 +10,7 @@ un redemarrage du serveur ou plus de DUREE_CONSERVATION_HEURES supprime les mont
 """
 
 import copy
+import difflib
 import json
 import os
 import re
@@ -24,6 +25,7 @@ import uuid
 import wave
 from concurrent.futures import ThreadPoolExecutor
 
+import requests
 from dotenv import load_dotenv
 
 from . import charte_montage, montage_video, sons
@@ -189,6 +191,88 @@ def _transcrire_morceau(octets_wav: bytes, decalage: float, duree: float) -> lis
     return phrases
 
 
+MOTS_HESITATION = {"euh", "euhh", "heu", "hum", "hmm", "mmh", "ben", "bah"}
+PAUSE_NOUVELLE_PHRASE = 0.45        # silence (s) entre deux mots qui ouvre une nouvelle ligne de sous-titre
+MOTS_MAX_PHRASE = 9
+
+
+def _phrases_depuis_whisper(donnees: dict, decalage: float, duree: float) -> list:
+    """
+    Reponse « verbose_json » de Whisper (mots et segments horodates) -> phrases de sous-titres avec leurs mots chronometres :
+    [{"debut", "fin", "texte", "hesitation", "mots": [{"texte", "debut", "fin"}]}]. Une nouvelle phrase commence apres une ponctuation
+    forte, une pause de PAUSE_NOUVELLE_PHRASE secondes ou MOTS_MAX_PHRASE mots. La ponctuation du segment est reprise quand les mots concordent.
+    """
+    mots = []
+    for w in donnees.get("words") or []:
+        try:
+            texte = str(w.get("word", "")).strip()
+            debut, fin = max(0.0, min(float(w["start"]), duree)), max(0.0, min(float(w["end"]), duree))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if texte and fin >= debut:
+            mots.append({"texte": texte, "debut": debut, "fin": max(fin, debut + 0.02)})
+    if not mots:
+        return []
+    segments = [s for s in (donnees.get("segments") or []) if isinstance(s, dict)]
+    groupes, i = [], 0
+    for segment in segments:
+        try:
+            fin_segment = float(segment["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        groupe = []
+        while i < len(mots) and mots[i]["debut"] < fin_segment - 0.001:
+            groupe.append(mots[i])
+            i += 1
+        jetons = str(segment.get("text", "")).split()
+        if groupe and len(jetons) == len(groupe):                      # la ponctuation et les majuscules du segment
+            groupe = [{**m, "texte": j} for m, j in zip(groupe, jetons)]
+        if groupe:
+            groupes.append(groupe)
+    if i < len(mots):
+        groupes.append(mots[i:])
+    phrases = []
+    for groupe in groupes:
+        courante = []
+        for m in groupe:
+            if courante and (m["debut"] - courante[-1]["fin"] > PAUSE_NOUVELLE_PHRASE or len(courante) >= MOTS_MAX_PHRASE
+                             or re.search(r"[.!?;…]$", courante[-1]["texte"]) or (len(courante) >= 4 and courante[-1]["texte"].endswith(","))):
+                phrases.append(courante)
+                courante = []
+            courante.append(m)
+        if courante:
+            phrases.append(courante)
+    sorties = []
+    for p in phrases:
+        sorties.append({
+            "debut": p[0]["debut"] + decalage, "fin": p[-1]["fin"] + decalage, "texte": " ".join(m["texte"] for m in p),
+            "hesitation": all(_normaliser(m["texte"]) in MOTS_HESITATION for m in p),
+            "mots": [{"texte": m["texte"], "debut": round(m["debut"] + decalage, 3), "fin": round(m["fin"] + decalage, 3)} for m in p],
+        })
+    return sorties
+
+
+def _transcrire_morceau_whisper(octets_wav: bytes, decalage: float, duree: float) -> list:
+    """Transcription d'un morceau par Whisper (OpenAI) : horodatage mot a mot, bien plus precis que l'estimation sur les phrases."""
+    cle = os.getenv("OPENAI_API_KEY")
+    if not cle:
+        raise ErreurMontage("OPENAI_API_KEY manquant dans plateforme_web/.env.")
+    donnees_requete = [("model", "whisper-1"), ("language", "fr"), ("response_format", "verbose_json"), ("temperature", "0"),
+                       ("timestamp_granularities[]", "word"), ("timestamp_granularities[]", "segment")]
+    derniere_erreur = None
+    for _ in range(3):
+        try:
+            reponse = requests.post("https://api.openai.com/v1/audio/transcriptions", headers={"Authorization": f"Bearer {cle}"},
+                                    files={"file": ("audio.wav", octets_wav, "audio/wav")}, data=donnees_requete, timeout=300)
+            if reponse.status_code != 200:
+                raise RuntimeError(f"code {reponse.status_code} : {reponse.text[:200]}")
+            return _phrases_depuis_whisper(reponse.json(), decalage, duree)
+        except Exception as erreur:      # quota, coupure reseau, reponse invalide... on retente
+            derniere_erreur = erreur
+            time.sleep(2)
+    raise ErreurMontage(f"Transcription impossible : {derniere_erreur}")
+
+
 def _morceaux(duree: float, silences: list) -> list:
     """Bornes des morceaux de transcription, calees sur un silence proche quand c'est possible."""
     bornes, debut = [], 0.0
@@ -222,9 +306,17 @@ def transcrire(audio_wav: str, duree: float, silences: list, progression=None) -
     termines = 0
     verrou = threading.Lock()
 
+    # Whisper (mots horodates) quand la cle OpenAI est configuree, sinon Gemini (horodatage a la phrase, puis estimation des mots).
+    utiliser_whisper = bool(os.getenv("OPENAI_API_KEY"))
+
     def travail(element):
         nonlocal termines
-        resultat = _transcrire_morceau(*element)
+        try:
+            resultat = _transcrire_morceau_whisper(*element) if utiliser_whisper else _transcrire_morceau(*element)
+        except ErreurMontage:
+            if not utiliser_whisper or not os.getenv("GEMINI_API_KEY"):
+                raise
+            resultat = _transcrire_morceau(*element)
         with verrou:
             termines += 1
             if progression:
@@ -235,7 +327,7 @@ def transcrire(audio_wav: str, duree: float, silences: list, progression=None) -
         resultats = list(pool.map(travail, morceaux))
     phrases = [p for lot in resultats for p in lot]
     phrases.sort(key=lambda p: p["debut"])
-    return caler_sur_voix(phrases, silences)
+    return phrases if all("mots" in p for p in phrases) else caler_sur_voix(phrases, silences)
 
 
 def caler_sur_voix(phrases: list, silences: list) -> list:
@@ -313,15 +405,91 @@ def _remapper(instant: float, segments: list, vers_debut: bool) -> float:
     return None if vers_debut else cumul
 
 
+def _estimer_mots(phrase: dict, jetons: list) -> list:
+    """Instants estimes des mots d'une phrase (duree repartie selon la longueur des mots) : repli quand la transcription n'est pas mot a mot."""
+    poids = [len(m) + 1 for m in jetons]
+    total, duree = sum(poids), max(0.05, phrase["fin"] - phrase["debut"])
+    resultat, cumul = [], 0.0
+    for jeton, poids_mot in zip(jetons, poids):
+        debut = phrase["debut"] + duree * cumul / total
+        cumul += poids_mot
+        resultat.append({"texte": jeton, "debut": round(debut, 3), "fin": round(phrase["debut"] + duree * cumul / total, 3)})
+    return resultat
+
+
+def mots_chronometres(phrase: dict) -> list:
+    """Mots de la phrase avec leur instant : les vrais (transcription mot a mot) s'ils sont connus, sinon estimes d'apres la longueur."""
+    jetons = (phrase.get("texte") or "").split()
+    if not jetons:
+        return []
+    mots = phrase.get("mots")
+    if mots and len(mots) == len(jetons):
+        return [{"texte": j, "debut": m["debut"], "fin": m["fin"]} for j, m in zip(jetons, mots)]
+    return _estimer_mots(phrase, jetons)
+
+
+def caler_mots_sur_texte(phrase: dict, nouveau_texte: str):
+    """
+    Mots chronometres d'une phrase dont le texte change (correction, calage sur le script) : les mots conserves gardent leur instant reel,
+    les mots nouveaux se partagent le temps entre leurs voisins. None si la phrase n'a pas de mots chronometres.
+    """
+    anciens, nouveaux = phrase.get("mots") or [], nouveau_texte.split()
+    if not anciens or not nouveaux:
+        return None
+    if len(anciens) == len(nouveaux):
+        return [{"texte": n, "debut": a["debut"], "fin": a["fin"]} for n, a in zip(nouveaux, anciens)]
+    correspondance = difflib.SequenceMatcher(None, [_normaliser(a["texte"]) for a in anciens], [_normaliser(n) for n in nouveaux], autojunk=False)
+    attribues = [None] * len(nouveaux)
+    for balise, i1, i2, j1, j2 in correspondance.get_opcodes():
+        if balise == "equal" or (balise == "replace" and i2 - i1 == j2 - j1):
+            for k in range(j2 - j1):
+                attribues[j1 + k] = (anciens[i1 + k]["debut"], anciens[i1 + k]["fin"])
+    i = 0
+    while i < len(nouveaux):
+        if attribues[i] is not None:
+            i += 1
+            continue
+        j = i
+        while j < len(nouveaux) and attribues[j] is None:
+            j += 1
+        debut = attribues[i - 1][1] if i > 0 else phrase["debut"]
+        fin = max(attribues[j][0] if j < len(nouveaux) else phrase["fin"], debut + 0.04 * (j - i))
+        pas = (fin - debut) / (j - i)
+        for k in range(i, j):
+            attribues[k] = (debut + pas * (k - i), debut + pas * (k - i + 1))
+        i = j
+    return [{"texte": n, "debut": round(d, 3), "fin": round(f, 3)} for n, (d, f) in zip(nouveaux, attribues)]
+
+
+def appliquer_texte(phrase: dict, nouveau_texte: str) -> None:
+    """Change le texte d'une phrase en gardant, autant que possible, l'instant reel de chaque mot."""
+    mots = caler_mots_sur_texte(phrase, nouveau_texte)
+    phrase["texte"] = nouveau_texte
+    if mots:
+        phrase["mots"] = mots
+    else:
+        phrase.pop("mots", None)
+
+
 def phrases_sur_montage(phrases: list, segments: list) -> list:
-    """Phrases recalees sur la chronologie du montage ; une phrase entierement coupee disparait."""
+    """Phrases (et leurs mots chronometres) recalees sur la chronologie du montage ; une phrase entierement coupee disparait."""
     sorties = []
     for p in phrases:
         debut = _remapper(p["debut"], segments, True)
         fin = _remapper(p["fin"], segments, False)
         if debut is None or fin is None or fin - debut < 0.25:
             continue
-        sorties.append({**p, "debut": debut, "fin": fin})
+        nouvelle = {**p, "debut": debut, "fin": fin}
+        if p.get("mots"):
+            precedent, mots = debut, []
+            for m in p["mots"]:
+                a, b = _remapper(m["debut"], segments, True), _remapper(m["fin"], segments, False)
+                a = min(max(precedent, debut if a is None else a), fin)
+                b = min(max(a, a if b is None else b), fin)
+                mots.append({"texte": m["texte"], "debut": round(a, 3), "fin": round(b, 3)})
+                precedent = a
+            nouvelle["mots"] = mots
+        sorties.append(nouvelle)
     return sorties
 
 
@@ -403,6 +571,80 @@ def _lignes_titre(debut: float, fin: float, texte: str, vertical: bool, classiqu
 
 
 POLICE_SERIF = "DM Serif Display"
+ANTICIPATION_BLOC = 0.08        # le bloc de sous-titres apparait un peu avant son premier mot
+MAINTIEN_BLOC = 0.25            # et reste un instant apres son dernier mot (sans chevaucher le bloc suivant)
+
+
+def _blocs_de_mots(mots: list, max_car: int) -> list:
+    """Decoupe une phrase en blocs de mots qui tiennent sur deux lignes de max_car caracteres."""
+    blocs, courant, total = [], [], 0
+    for m in mots:
+        longueur = len(m["affiche"]) + (1 if courant else 0)
+        if courant and total + longueur > 2 * max_car:
+            blocs.append(courant)
+            courant, total, longueur = [], 0, len(m["affiche"])
+        courant.append(m)
+        total += longueur
+    if courant:
+        blocs.append(courant)
+    return blocs
+
+
+def _dialogues_fluides(phrases: list, accent: tuple, largeur: int, hauteur: int, max_car: int, marge_v: int, gros: set,
+                       pastille: tuple = None, editorial: bool = False) -> list:
+    """
+    Sous-titres « fluides » (rendu par defaut) : la phrase s'affiche d'un bloc (une ou deux lignes, en minuscules), les mots pas encore
+    prononces sont attenues, le mot prononce passe en couleur d'accent puis redevient blanc ; les mots importants gardent la couleur
+    d'accent (serif italique en mode editorial, pastille si elle est activee). Aucun contour epais : une ombre douce, et un leger degrade
+    sombre ajoute en bas de la video par le rendu. Calage sur les instants reels des mots (voir mots_chronometres).
+    """
+    couleur_accent = _couleur_ass(accent) + "&"
+    couleur_pastille = (_couleur_ass(pastille) + "&") if pastille else None
+    epaisseur_pastille = max(12, int(largeur * 0.016))
+    blocs = []
+    for p in phrases:
+        mots = []
+        for m in mots_chronometres(p):
+            affiche = re.sub(r"[,;:.]+$", "", _echapper_ass(m["texte"]))
+            if affiche:
+                mots.append({**m, "affiche": affiche.lower()})
+        blocs += _blocs_de_mots(mots, max_car)
+    sorties, fin_precedente = [], 0.0
+    x, y_final = largeur // 2, hauteur - marge_v
+    for k, bloc in enumerate(blocs):
+        debut_bloc, fin_bloc = bloc[0]["debut"], max(bloc[-1]["fin"], bloc[0]["debut"] + 0.2)
+        debut = max(debut_bloc - ANTICIPATION_BLOC, fin_precedente)
+        fin = fin_bloc + MAINTIEN_BLOC
+        if k + 1 < len(blocs):
+            fin = min(fin, max(fin_bloc, blocs[k + 1][0]["debut"] - ANTICIPATION_BLOC - 0.02))
+        fin_precedente = fin
+        coupures = set(_lignes_sous_titre([m["affiche"] for m in bloc], max_car))
+        morceaux = []
+        for i, m in enumerate(bloc):
+            debut_mot = max(0, int((m["debut"] - debut) * 1000))
+            fin_mot = int(((bloc[i + 1]["debut"] if i + 1 < len(bloc) else m["fin"]) - debut) * 1000)
+            fin_mot = max(fin_mot, debut_mot + 80)
+            cle = _normaliser(m["affiche"]) in gros
+            entree = f"\\t({max(0, debut_mot - 40)},{debut_mot + 70},\\1a&H00&"
+            if editorial and cle:
+                balise = f"\\fn{POLICE_SERIF}\\i1\\fscx116\\fscy116\\1c&HFFFFFF&\\1a&H4D&{entree})"
+            elif cle and couleur_pastille:
+                balise = (f"\\fnPoppins\\i0\\fscx100\\fscy100\\1c&HFFFFFF&\\1a&H4D&\\3c{couleur_pastille}\\3a&HFF&\\bord{epaisseur_pastille}\\blur0\\shad0"
+                          f"\\t({max(0, debut_mot - 40)},{debut_mot + 70},\\1a&H00&\\3a&H00&)")
+            elif cle:
+                balise = f"\\fnPoppins\\i0\\fscx100\\fscy100\\1c{couleur_accent}\\1a&H4D&{entree})"
+            else:
+                balise = f"\\fnPoppins\\i0\\fscx100\\fscy100\\1c&HFFFFFF&\\1a&H4D&{entree}\\1c{couleur_accent})\\t({fin_mot},{fin_mot + 140},\\1c&HFFFFFF&)"
+            if not (cle and couleur_pastille):
+                balise += "\\bord0\\blur3\\shad3\\4c&H000000&\\4a&H50&"
+            if i in coupures:
+                morceaux.append("\\N")
+            elif i:
+                morceaux.append(" ")
+            morceaux.append(f"{{{balise}}}{m['affiche']}")
+        entete = f"{{\\an2\\fad(110,170)\\move({x},{y_final + 18},{x},{y_final},0,150)}}"
+        sorties.append(f"Dialogue: 0,{_horodatage_ass(debut)},{_horodatage_ass(fin)},Fluide,,0,0,0,,{entete}{''.join(morceaux)}")
+    return sorties
 
 
 def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastille: tuple = None, contour: int = 8, editorial: bool = False, classique: bool = False) -> list:
@@ -420,15 +662,14 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastil
     gros_scale = "\\fscx122\\fscy122" if classique else "\\fscx110\\fscy110"
     sorties = []
     for p in phrases:
-        mots = _mots_pop(p["texte"], majuscules=classique and not editorial)
+        mots, debuts = [], []
+        for m in mots_chronometres(p):
+            nettoye = re.sub(r"[,;:.]+$", "", _echapper_ass(m["texte"]))
+            if nettoye:
+                mots.append(nettoye.upper() if (classique and not editorial) else nettoye.lower())
+                debuts.append(m["debut"])
         if not mots:
             continue
-        poids = [len(m) + 1 for m in mots]
-        total_poids, duree = sum(poids), max(0.05, p["fin"] - p["debut"])
-        debuts, cumul = [], 0.0
-        for poids_mot in poids:
-            debuts.append(p["debut"] + duree * cumul / total_poids)
-            cumul += poids_mot
         fins = debuts[1:] + [p["fin"]]
         for groupe in _groupes_pop(mots, max_car):
             mots_groupe = [mots[i] for i in groupe]
@@ -483,6 +724,7 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
         "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Sous,Poppins,{taille},{_couleur_ass(accent)},&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour},2,2,60,60,{marge_v},1",
+        f"Style: Fluide,Poppins,{88 if vertical else 60},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,60,60,{marge_v},1",
         f"Style: Pop,Poppins,{taille_pop},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour + 1 if classique else 3},{3 if classique else 2},2,50,50,{marge_v},1",
         f"Style: Titre,Poppins,{int(taille * 0.9)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour if classique else 3},2,8,70,70,{int(hauteur * 0.09)},1",
         f"Style: Barre,Poppins,20,{_couleur_ass(accent)},&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
@@ -492,24 +734,26 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
         lignes.append(_lignes_titre(0.2, 3.6, titre, vertical, classique))
     for debut, fin, texte in (titres or []):
         lignes.append(_lignes_titre(debut, fin, texte, vertical, classique))
-    if pop:
+    if pop and not classique:
+        lignes += _dialogues_fluides(phrases, accent, largeur, hauteur, 18 if vertical else 36, marge_v, mots_gros or set(), pastille, editorial)
+    elif pop:
         lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set(), pastille, contour + 1, editorial, classique)
     else:
         for p in phrases:
-            mots = _echapper_ass(p["texte"]).split()
+            chronometres = mots_chronometres(p)
+            mots = [_echapper_ass(m["texte"]) for m in chronometres]
             if not mots:
                 continue
-            poids = [len(m) + 1 for m in mots]
-            duree_cs = max(1, int(round((p["fin"] - p["debut"]) * 100)))
             coupures = set(_lignes_sous_titre(mots, max_car))
-            texte, restant_cs, restant_poids = "", duree_cs, sum(poids)
-            for i, (mot, poids_mot) in enumerate(zip(mots, poids)):
-                cs = max(1, round(restant_cs * poids_mot / restant_poids)) if restant_poids else 1
-                restant_cs -= cs
-                restant_poids -= poids_mot
+            texte, curseur = "", p["debut"]
+            for i, (mot, m) in enumerate(zip(mots, chronometres)):
+                suivant = chronometres[i + 1]["debut"] if i + 1 < len(chronometres) else p["fin"]
+                attente = max(0, int(round((m["debut"] - curseur) * 100)))
+                cs = max(1, int(round((max(suivant, m["debut"] + 0.05) - m["debut"]) * 100)))
+                curseur = m["debut"] + cs / 100
                 if i in coupures:
                     texte += "\\N"
-                texte += f"{{\\k{cs}}}{mot}" + (" " if i < len(mots) - 1 and (i + 1) not in coupures else "")
+                texte += (f"{{\\k{attente}}}" if attente else "") + f"{{\\k{cs}}}{mot}" + (" " if i < len(mots) - 1 and (i + 1) not in coupures else "")
             lignes.append(f"Dialogue: 0,{_horodatage_ass(p['debut'])},{_horodatage_ass(p['fin'])},Sous,,0,0,0,,{texte}")
     if barre > 0:
         # Rectangle (dessin ASS) ancre a gauche, dont la largeur grandit de 1 % a 100 % pendant toute la video.
@@ -523,6 +767,20 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
 
 
 # --------------------------------------------------------------------------- rendu
+
+def ecrire_degrade(chemin: str, largeur: int, hauteur: int) -> None:
+    """Degrade sombre (transparent en haut, noir a 50 % en bas) qui occupe le bas de la video : les sous-titres restent lisibles sans gros contour."""
+    from PIL import Image
+    h = max(2, int(hauteur * (0.40 if hauteur > largeur else 0.34)))
+    colonne = Image.new("L", (1, h))
+    for y in range(h):
+        x = y / (h - 1)
+        colonne.putpixel((0, y), int(255 * 0.50 * (x * x * (3 - 2 * x)) ** 1.15))
+    alpha = colonne.resize((largeur, h))
+    image = Image.new("RGBA", (largeur, h), (0, 0, 0, 0))
+    image.putalpha(alpha)
+    image.save(chemin, format="PNG")
+
 
 def _chemin_filtre(chemin: str) -> str:
     return chemin.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
@@ -547,7 +805,7 @@ def expression_zoom(zooms: list) -> str:
 
 def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie: str, fichier_ass: str = None,
            musique: str = None, progression=None, zooms: list = None, visage_x: float = None, illustrations: list = None,
-           transitions: dict = None, bruitages: list = None, panneau: tuple = None) -> None:
+           transitions: dict = None, bruitages: list = None, panneau: tuple = None, degrade: bool = False) -> None:
     """
     Assemble les segments de `source`, recadre (en vertical, centre sur le visage si visage_x est connu : 0 = bord gauche, 1 = bord
     droit), applique les zooms (debut, fin, amplitude) sur la chronologie du montage, incruste les illustrations
@@ -644,6 +902,13 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
         )
         parties.append(f"[{etiquette}][i{k}]overlay=x={x}:y={y}:enable='between(t,{debut_i:.3f},{fin_i:.3f})'[v{k + 1}]")
         etiquette = f"v{k + 1}"
+    if degrade:
+        chemin_degrade = os.path.join(dossier, f"degrade-{uuid.uuid4().hex[:6]}.png")
+        ecrire_degrade(chemin_degrade, largeur, hauteur)
+        images.append((chemin_degrade, duree_montee(segments) + 1.0, "image"))
+        parties.append(f"[{premiere_image + len(images) - 1}:v]format=rgba[dg]")
+        parties.append(f"[{etiquette}][dg]overlay=x=0:y=H-h[vdg]")
+        etiquette = "vdg"
     if fichier_ass:
         parties.append(f"[{etiquette}]ass='{_chemin_filtre(fichier_ass)}':fontsdir='{_chemin_filtre(DOSSIER_POLICES)}'[v]")
     else:
@@ -901,7 +1166,7 @@ def appliquer_actions(sortie: dict, actions: list) -> tuple:
             if not proches or abs((proches[0]["debut"] + proches[0]["fin"]) / 2 - debut_s) > 15:
                 refus.append(f"Texte « {ancien} » introuvable près de {_mmss(debut_m)}.")
                 continue
-            proches[0]["texte"] = motif.sub(lambda _: texte, proches[0]["texte"], count=1)
+            appliquer_texte(proches[0], motif.sub(lambda _: texte, proches[0]["texte"], count=1))
             resume.append(f"Sous-titre corrigé : « {ancien} » devient « {texte} »")
         else:
             refus.append("Action non reconnue.")
@@ -1037,7 +1302,8 @@ def plan_effets(sortie: dict) -> dict:
     fond, texte = charte_montage.rgb(charte["fond"]), charte_montage.rgb(charte["texte"])
     panneau = tuple(int(round(f + (t - f) * 0.06)) for f, t in zip(fond, texte))      # fond de la charte, tres legerement teinte : les cartes blanches ressortent
     return {"duree": duree, "phrases": phrases_montage, "zooms": zooms, "titres": titres, "pop": pop, "gros": gros, "barre": barre, "titre": titre, "pastille": pastille,
-            "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages, "panneau": panneau, "editorial": bool(pop and effets.get("editorial")), "classique": bool(effets.get("classique"))}
+            "fenetres": fenetres, "illustrations": illustrations, "bruitages": bruitages, "panneau": panneau, "editorial": bool(pop and effets.get("editorial")), "classique": bool(effets.get("classique")),
+            "degrade": bool(pop and not effets.get("classique"))}
 
 
 def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
@@ -1053,7 +1319,8 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
         ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
                    pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"], editorial=plan["editorial"], classique=plan["classique"])
     chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
-    options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"], panneau=plan["panneau"])
+    options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"], panneau=plan["panneau"],
+                   degrade=plan["degrade"] and bool(fichier_ass) and bool(phrases_montage) and bool(sortie["sous_titres"]))
     try:
         rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, **options)
     except ErreurMontage:
@@ -1236,7 +1503,7 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
                         alignement = aligner_script(brute, script)
                         corrigees = copy.deepcopy(brute)
                         for p, texte in zip(corrigees, alignement["textes"]):
-                            p["texte"] = texte
+                            appliquer_texte(p, texte)
                         montage["transcription"] = corrigees
                         montage["retirer_script"] = [(brute[i]["debut"], brute[i]["fin"]) for i in alignement["retirer"] if 0 <= i < len(brute)]
                         montage["avert_script"] = alignement.get("avertissement") or ""
