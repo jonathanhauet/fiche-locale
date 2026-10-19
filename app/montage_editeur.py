@@ -89,6 +89,7 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
         "mots_gros": sorted(set(effets["mots_gros"]) | {mp._normaliser(m) for m in effets["mots_cles"]}),
         "reglages": {**effets["actif"], "alterne": bool(effets.get("alterne")), "bruitages": bool(effets.get("bruitages")), "pastille": bool(effets.get("pastille")),
                      "editorial": bool(effets.get("editorial")), "partage": bool(effets.get("partage")), "classique": bool(effets.get("classique")),
+                     "sons_zoom": effets.get("sons_zoom") if effets.get("sons_zoom") in mp.SONS_ZOOM else "discret",
                      "panneau": "#%02x%02x%02x" % plan["panneau"],
                      "transition": effets.get("transition", "aucune"), "sous_titres": bool(sortie["sous_titres"]), "style": effets["style"]},
         "accroche": effets["titre"], "peut_annuler": bool(sortie.get("annulations")), "peut_revenir": bool(sortie["historique"]),
@@ -256,6 +257,13 @@ def _appliquer_operations(montage: dict, sortie: dict, operations: list) -> tupl
                 effets[cle] = valeur
             elif cle == "sous_titres":
                 sortie["sous_titres"] = valeur
+            elif cle == "sons_zoom":
+                if operation.get("valeur") not in mp.SONS_ZOOM:
+                    refus.append("Réglage de bruitage de zoom inconnu.")
+                    continue
+                effets["sons_zoom"] = operation["valeur"]
+                resume.append(f"Bruitage des zooms : {mp.SONS_ZOOM[effets['sons_zoom']]}")
+                continue
             elif cle == "transition":
                 if operation.get("valeur") not in styles_montage.TRANSITIONS_VALIDES:
                     refus.append("Transition inconnue.")

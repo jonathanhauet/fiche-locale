@@ -18,7 +18,8 @@ TYPES = {"etape": "Étape numérotée", "info": "Information", "chiffre": "Chiff
          "appel_action": "Appel à l'action (commente MOT)", "badge": "Badge compteur", "sticker": "Sticker de titre"}
 TYPES_INTERFACE = ("chat", "checklist", "notification", "evolution", "appel_action", "badge", "sticker")      # dessines par cartes_interface.py
 LIMITES = {"numero": 2, "titre": 60, "sous_titre": 90, "valeur": 12, "libelle": 60, "texte": 140, "auteur": 40, "avant": 12, "mot": 20, "elements": 170}
-LARGEUR_CARTE = {"vertical": 0.84, "horizontal": 0.40}          # part de la largeur de l'image video
+LARGEUR_CARTE = {"vertical": 0.84, "horizontal": 0.32}          # part de la largeur de l'image video (en horizontal : sur le cote, a cote de la personne)
+BASE_CARTE = {"vertical": 907, "horizontal": 700}               # largeur de reference de la mise en page : plus petite en horizontal, le texte y reste lisible
 POSITIONS = {"haut": "En haut", "centre": "Au centre", "bas": "En bas", "partage": "Écran coupé (vous en bas)"}
 
 
@@ -116,7 +117,7 @@ def rendre_carte(genre: str, textes: dict, charte: dict, format_video: str = "ve
     textes = nettoyer_textes(textes)
     largeur_video = 1080 if format_video == "vertical" else 1920
     largeur = int(largeur_video * LARGEUR_CARTE.get(format_video, 0.84))
-    echelle = largeur / 907
+    echelle = largeur / BASE_CARTE.get(format_video, 907)
     rayon = int(largeur * charte_montage.ARRONDIS[charte["arrondi"]])
     marge = int(46 * echelle)
     principale, secondaire = charte_montage.rgb(charte["principale"]), charte_montage.rgb(charte["secondaire"])

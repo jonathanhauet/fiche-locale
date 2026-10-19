@@ -13,7 +13,7 @@ import wave
 CADENCE = 44100
 DOSSIER_SONS = os.path.join(tempfile.gettempdir(), "fiche_locale_sons")
 
-LIBELLES = {"whoosh": "Whoosh", "pop": "Pop", "impact": "Impact", "clic": "Clic", "ding": "Ding"}
+LIBELLES = {"whoosh": "Whoosh", "swoosh": "Swoosh", "pop": "Pop", "impact": "Impact", "clic": "Clic", "ding": "Ding"}
 
 
 def _ecrire(chemin: str, echantillons: list) -> None:
@@ -38,8 +38,45 @@ def _bruit_filtre(duree: float, depart: float, fin: float, graine: int) -> list:
     return sortie
 
 
+def _souffle(duree: float, f_debut: float, f_fin: float, pic: float, q: float, graine: int) -> list:
+    """
+    Souffle de whoosh : bruit ROSE (plus doux et plus naturel que le bruit blanc, qui donne un « sssh » dur) passe par un filtre passe-bande
+    resonant dont la frequence glisse (echelle exponentielle) de f_debut a f_fin, avec une enveloppe qui monte jusqu'a `pic` (0 a 1) puis
+    retombe : un air qui passe, pas un sifflement continu. Un dernier filtre passe-bas supprime le sifflement aigu.
+    """
+    hasard = random.Random(graine)
+    n, sortie = int(duree * CADENCE), []
+    x1 = x2 = y1 = y2 = lissage = 0.0
+    b0 = b1 = b2 = b3 = b4 = b5 = b6 = 0.0
+    for i in range(n):
+        u = i / n
+        blanc = hasard.uniform(-1, 1)
+        b0 = 0.99886 * b0 + blanc * 0.0555179
+        b1 = 0.99332 * b1 + blanc * 0.0750759
+        b2 = 0.96900 * b2 + blanc * 0.1538520
+        b3 = 0.86650 * b3 + blanc * 0.3104856
+        b4 = 0.55000 * b4 + blanc * 0.5329522
+        b5 = -0.7616 * b5 - blanc * 0.0168980
+        rose = b0 + b1 + b2 + b3 + b4 + b5 + b6 + blanc * 0.5362
+        b6 = blanc * 0.115926
+        w0 = 2 * math.pi * f_debut * (f_fin / f_debut) ** u / CADENCE
+        alpha = math.sin(w0) / (2 * q)
+        y = (alpha * rose - alpha * x2 + 2 * math.cos(w0) * y1 - (1 - alpha) * y2) / (1 + alpha)
+        x2, x1, y2, y1 = x1, rose, y1, y
+        lissage += 0.35 * (y - lissage)
+        enveloppe = (u / pic) ** 2 if u < pic else math.cos((u - pic) / (1 - pic) * math.pi / 2) ** 2
+        sortie.append(lissage * enveloppe)
+    return sortie
+
+
 def _whoosh() -> list:
-    return _bruit_filtre(0.55, 0.02, 0.45, 1)
+    """Whoosh de transition : air qui passe, du grave vers l'aigu (0,5 s)."""
+    return _souffle(0.50, 260, 2800, 0.52, 2.0, 1)
+
+
+def _swoosh() -> list:
+    """Swoosh de zoom : court, qui monte vite avec le cadrage (0,34 s)."""
+    return _souffle(0.34, 450, 4000, 0.64, 2.6, 5)
 
 
 def _pop() -> list:
@@ -65,7 +102,7 @@ def _ding() -> list:
     return [(math.sin(2 * math.pi * 1320 * i / CADENCE) + 0.5 * math.sin(2 * math.pi * 1980 * i / CADENCE)) * math.exp(-i / (0.2 * CADENCE)) for i in range(n)]
 
 
-GENERATEURS = {"whoosh": _whoosh, "pop": _pop, "impact": _impact, "clic": _clic, "ding": _ding}
+GENERATEURS = {"whoosh": _whoosh, "swoosh": _swoosh, "pop": _pop, "impact": _impact, "clic": _clic, "ding": _ding}
 
 
 def chemin_son(nom: str) -> str:

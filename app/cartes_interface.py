@@ -45,7 +45,7 @@ def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical
     textes = cm.nettoyer_textes(textes)
     largeur_video = 1080 if format_video == "vertical" else 1920
     largeur = int(largeur_video * cm.LARGEUR_CARTE.get(format_video, 0.84))
-    e = largeur / 907
+    e = largeur / cm.BASE_CARTE.get(format_video, 907)
     rayon = int(largeur * charte_montage.ARRONDIS[charte["arrondi"]])
     marge = int(40 * e)
     principale, secondaire = charte_montage.rgb(charte["principale"]), charte_montage.rgb(charte["secondaire"])
@@ -212,7 +212,7 @@ def rendre(genre: str, textes: dict, charte: dict, format_video: str = "vertical
 
     haut = entete if entete else (0 if genre == "sticker" else marge)
     hauteur = haut + sum(h for h, _ in corps) + (0 if genre == "sticker" else marge)
-    ombre_marge = int(60 * e)
+    ombre_marge = int(40 * e)
     carte = Image.new("RGBA", (largeur, max(hauteur, 10)), (0, 0, 0, 0))
     d = ImageDraw.Draw(carte)
     if couleur_carte is not None:

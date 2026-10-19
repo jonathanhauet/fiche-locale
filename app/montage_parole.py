@@ -883,6 +883,13 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
             if partage:      # centree dans la moitie haute, reduite si elle est plus haute que le panneau
                 mise = f"scale='min(iw,{int(largeur * 0.926)})':'min(ih,{int(hauteur * 0.458)})':force_original_aspect_ratio=decrease," + mise
                 y = f"({demi}-h)/2"
+            elif not vertical:
+                # En horizontal, la personne est au centre : la carte va sur le cote (a droite ; en bas, a gauche, au-dessus des sous-titres),
+                # reduite si elle est trop haute.
+                place = illustration.get("place")
+                mise = f"scale='min(iw,{int(largeur * 0.36)})':'min(ih,{int(hauteur * 0.50)})':force_original_aspect_ratio=decrease," + mise
+                x = "W*0.185-w/2" if place == "bas" else "W*0.815-w/2"
+                y = {"haut": "H*0.07", "centre": "(H-h)/2", "bas": "H*0.77-h"}.get(place, "H*0.07")
         elif partage:
             mise = f"scale={int(largeur * 0.86)}:{int(hauteur * 0.42)}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=iw+16:ih+16:8:8:white"
             x, y = "(W-w)/2", f"({demi}-h)/2"
@@ -1179,7 +1186,9 @@ _DUREE_TRANSITION = {"flash": 0.12, "zoom": 0.35, "glitch": 0.20, "secousse": 0.
 _ORDRE_MELANGE = ("flash", "zoom", "glitch", "secousse")
 ECART_MINI_TRANSITION = 1.5
 MAX_TRANSITIONS = 60
-VOLUMES_SONS = {"whoosh": 0.55, "pop": 0.70, "impact": 0.65, "clic": 0.60}
+VOLUMES_SONS = {"whoosh": 0.50, "swoosh": 0.42, "pop": 0.70, "impact": 0.65, "clic": 0.60}
+SONS_ZOOM = {"aucun": "Aucun", "discret": "Discret (zooms marqués seulement)", "marque": "Sur tous les zooms"}
+AMPLITUDE_ZOOM_MARQUE = 0.15       # un zoom de cette amplitude ou plus est « marque » (les zooms doux automatiques sont a 0,10 puis 0,17)
 
 
 def fenetres_transitions(segments: list, mode: str, duree: float) -> dict:
@@ -1200,15 +1209,16 @@ def fenetres_transitions(segments: list, mode: str, duree: float) -> dict:
     return resultat
 
 
-def evenements_sons(zooms: list, titres: list, illustrations: list, accroche: bool, fenetres: dict) -> list:
+def evenements_sons(zooms: list, titres: list, illustrations: list, accroche: bool, fenetres: dict, sons_zoom: str = "discret") -> list:
     """
-    Bruitages a poser sur le montage : [{"t", "fichier", "volume", "son"}] (temps du montage). Un « whoosh » sur chaque zoom doux, un « pop »
+    Bruitages a poser sur le montage : [{"t", "fichier", "volume", "son"}] (temps du montage). Un « swoosh » sur les zooms (sons_zoom : « discret »
+    = seulement les zooms marques, « marque » = tous, « aucun » = jamais), qui demarre un peu avant le zoom pour culminer avec lui, un « pop »
     sur chaque titre et illustration, un impact sur l'accroche, un son adapte a chaque transition. Au plus un son tous les 0,25 s.
     """
     brut = []
     for fenetre in zooms:
-        if len(fenetre) == 3 or fenetre[3] == "doux":
-            brut.append((fenetre[0], "whoosh"))
+        if (len(fenetre) == 3 or fenetre[3] == "doux") and (sons_zoom == "marque" or (sons_zoom == "discret" and fenetre[2] >= AMPLITUDE_ZOOM_MARQUE)):
+            brut.append((max(0.0, fenetre[0] - 0.10), "swoosh"))
     brut += [(t[0], "pop") for t in titres]
     brut += [(i["debut"], "pop") for i in illustrations]
     if accroche:
@@ -1296,7 +1306,8 @@ def plan_effets(sortie: dict) -> dict:
             sequence = illustration.get("sequence")
             illustrations.append({"id": illustration.get("id"), "debut": a, "fin": b, "chemin": fichier, "mode": mode, "video": illustration.get("kind") == "video",
                                   "place": place, "partage": partage, "sequence": sequence if sequence and os.path.exists(sequence) else None})
-    bruitages = evenements_sons(zooms, titres, illustrations, effets["actif"]["accroche"] and bool(effets["titre"]), fenetres) if effets.get("bruitages") else []
+    bruitages = evenements_sons(zooms, titres, illustrations, effets["actif"]["accroche"] and bool(effets["titre"]), fenetres,
+                                 effets.get("sons_zoom", "discret") if effets.get("sons_zoom") in SONS_ZOOM else "discret") if effets.get("bruitages") else []
     charte = charte_montage.nettoyer(effets.get("charte"))
     pastille = charte_montage.rgb(charte["principale"]) if pop and effets.get("pastille") else None
     fond, texte = charte_montage.rgb(charte["fond"]), charte_montage.rgb(charte["texte"])
