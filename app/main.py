@@ -7714,10 +7714,11 @@ async def generer_script_video(request: Request, db: Session = Depends(obtenir_s
     donnees = await request.json()
     sujet = (donnees.get("sujet") or "").strip()
     angle = (donnees.get("angle") or "").strip()
+    format_script = donnees.get("format") if donnees.get("format") in claude_generation.FORMATS_SCRIPT_VIDEO else claude_generation.FORMAT_SCRIPT_DEFAUT
 
     try:
         resultat = await run_in_threadpool(
-            claude_generation.generer_script_video_youtube, sujet, angle, _sujets_videos_deja_traites(db),
+            claude_generation.generer_script_video_youtube, sujet, angle, _sujets_videos_deja_traites(db), format_script,
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Impossible de générer le script : {e}"}, status_code=500)
@@ -8693,6 +8694,30 @@ def montage_editeur_rendre(identifiant: str, numero: int, request: Request):
         return JSONResponse({"erreur": "Un rendu est déjà en cours."}, status_code=409)
     montage_editeur.lancer_rendu(identifiant, numero)
     return JSONResponse({"id": identifiant})
+
+
+@app.post("/montage-video/{identifiant}/editeur/{numero}/apercu-rapide")
+def montage_editeur_apercu_rapide(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    montage, sortie = _montage_et_sortie(identifiant, numero)
+    if not sortie:
+        return JSONResponse({"erreur": "Montage introuvable."}, status_code=404)
+    if montage["etat"] == "en_cours":
+        return JSONResponse({"erreur": "Un rendu est déjà en cours."}, status_code=409)
+    montage_editeur.lancer_apercu_rapide(identifiant, numero)
+    return JSONResponse({"id": identifiant})
+
+
+@app.get("/montage-video/{identifiant}/apercu-rapide/{numero}.mp4")
+def montage_editeur_apercu_rapide_fichier(identifiant: str, numero: int, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    montage = montage_parole.MONTAGES.get(identifiant)
+    chemin = montage_editeur.fichier_apercu_rapide(montage, numero) if montage else None
+    if not chemin:
+        return JSONResponse({"erreur": "Aperçu pas encore prêt."}, status_code=404)
+    return FileResponse(chemin, media_type="video/mp4")
 
 
 @app.get("/montage-video/{identifiant}/apercu.mp4")

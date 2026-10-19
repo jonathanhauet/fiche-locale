@@ -859,7 +859,7 @@ def expression_zoom(zooms: list) -> str:
 
 def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie: str, fichier_ass: str = None,
            musique: str = None, progression=None, zooms: list = None, visage_x: float = None, illustrations: list = None,
-           transitions: dict = None, bruitages: list = None, panneau: tuple = None, degrade: bool = False) -> None:
+           transitions: dict = None, bruitages: list = None, panneau: tuple = None, degrade: bool = False, rapide: bool = False) -> None:
     """
     Assemble les segments de `source`, recadre (en vertical, centre sur le visage si visage_x est connu : 0 = bord gauche, 1 = bord
     droit), applique les zooms (debut, fin, amplitude) sur la chronologie du montage, incruste les illustrations
@@ -1029,7 +1029,7 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     commande += ["-filter_complex", graphe, "-map", "[v]"]
     if filtre_audio:
         commande += ["-map", "[a]", "-c:a", "aac", "-b:a", "160k", "-ar", "48000"]
-    commande += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", str(FPS),
+    commande += ["-c:v", "libx264", "-preset", "ultrafast" if rapide else "veryfast", "-crf", "30" if rapide else "23", "-pix_fmt", "yuv420p", "-r", str(FPS),
                  "-t", f"{duree_montee(segments):.3f}", "-movflags", "+faststart", sortie]
 
     total = duree_montee(segments)
@@ -1371,8 +1371,30 @@ def plan_effets(sortie: dict) -> dict:
             "degrade": bool(pop and not effets.get("classique"))}
 
 
-def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
-    """Rend (ou re-rend) une sortie depuis la video d'origine et son etat (segments, effets, phrases) : (chemin du fichier, duree)."""
+DUREE_APERCU_RAPIDE = 45.0
+
+
+def segments_jusqua(segments: list, limite: float) -> list:
+    """Les `limite` premieres secondes du MONTAGE (apres coupes) : les segments entiers, le dernier raccourci."""
+    gardes, cumul = [], 0.0
+    for debut, fin in segments:
+        if cumul + (fin - debut) <= limite:
+            gardes.append((debut, fin))
+            cumul += fin - debut
+            continue
+        if limite - cumul > 0.2:
+            gardes.append((debut, debut + (limite - cumul)))
+        break
+    return gardes
+
+
+def _rendre_sortie(montage: dict, sortie: dict, suivi, limite: float = None) -> tuple:
+    """
+    Rend (ou re-rend) une sortie depuis la video d'origine et son etat (segments, effets, phrases) : (chemin du fichier, duree).
+    Avec `limite` (secondes), apercu rapide : seul le debut du montage est rendu, avec le meme style mais un encodage plus leger.
+    """
+    if limite:
+        sortie = dict(sortie, segments=segments_jusqua(sortie["segments"], limite))
     infos, segments = montage["infos"], sortie["segments"]
     largeur, hauteur = (1080, 1920) if sortie["format"] == "vertical" else (1920, 1080)
     plan = plan_effets(sortie)
@@ -1383,8 +1405,8 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi) -> tuple:
         fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
         ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
                    pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"], editorial=plan["editorial"], classique=plan["classique"])
-    chemin = os.path.join(montage["dossier"], f"montage-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
-    options = dict(zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"], panneau=plan["panneau"],
+    chemin = os.path.join(montage["dossier"], f"{'apercu-rendu' if limite else 'montage'}-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
+    options = dict(rapide=bool(limite), zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"], panneau=plan["panneau"],
                    degrade=plan["degrade"] and bool(fichier_ass) and bool(phrases_montage) and bool(sortie["sous_titres"]))
     try:
         rendre(montage["source"], infos, segments, chemin, sortie["format"], fichier_ass, sortie["musique"], suivi, **options)

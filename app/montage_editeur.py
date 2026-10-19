@@ -515,12 +515,37 @@ def fichier_apercu(montage: dict):
     return chemin if montage.get("apercu", {}).get("etat") == "pret" and os.path.exists(chemin) else None
 
 
+# --------------------------------------------------------------------------- apercu rapide du rendu
+
+def lancer_apercu_rapide(identifiant: str, numero: int) -> None:
+    """Rend les premieres secondes avec le vrai style (sous-titres, cartes, zooms, sons), sans nouvelle version ni retour en arriere."""
+    montage = mp.MONTAGES[identifiant]
+    montage.update(etat="en_cours", etape="Aperçu rapide", progression=0.02, erreur="", avertissement="", rendu_type="apercu")
+
+    def travail():
+        try:
+            sortie = montage["sorties"][numero]
+            suivi = lambda p: montage.__setitem__("progression", 0.02 + 0.98 * p)
+            chemin, duree = mp._rendre_sortie(montage, sortie, suivi, limite=mp.DUREE_APERCU_RAPIDE)
+            montage["apercu_rapide"] = {"numero": numero, "chemin": chemin, "duree": round(duree, 1)}
+            montage.update(etat="termine", etape="Aperçu prêt", progression=1.0)
+        except Exception as erreur:
+            montage.update(etat="erreur", erreur=str(erreur) or erreur.__class__.__name__)
+
+    threading.Thread(target=travail, daemon=True).start()
+
+
+def fichier_apercu_rapide(montage: dict, numero: int):
+    pret = montage.get("apercu_rapide") or {}
+    return pret["chemin"] if pret.get("numero") == numero and os.path.exists(pret.get("chemin", "")) else None
+
+
 # --------------------------------------------------------------------------- rendu final depuis l'editeur
 
 def lancer_rendu(identifiant: str, numero: int) -> None:
     """Rend la sortie avec l'etat actuel de l'editeur : une nouvelle version, la precedente reste disponible (retour en arriere)."""
     montage = mp.MONTAGES[identifiant]
-    montage.update(etat="en_cours", etape="Rendu de la vidéo", progression=0.02, erreur="", avertissement="")
+    montage.update(etat="en_cours", etape="Rendu de la vidéo", progression=0.02, erreur="", avertissement="", rendu_type="final")
 
     def travail():
         try:

@@ -8,6 +8,7 @@
   <h1>Éditeur · {{ titre }}</h1>
   <div class="barre-outils-import-masse">
     <button type="button" class="bouton-secondaire" id="ed-annuler" disabled>↶ Annuler</button>
+    <button type="button" class="bouton-secondaire" id="ed-apercu-rapide" title="Rend les 45 premières secondes avec le vrai style (sous-titres, cartes, zooms, sons) pour valider avant le rendu complet">⚡ Aperçu rapide (45 s)</button>
     <button type="button" class="bouton" id="ed-rendre">🎞️ Rendre la vidéo</button>
   </div>
 </div>
@@ -958,22 +959,24 @@
   });
 
   // ---------- rendu final
-  $("ed-rendre").addEventListener("click", async () => {
+  async function lancerRendu(chemin, apercu) {
     if (enRendu) return;
-    try { await envoyer("/rendre"); } catch (e) { message(e.message, true); return; }
-    enRendu = true; $("ed-rendre").disabled = true; $("ed-annuler").disabled = true; $("ed-progression").hidden = false; $("ed-resultat").hidden = true; message("");
-    suivreRendu();
-  });
-  async function suivreRendu() {
+    try { await envoyer(chemin); } catch (e) { message(e.message, true); return; }
+    enRendu = true; $("ed-rendre").disabled = true; $("ed-apercu-rapide").disabled = true; $("ed-annuler").disabled = true; $("ed-progression").hidden = false; $("ed-resultat").hidden = true; message("");
+    suivreRendu(apercu);
+  }
+  $("ed-rendre").addEventListener("click", () => lancerRendu("/rendre", false));
+  $("ed-apercu-rapide").addEventListener("click", () => lancerRendu("/apercu-rapide", true));
+  async function suivreRendu(apercu) {
     let etat;
-    try { etat = (await (await fetch("/montage-video/" + ID + "/etat")).json()); } catch (e) { setTimeout(suivreRendu, 3000); return; }
+    try { etat = (await (await fetch("/montage-video/" + ID + "/etat")).json()); } catch (e) { setTimeout(() => suivreRendu(apercu), 3000); return; }
     $("ed-barre-rendu-remplissage").style.width = Math.round((etat.progression || 0) * 100) + "%";
     $("ed-etape").textContent = (etat.etape || "Rendu") + " (" + Math.round((etat.progression || 0) * 100) + " %)";
-    if (etat.etat === "en_cours") { setTimeout(suivreRendu, 2000); return; }
-    enRendu = false; $("ed-rendre").disabled = false; $("ed-progression").hidden = true;
-    if (etat.etat === "erreur") { message("Le rendu a échoué : " + etat.erreur, true); await charger(); return; }
-    message(etat.avertissement || "Rendu terminé : relisez la vidéo avant de publier.");
-    const url = "/montage-video/" + ID + "/fichier/" + NUMERO;
+    if (etat.etat === "en_cours") { setTimeout(() => suivreRendu(apercu), 2000); return; }
+    enRendu = false; $("ed-rendre").disabled = false; $("ed-apercu-rapide").disabled = false; $("ed-progression").hidden = true;
+    if (etat.etat === "erreur") { message((apercu ? "L'aperçu a échoué : " : "Le rendu a échoué : ") + etat.erreur, true); await charger(); return; }
+    message(etat.avertissement || (apercu ? "Aperçu des 45 premières secondes : si le style vous plaît, lancez le rendu complet." : "Rendu terminé : relisez la vidéo avant de publier."));
+    const url = apercu ? "/montage-video/" + ID + "/apercu-rapide/" + NUMERO + ".mp4" : "/montage-video/" + ID + "/fichier/" + NUMERO;
     $("ed-resultat").hidden = false; $("ed-resultat-video").src = url + "?v=" + Date.now(); $("ed-resultat-lien").href = url + "?telecharger=1";
     $("ed-resultat").scrollIntoView({ behavior: "smooth", block: "start" }); await charger();
   }
