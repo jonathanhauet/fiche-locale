@@ -39,7 +39,14 @@
     <ul id="liste-sujets-evergreen" class="liste-sujets-tendance"></ul>
   </div>
 
-  <label for="script-angle">Précision facultative (angle, public visé, longueur souhaitée...)</label>
+  <label for="script-format">Longueur du script</label>
+  <select id="script-format">
+    <option value="court">Court : percutant, 30 à 45 secondes (Reel, Short, TikTok)</option>
+    <option value="moyen" selected>Moyen : environ 3 minutes</option>
+    <option value="long">Long : 6 à 9 minutes (YouTube)</option>
+  </select>
+
+  <label for="script-angle">Précision facultative (angle, public visé...)</label>
   <input type="text" id="script-angle" placeholder="Ex : insister sur les artisans sans local physique">
 
   <div class="ligne-champs">
@@ -190,6 +197,9 @@
   (function () {
     const champSujet = document.getElementById("script-sujet");
     const champAngle = document.getElementById("script-angle");
+    const champFormat = document.getElementById("script-format");
+    try { const memo = localStorage.getItem("script-format"); if (memo && champFormat.querySelector('option[value="' + memo + '"]')) champFormat.value = memo; } catch (e) { /* stockage indisponible */ }
+    champFormat.addEventListener("change", () => { try { localStorage.setItem("script-format", champFormat.value); } catch (e) { /* ignore */ } });
     const bouton = document.getElementById("script-generer");
     const spinner = document.getElementById("script-spinner");
     const statut = document.getElementById("script-statut");
@@ -223,7 +233,7 @@
         const reponse = await fetch("/scripts-video/generer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sujet: sujet, angle: champAngle.value.trim() }),
+          body: JSON.stringify({ sujet: sujet, angle: champAngle.value.trim(), format: champFormat.value }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {
@@ -236,9 +246,10 @@
         scriptIdCourant = donnees.id;
         zoneKit.hidden = true; zoneKit.innerHTML = ""; statutKit.hidden = true;
         ajouterOuMarquerHistorique(donnees.id, donnees.sujet, false);
-        statut.textContent = donnees.sujet_utilise
+        const duree = donnees.duree_estimee ? " (" + donnees.mots + " mots, environ " + (donnees.duree_estimee >= 90 ? Math.round(donnees.duree_estimee / 60) + " min" : donnees.duree_estimee + " s") + " à l'oral)" : "";
+        statut.textContent = (donnees.sujet_utilise
           ? `Sujet choisi par l'IA : « ${donnees.sujet_utilise} » — relisez le script avant de tourner.`
-          : "Script généré — relisez-le avant de tourner.";
+          : "Script généré — relisez-le avant de tourner.") + duree;
         if (donnees.sujet_utilise) champSujet.value = donnees.sujet_utilise;
       } catch (erreur) {
         statut.textContent = "Erreur réseau lors de la génération du script.";

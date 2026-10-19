@@ -2488,7 +2488,7 @@ Le ton de Jonathan Hauët (Expert Produit Google, spécialiste en référencemen
 - Vocabulaire récurrent : "fiche d'établissement Google" / "fiche Google Business", "visibilité locale",
   "référencement local", "Pack Local". Pas d'anglicisme sauf les termes propres au métier (SEO, Google Ads...).
 - Jamais de tiret cadratin (—) : un tiret simple ou une virgule à la place.
-- Longueur adaptée à la richesse du sujet, dans l'esprit de ses scripts existants (environ 400 à 900 mots).
+- Longueur : celle demandée dans la consigne de format (à défaut, environ 400 à 900 mots, dans l'esprit de ses scripts existants).
 - Écrit avec les accents français corrects partout (é, è, à, ê, ô, ç...).
 """.strip()
 
@@ -2546,7 +2546,38 @@ EXEMPLES_SCRIPT_VIDEO = [
 ]
 
 
-def generer_script_video_youtube(sujet: str = "", angle: str = "", sujets_deja_traites: list = None) -> dict:
+# Formats de script : longueur imposee (mots, a ~2,5 mots par seconde face camera) et consigne de structure.
+FORMATS_SCRIPT_VIDEO = {
+    "court": {
+        "libelle": "court", "mots": (70, 120), "max_tokens": 1100, "duree": "30 à 45 secondes",
+        "consigne": (
+            "FORMAT COURT, percutant (Reel, Short, TikTok) : entre 70 et 120 mots, environ 30 à 45 secondes à l'oral. "
+            "Une seule idée, une seule promesse. Commence DIRECTEMENT par une accroche qui arrête le pouce (un chiffre, une erreur "
+            "courante, une question qui pique), sans « Bonjour à tous » ni présentation. Phrases très courtes, rythme rapide, "
+            "aucun détail secondaire. Termine par une phrase de clôture et un appel à l'action en une phrase (commenter, s'abonner, "
+            "ou prendre contact). Les deux exemples ci-dessus servent uniquement pour le ton : ne copie NI leur longueur NI leur structure."
+        ),
+    },
+    "moyen": {
+        "libelle": "moyen", "mots": (350, 550), "max_tokens": 2400, "duree": "environ 2 minutes 30 à 3 minutes 30",
+        "consigne": (
+            "FORMAT MOYEN : entre 350 et 550 mots, environ 2 minutes 30 à 3 minutes 30 à l'oral. Présentation courte, accroche, "
+            "3 à 5 points ou étapes concrets, un exemple, conclusion avec appel à s'abonner."
+        ),
+    },
+    "long": {
+        "libelle": "long", "mots": (900, 1400), "max_tokens": 5000, "duree": "6 à 9 minutes",
+        "consigne": (
+            "FORMAT LONG : entre 900 et 1400 mots, environ 6 à 9 minutes à l'oral. Présentation, accroche qui annonce le plan, "
+            "5 à 8 parties clairement séparées (chacune sur son paragraphe, avec une transition parlée), plusieurs exemples concrets "
+            "ou vécus, un récapitulatif, puis la conclusion avec appel à s'abonner et à commenter."
+        ),
+    },
+}
+FORMAT_SCRIPT_DEFAUT = "moyen"
+
+
+def generer_script_video_youtube(sujet: str = "", angle: str = "", sujets_deja_traites: list = None, format_script: str = FORMAT_SCRIPT_DEFAUT) -> dict:
     """
     Script à lire face caméra pour une vidéo YouTube, dans le ton de Jonathan Hauët (voir STYLE_SCRIPT_VIDEO et
     EXEMPLES_SCRIPT_VIDEO, deux de ses scripts réels servant de modèle de style). sujet : le thème de la vidéo,
@@ -2555,11 +2586,15 @@ def generer_script_video_youtube(sujet: str = "", angle: str = "", sujets_deja_t
     public cible, une longueur souhaitée). Renvoie {"script", "sujet_utilise"} - sujet_utilise n'est rempli que
     lorsque le sujet a été choisi par l'IA (vide sinon), pour l'afficher à l'utilisateur. sujets_deja_traites :
     sujets des vidéos précédentes (voir models.ScriptVideo), pour ne pas reproposer le même sujet ni un angle trop proche.
+    format_script : « court », « moyen » ou « long » (voir FORMATS_SCRIPT_VIDEO) ; la longueur est imposee et verifiee (une seule reecriture
+    si le nombre de mots est loin de la cible). Renvoie aussi "mots" et "duree_estimee" (secondes de lecture).
     """
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
     sujet = (sujet or "").strip()
     angle = (angle or "").strip()
+    format_choisi = FORMATS_SCRIPT_VIDEO.get(format_script) or FORMATS_SCRIPT_VIDEO[FORMAT_SCRIPT_DEFAUT]
+    mots_mini, mots_maxi = format_choisi["mots"]
 
     bloc_angle = f"\nPrécision supplémentaire à respecter : {angle[:500]}\n" if angle else ""
     exemples = "\n\n---\n\n".join(EXEMPLES_SCRIPT_VIDEO)
@@ -2591,16 +2626,33 @@ def generer_script_video_youtube(sujet: str = "", angle: str = "", sujets_deja_t
         f"Voici deux exemples réels de scripts déjà écrits par Jonathan, à prendre comme modèle de ton et de "
         f"structure (pas de contenu, le sujet du jour est différent) :\n\n{exemples}\n\n---\n\n"
         f"Écris maintenant, dans ce même ton, un nouveau script vidéo face caméra {consigne_sujet}.{bloc_angle}\n"
+        f"{format_choisi['consigne']} Cette longueur prime sur toute autre indication.\n"
         f"{bloc_deja}{consigne_format}"
     )
     client = Anthropic(api_key=CLE_API)
-    reponse = client.messages.create(
-        model=MODELE_CLAUDE, max_tokens=2200, thinking={"type": "disabled"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    texte = next((b.text for b in reponse.content if b.type == "text"), "").strip()
+    messages = [{"role": "user", "content": prompt}]
+
+    def ecrire():
+        reponse = client.messages.create(model=MODELE_CLAUDE, max_tokens=format_choisi["max_tokens"], thinking={"type": "disabled"}, messages=messages)
+        return next((b.text for b in reponse.content if b.type == "text"), "").strip()
+
+    def compter(brut):
+        lignes = brut.splitlines()
+        if lignes and re.match(r"^SUJET\s*:", lignes[0].strip(), re.IGNORECASE):
+            brut = "\n".join(lignes[1:])
+        return len(brut.split())
+
+    texte = ecrire()
     if not texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    nombre = compter(texte)
+    if nombre > mots_maxi * 1.2 or nombre < mots_mini * 0.8:       # trop loin de la cible : une seule reecriture, en gardant le meilleur des deux
+        messages += [{"role": "assistant", "content": texte}, {"role": "user", "content": (
+            f"Ce script fait {nombre} mots : il doit en faire entre {mots_mini} et {mots_maxi} ({format_choisi['duree']} à l'oral). "
+            f"Réécris-le à la bonne longueur, même ton, même format de réponse, sans commentaire.")}]
+        nouveau = ecrire()
+        if nouveau and abs(compter(nouveau) - (mots_mini + mots_maxi) / 2) < abs(nombre - (mots_mini + mots_maxi) / 2):
+            texte = nouveau
 
     sujet_utilise = ""
     if not sujet:
@@ -2609,7 +2661,10 @@ def generer_script_video_youtube(sujet: str = "", angle: str = "", sujets_deja_t
             sujet_utilise = correspondance.group(1).strip()
             texte = texte[len(texte.splitlines()[0]):].lstrip("\n")
 
-    return {"script": _nettoyer_texte_genere(texte.strip()), "sujet_utilise": sujet_utilise}
+    script = _nettoyer_texte_genere(texte.strip())
+    nombre_mots = len(script.split())
+    return {"script": script, "sujet_utilise": sujet_utilise, "mots": nombre_mots, "duree_estimee": int(round(nombre_mots / MOTS_PAR_SECONDE_SCRIPT)),
+            "format": next(cle for cle, valeur in FORMATS_SCRIPT_VIDEO.items() if valeur is format_choisi)}
 
 
 SCHEMA_KIT_VIDEO = {
