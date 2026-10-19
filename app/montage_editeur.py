@@ -69,7 +69,7 @@ def etat_editeur(identifiant: str, montage: dict, sortie: dict) -> dict:
                                                          for d, f, amp in effets["zoom_manuel"])
     partages = {i["id"] for i in plan["illustrations"] if i.get("partage")}
     transitions = [{"type": genre, "debut": _source(a, segments), "fin": _source(b, segments)}
-                   for genre in ("flash", "glitch", "secousse") for a, b in plan["fenetres"][genre]]
+                   for genre in ("flash", "balayage", "glitch", "secousse") for a, b in plan["fenetres"][genre]]
     return {
         "id": identifiant, "numero": sortie["numero"], "titre": sortie["titre"], "version": sortie["version"], "format": sortie["format"],
         "visage_x": sortie.get("visage_x"),

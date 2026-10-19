@@ -7,7 +7,7 @@ import json
 
 from . import models
 
-TRANSITIONS_VALIDES = ("aucune", "melange", "flash", "zoom", "glitch", "secousse")
+TRANSITIONS_VALIDES = ("aucune", "melange", "flash", "zoom", "balayage", "glitch", "secousse")
 CLES_BOOLEENNES = ("zooms", "mots", "accroche", "barre", "visage", "bruitages", "alterne", "pastille", "editorial", "partage")
 
 STYLES_PREDEFINIS = [

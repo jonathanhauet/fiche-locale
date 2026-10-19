@@ -38,6 +38,7 @@
       <div class="ed-titre ed-accroche" id="ed-accroche" hidden></div>
       <div class="ed-sous" id="ed-sous"></div>
       <div class="ed-flash" id="ed-flash"></div>
+      <div class="ed-balayage" id="ed-balayage" hidden></div>
       <div class="ed-barre" id="ed-barre"><div></div></div>
       <div class="ed-attente" id="ed-attente">Préparation de l'aperçu…</div>
     </div>
@@ -114,7 +115,7 @@
         <label>Transitions sur les coupes
           <select id="ed-transition">
             <option value="aucune">Aucune</option><option value="melange">Variées</option><option value="flash">Flash blanc</option>
-            <option value="zoom">Zoom-punch</option><option value="glitch">Glitch</option><option value="secousse">Secousse</option>
+            <option value="zoom">Zoom-punch</option><option value="balayage">Balayage de couleur</option><option value="glitch">Glitch</option><option value="secousse">Secousse</option>
           </select>
         </label>
         <label><input type="checkbox" data-reglage="accroche"> Titre d'accroche au début</label>
@@ -282,7 +283,9 @@
   .ed-ill.plein img { max-width: none; max-height: none; width: 100%; height: 100%; margin: 0; border: 0; object-fit: cover; box-shadow: none; }
   .ed-titre { position: absolute; left: 6%; right: 6%; top: 9%; text-align: center; color: #fff; font-weight: 800; text-transform: uppercase; font-family: Poppins, system-ui, sans-serif;
     text-shadow: 0 0 6px #000, 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000; pointer-events: none; line-height: 1.12; }
-  .ed-titre.ed-accroche { top: 9%; }
+  .ed-titre.ed-accroche { top: 9%; text-transform: none; font-weight: 800; line-height: 1.43; text-shadow: 0 4px 12px rgba(0,0,0,.5); }
+  .ed-titre.ed-accroche::before { content: ""; display: block; width: 16%; height: .11em; margin-bottom: .22em; border-radius: 99px; background: var(--accent-titre, #ffd60a); }
+  .ed-titre.ed-accroche .hl { display: inline-block; line-height: 1.2; padding: 0 .17em; margin: 0 -.05em 0 .05em; border-radius: .26em; background: var(--accent-titre, #ffd60a); color: #111; text-shadow: none; }
   .ed-sous { position: absolute; left: 4%; right: 4%; bottom: 22%; text-align: center; color: #fff; font-weight: 800; text-transform: uppercase; font-family: Poppins, system-ui, sans-serif;
     text-shadow: 0 0 5px #000, 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000; pointer-events: none; line-height: 1.15; }
   .ed-scene.horizontal .ed-sous { bottom: 8%; }
@@ -294,14 +297,17 @@
   .ed-scene.partage video#ed-video { clip-path: inset(13% 0 37% 0); }
   .ed-ill.partage:not(.carte) { bottom: 50%; align-items: center; }
   .ed-ill.partage:not(.carte) img, .ed-ill.partage:not(.carte) video { max-width: 86%; max-height: 84%; margin-top: 0; }
+  .ed-balayage { position: absolute; top: 0; bottom: 0; left: 0; width: 125%; pointer-events: none; clip-path: polygon(9.6% 0, 100% 0, 90.4% 100%, 0 100%);
+    background: linear-gradient(to right, var(--pilule, #111) 0, var(--pilule, #111) 16%, #ffd60a 16%); }
   .ed-degrade { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: linear-gradient(to top, rgba(0,0,0,.5), rgba(0,0,0,0)); pointer-events: none; }
   .ed-scene.horizontal .ed-degrade { height: 34%; }
-  .ed-sous.fluide { text-transform: none; font-weight: 700; line-height: 1.22; word-spacing: .1em; text-shadow: 0 1px 3px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4); }
-  .ed-sous.fluide span { transition: color .08s, opacity .08s; }
-  .ed-sous.fluide .avenir { opacity: .7; }
-  .ed-sous.fluide .actuel { color: #ffd60a; opacity: 1; }
+  .ed-sous.fluide { text-transform: none; font-weight: 700; line-height: 1.54; word-spacing: .1em; text-shadow: 0 3px 9px rgba(0,0,0,.5); }
   .ed-sous.fluide .cle { color: #ffd60a; }
-  .ed-sous.fluide .pastille { color: #fff; background: var(--pastille, #2f5eff); border-radius: .35em; padding: 0 .22em; }
+  .ed-sous.fluide .actuel { display: inline-block; line-height: 1.22; padding: 0 .2em; margin: 0 -.2em; border-radius: .3em; background: var(--pilule, #2f5eff); color: #fff; text-shadow: none; }
+  .ed-sous.fluide .actuel.cle { color: #ffd60a; }
+  .ed-sous.fluide.pilule-claire .actuel, .ed-sous.fluide.pilule-claire .actuel.cle { color: #111; }
+  .ed-sous.fluide.magazine { line-height: 1.22; }
+  .ed-sous.fluide.magazine .actuel { display: inline; background: none; padding: 0; margin: 0; }
   .ed-sous.fluide.magazine .cle { color: #fff; font-family: "DM Serif Display", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400; font-size: 1.16em; }
   .ed-sous.fluide.magazine .actuel { color: #fff; }
   .ed-sous.moderne { text-transform: none; font-weight: 700; text-shadow: 0 0 2px rgba(0,0,0,.85), 0 1px 3px rgba(0,0,0,.7), 0 2px 5px rgba(0,0,0,.45); }
@@ -407,9 +413,18 @@
   function redimensionner() {
     const hauteur = scene.clientHeight || 1; const echelle = hauteur / (E && E.format === "vertical" ? 1920 : 1080);
     scene.style.setProperty("--u", echelle);
-    $("ed-sous").style.fontSize = Math.round((E && E.format === "vertical" ? 94 : 66) * echelle) + "px";
-    document.querySelectorAll(".ed-titre").forEach((t) => { t.style.fontSize = Math.round((E && E.format === "vertical" ? 76 : 54) * echelle) + "px"; });
+    ajusterPolices();
     dessinerFrise();
+  }
+  // Une taille ASS (\fs) s'affiche a ~0,558 de sa valeur en pixels : l'apercu applique le meme rapport que le rendu (voir motion_design.py).
+  function ajusterPolices() {
+    if (!E) return;
+    const v = E.format === "vertical", echelle = parseFloat(scene.style.getPropertyValue("--u")) || 0.2, r = E.reglages || {};
+    const fluide = !!(r.mots && !r.classique), editorial = !!r.editorial;
+    const asp = fluide ? (editorial ? (v ? 88 : 60) : (v ? 104 : 84)) : (r.mots ? (v ? 94 : 66) : (v ? 84 : 60));
+    const sous = Math.round(asp * 0.558 * echelle * 10) / 10 + "px", titre = Math.round((v ? 90.4 : 70.7) * echelle * 10) / 10 + "px";
+    if ($("ed-sous").style.fontSize !== sous) $("ed-sous").style.fontSize = sous;
+    document.querySelectorAll(".ed-titre").forEach((t) => { if (t.style.fontSize !== titre) t.style.fontSize = titre; });
   }
   window.addEventListener("resize", redimensionner);
 
@@ -512,30 +527,45 @@
       const span = document.createElement("span"); span.textContent = m.texte;
       const motCle = gros.has(normaliser(m.texte));
       const etat = t < m.debut ? "avenir" : t < suivant ? "actuel" : "dit";
-      span.className = etat + (motCle ? (E.reglages.pastille && !E.reglages.editorial ? " pastille" : " cle") : "");
+      span.className = etat + (motCle ? " cle" : "");
       if (i === coupure) zone.appendChild(document.createElement("br"));
       else if (i) zone.appendChild(document.createTextNode(" "));
       zone.appendChild(span);
     });
   }
+  // Titre d'accroche : meme mise en forme que le rendu (voir motion_design.titre_cinetique), le dernier mot est surligne.
+  function dessinerAccroche(zone, texte) {
+    if (zone.dataset.texte === texte) return;
+    zone.dataset.texte = texte; zone.textContent = "";
+    const mots = texte.split(/\s+/).filter(Boolean); if (!mots.length) return;
+    mots[0] = mots[0].charAt(0).toUpperCase() + mots[0].slice(1);
+    const cle = (mots[mots.length - 1].length >= 3 || mots.length === 1) ? mots.length - 1 : mots.length - 2;
+    mots.forEach((m, i) => { const span = document.createElement("span"); span.textContent = m; if (i === cle) span.className = "hl"; zone.appendChild(span); if (i < mots.length - 1) zone.appendChild(document.createTextNode(" ")); });
+  }
   function majSurimpressions() {
     if (!E) return;
     const t = video.currentTime || 0, tm = tempsMonte(t), visible = estGarde(t);
-    let facteurZoom = fenetreZoom(t), dx = 0, dy = 0, filtre = "", flash = 0;
+    let facteurZoom = fenetreZoom(t), dx = 0, dy = 0, filtre = "", flash = 0, balayage = -1;
     (E.transitions || []).forEach((x) => {
       if (t < x.debut || t > x.fin) return;
       const avance = (t - x.debut) / Math.max(0.05, x.fin - x.debut);
       if (x.type === "flash") flash = 0.55;
+      else if (x.type === "balayage") balayage = avance;
       else if (x.type === "secousse") { facteurZoom += 0.06; dx += 24 * Math.sin(70 * (t - x.debut)) * (1 - avance); dy += 18 * Math.cos(85 * (t - x.debut)) * (1 - avance); }
       else if (x.type === "glitch") { filtre = "hue-rotate(50deg) saturate(2.2) contrast(1.15)"; dx += 8; }
     });
     const echelleScene = parseFloat(scene.style.getPropertyValue("--u")) || 0.2;
     video.style.transform = "translate(" + (dx * echelleScene).toFixed(1) + "px," + (dy * echelleScene).toFixed(1) + "px) scale(" + facteurZoom.toFixed(4) + ")";
     video.style.filter = filtre; $("ed-flash").style.opacity = flash;
+    const bande = $("ed-balayage"); bande.hidden = balayage < 0;
+    if (balayage >= 0) bande.style.transform = "translateX(" + (-100 + 180 * balayage).toFixed(1) + "%)";
     if (E.format === "vertical" && E.visage_x != null) video.style.objectPosition = Math.round(E.visage_x * 100) + "% 50%";
     $("ed-temps").textContent = minutes(tm) + " / " + minutes(E.duree_montee);
     // sous-titres
+    ajusterPolices();
     const sous = $("ed-sous"); sous.textContent = ""; sous.classList.toggle("magazine", !!(E.reglages.editorial && E.reglages.mots));
+    const pilulePrincipale = !!(E.reglages.pastille && (E.charte || {}).principale);
+    scene.style.setProperty("--pilule", pilulePrincipale ? E.charte.principale : "#ffd60a"); sous.classList.toggle("pilule-claire", !pilulePrincipale);
     const fluide = !!(E.reglages.mots && !E.reglages.classique);
     sous.classList.toggle("moderne", fluide && false); sous.classList.toggle("fluide", fluide);
     $("ed-degrade").hidden = !(fluide && visible && E.reglages.sous_titres);
@@ -559,7 +589,7 @@
     const titres = E.titres.filter((x) => t >= x.debut && t < x.fin).map((x) => x.texte);
     $("ed-titre").hidden = !(visible && titres.length); $("ed-titre").textContent = titres.join(" · ");
     const accroche = E.reglages.accroche && E.accroche && tm >= 0.2 && tm < 3.6;
-    $("ed-accroche").hidden = !accroche; $("ed-accroche").textContent = accroche ? E.accroche : "";
+    $("ed-accroche").hidden = !accroche; dessinerAccroche($("ed-accroche"), accroche ? E.accroche : "");
     const ill = visible ? E.illustrations.find((x) => t >= x.debut && t < x.fin) : null;
     $("ed-ill").hidden = !ill;
     const enPartage = !!(ill && ill.partage && E.format === "vertical");

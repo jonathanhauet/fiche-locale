@@ -9,6 +9,7 @@ temporaire du serveur) : la page interroge l'etat toutes les quelques secondes. 
 un redemarrage du serveur ou plus de DUREE_CONSERVATION_HEURES supprime les montages.
 """
 
+import array
 import copy
 import difflib
 import json
@@ -28,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from dotenv import load_dotenv
 
-from . import charte_montage, montage_video, sons
+from . import charte_montage, montage_video, motion_design, sons
 from .montage_video import FFMPEG, FFPROBE
 
 DOSSIER_APP = os.path.dirname(os.path.abspath(__file__))
@@ -111,6 +112,49 @@ def extraire_audio(video: str, sortie_wav: str) -> None:
                         "-c:a", "pcm_s16le", sortie_wav], 900)
     if resultat.returncode != 0:
         raise ErreurMontage("Impossible d'extraire le son de la vidéo.")
+
+
+FENETRE_AFFINAGE = 0.14     # une coupe peut glisser de 0,14 s au plus vers le moment le plus calme
+
+
+def _energies(audio_wav: str, debut: float, fin: float, pas: float = 0.01) -> list:
+    """[(instant du milieu, energie moyenne)] par fenetre de `pas` secondes entre debut et fin (WAV 16 bits)."""
+    with wave.open(audio_wav, "rb") as fichier:
+        cadence, total = fichier.getframerate(), fichier.getnframes()
+        d, f = max(0, int(debut * cadence)), min(total, int(fin * cadence))
+        if f <= d:
+            return []
+        fichier.setpos(d)
+        echantillons = array.array("h")
+        echantillons.frombytes(fichier.readframes(f - d))
+    n = max(1, int(pas * cadence))
+    return [(d / cadence + i * pas + pas / 2, sum(abs(x) for x in echantillons[i * n:(i + 1) * n]) / n) for i in range(len(echantillons) // n)]
+
+
+def affiner_coupes(audio_wav, coupes: list, fenetre: float = FENETRE_AFFINAGE) -> list:
+    """
+    Les horodatages des mots (Whisper) sont a +/- 0,1 s : une coupe posee dessus mange le debut ou la fin d'un mot, ou laisse un bout du « euh ».
+    Chaque bord de coupe glisse donc vers le moment le plus calme du son (le silence entre deux mots) dans une petite fenetre.
+    """
+    if not audio_wav or not coupes:
+        return list(coupes or [])
+
+    def caler(t: float) -> float:
+        points = _energies(audio_wav, t - fenetre, t + fenetre)
+        if not points:
+            return t
+        mini = min(e for _, e in points)
+        calmes = [(abs(p - t), p) for p, e in points if e <= mini * 1.15 + 3]      # aussi calmes que le plus calme (a 15 % pres) : le plus proche
+        return min(calmes)[1]
+
+    try:
+        resultat = []
+        for a, b in coupes:
+            a2, b2 = (a if a < 0.05 else caler(a)), caler(b)
+            resultat.append((a2, b2) if b2 - a2 >= 0.05 else (a, b))
+        return resultat
+    except (OSError, EOFError, wave.Error):
+        return list(coupes)
 
 
 def detecter_silences(audio_wav: str) -> list:
@@ -624,6 +668,13 @@ def _lignes_titre(debut: float, fin: float, texte: str, vertical: bool, classiqu
     return f"Dialogue: 1,{_horodatage_ass(debut)},{_horodatage_ass(fin)},Titre,,0,0,0,,{{\\fad(250,350)}}" + "\\N".join(lignes)
 
 
+def _lignes_titre_ass(debut: float, fin: float, texte: str, vertical: bool, classique: bool, largeur: int, hauteur: int, accent: tuple) -> list:
+    """Titre d'accroche : motion design (motion_design.titre_cinetique), ou l'ancien titre fixe en majuscules avec le rendu classique."""
+    if classique:
+        return [_lignes_titre(debut, fin, texte, vertical, True)]
+    return motion_design.titre_cinetique(debut, fin, texte, largeur, hauteur, accent)
+
+
 POLICE_SERIF = "DM Serif Display"
 ANTICIPATION_BLOC = 0.08        # le bloc de sous-titres apparait un peu avant son premier mot
 MAINTIEN_BLOC = 0.25            # et reste un instant apres son dernier mot (sans chevaucher le bloc suivant)
@@ -701,6 +752,35 @@ def _dialogues_fluides(phrases: list, accent: tuple, largeur: int, hauteur: int,
     return sorties
 
 
+def _dialogues_spotlight(phrases: list, accent: tuple, largeur: int, hauteur: int, max_car: int, marge_v: int, gros: set, pastille: tuple = None) -> list:
+    """
+    Sous-titres par defaut (voir motion_design.sous_titres_bloc) : la phrase apparait en cascade, une pastille arrondie saute de mot en mot
+    pour suivre la voix, les mots importants gardent la couleur d'accent. Memes blocs et memes instants que l'apercu de l'editeur.
+    """
+    blocs = []
+    for p in phrases:
+        mots = []
+        for m in mots_chronometres(p):
+            affiche = re.sub(r"[,;:.]+$", "", _echapper_ass(m["texte"]))
+            if affiche:
+                mots.append({**m, "affiche": affiche.lower()})
+        blocs += _blocs_de_mots(mots, max_car)
+    taille = 104 if hauteur > largeur else 84
+    sorties, fin_precedente = [], 0.0
+    for k, bloc in enumerate(blocs):
+        debut_bloc, fin_bloc = bloc[0]["debut"], max(bloc[-1]["fin"], bloc[0]["debut"] + 0.2)
+        debut = max(debut_bloc - ANTICIPATION_BLOC, fin_precedente)
+        fin = fin_bloc + MAINTIEN_BLOC
+        if k + 1 < len(blocs):
+            fin = min(fin, max(fin_bloc, blocs[k + 1][0]["debut"] - ANTICIPATION_BLOC - 0.02))
+        fin = max(fin, debut + 0.25)
+        fin_precedente = fin
+        coupures = set(_lignes_sous_titre([m["affiche"] for m in bloc], max_car))
+        mots_bloc = [{"affiche": m["affiche"], "debut": m["debut"], "fin": m["fin"], "cle": _normaliser(m["affiche"]) in gros} for m in bloc]
+        sorties += motion_design.sous_titres_bloc(mots_bloc, coupures, debut, fin, largeur, hauteur, taille, hauteur - marge_v, accent, pastille or accent)
+    return sorties
+
+
 def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastille: tuple = None, contour: int = 8, editorial: bool = False, classique: bool = False) -> list:
     """
     Sous-titres « pop » : 1 a 3 mots a la fois, en majuscules, le mot prononce grossit et prend la couleur d'accent ; les mots
@@ -758,7 +838,8 @@ def _dialogues_pop(phrases: list, accent: tuple, max_car: int, gros: set, pastil
 
 
 def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: tuple = (255, 214, 10), titre: str = "",
-               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0, pastille: tuple = None, editorial: bool = False, classique: bool = False) -> None:
+               pop: bool = False, titres: list = None, mots_gros: set = None, barre: float = 0.0, pastille: tuple = None, editorial: bool = False, classique: bool = False,
+               balayages: list = None) -> None:
     """
     Sous-titres, titre d'accroche, titres ajoutes a la main (titres : [(debut, fin, texte)]) et barre de progression (barre : duree
     totale en secondes, 0 = pas de barre). Par defaut sous-titres « karaoke » : les mots se colorent au rythme de la voix ;
@@ -782,13 +863,16 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
         f"Style: Pop,Poppins,{taille_pop},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour + 1 if classique else 3},{3 if classique else 2},2,50,50,{marge_v},1",
         f"Style: Titre,Poppins,{int(taille * 0.9)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{contour if classique else 3},2,8,70,70,{int(hauteur * 0.09)},1",
         f"Style: Barre,Poppins,20,{_couleur_ass(accent)},&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
+        "Style: Mot,Poppins,90,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     if titre:
-        lignes.append(_lignes_titre(0.2, 3.6, titre, vertical, classique))
+        lignes += _lignes_titre_ass(0.2, 3.6, titre, vertical, classique, largeur, hauteur, accent)
     for debut, fin, texte in (titres or []):
-        lignes.append(_lignes_titre(debut, fin, texte, vertical, classique))
-    if pop and not classique:
+        lignes += _lignes_titre_ass(debut, fin, texte, vertical, classique, largeur, hauteur, accent)
+    if pop and not classique and not editorial:
+        lignes += _dialogues_spotlight(phrases, accent, largeur, hauteur, 18 if vertical else 36, marge_v, mots_gros or set(), pastille)
+    elif pop and not classique:
         lignes += _dialogues_fluides(phrases, accent, largeur, hauteur, 18 if vertical else 36, marge_v, mots_gros or set(), pastille, editorial)
     elif pop:
         lignes += _dialogues_pop(phrases, accent, max_car_pop, mots_gros or set(), pastille, contour + 1, editorial, classique)
@@ -809,6 +893,8 @@ def ecrire_ass(phrases: list, chemin: str, largeur: int, hauteur: int, accent: t
                     texte += "\\N"
                 texte += (f"{{\\k{attente}}}" if attente else "") + f"{{\\k{cs}}}{mot}" + (" " if i < len(mots) - 1 and (i + 1) not in coupures else "")
             lignes.append(f"Dialogue: 0,{_horodatage_ass(p['debut'])},{_horodatage_ass(p['fin'])},Sous,,0,0,0,,{texte}")
+    for debut_balayage, fin_balayage in (balayages or []):
+        lignes += motion_design.balayage(debut_balayage, fin_balayage, largeur, hauteur, accent, pastille or (20, 20, 20))
     if barre > 0:
         # Rectangle (dessin ASS) ancre a gauche, dont la largeur grandit de 1 % a 100 % pendant toute la video.
         lignes.append(
@@ -1235,9 +1321,10 @@ def appliquer_actions(sortie: dict, actions: list) -> tuple:
     return nouvel, resume, refus
 
 
-TRANSITIONS = {"aucune": "Aucune", "melange": "Variées (flash, zoom, glitch, secousse)", "flash": "Flash blanc", "zoom": "Zoom-punch", "glitch": "Glitch", "secousse": "Secousse"}
-_DUREE_TRANSITION = {"flash": 0.12, "zoom": 0.35, "glitch": 0.20, "secousse": 0.30}
-_ORDRE_MELANGE = ("flash", "zoom", "glitch", "secousse")
+TRANSITIONS = {"aucune": "Aucune", "melange": "Variées (flash, zoom, balayage, glitch, secousse)", "flash": "Flash blanc", "zoom": "Zoom-punch", "balayage": "Balayage de couleur",
+               "glitch": "Glitch", "secousse": "Secousse"}
+_DUREE_TRANSITION = {"flash": 0.12, "zoom": 0.35, "balayage": motion_design.DUREE_BALAYAGE, "glitch": 0.20, "secousse": 0.30}
+_ORDRE_MELANGE = ("flash", "zoom", "balayage", "glitch", "secousse")
 ECART_MINI_TRANSITION = 1.5
 MAX_TRANSITIONS = 60
 VOLUMES_SONS = {"whoosh": 0.50, "swoosh": 0.42, "pop": 0.70, "impact": 0.65, "clic": 0.60}
@@ -1257,7 +1344,10 @@ def fenetres_transitions(segments: list, mode: str, duree: float) -> dict:
     for rang, (debut, fin) in enumerate(segments):
         if rang > 0 and cumul - derniere >= ECART_MINI_TRANSITION and total < MAX_TRANSITIONS and cumul < duree - 0.3:
             genre = _ORDRE_MELANGE[total % len(_ORDRE_MELANGE)] if mode == "melange" else mode
-            resultat[genre].append((cumul, min(cumul + _DUREE_TRANSITION[genre], duree)))
+            if genre == "balayage":      # la coupe est au milieu du balayage : l'image change pendant que la bande recouvre l'ecran
+                resultat[genre].append((max(0.0, cumul - 0.22), min(cumul + _DUREE_TRANSITION[genre] - 0.22, duree)))
+            else:
+                resultat[genre].append((cumul, min(cumul + _DUREE_TRANSITION[genre], duree)))
             derniere, total = cumul, total + 1
         cumul += fin - debut
     return resultat
@@ -1277,7 +1367,7 @@ def evenements_sons(zooms: list, titres: list, illustrations: list, accroche: bo
     brut += [(i["debut"], "pop") for i in illustrations]
     if accroche:
         brut.append((0.25, "impact"))
-    for genre, son in (("flash", "clic"), ("zoom", "whoosh"), ("glitch", "clic"), ("secousse", "impact")):
+    for genre, son in (("flash", "clic"), ("zoom", "whoosh"), ("balayage", "whoosh"), ("glitch", "clic"), ("secousse", "impact")):
         brut += [(a, son) for a, _ in fenetres.get(genre, [])]
     evenements, dernier = [], -1.0
     for t, nom in sorted(brut):
@@ -1399,12 +1489,13 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi, limite: float = None) -> 
     largeur, hauteur = (1080, 1920) if sortie["format"] == "vertical" else (1920, 1080)
     plan = plan_effets(sortie)
     duree, phrases_montage, barre, titre = plan["duree"], plan["phrases"], plan["barre"], plan["titre"]
-    dessiner = bool(phrases_montage and sortie["sous_titres"]) or bool(plan["titres"]) or barre > 0 or (titre and sortie["sous_titres"])
+    dessiner = bool(phrases_montage and sortie["sous_titres"]) or bool(plan["titres"]) or barre > 0 or (titre and sortie["sous_titres"]) or bool(plan["fenetres"].get("balayage"))
     fichier_ass = None
     if dessiner:
         fichier_ass = os.path.join(montage["dossier"], f"sous-titres-{uuid.uuid4().hex[:6]}.ass")
         ecrire_ass(phrases_montage if sortie["sous_titres"] else [], fichier_ass, largeur, hauteur, sortie["accent"], titre if sortie["sous_titres"] else "",
-                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"], editorial=plan["editorial"], classique=plan["classique"])
+                   pop=plan["pop"], titres=plan["titres"], mots_gros=plan["gros"], barre=barre, pastille=plan["pastille"], editorial=plan["editorial"], classique=plan["classique"],
+                   balayages=plan["fenetres"].get("balayage"))
     chemin = os.path.join(montage["dossier"], f"{'apercu-rendu' if limite else 'montage'}-{uuid.uuid4().hex[:6]}-{sortie['numero']}.mp4")
     options = dict(rapide=bool(limite), zooms=plan["zooms"], visage_x=sortie.get("visage_x"), illustrations=plan["illustrations"], transitions=plan["fenetres"], bruitages=plan["bruitages"], panneau=plan["panneau"],
                    degrade=plan["degrade"] and bool(fichier_ass) and bool(phrases_montage) and bool(sortie["sous_titres"]))
@@ -1616,6 +1707,10 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
             if (options.get("consignes") or "").strip() and phrases:
                 fixer("Application de vos consignes", 0.42)
                 coupes_consignes = list(choisir_retouches(phrases, options["consignes"].strip()))
+
+            coupes_script = affiner_coupes(montage.get("audio"), coupes_script)
+            coupes_hesitations = affiner_coupes(montage.get("audio"), coupes_hesitations)
+            coupes_consignes = affiner_coupes(montage.get("audio"), coupes_consignes)
 
             def calculer_segments(debut=0.0, fin=None):
                 """Parties gardees ; si les coupes automatiques retirent toute la prise, on les ecarte une a une (script, silences, « euh ») plutot que d'echouer."""
