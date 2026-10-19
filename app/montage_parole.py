@@ -191,7 +191,8 @@ def _transcrire_morceau(octets_wav: bytes, decalage: float, duree: float) -> lis
     return phrases
 
 
-MOTS_HESITATION = {"euh", "euhh", "heu", "hum", "hmm", "mmh", "ben", "bah"}
+MOTS_HESITATION = {"euh", "euhh", "euhhh", "heu", "hum", "hmm", "mmh", "mm", "ben", "bah"}
+PROMPT_WHISPER = "Euh... alors, hum, ben, voilà. Euh, je vais, euh, vous expliquer comment ça marche, hum, bah, enfin, euh."
 PAUSE_NOUVELLE_PHRASE = 0.45        # silence (s) entre deux mots qui ouvre une nouvelle ligne de sous-titre
 MOTS_MAX_PHRASE = 9
 
@@ -244,11 +245,21 @@ def _phrases_depuis_whisper(donnees: dict, decalage: float, duree: float) -> lis
             phrases.append(courante)
     sorties = []
     for p in phrases:
-        sorties.append({
-            "debut": p[0]["debut"] + decalage, "fin": p[-1]["fin"] + decalage, "texte": " ".join(m["texte"] for m in p),
-            "hesitation": all(_normaliser(m["texte"]) in MOTS_HESITATION for m in p),
-            "mots": [{"texte": m["texte"], "debut": round(m["debut"] + decalage, 3), "fin": round(m["fin"] + decalage, 3)} for m in p],
-        })
+        utiles = [m for m in p if _normaliser(m["texte"]) not in MOTS_HESITATION]
+        if not utiles:                      # la phrase n'est qu'une hesitation : elle est retiree en entier
+            utiles, hesitations = p, []
+            phrase_hesitation = True
+        else:                               # des « euh » au milieu d'une vraie phrase : ils sont retires un a un, a leur instant exact
+            hesitations = [(round(m["debut"] + decalage, 3), round(m["fin"] + decalage, 3)) for m in p if m not in utiles]
+            phrase_hesitation = False
+        sortie = {
+            "debut": utiles[0]["debut"] + decalage, "fin": utiles[-1]["fin"] + decalage, "texte": " ".join(m["texte"] for m in utiles),
+            "hesitation": phrase_hesitation,
+            "mots": [{"texte": m["texte"], "debut": round(m["debut"] + decalage, 3), "fin": round(m["fin"] + decalage, 3)} for m in utiles],
+        }
+        if hesitations:
+            sortie["fillers"] = hesitations
+        sorties.append(sortie)
     return sorties
 
 
@@ -258,7 +269,7 @@ def _transcrire_morceau_whisper(octets_wav: bytes, decalage: float, duree: float
     if not cle:
         raise ErreurMontage("OPENAI_API_KEY manquant dans plateforme_web/.env.")
     donnees_requete = [("model", "whisper-1"), ("language", "fr"), ("response_format", "verbose_json"), ("temperature", "0"),
-                       ("timestamp_granularities[]", "word"), ("timestamp_granularities[]", "segment")]
+                       ("prompt", PROMPT_WHISPER), ("timestamp_granularities[]", "word"), ("timestamp_granularities[]", "segment")]
     derniere_erreur = None
     for _ in range(3):
         try:
@@ -1533,6 +1544,7 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
             coupes_hesitations, coupes_consignes = [], []
             if options.get("hesitations"):
                 coupes_hesitations = [(p["debut"], p["fin"]) for p in phrases if p.get("hesitation")]
+                coupes_hesitations += [(max(0.0, a - 0.03), b + 0.03) for p in phrases for a, b in p.get("fillers", [])]
             if (options.get("consignes") or "").strip() and phrases:
                 fixer("Application de vos consignes", 0.42)
                 coupes_consignes = list(choisir_retouches(phrases, options["consignes"].strip()))
