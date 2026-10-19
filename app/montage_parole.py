@@ -538,6 +538,49 @@ def _normaliser(mot: str) -> str:
     return re.sub(r"[^a-z0-9]", "", sans_accents.lower())
 
 
+REPRISE_MOTS_MINI = 3             # une reprise se reconnait a au moins 3 mots identiques au debut
+REPRISE_SIMILARITE = 0.85         # 0.85 : « je vais vous montrer X » puis « je vais vous montrer Y » n'est PAS une reprise
+REPRISE_PHRASES_MAX = 4           # la nouvelle prise recommence dans les 4 phrases suivantes
+REPRISE_ECART_MAX = 15.0          # et moins de 15 s apres la fin de la prise abandonnee
+REPRISE_DUREE_MAX = 25.0          # on ne coupe jamais plus de 25 s d'un seul tenant
+
+
+def detecter_reprises(phrases: list) -> list:
+    """
+    Reprises sans script : quand une phrase est recommencee juste apres (« Je vais vous montrer comment... » puis
+    « Je vais vous montrer comment j'automatise mon montage »), la prise abandonnee est retiree et la derniere est gardee.
+    Renvoie les intervalles (debut, fin) a couper, du debut de la prise abandonnee juste avant le debut de la nouvelle.
+    """
+    mots = [[m for m in (_normaliser(x) for x in (p.get("texte") or "").split()) if m] for p in phrases]
+    coupes, i = [], 0
+    while i < len(phrases):
+        a = mots[i]
+        if phrases[i].get("hesitation") or len(a) < REPRISE_MOTS_MINI:
+            i += 1
+            continue
+        trouve = None
+        for j in range(i + 1, min(len(phrases), i + 1 + REPRISE_PHRASES_MAX)):
+            if phrases[j]["debut"] - phrases[i]["fin"] > REPRISE_ECART_MAX:
+                break
+            suite = []
+            for k in range(j, len(phrases)):                       # la nouvelle prise peut s'etendre sur plusieurs phrases
+                suite += mots[k]
+                if len(suite) >= len(a):
+                    break
+            m = min(len(a), len(suite))
+            if m < REPRISE_MOTS_MINI or a[:2] != suite[:2]:
+                continue
+            if difflib.SequenceMatcher(None, a[:m], suite[:m], autojunk=False).ratio() >= REPRISE_SIMILARITE:
+                trouve = j
+                break
+        if trouve is not None and phrases[trouve]["debut"] - phrases[i]["debut"] <= REPRISE_DUREE_MAX:
+            coupes.append((phrases[i]["debut"], max(phrases[i]["debut"] + 0.05, phrases[trouve]["debut"] - 0.05)))
+            i = trouve
+        else:
+            i += 1
+    return coupes
+
+
 def _mots_pop(texte: str, majuscules: bool = True) -> list:
     mots = [re.sub(r"[,;:.]+$", "", m) for m in _echapper_ass(texte).split()]
     return [(m.upper() if majuscules else m.lower()) for m in mots if m]
@@ -1545,6 +1588,9 @@ def lancer_montage(identifiant: str, dossier: str, source: str, options: dict, c
             if options.get("hesitations"):
                 coupes_hesitations = [(p["debut"], p["fin"]) for p in phrases if p.get("hesitation")]
                 coupes_hesitations += [(max(0.0, a - 0.03), b + 0.03) for p in phrases for a, b in p.get("fillers", [])]
+                if not coupes_script:                  # sans script, les prises recommencees sont detectees dans la transcription elle-meme
+                    montage["reprises"] = detecter_reprises(phrases)
+                    coupes_hesitations += montage["reprises"]
             if (options.get("consignes") or "").strip() and phrases:
                 fixer("Application de vos consignes", 0.42)
                 coupes_consignes = list(choisir_retouches(phrases, options["consignes"].strip()))
