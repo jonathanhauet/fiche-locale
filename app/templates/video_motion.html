@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% set page_actuelle = "video_motion" %}
+{% block titre %}Vidéo motion design (IA) — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Vidéo motion design (IA)</h1>
+</div>
+
+<p class="texte-vide">
+  Une vidéo de 15 à 25 secondes créée entièrement par code, sans aucun tournage : texte animé, chiffres, listes, transitions et bruitages,
+  aux couleurs du client. L'IA écrit le scénario, vous le relisez et le corrigez, puis la vidéo est générée.
+</p>
+
+<div class="formulaire">
+  <label for="vm-client">Client (facultatif : reprend son nom et le contenu de son site)</label>
+  <select id="vm-client">
+    <option value="">Aucun, je saisis les informations</option>
+    {% for c in clients %}<option value="{{ c.id }}" data-nom="{{ c.nom }}">{{ c.nom }}</option>{% endfor %}
+  </select>
+
+  <div class="ligne-champs">
+    <div><label for="vm-nom">Nom affiché dans la vidéo</label><input type="text" id="vm-nom" maxlength="80" placeholder="Ex : GoldUnion Agen"></div>
+    <div><label for="vm-ville">Ville</label><input type="text" id="vm-ville" maxlength="60" placeholder="Ex : Agen"></div>
+  </div>
+
+  <label for="vm-brief">Ce que la vidéo doit faire passer</label>
+  <textarea id="vm-brief" rows="3" maxlength="1200" placeholder="Ex : rachat d'or à Agen, estimation gratuite et paiement immédiat, on pèse devant le client"></textarea>
+
+  <label for="vm-faits">Faits vérifiés à utiliser (seuls chiffres et avis autorisés dans la vidéo)</label>
+  <textarea id="vm-faits" rows="3" maxlength="800" placeholder="Ex : 4,8 sur 5 sur Google (127 avis) / ouvert depuis 2009 / avis : « Estimation honnête, paiement sur place » (Marie L.) / site : goldunion.fr/agen / tél : 05 53 00 00 00"></textarea>
+
+  <div class="ligne-champs">
+    <div>
+      <label for="vm-ton">Ton</label>
+      <select id="vm-ton">
+        <option value="dynamique">Dynamique</option><option value="elegant">Élégant</option><option value="chaleureux">Chaleureux</option>
+        <option value="premium">Premium sobre</option><option value="humour">Décalé et léger</option>
+      </select>
+    </div>
+    <div>
+      <label for="vm-duree">Durée</label>
+      <select id="vm-duree"><option value="15">15 secondes</option><option value="20" selected>20 secondes</option><option value="25">25 secondes</option></select>
+    </div>
+    <div>
+      <label for="vm-format">Format</label>
+      <select id="vm-format"><option value="vertical">Vertical 9:16 (Reel, TikTok, Short)</option><option value="carre">Carré 1:1</option><option value="horizontal">Horizontal 16:9</option></select>
+    </div>
+  </div>
+
+  <div class="ligne-champs">
+    <div><label for="vm-couleur1">Couleur principale</label><input type="color" id="vm-couleur1" value="{{ charte.principale }}"></div>
+    <div><label for="vm-couleur2">Couleur secondaire</label><input type="color" id="vm-couleur2" value="{{ charte.secondaire }}"></div>
+  </div>
+
+  <div class="ligne-champs">
+    <button type="button" id="vm-scenario" class="bouton"><span class="spinner" id="vm-spinner" hidden></span>🎬 Écrire le scénario</button>
+  </div>
+  <p id="vm-statut" class="texte-vide" hidden></p>
+</div>
+
+<div id="vm-zone-scenario" hidden>
+  <h2>Scénario (modifiable)</h2>
+  <p class="texte-discret">
+    Dans un texte, <code>*mot*</code> est surligné sur une pastille de couleur et <code>_mot_</code> passe en serif italique.
+    Vérifiez que chaque chiffre, avis ou coordonnée est exact avant de lancer la vidéo.
+  </p>
+  <div id="vm-scenes"></div>
+  <div class="ligne-champs">
+    <button type="button" id="vm-rendre" class="bouton">🎞️ Générer la vidéo</button>
+  </div>
+  <div id="vm-progression" hidden>
+    <div class="vm-barre"><div id="vm-barre-remplissage"></div></div>
+    <p id="vm-etape" class="texte-discret"></p>
+  </div>
+  <div id="vm-resultat" hidden>
+    <video id="vm-video" controls preload="metadata" playsinline></video>
+    <div class="ligne-champs">
+      <a class="bouton-secondaire" id="vm-telecharger" href="#">⬇ Télécharger la vidéo</a>
+    </div>
+    <label for="vm-legende">Texte du post (à copier)</label>
+    <textarea id="vm-legende" rows="5"></textarea>
+  </div>
+</div>
+
+<style>
+  .vm-carte { border: 1px solid var(--bordure, #d9dce3); border-radius: 12px; padding: .8rem 1rem; margin: .6rem 0; }
+  .vm-carte h3 { margin: 0 0 .5rem; font-size: .95rem; display: flex; justify-content: space-between; gap: 1rem; }
+  .vm-carte label { font-size: .8rem; margin-top: .4rem; display: block; }
+  .vm-carte input, .vm-carte textarea { width: 100%; }
+  .vm-barre { height: 10px; background: rgba(127,127,127,.25); border-radius: 99px; overflow: hidden; margin: .6rem 0; }
+  #vm-barre-remplissage { height: 100%; width: 0; background: #2f5eff; transition: width .3s; }
+  #vm-resultat video { width: 100%; max-width: 380px; border-radius: 12px; background: #000; display: block; margin: .8rem 0; }
+</style>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const LIBELLES = {
+    hook: "Accroche", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
+  };
+  const CHAMPS = {
+    hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"]],
+    marque: [["nom", "Nom"], ["accroche", "Slogan"]],
+    chiffre: [["valeur", "Valeur"], ["suffixe", "Suffixe (/5, ans, %...)"], ["libelle", "Libellé"], ["legende", "Précision"]],
+    liste: [["titre", "Titre"], ["items", "Éléments (un par ligne)"]],
+    etape: [["numero", "Numéro"], ["kicker", "Mot-clé court"], ["titre", "Titre"], ["texte", "Texte"]],
+    citation: [["texte", "Avis"], ["auteur", "Auteur"]],
+    cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"]],
+  };
+  let scenes = [], legende = "", titre = "";
+
+  function statut(texte) { $("vm-statut").hidden = !texte; $("vm-statut").textContent = texte || ""; }
+
+  $("vm-client").addEventListener("change", () => {
+    const o = $("vm-client").selectedOptions[0];
+    if (o && o.dataset.nom && !$("vm-nom").value) $("vm-nom").value = o.dataset.nom;
+  });
+
+  function dessiner() {
+    const zone = $("vm-scenes"); zone.textContent = "";
+    scenes.forEach((sc, i) => {
+      const carte = document.createElement("div"); carte.className = "vm-carte";
+      const entete = document.createElement("h3");
+      const nom = document.createElement("span"); nom.textContent = (i + 1) + ". " + (LIBELLES[sc.type] || sc.type);
+      const bouton = document.createElement("button"); bouton.type = "button"; bouton.className = "bouton-secondaire bouton-mini"; bouton.textContent = "Retirer";
+      bouton.addEventListener("click", () => { scenes.splice(i, 1); dessiner(); });
+      entete.appendChild(nom); entete.appendChild(bouton); carte.appendChild(entete);
+      (CHAMPS[sc.type] || []).forEach(([cle, libelle]) => {
+        const label = document.createElement("label"); label.textContent = libelle; carte.appendChild(label);
+        const multi = cle === "items" || cle === "contact";
+        const champ = document.createElement(multi ? "textarea" : "input"); if (multi) champ.rows = 3; else champ.type = "text";
+        champ.value = cle === "items" ? (sc.items || []).join("\n") : (sc[cle] || "");
+        champ.addEventListener("input", () => { if (cle === "items") sc.items = champ.value.split("\n").map((x) => x.trim()).filter(Boolean); else sc[cle] = champ.value; });
+        carte.appendChild(champ);
+      });
+      zone.appendChild(carte);
+    });
+    $("vm-rendre").disabled = !scenes.length;
+  }
+
+  $("vm-scenario").addEventListener("click", async () => {
+    $("vm-scenario").disabled = true; $("vm-spinner").hidden = false; $("vm-resultat").hidden = true;
+    statut("Écriture du scénario en cours (environ 20 secondes)...");
+    try {
+      const r = await fetch("/video-motion/scenario", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value }),
+      });
+      const d = await r.json();
+      if (!r.ok) { statut(d.erreur || "Échec de l'écriture du scénario."); return; }
+      scenes = d.scenes; legende = d.legende || ""; titre = d.titre || "";
+      $("vm-zone-scenario").hidden = false; dessiner();
+      statut("Scénario prêt : relisez-le, corrigez ce qui doit l'être, puis générez la vidéo.");
+    } catch (e) { statut("Erreur réseau."); }
+    finally { $("vm-scenario").disabled = false; $("vm-spinner").hidden = true; }
+  });
+
+  $("vm-rendre").addEventListener("click", async () => {
+    $("vm-rendre").disabled = true; $("vm-resultat").hidden = true; $("vm-progression").hidden = false; $("vm-barre-remplissage").style.width = "0%";
+    $("vm-etape").textContent = "Démarrage...";
+    try {
+      const r = await fetch("/video-motion/rendre", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenes: scenes, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value }),
+      });
+      const d = await r.json();
+      if (!r.ok) { $("vm-etape").textContent = d.erreur || "Échec."; $("vm-rendre").disabled = false; return; }
+      suivre(d.id);
+    } catch (e) { $("vm-etape").textContent = "Erreur réseau."; $("vm-rendre").disabled = false; }
+  });
+
+  async function suivre(id) {
+    let e;
+    try { e = await (await fetch("/video-motion/" + id + "/etat")).json(); } catch (x) { setTimeout(() => suivre(id), 3000); return; }
+    $("vm-barre-remplissage").style.width = Math.round((e.progression || 0) * 100) + "%";
+    $("vm-etape").textContent = "Génération de la vidéo (" + Math.round((e.progression || 0) * 100) + " %)";
+    if (e.etat === "en_cours") { setTimeout(() => suivre(id), 1500); return; }
+    $("vm-rendre").disabled = false; $("vm-progression").hidden = true;
+    if (e.etat === "erreur") { $("vm-etape").textContent = ""; statut("La génération a échoué : " + e.erreur); return; }
+    const url = "/video-motion/" + id + "/video.mp4";
+    $("vm-resultat").hidden = false; $("vm-video").src = url + "?v=" + Date.now(); $("vm-telecharger").href = url + "?telecharger=1"; $("vm-legende").value = legende;
+    statut("Vidéo prête (" + e.duree + " s). Regardez-la avant de la publier.");
+    $("vm-resultat").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+})();
+</script>
+{% endblock %}

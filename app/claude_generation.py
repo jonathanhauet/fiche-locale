@@ -3588,3 +3588,94 @@ def contenu_modele_visuel(modele: str, texte_base: str, contexte: str, nb: int) 
         "couverture": {c: nettoye(v) for c, v in brut["couverture"].items()}, "cta": {c: nettoye(v) for c, v in brut["cta"].items()},
         "elements": [{c: nettoye(v) for c, v in e.items()} for e in brut["elements"]],
     }
+
+
+# --------------------------------------------------------------------------- video motion design (voir motion_video.py)
+
+_CHAMPS_SCENE_MOTION = ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact")
+SCHEMA_SCENARIO_MOTION = {
+    "type": "object",
+    "properties": {
+        "titre": {"type": "string"},
+        "legende": {"type": "string"},
+        "scenes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta"]},
+                    "duree": {"type": "number"},
+                    **{champ: {"type": "string"} for champ in _CHAMPS_SCENE_MOTION},
+                    "items": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["type", "duree", *_CHAMPS_SCENE_MOTION, "items"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["titre", "legende", "scenes"],
+    "additionalProperties": False,
+}
+
+TONS_MOTION = {
+    "elegant": "élégant et posé : phrases courtes, vocabulaire soigné, rythme lent",
+    "dynamique": "dynamique et affirmé : phrases percutantes, rythme rapide, verbes d'action",
+    "chaleureux": "chaleureux et humain : proche du client, simple, rassurant",
+    "humour": "décalé et léger : une pointe d'humour, sans jamais ridiculiser le métier ni le client",
+    "premium": "premium et sobre : peu de mots, chaque mot compte, aucune exagération",
+}
+
+
+def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 20) -> dict:
+    """
+    Scenario d'une video de motion design (sans tournage) pour un client, rendue par motion_video.py : accroche, revelation, 2 a 3 temps forts, chute.
+    Renvoie {"titre", "legende", "scenes": [...]} ; les scenes sont nettoyees par motion_video.nettoyer_scenario. Les chiffres viennent
+    uniquement de `faits` (jamais inventes) ; tout est positif, puisque la video est montree au client.
+    """
+    from . import motion_video
+
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    nom, ville, brief, faits = (nom or "").strip()[:120], (ville or "").strip()[:80], (brief or "").strip()[:1200], (faits or "").strip()[:800]
+    duree_cible = max(12, min(int(duree_cible or 20), 30))
+    nombre_scenes = max(4, min(round(duree_cible / 3), 9))
+    consigne_ton = TONS_MOTION.get(ton, TONS_MOTION["dynamique"])
+    prompt = (
+        "Tu écris le scénario d'une courte vidéo de motion design (aucun tournage : texte animé, formes, chiffres, couleurs), pour les réseaux "
+        "sociaux, au format Reel. Elle est montrée au client lui-même : elle doit le valoriser.\n\n"
+        f"Entreprise : {nom or '(à déduire du brief)'}{' - ' + ville if ville else ''}\n"
+        + (f"Ce que le client veut faire passer :\n{brief}\n\n" if brief else "")
+        + (f"Faits vérifiés que tu peux utiliser (seuls chiffres autorisés) :\n{faits}\n\n" if faits else "Aucun chiffre n'est fourni : n'utilise AUCUNE scène « chiffre » et n'invente aucun chiffre.\n\n")
+        + (f"Extrait du site du client (pour comprendre son activité et son vocabulaire) :\n{(contenu_site or '')[:3500]}\n\n" if contenu_site else "")
+        + f"Ton : {consigne_ton}.\nDurée visée : environ {duree_cible} secondes, soit {nombre_scenes} scènes de 2,5 à 4 secondes.\n\n"
+        "Types de scènes disponibles (remplis uniquement les champs utiles à la scène, laisse les autres vides) :\n"
+        "- hook : accroche d'ouverture. texte (4 à 9 mots), sous_texte (une phrase courte, facultative).\n"
+        "- marque : révélation du nom. nom, accroche (slogan de 3 à 6 mots).\n"
+        "- chiffre : un chiffre fourni dans les faits. valeur (nombre seul, ex. 4,8 ou 127), suffixe (ex. /5, ans, %), libelle (3 à 6 mots), legende (source ou précision courte).\n"
+        "- liste : titre (3 à 6 mots), items (3 ou 4 éléments de 2 à 6 mots).\n"
+        "- etape : numero (01, 02...), kicker (1 à 2 mots), titre (3 à 7 mots), texte (une phrase).\n"
+        "- citation : texte (un avis ou une phrase client, 8 à 20 mots, UNIQUEMENT s'il est fourni dans les faits), auteur.\n"
+        "- cta : texte (3 à 6 mots), bouton (2 à 4 mots), contact (lignes : site, téléphone ou adresse, UNIQUEMENT ceux fournis).\n\n"
+        "Dans les champs texte, texte et titre uniquement : entoure UN mot clé de *astérisques* pour le surligner sur une pastille de couleur, et "
+        "UN autre mot de _tirets bas_ pour le mettre en serif italique.\n\n"
+        "Trame obligatoire : une accroche (hook) qui arrête le pouce, la révélation (marque), 2 ou 3 temps forts (chiffre, liste, etape, citation), "
+        "puis une chute (cta). Chaque texte doit rester lisible : pas plus de 9 mots par ligne de titre. "
+        "Règles : français soigné avec accents ; jamais de tiret cadratin ; pas de formule creuse (« leader », « excellence », « solutions sur mesure ») ; "
+        "aucune promesse que le client ne tiendrait pas ; rien de négatif, de comparatif ou de critique ; ne cite aucun prix ni délai absent des faits.\n"
+        "titre : titre interne de la vidéo (3 à 6 mots). legende : texte du post à publier avec la vidéo (3 à 4 lignes, 3 hashtags à la fin)."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=4000, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_SCENARIO_MOTION}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    donnees = json.loads(bloc)
+    scenes = motion_video.nettoyer_scenario({"scenes": [{**{k: v for k, v in scene.items() if v not in ("", [])}} for scene in donnees.get("scenes", [])]})
+    if not scenes:
+        raise RuntimeError("L'IA n'a renvoye aucune scene exploitable.")
+    return {"titre": _nettoyer_texte_genere(donnees.get("titre", "")).replace("\u2014", "-")[:120], "legende": _nettoyer_texte_genere(donnees.get("legende", "")).replace("\u2014", "-")[:1200],
+            "scenes": scenes}

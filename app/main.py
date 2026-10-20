@@ -85,6 +85,7 @@ from . import (
     models,
     miniature_youtube,
     montage_editeur,
+    motion_video,
     cartes_montage,
     charte_montage,
     modeles_visuels,
@@ -7911,6 +7912,87 @@ INSTRUCTION_MINIATURE = (
 # --- Montage automatique d'une video face camera (voir montage_parole.py) ---
 
 EXTENSIONS_VIDEO_MONTAGE = {"mp4", "mov", "m4v", "webm", "mkv"}
+
+
+# --- Video motion design (sans tournage) : voir motion_video.py -------------------------------------------------------
+
+@app.get("/video-motion", response_class=HTMLResponse)
+def page_video_motion(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    clients = db.query(models.Client).order_by(models.Client.nom).all()
+    return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db)})
+
+
+@app.post("/video-motion/scenario")
+async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_session)):
+    """Scenario ecrit par l'IA a partir du brief (et du contenu du site du client choisi). Corps : nom, ville, brief, faits, ton, duree, client_id."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    nom = str(donnees.get("nom") or "").strip()
+    contenu_site = ""
+    try:
+        client = db.get(models.Client, int(donnees.get("client_id") or 0))
+    except (TypeError, ValueError):
+        client = None
+    if client:
+        nom = nom or client.nom
+        contenu_site = client.contenu_site or ""
+    if not nom and not str(donnees.get("brief") or "").strip():
+        return JSONResponse({"erreur": "Indiquez le nom de l'entreprise ou ce que la vidéo doit faire passer."}, status_code=400)
+    try:
+        resultat = await run_in_threadpool(
+            claude_generation.generer_scenario_motion, nom, str(donnees.get("ville") or ""), str(donnees.get("brief") or ""), str(donnees.get("faits") or ""),
+            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Impossible d'écrire le scénario : {erreur}"}, status_code=500)
+    return JSONResponse(resultat)
+
+
+@app.post("/video-motion/rendre")
+async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_session)):
+    """Lance la generation de la video depuis le scenario relu. Corps : scenes, format, nom, ville, couleur1, couleur2."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    format_video = donnees.get("format") if donnees.get("format") in motion_video.FORMATS else "vertical"
+    scenario = {"scenes": donnees.get("scenes") or []}
+    if not motion_video.nettoyer_scenario(scenario):
+        return JSONResponse({"erreur": "Le scénario ne contient aucune scène."}, status_code=400)
+    charte = charte_montage.nettoyer({**charte_montage.lire(db), **{k: v for k, v in (("principale", donnees.get("couleur1")), ("secondaire", donnees.get("couleur2"))) if isinstance(v, str)}})
+    try:
+        identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60])
+    except motion_video.ErreurMotion as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=409)
+    return JSONResponse({"id": identifiant})
+
+
+@app.get("/video-motion/{identifiant}/etat")
+def video_motion_etat(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    etat = motion_video.ETATS.get(identifiant)
+    if not etat:
+        return JSONResponse({"erreur": "Vidéo introuvable (elle est conservée quelques heures)."}, status_code=404)
+    return JSONResponse({cle: etat[cle] for cle in ("etat", "progression", "erreur", "duree")})
+
+
+@app.get("/video-motion/{identifiant}/video.mp4")
+def video_motion_fichier(identifiant: str, request: Request, telecharger: int = 0):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    etat = motion_video.ETATS.get(identifiant)
+    if not etat or etat["etat"] != "termine" or not os.path.exists(etat["chemin"]):
+        return JSONResponse({"erreur": "Vidéo pas encore prête."}, status_code=404)
+    return FileResponse(etat["chemin"], media_type="video/mp4", filename="video-motion-design.mp4" if telecharger else None)
 
 
 @app.get("/montage-video", response_class=HTMLResponse)
