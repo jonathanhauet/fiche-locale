@@ -8104,7 +8104,72 @@ def video_motion_etat(identifiant: str, request: Request):
     etat = motion_video.ETATS.get(identifiant)
     if not etat:
         return JSONResponse({"erreur": "Vidéo introuvable (elle est conservée quelques heures)."}, status_code=404)
-    return JSONResponse({cle: etat[cle] for cle in ("etat", "progression", "erreur", "duree")})
+    hebergement = etat.get("hebergement") or {"etat": "absent", "erreur": ""}
+    return JSONResponse({**{cle: etat[cle] for cle in ("etat", "progression", "erreur", "duree")}, "hebergement": hebergement["etat"], "erreur_hebergement": hebergement["erreur"]})
+
+
+@app.post("/video-motion/{identifiant}/publication/preparer")
+def video_motion_publication_preparer(identifiant: str, request: Request):
+    """Heberge la video generee (en arriere-plan) pour la publier ; suivi avec /video-motion/{id}/etat (champ « hebergement »)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        hebergement = motion_video.heberger(identifiant, _heberger_video)
+    except motion_video.ErreurMotion as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=404 if identifiant not in motion_video.ETATS else 409)
+    return JSONResponse({"hebergement": hebergement["etat"]})
+
+
+@app.post("/video-motion/{identifiant}/publication/composeur")
+async def video_motion_publication_composeur(identifiant: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Envoie la video hebergee et son texte au composeur multi-reseaux de la fiche choisie (brouillon garde dans la session)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    etat = motion_video.ETATS.get(identifiant)
+    if not etat:
+        return JSONResponse({"erreur": "Vidéo introuvable (elle est conservée quelques heures)."}, status_code=404)
+    try:
+        corps = await request.json()
+        client = db.get(models.Client, int(corps.get("client_id")))
+        texte = str(corps.get("texte") or "")[:3000]
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if not client:
+        return JSONResponse({"erreur": "Choisissez la fiche pour laquelle publier."}, status_code=400)
+    hebergement = etat.get("hebergement") or {}
+    if hebergement.get("etat") != "pret":
+        return JSONResponse({"erreur": "La vidéo n'est pas encore hébergée : patientez un instant."}, status_code=409)
+    request.session["brouillon_vocal"] = {"client_id": client.id, "texte": texte, "video_url": hebergement["url"]}
+    return JSONResponse({"url": f"/publication-multi?client_id={client.id}"})
+
+
+@app.post("/video-motion/{identifiant}/publication/bibliotheque")
+async def video_motion_publication_bibliotheque(identifiant: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Garde la video hebergee (et son texte) dans la bibliotheque /videos. Corps : titre, texte."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    etat = motion_video.ETATS.get(identifiant)
+    if not etat:
+        return JSONResponse({"erreur": "Vidéo introuvable (elle est conservée quelques heures)."}, status_code=404)
+    hebergement = etat.get("hebergement") or {}
+    if hebergement.get("etat") != "pret":
+        return JSONResponse({"erreur": "La vidéo n'est pas encore hébergée : patientez un instant."}, status_code=409)
+    try:
+        corps = await request.json()
+    except Exception:
+        corps = {}
+    corps = corps if isinstance(corps, dict) else {}
+    existante = db.query(models.VideoMontee).filter(models.VideoMontee.url == hebergement["url"]).first()
+    if existante:
+        return JSONResponse({"id": existante.id, "deja": True})
+    titre = " ".join(str(corps.get("titre") or etat.get("marque") or "Vidéo motion design").split())[:150]
+    ligne = models.VideoMontee(
+        titre=titre, url=hebergement["url"], nom_distant=hebergement.get("nom_distant", ""), duree=etat["duree"], format=etat.get("format", ""),
+        kit_json=json.dumps({"titre": titre, "texte": str(corps.get("texte") or "")[:3000]}, ensure_ascii=False),
+    )
+    db.add(ligne)
+    db.commit()
+    return JSONResponse({"id": ligne.id, "deja": False})
 
 
 @app.get("/video-motion/{identifiant}/video.mp4")

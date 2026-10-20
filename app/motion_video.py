@@ -990,7 +990,7 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
         if any(e["etat"] == "en_cours" for e in ETATS.values()):
             raise ErreurMotion("Une video est deja en cours de generation : attendez qu'elle soit terminee.")
         identifiant = uuid.uuid4().hex[:12]
-        etat = {"etat": "en_cours", "progression": 0.0, "erreur": "", "chemin": "", "duree": 0.0, "cree": time.time()}
+        etat = {"etat": "en_cours", "progression": 0.0, "erreur": "", "chemin": "", "duree": 0.0, "cree": time.time(), "format": format_video, "marque": marque}
         ETATS[identifiant] = etat
     dossier = tempfile.mkdtemp(prefix="fiche_locale_motion_")
 
@@ -1023,3 +1023,29 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
 
     threading.Thread(target=travail, daemon=True).start()
     return identifiant
+
+
+def heberger(identifiant: str, heberger_fichier) -> dict:
+    """
+    Heberge la video terminee en arriere-plan (heberger_fichier(octets, nom) -> adresse publique) pour pouvoir la publier. Un hebergement deja fait
+    n'est pas refait ; un hebergement en erreur est relance. Renvoie {"etat": absent / en_cours / pret / erreur, "url", "nom_distant", "erreur"}.
+    """
+    etat = ETATS.get(identifiant)
+    if not etat or etat["etat"] != "termine" or not os.path.exists(etat["chemin"]):
+        raise ErreurMotion("La video n'est pas prete (ou n'est plus disponible) : regenerez-la.")
+    hebergement = etat.setdefault("hebergement", {"etat": "absent", "url": "", "nom_distant": "", "erreur": ""})
+    if hebergement["etat"] in ("absent", "erreur"):
+        hebergement.update(etat="en_cours", erreur="")
+        chemin_video = etat["chemin"]
+
+        def travail():
+            try:
+                with open(chemin_video, "rb") as fichier:
+                    octets = fichier.read()
+                nom = f"motion-{uuid.uuid4().hex[:12]}.mp4"
+                hebergement.update(url=heberger_fichier(octets, nom), nom_distant=nom, etat="pret")
+            except Exception as erreur:
+                hebergement.update(etat="erreur", erreur=f"Hebergement de la video impossible : {str(erreur)[:250]}")
+
+        threading.Thread(target=travail, daemon=True).start()
+    return dict(hebergement)

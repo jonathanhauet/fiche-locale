@@ -105,8 +105,17 @@
     <div class="ligne-champs">
       <a class="bouton-secondaire" id="vm-telecharger" href="#">⬇ Télécharger la vidéo</a>
     </div>
-    <label for="vm-legende">Texte du post (à copier)</label>
+    <label for="vm-legende">Texte du post (modifiable)</label>
     <textarea id="vm-legende" rows="5"></textarea>
+
+    <h3>Publier cette vidéo</h3>
+    <label for="vm-pub-client">Publier pour (fiche du client)</label>
+    <select id="vm-pub-client">{% for c in clients %}<option value="{{ c.id }}">{{ c.nom }}</option>{% endfor %}</select>
+    <div class="ligne-champs">
+      <button type="button" id="vm-vers-composeur" class="bouton">📤 Envoyer vers la publication multi-réseaux</button>
+      <button type="button" id="vm-vers-biblio" class="bouton-secondaire">📚 Garder dans la bibliothèque</button>
+    </div>
+    <p id="vm-pub-statut" class="texte-vide" hidden></p>
   </div>
 </div>
 
@@ -149,7 +158,37 @@
     citation: [["texte", "Avis"], ["auteur", "Auteur"]],
     cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"]],
   };
-  let scenes = [], legende = "", titre = "";
+  let scenes = [], legende = "", titre = "", identifiantVideo = "";
+
+  function statutPublication(texte) { $("vm-pub-statut").hidden = !texte; $("vm-pub-statut").textContent = texte || ""; }
+  // La video est d'abord hebergee (quelques secondes), puis envoyee au composeur multi-reseaux ou gardee dans la bibliotheque.
+  async function hebergerVideo() {
+    const r = await fetch("/video-motion/" + identifiantVideo + "/publication/preparer", { method: "POST" });
+    if (!r.ok) throw new Error((await r.json()).erreur || "Préparation impossible.");
+    for (let i = 0; i < 120; i++) {
+      const e = await (await fetch("/video-motion/" + identifiantVideo + "/etat")).json();
+      if (e.hebergement === "pret") return;
+      if (e.hebergement === "erreur") throw new Error(e.erreur_hebergement || "Hébergement impossible.");
+      await new Promise((ok) => setTimeout(ok, 1500));
+    }
+    throw new Error("L'hébergement de la vidéo prend trop de temps : réessayez.");
+  }
+  async function publier(destination) {
+    $("vm-vers-composeur").disabled = $("vm-vers-biblio").disabled = true;
+    statutPublication("Préparation de la vidéo (hébergement)...");
+    try {
+      await hebergerVideo();
+      const corps = destination === "composeur" ? { client_id: $("vm-pub-client").value, texte: $("vm-legende").value } : { titre: titre || $("vm-nom").value, texte: $("vm-legende").value };
+      const r = await fetch("/video-motion/" + identifiantVideo + "/publication/" + destination, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || "Échec.");
+      if (destination === "composeur") { statutPublication("Ouverture de la publication multi-réseaux..."); window.location.href = d.url; return; }
+      statutPublication(d.deja ? "Cette vidéo est déjà dans la bibliothèque (menu « Vidéos montées »)." : "Vidéo ajoutée à la bibliothèque (menu « Vidéos montées »).");
+    } catch (e) { statutPublication(e.message || "Échec."); }
+    $("vm-vers-composeur").disabled = $("vm-vers-biblio").disabled = false;
+  }
+  $("vm-vers-composeur").addEventListener("click", () => publier("composeur"));
+  $("vm-vers-biblio").addEventListener("click", () => publier("bibliotheque"));
 
   function statut(texte) { $("vm-statut").hidden = !texte; $("vm-statut").textContent = texte || ""; }
 
@@ -327,6 +366,8 @@
     if (e.etat === "en_cours") { setTimeout(() => suivre(id), 1500); return; }
     $("vm-rendre").disabled = false; $("vm-progression").hidden = true;
     if (e.etat === "erreur") { $("vm-etape").textContent = ""; statut("La génération a échoué : " + e.erreur); return; }
+    identifiantVideo = id;
+    if ($("vm-client").value) $("vm-pub-client").value = $("vm-client").value;
     const url = "/video-motion/" + id + "/video.mp4";
     $("vm-resultat").hidden = false; $("vm-video").src = url + "?v=" + Date.now(); $("vm-telecharger").href = url + "?telecharger=1"; $("vm-legende").value = legende;
     statut("Vidéo prête (" + e.duree + " s). Regardez-la avant de la publier.");
