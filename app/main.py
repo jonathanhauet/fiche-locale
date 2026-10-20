@@ -7959,26 +7959,76 @@ async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_
     return JSONResponse(resultat)
 
 
+async def _client_et_site(request: Request, db: Session):
+    """(client, contenu du site, reponse d'erreur) pour les boutons de suggestion de la video motion design."""
+    if not utilisateur_connecte(request):
+        return None, "", JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401), {}
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    try:
+        client = db.get(models.Client, int(donnees.get("client_id") or 0))
+    except (TypeError, ValueError):
+        client = None
+    if not client or not (client.contenu_site or "").strip():
+        return client, "", JSONResponse({"erreur": "Choisissez un client dont le contenu du site est enregistré."}, status_code=400), donnees
+    return client, client.contenu_site, None, donnees
+
+
+@app.post("/video-motion/idees")
+async def video_motion_idees(request: Request, db: Session = Depends(obtenir_session)):
+    """Idees de videos tirees du contenu du site du client. Corps : client_id, deja (idees deja affichees, pour en proposer d'autres)."""
+    client, contenu, erreur, donnees = await _client_et_site(request, db)
+    if erreur:
+        return erreur
+    deja = [str(x)[:120] for x in (donnees.get("deja") or []) if str(x).strip()][:20]
+    try:
+        idees = await run_in_threadpool(claude_generation.suggerer_idees_video_motion, client.nom, contenu, deja)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Impossible de proposer des idées : {e}"}, status_code=500)
+    return JSONResponse({"idees": idees})
+
+
+@app.post("/video-motion/faits")
+async def video_motion_faits(request: Request, db: Session = Depends(obtenir_session)):
+    """Faits verifiables ecrits sur le site du client (a relire par l'utilisateur avant de generer le scenario). Corps : client_id."""
+    client, contenu, erreur, _ = await _client_et_site(request, db)
+    if erreur:
+        return erreur
+    try:
+        faits = await run_in_threadpool(claude_generation.extraire_faits_site, client.nom, contenu)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Impossible de relever les faits : {e}"}, status_code=500)
+    return JSONResponse({"faits": faits})
+
+
 @app.get("/video-motion/photos/{client_id}")
-def video_motion_photos(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """Photos de la fiche Google du client (pour les scenes photo) et son logo. Jamais bloquant : sans compte Google valide, listes vides."""
+def video_motion_photos(client_id: int, request: Request, page: str = "", db: Session = Depends(obtenir_session)):
+    """
+    Photos de la fiche Google du client (pour les scenes photo) et son logo, par pages de 36 : `page` est le jeton renvoye (« suivante ») pour
+    afficher la suite. Jamais bloquant : sans compte Google valide, listes vides.
+    """
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
     client = db.get(models.Client, client_id)
     if not client:
         return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
-    resultat = {"photos": [], "logo": "", "avertissement": ""}
-    try:
-        resultat["logo"] = _logo_page_client(db, client)
-    except Exception:
-        pass
+    resultat = {"photos": [], "logo": "", "avertissement": "", "suivante": ""}
+    if not page:                                   # le logo n'est lu qu'avec la premiere page
+        try:
+            resultat["logo"] = _logo_page_client(db, client)
+        except Exception:
+            pass
     identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.compte_google_id else None
     if not (client.account_id and client.location_id and identifiants):
         resultat["avertissement"] = "Pas de fiche Google reliée à ce client : importez vos propres images."
         return JSONResponse(resultat)
     try:
-        photos, _ = google_business.lister_photos_page(identifiants, client.account_id, client.location_id, None, 36)
-        resultat["photos"] = [{"url": p["url"], "miniature": p["miniature"] or p["url"], "categorie": p["categorie"]} for p in photos if p["categorie"] not in ("LOGO", "COVER", "PROFILE")][:30]
+        photos, suivante = google_business.lister_photos_page(identifiants, client.account_id, client.location_id, page or None, 36)
+        resultat["suivante"] = suivante or ""
+        resultat["photos"] = [{"url": p["url"], "miniature": p["miniature"] or p["url"], "categorie": p["categorie"]} for p in photos if p["categorie"] not in ("LOGO", "COVER", "PROFILE")]
     except Exception as erreur:
         resultat["avertissement"] = f"Photos de la fiche illisibles pour le moment : {erreur}"
     return JSONResponse(resultat)

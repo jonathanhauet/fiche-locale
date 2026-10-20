@@ -20,10 +20,18 @@
     {% for c in clients %}<option value="{{ c.id }}" data-nom="{{ c.nom }}">{{ c.nom }}</option>{% endfor %}
   </select>
 
+  <div class="ligne-champs">
+    <button type="button" id="vm-idees" class="bouton-secondaire"><span class="spinner" id="vm-spinner-idees" hidden></span>💡 Idées de vidéo (d'après le site du client)</button>
+    <button type="button" id="vm-faits-site" class="bouton-secondaire"><span class="spinner" id="vm-spinner-faits" hidden></span>📌 Reprendre les faits du site</button>
+  </div>
+  <p id="vm-suggestions-statut" class="texte-discret" hidden></p>
+  <div id="vm-idees-liste" class="vm-idees"></div>
+
   <div class="vm-photos">
     <label>Photos à utiliser dans la vidéo (cliquez pour choisir : photo 1, photo 2, etc.)</label>
     <p id="vm-photos-avert" class="texte-discret"></p>
     <div id="vm-grille" class="vm-grille"></div>
+    <button type="button" id="vm-plus" class="bouton-secondaire bouton-mini" hidden>Afficher plus de photos</button>
     <label for="vm-fichiers">Ajouter vos propres images</label>
     <input type="file" id="vm-fichiers" accept="image/*" multiple>
     <div id="vm-choix" class="vm-grille"></div>
@@ -112,7 +120,13 @@
   .vm-miniature img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .vm-miniature.choisie { border-color: #2f5eff; }
   .vm-miniature .num { position: absolute; top: 3px; left: 3px; background: #2f5eff; color: #fff; font-size: .75rem; font-weight: 700; border-radius: 99px; min-width: 1.3rem; text-align: center; }
-  .vm-case { display: flex; gap: .5rem; align-items: center; margin-top: .6rem; }
+  .vm-case { display: flex; gap: .5rem; align-items: center; justify-content: flex-start; text-align: left; margin-top: .6rem; }
+  .vm-case input { width: auto; flex: none; margin: 0; }
+  .vm-idees { display: flex; flex-direction: column; gap: .4rem; margin: .4rem 0 .8rem; }
+  .vm-idee { text-align: left; border: 1px solid var(--bordure, #d9dce3); border-radius: 10px; padding: .55rem .8rem; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+  .vm-idee:hover { border-color: #2f5eff; }
+  .vm-idee b { display: block; }
+  .vm-idee span { font-size: .85rem; opacity: .8; }
   .vm-barre { height: 10px; background: rgba(127,127,127,.25); border-radius: 99px; overflow: hidden; margin: .6rem 0; }
   #vm-barre-remplissage { height: 100%; width: 0; background: #2f5eff; transition: width .3s; }
   #vm-resultat video { width: 100%; max-width: 380px; border-radius: 12px; background: #000; display: block; margin: .8rem 0; }
@@ -139,6 +153,46 @@
 
   function statut(texte) { $("vm-statut").hidden = !texte; $("vm-statut").textContent = texte || ""; }
 
+  function statutSuggestions(texte) { $("vm-suggestions-statut").hidden = !texte; $("vm-suggestions-statut").textContent = texte || ""; }
+  const idees = [];
+  function dessinerIdees() {
+    const zone = $("vm-idees-liste"); zone.textContent = "";
+    idees.forEach((idee) => {
+      const bouton = document.createElement("button"); bouton.type = "button"; bouton.className = "vm-idee";
+      const titre = document.createElement("b"); titre.textContent = idee.titre;
+      const brief = document.createElement("span"); brief.textContent = idee.brief;
+      bouton.appendChild(titre); bouton.appendChild(brief);
+      bouton.addEventListener("click", () => { $("vm-brief").value = idee.titre + " : " + idee.brief; $("vm-brief").focus(); statutSuggestions("Idée reprise dans « Ce que la vidéo doit faire passer » : modifiez-la si besoin."); });
+      zone.appendChild(bouton);
+    });
+  }
+  async function suggestion(chemin, corps, spinner) {
+    if (!$("vm-client").value) { statutSuggestions("Choisissez d'abord un client : les suggestions viennent du contenu de son site."); return null; }
+    $(spinner).hidden = false;
+    statutSuggestions("Lecture du site du client...");
+    try {
+      const r = await fetch(chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: $("vm-client").value, ...corps }) });
+      const d = await r.json();
+      if (!r.ok) { statutSuggestions(d.erreur || "Échec."); return null; }
+      return d;
+    } catch (e) { statutSuggestions("Erreur réseau."); return null; }
+    finally { $(spinner).hidden = true; }
+  }
+  $("vm-idees").addEventListener("click", async () => {
+    const d = await suggestion("/video-motion/idees", { deja: idees.map((i) => i.titre) }, "vm-spinner-idees");
+    if (!d) return;
+    d.idees.forEach((i) => idees.push(i)); dessinerIdees();
+    statutSuggestions("Cliquez sur une idée pour la reprendre (un nouveau clic sur le bouton en propose d'autres).");
+  });
+  $("vm-faits-site").addEventListener("click", async () => {
+    const d = await suggestion("/video-motion/faits", {}, "vm-spinner-faits");
+    if (!d) return;
+    if (!d.faits.length) { statutSuggestions("Le site n'affirme aucun fait précis utilisable."); return; }
+    const existant = $("vm-faits").value.trim();
+    $("vm-faits").value = (existant ? existant + "\n" : "") + d.faits.map((f) => "- " + f).join("\n");
+    statutSuggestions(d.faits.length + " faits repris du site : vérifiez-les, ajoutez la note Google, les avis et les coordonnées que vous connaissez.");
+  });
+
   let choix = [], logoClient = false;
   const MAX_PHOTOS = 9;
 
@@ -152,7 +206,7 @@
     const zone = $("vm-choix"); zone.textContent = "";
     choix.forEach((c, i) => zone.appendChild(miniature(c.vignette, i + 1, () => { choix.splice(i, 1); dessinerChoix(); dessinerGrille(); })));
   }
-  let photosClient = [];
+  let photosClient = [], jetonSuivant = "";
   function dessinerGrille() {
     const zone = $("vm-grille"); zone.textContent = "";
     photosClient.forEach((p) => {
@@ -166,20 +220,30 @@
   }
 
   $("vm-client").addEventListener("change", async () => {
+    idees.length = 0; dessinerIdees(); statutSuggestions("");
     const o = $("vm-client").selectedOptions[0];
     if (o && o.dataset.nom && !$("vm-nom").value) $("vm-nom").value = o.dataset.nom;
-    photosClient = []; logoClient = false; choix = choix.filter((c) => c.type === "import"); dessinerChoix(); dessinerGrille();
-    $("vm-photos-avert").textContent = "";
+    photosClient = []; jetonSuivant = ""; logoClient = false; choix = choix.filter((c) => c.type === "import"); dessinerChoix(); dessinerGrille();
+    $("vm-photos-avert").textContent = ""; $("vm-plus").hidden = true;
     if (!$("vm-client").value) return;
+    await chargerPhotos(true);
+  });
+
+  async function chargerPhotos(premiere) {
     $("vm-photos-avert").textContent = "Chargement des photos de la fiche Google...";
+    $("vm-plus").disabled = true;
     try {
-      const r = await fetch("/video-motion/photos/" + $("vm-client").value); const d = await r.json();
+      const r = await fetch("/video-motion/photos/" + $("vm-client").value + (jetonSuivant ? "?page=" + encodeURIComponent(jetonSuivant) : "")); const d = await r.json();
       if (!r.ok) { $("vm-photos-avert").textContent = d.erreur || ""; return; }
-      photosClient = d.photos || []; logoClient = !!d.logo;
-      $("vm-photos-avert").textContent = d.avertissement || (photosClient.length ? photosClient.length + " photos trouvées" + (logoClient ? " et un logo." : ".") : "Aucune photo trouvée sur la fiche.");
+      photosClient = photosClient.concat(d.photos || []); jetonSuivant = d.suivante || "";
+      if (premiere) logoClient = !!d.logo;
+      $("vm-photos-avert").textContent = d.avertissement || (photosClient.length ? photosClient.length + " photos chargées" + (logoClient ? " et un logo" : "") + (jetonSuivant ? " (il y en a d'autres)." : " (toutes les photos de la fiche).") : "Aucune photo trouvée sur la fiche.");
+      $("vm-plus").hidden = !jetonSuivant;
       dessinerGrille();
     } catch (e) { $("vm-photos-avert").textContent = "Photos indisponibles pour le moment."; }
-  });
+    finally { $("vm-plus").disabled = false; }
+  }
+  $("vm-plus").addEventListener("click", () => chargerPhotos(false));
 
   $("vm-fichiers").addEventListener("change", async () => {
     for (const f of Array.from($("vm-fichiers").files)) {
