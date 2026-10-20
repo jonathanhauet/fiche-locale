@@ -3660,7 +3660,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "- marque : révélation du nom. nom, accroche (slogan de 3 à 6 mots).\n"
         "- chiffre : un chiffre fourni dans les faits. valeur (nombre seul, ex. 4,8 ou 127), suffixe (ex. /5, ans, %), libelle (3 à 6 mots), legende (source ou précision courte).\n"
         "- liste : titre (3 à 6 mots), items (3 ou 4 éléments de 2 à 6 mots).\n"
-        "- etape : numero (01, 02...), kicker (1 à 2 mots), titre (3 à 7 mots), texte (une phrase).\n"
+        "- etape : numero (01, 02...), kicker (1 à 2 mots), titre (3 à 7 mots), texte (une phrase). Utilise TOUJOURS au moins 2 étapes à la suite (01, 02, éventuellement 03), jamais une seule.\n"
         "- citation : texte (un avis ou une phrase client, 8 à 20 mots, UNIQUEMENT s'il est fourni dans les faits), auteur.\n"
         "- cta : texte (3 à 6 mots), bouton (2 à 4 mots), contact (lignes : site, téléphone ou adresse, UNIQUEMENT ceux fournis).\n"
         "- photo : une photo du client en plein cadre. photo (son numéro), texte (4 à 9 mots posés sur l'image), sous_texte (facultatif).\n"

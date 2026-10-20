@@ -322,33 +322,56 @@ def calque_revele(image: Image.Image, calque: Image.Image, x: int, y: int, haute
 
 # --------------------------------------------------------------------------- composition typographique
 
+def decouper_segments(texte: str) -> list:
+    """
+    « Votre *fiche Google* est d'_Agen_, la ville » -> [(mot, style, colle)] ; style : "n", "pastille" (*...*) ou "serif" (_..._) ; colle=True quand
+    le segment suit le precedent SANS espace (d'*Ath*, *Ath*,) : il reste attache a lui, sur la meme ligne. Un marqueur isole est ignore.
+    """
+    segments, precedent_fini_par_espace = [], True
+    for morceau in re.split(r"(\*[^*\n]+\*|_[^_\n]+_)", texte or ""):
+        if not morceau:
+            continue
+        if len(morceau) > 2 and morceau[0] == "*" and morceau[-1] == "*":
+            style, mots = "pastille", [morceau[1:-1].strip()]
+        elif len(morceau) > 2 and morceau[0] == "_" and morceau[-1] == "_":
+            style, mots = "serif", morceau[1:-1].split()
+        else:
+            style, mots = "n", sans_balises(morceau).split()
+        for i, mot in enumerate(mots):
+            if mot:
+                segments.append((mot, style, i == 0 and bool(segments) and not morceau[0].isspace() and not precedent_fini_par_espace))
+        precedent_fini_par_espace = morceau[-1].isspace() if mots else True
+    return segments
+
+
 def decouper_texte(texte: str) -> list:
     """« Votre *fiche Google* est _invisible_ » -> [("Votre", "n"), ("fiche Google", "pastille"), ("est", "n"), ("invisible", "serif")]."""
-    unites = []
-    for morceau in re.findall(r"\*[^*]+\*|_[^_]+_|\S+", texte or ""):
-        if morceau.startswith("*") and morceau.endswith("*") and len(morceau) > 2:
-            unites.append((morceau[1:-1].strip(), "pastille"))
-        elif morceau.startswith("_") and morceau.endswith("_") and len(morceau) > 2:
-            unites += [(m, "serif") for m in morceau[1:-1].split()]
-        else:
-            unites.append((morceau.strip("*_"), "n"))
-    return [u for u in unites if u[0]]
+    return [(mot, style) for mot, style, _ in decouper_segments(texte)]
 
 
 def composer(ctx: Contexte, texte: str, taille: int, largeur_max: float, nom: str = GRAS, interligne: float = 1.12) -> dict:
     """Place les mots sur des lignes : {"lignes": [[(mot, style, x, largeur)]], "hauteur_ligne", "hauteur"}. Les mots surlignes forment un seul bloc."""
-    unites = decouper_texte(texte)
+    groupes = []
+    for mot, style, colle in decouper_segments(texte):
+        if colle and groupes:
+            groupes[-1].append((mot, style))
+        else:
+            groupes.append([(mot, style)])
     espace = largeur_texte(" ", nom, taille) * 1.05
     lignes, courante, x = [], [], 0.0
-    for mot, style in unites:
-        police_mot = SERIF if style == "serif" else nom
-        taille_mot = int(taille * 1.12) if style == "serif" else taille
-        w = largeur_texte(mot, police_mot, taille_mot) + (0.5 * taille if style == "pastille" else 0)
-        if courante and x + w > largeur_max:
+    for groupe in groupes:
+        largeurs = []
+        for mot, style in groupe:
+            police_mot = SERIF if style == "serif" else nom
+            taille_mot = int(taille * 1.12) if style == "serif" else taille
+            largeurs.append(largeur_texte(mot, police_mot, taille_mot) + (0.5 * taille if style == "pastille" else 0))
+        if courante and x + sum(largeurs) > largeur_max:
             lignes.append(courante)
             courante, x = [], 0.0
-        courante.append((mot, style, x, w))
-        x += w + espace
+        for (mot, style), w in zip(groupe, largeurs):
+            courante.append((mot, style, x, w))
+            x += w
+        x += espace
     if courante:
         lignes.append(courante)
     hauteur_ligne = int(taille * interligne * 1.18)
@@ -793,7 +816,17 @@ def nettoyer_scenario(scenario: dict) -> list:
         if isinstance(brut.get("items"), list):
             scene["items"] = [sans_balises(str(x).replace("—", "-")).strip()[:80] for x in brut["items"] if str(x).strip()][:5]
         scenes.append(scene)
-    return scenes[:12]
+    scenes = scenes[:12]
+    etapes = [sc for sc in scenes if sc["type"] == "etape"]
+    if len(etapes) == 1:                  # une etape « 01 » sans « 02 » n'a pas de sens : elle devient une scene d'accroche
+        unique = etapes[0]
+        unique.update(type="hook", texte=unique.get("titre") or unique.get("texte", ""), sous_texte=unique.get("texte", "") if unique.get("titre") else "")
+        for cle in ("titre", "numero", "kicker"):
+            unique.pop(cle, None)
+    else:
+        for rang, etape in enumerate(etapes, 1):
+            etape["numero"] = f"{rang:02d}"
+    return scenes
 
 
 def minutage(scenes: list) -> list:
