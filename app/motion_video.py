@@ -10,6 +10,7 @@ Scenario : {"scenes": [{"type": "hook", "texte": "Votre *fiche* est _invisible_"
 """
 
 import functools
+import io
 import math
 import os
 import re
@@ -17,7 +18,9 @@ import subprocess
 import threading
 import time
 import uuid
+from urllib.parse import urlparse
 
+import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from . import sons
@@ -27,13 +30,72 @@ DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stat
 FPS = 30
 FORMATS = {"vertical": (1080, 1920), "carre": (1080, 1080), "horizontal": (1920, 1080)}
 DUREE_TRANSITION = 0.45
-TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta")
+TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique")
+HOTES_IMAGES = (".googleusercontent.com", ".ggpht.com", ".google.com")
+TAILLE_MAX_IMAGE = 8 * 1024 * 1024
 GRAS, NORMAL, SERIF = "Poppins-Bold.ttf", "Poppins-Regular.ttf", "DMSerifDisplay-Regular.ttf"
 CREME = (250, 244, 235)
 
 
 class ErreurMotion(Exception):
     pass
+
+
+# --------------------------------------------------------------------------- images du client (photos de la fiche, logo, imports)
+
+def ouvrir_image(octets: bytes, transparente: bool = False) -> Image.Image:
+    """Image lue depuis des octets (JPEG, PNG, WebP...), reduite a 1800 px au plus ; transparente=True garde la transparence (logo)."""
+    try:
+        image = Image.open(io.BytesIO(octets))
+        image = image.convert("RGBA" if transparente else "RGB")
+    except Exception as erreur:
+        raise ErreurMotion("Image illisible.") from erreur
+    image.thumbnail((1800, 1800))
+    return image
+
+
+def telecharger_image(url: str, transparente: bool = False, confiance: bool = False) -> Image.Image:
+    """
+    Photo d'une fiche Google : seules les adresses Google sont acceptees (pas de requete vers un site quelconque), sauf `confiance`
+    (adresse lue en base par le serveur lui-meme, comme le logo enregistre d'un client).
+    """
+    analyse = urlparse(url or "")
+    hote = (analyse.hostname or "").lower()
+    if analyse.scheme != "https" or not (confiance or any(hote.endswith(suffixe) for suffixe in HOTES_IMAGES)):
+        raise ErreurMotion("Adresse d'image non autorisee.")
+    adresse = (re.sub(r"=[swh][0-9a-z-]*$", "", url) + "=s1600") if any(hote.endswith(suffixe) for suffixe in HOTES_IMAGES) else url
+    try:
+        reponse = requests.get(adresse, timeout=25, stream=True)
+        reponse.raise_for_status()
+        octets = b""
+        for morceau in reponse.iter_content(65536):
+            octets += morceau
+            if len(octets) > TAILLE_MAX_IMAGE:
+                break
+    except requests.RequestException as erreur:
+        raise ErreurMotion("Photo introuvable.") from erreur
+    if len(octets) > TAILLE_MAX_IMAGE:
+        raise ErreurMotion("Photo trop lourde.")
+    return ouvrir_image(octets, transparente)
+
+
+def recadrer(image: Image.Image, l: int, h: int, zoom: float = 1.0, cx: float = 0.5, cy: float = 0.5) -> Image.Image:
+    """Remplit un cadre l x h avec l'image (recadrage « cover »), avec un zoom et un point de focale (fractions de 0 a 1)."""
+    iw, ih = image.size
+    echelle = max(l / iw, h / ih) * max(1.0, zoom)
+    fw, fh = l / echelle, h / echelle
+    x0, y0 = (iw - fw) * borne(cx), (ih - fh) * borne(cy)
+    return image.resize((l, h), Image.BILINEAR, box=(x0, y0, x0 + fw, y0 + fh))
+
+
+def carte_photo(image: Image.Image, l: int, h: int, rayon: int, zoom: float = 1.0) -> Image.Image:
+    """Photo recadree dans un cadre aux coins arrondis, avec un fin liseré clair (RGBA)."""
+    carte = recadrer(image, l, h, zoom).convert("RGBA")
+    masque = Image.new("L", (l, h), 0)
+    ImageDraw.Draw(masque).rounded_rectangle((0, 0, l - 1, h - 1), radius=rayon, fill=255)
+    carte.putalpha(masque)
+    ImageDraw.Draw(carte).rounded_rectangle((0, 0, l - 1, h - 1), radius=rayon, outline=(255, 255, 255, 110), width=2)
+    return carte
 
 
 # --------------------------------------------------------------------------- outils : courbes, couleurs, polices
@@ -119,17 +181,41 @@ def largeur_texte(texte: str, nom: str, taille: int) -> float:
 # --------------------------------------------------------------------------- contexte de rendu
 
 class Contexte:
-    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = ""):
+    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None):
         self.l, self.h = FORMATS[format_video]
         self.format = format_video
         self.u = min(self.l, self.h) / 1080            # echelle : les tailles ci-dessous sont donnees pour 1080 px
         self.t = theme(charte)
         self.marque, self.ville = marque, ville
+        self.images, self.logo = list(images or []), logo
         self._fonds = {}
+        self._cartes = {}
+        self._degrade = None
         self._glows = {}
 
     def px(self, valeur: float) -> int:
         return int(round(valeur * self.u))
+
+    def photo(self, numero) -> Image.Image:
+        """Photo n (a partir de 1), ou None si elle n'existe pas."""
+        try:
+            return self.images[int(numero) - 1]
+        except (TypeError, ValueError, IndexError):
+            return None
+
+    def carte(self, numero, l: int, h: int, rayon: int) -> Image.Image:
+        cle = (int(numero), l, h, rayon)
+        if cle not in self._cartes:
+            self._cartes[cle] = carte_photo(self.photo(numero), l, h, rayon)
+        return self._cartes[cle]
+
+    def degrade_bas(self) -> Image.Image:
+        """Voile sombre qui monte du bas de l'image (pour lire le texte sur une photo)."""
+        if self._degrade is None:
+            masque = Image.new("L", (1, self.h))
+            masque.putdata([int(235 * borne((y / self.h - 0.28) / 0.6) ** 1.4) for y in range(self.h)])
+            self._degrade = masque.resize((self.l, self.h))
+        return self._degrade
 
     def haut_centre(self, hauteur_contenu: float, decalage: float = 0.0) -> int:
         """Ordonnee du haut d'un contenu de la hauteur donnee, centre dans la zone utile de l'ecran."""
@@ -432,7 +518,12 @@ def scene_marque(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     rayon = ctx.px(120 if horizontal else 190) * sortie_expo(t / 0.9)
     # forme qui passe du cercle au carre arrondi, entouree de points en orbite
     arrondi = rayon * (1 - 0.7 * entree_sortie((t - 0.8) / 1.0))
-    d.rounded_rectangle((cx - rayon, cy - rayon, cx + rayon, cy + rayon), radius=max(2, arrondi), fill=accent)
+    d.rounded_rectangle((cx - rayon, cy - rayon, cx + rayon, cy + rayon), radius=max(2, arrondi), fill=(255, 255, 255) if ctx.logo is not None else accent)
+    if ctx.logo is not None and rayon > 10:
+        interieur = int(rayon * 1.5)
+        logo = ctx.logo.copy()
+        logo.thumbnail((interieur, interieur))
+        image.paste(logo.convert("RGB"), (int(cx - logo.size[0] / 2), int(cy - logo.size[1] / 2)), logo.getchannel("A") if logo.mode == "RGBA" else None)
     for i in range(12):
         angle = t * 0.9 + i * math.pi / 6
         rr = ctx.px(190 if horizontal else 300) * sortie_expo((t - 0.2) / 0.9)
@@ -482,7 +573,59 @@ def scene_cta(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     return image
 
 
-SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta}
+def scene_photo(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Photo reelle du client en plein cadre, avec un lent mouvement de camera et un texte qui monte par-dessus."""
+    photo = ctx.photo(sc.get("photo"))
+    if photo is None:
+        return scene_hook(ctx, {**sc, "texte": sc.get("texte") or sc.get("sous_texte", "")}, t)
+    avance = borne(t / max(0.1, sc.get("duree", 3.0)))
+    image = recadrer(photo, ctx.l, ctx.h, 1.0 + 0.14 * sortie_cubique(avance), 0.42 + 0.16 * avance, 0.5)
+    image.paste(Image.new("RGB", (ctx.l, ctx.h), (6, 5, 6)), (0, 0), ctx.degrade_bas())
+    marge = ctx.px(76)
+    bloc = composer(ctx, sc.get("texte", ""), ctx.px(112 if ctx.format != "horizontal" else 88), ctx.l - 2 * marge)
+    bas = ctx.h * 0.80
+    y0 = int(max(ctx.h * 0.40, bas - bloc["hauteur"]))
+    dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.25)
+    if sc.get("sous_texte"):
+        suite = 0.25 + 0.09 * sum(len(l) for l in bloc["lignes"]) + 0.4
+        coller(image, image_texte(sc["sous_texte"], NORMAL, ctx.px(44), (235, 228, 220)), marge - 10, y0 + bloc["hauteur"] + ctx.px(20), borne((t - suite) / 0.5))
+    return image
+
+
+def scene_mosaique(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Trois photos du client en cartes aux coins arrondis qui rebondissent a l'arrivee."""
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    numeros = [n for n in (sc.get("photos") or []) if ctx.photo(n) is not None][:3]
+    marge = ctx.px(76)
+    titre = composer(ctx, sc.get("titre", ""), ctx.px(88 if ctx.format != "horizontal" else 70), ctx.l - 2 * marge)
+    haut = ctx.haut_centre(titre["hauteur"] + ctx.px(50) + int(ctx.h * 0.46), -0.02)
+    dessiner_bloc(ctx, image, titre, marge, haut, t, 0.05)
+    y_cartes = haut + titre["hauteur"] + ctx.px(50)
+    ecart = ctx.px(24)
+    rayon = ctx.px(34)
+    if ctx.format == "horizontal":
+        zone_h = int(ctx.h * 0.52)
+        largeur = (ctx.l - 2 * marge - 2 * ecart) // 3
+        cases = [(marge + i * (largeur + ecart), y_cartes, largeur, zone_h) for i in range(3)]
+    else:
+        grand_h, petit_h = int(ctx.h * 0.26), int(ctx.h * 0.20)
+        petit_l = (ctx.l - 2 * marge - ecart) // 2
+        cases = [(marge, y_cartes, ctx.l - 2 * marge, grand_h), (marge, y_cartes + grand_h + ecart, petit_l, petit_h),
+                 (marge + petit_l + ecart, y_cartes + grand_h + ecart, petit_l, petit_h)]
+    for i, numero in enumerate(numeros):
+        x, y, l, h = cases[i]
+        p = sortie_rebond((t - 0.35 - 0.28 * i) / 0.55)
+        if p <= 0:
+            continue
+        carte = ctx.carte(numero, l, h, rayon)
+        s = max(0.05, p)
+        reduite = carte.resize((max(1, int(l * s)), max(1, int(h * s))), Image.BILINEAR) if abs(s - 1) > 0.002 else carte
+        flotte = math.sin(t * 1.1 + i * 1.3) * ctx.px(6)
+        coller(image, reduite, x + (l - reduite.size[0]) / 2, y + (h - reduite.size[1]) / 2 + flotte, borne(p * 3))
+    return image
+
+
+SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique}
 
 
 # --------------------------------------------------------------------------- habillage, transitions, assemblage
@@ -524,6 +667,13 @@ def nettoyer_scenario(scenario: dict) -> list:
         for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact"):
             if brut.get(cle) is not None:
                 scene[cle] = str(brut[cle]).replace("—", "-").strip()[:180]
+        if brut.get("photo") not in (None, "", 0, "0"):
+            try:
+                scene["photo"] = max(1, min(int(brut["photo"]), 12))
+            except (TypeError, ValueError):
+                pass
+        if isinstance(brut.get("photos"), list):
+            scene["photos"] = [n for n in (int(x) if str(x).strip().isdigit() else 0 for x in brut["photos"]) if 1 <= n <= 12][:3]
         if isinstance(brut.get("items"), list):
             scene["items"] = [str(x).replace("—", "-").strip()[:80] for x in brut["items"] if str(x).strip()][:5]
         scenes.append(scene)
@@ -537,6 +687,19 @@ def minutage(scenes: list) -> list:
         positions.append((debut, debut + scene["duree"]))
         debut += scene["duree"] - DUREE_TRANSITION
     return positions
+
+
+def caler_sur_tempo(scenes: list, bpm: float) -> list:
+    """Allonge ou raccourcit chaque scene pour que son debut tombe sur un temps de la musique (par pas de deux temps)."""
+    try:
+        pas = 2 * 60.0 / float(bpm)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return scenes
+    if not 50 <= float(bpm) <= 200:
+        return scenes
+    for scene in scenes:
+        scene["duree"] = round(max(1, round((scene["duree"] - DUREE_TRANSITION) / pas)) * pas + DUREE_TRANSITION, 3)
+    return scenes
 
 
 def duree_totale(scenes: list) -> float:
@@ -555,6 +718,10 @@ def evenements_sons(scenes: list) -> list:
             evenements.append((debut + 0.85, "pop"))
         if scene["type"] == "citation":
             evenements.append((debut + 1.05, "ding"))
+        if scene["type"] == "photo":
+            evenements.append((debut + 0.3, "pop"))
+        if scene["type"] == "mosaique":
+            evenements += [(debut + 0.35 + 0.28 * k + 0.1, "pop") for k in range(len(scene.get("photos", [])))]
     brut = sorted(evenements)
     gardes, dernier = [], -1.0
     for t, nom in brut:
@@ -593,14 +760,17 @@ def image_a(ctx: Contexte, scenes: list, positions: list, t: float) -> Image.Ima
     return image
 
 
-def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque: str = "", ville: str = "", progression=None, musique: str = None) -> float:
+def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque: str = "", ville: str = "", progression=None, musique: str = None,
+           images: list = None, logo: Image.Image = None, bpm: float = None) -> float:
     """Rend la video MP4 (image par image vers ffmpeg, bruitages inclus). Renvoie sa duree en secondes."""
     if format_video not in FORMATS:
         raise ErreurMotion("Format inconnu.")
     scenes = nettoyer_scenario(scenario)
     if not scenes:
         raise ErreurMotion("Le scenario ne contient aucune scene valide.")
-    ctx = Contexte(format_video, charte, marque, ville)
+    if bpm:
+        scenes = caler_sur_tempo(scenes, bpm)
+    ctx = Contexte(format_video, charte, marque, ville, images, logo)
     positions = minutage(scenes)
     duree = positions[-1][1]
     total_images = int(duree * FPS)
@@ -609,13 +779,19 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
     fichiers = sorted({sons.chemin_son(nom) for _, nom in evenements})
     for fichier in fichiers:
         commande += ["-i", fichier]
+    indice_musique = 1 + len(fichiers)
+    if musique:
+        commande += ["-stream_loop", "-1", "-i", musique]
     parties, etiquettes = [], []
     for k, (t, nom) in enumerate(evenements):
         indice = 1 + fichiers.index(sons.chemin_son(nom))
         ms = int(max(0.0, t) * 1000)
         parties.append(f"[{indice}:a]aformat=channel_layouts=stereo,volume={VOLUMES[nom]:.2f},adelay={ms}|{ms}[s{k}]")
         etiquettes.append(f"[s{k}]")
-    parties.append("".join(etiquettes) + f"amix=inputs={len(etiquettes)}:duration=longest:dropout_transition=0:normalize=0,apad=whole_dur={duree:.2f}[a]")
+    if musique:
+        parties.append(f"[{indice_musique}:a]aformat=channel_layouts=stereo,volume=0.50,afade=t=in:st=0:d=0.8,afade=t=out:st={max(0.0, duree - 1.8):.2f}:d=1.8[mus]")
+        etiquettes.append("[mus]")
+    parties.append("".join(etiquettes) + f"amix=inputs={len(etiquettes)}:duration=longest:dropout_transition=0:normalize=0,atrim=0:{duree:.2f},apad=whole_dur={duree:.2f}[a]")
     commande += ["-filter_complex", ";".join(parties), "-map", "0:v", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                  "-c:a", "aac", "-b:a", "160k", "-t", f"{duree:.2f}", "-movflags", "+faststart", sortie]
     processus = subprocess.Popen(commande, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -656,8 +832,42 @@ def _purger() -> None:
                 pass
 
 
-def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "") -> str:
-    """Lance le rendu en tache de fond (un seul a la fois : il occupe le processeur) et renvoie son identifiant."""
+TELEVERSEES = {}            # images importees depuis la page : identifiant -> (octets, instant)
+MAX_TELEVERSEES = 30
+
+
+def enregistrer_import(octets: bytes) -> str:
+    """Garde en memoire une image importee (verifiee lisible) jusqu'au rendu ; renvoie son identifiant."""
+    if len(octets) > TAILLE_MAX_IMAGE:
+        raise ErreurMotion("Image trop lourde (8 Mo au plus).")
+    ouvrir_image(octets)
+    maintenant = time.time()
+    for ancien in [i for i, (_, t) in TELEVERSEES.items() if maintenant - t > DUREE_CONSERVATION]:
+        TELEVERSEES.pop(ancien, None)
+    if len(TELEVERSEES) >= MAX_TELEVERSEES:
+        raise ErreurMotion("Trop d'images importees : generez une video pour liberer de la place.")
+    identifiant = uuid.uuid4().hex[:12]
+    TELEVERSEES[identifiant] = (octets, maintenant)
+    return identifiant
+
+
+def telecharger_musique(url: str, dossier: str) -> str:
+    """Piste de la bibliotheque musicale (adresse enregistree par la plateforme) copiee dans le dossier du rendu."""
+    extension = (url or "").rsplit(".", 1)[-1].lower()[:4]
+    chemin = os.path.join(dossier, f"musique.{extension if extension.isalnum() else 'mp3'}")
+    reponse = requests.get(url, timeout=60)
+    reponse.raise_for_status()
+    with open(chemin, "wb") as fichier:
+        fichier.write(reponse.content)
+    return chemin
+
+
+def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
+             url_musique: str = "", bpm: float = None) -> str:
+    """
+    Lance le rendu en tache de fond (un seul a la fois : il occupe le processeur) et renvoie son identifiant. sources_images : [("google", url) ou
+    ("import", identifiant)] dans l'ordre des numeros de photos ; source_logo : ("url", adresse) ou ("import", identifiant).
+    """
     import tempfile
     with _VERROU:
         _purger()
@@ -671,7 +881,26 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
     def travail():
         try:
             chemin = os.path.join(dossier, "video.mp4")
-            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)))
+            images = []
+            for numero, (genre, reference) in enumerate(sources_images or [], 1):
+                try:
+                    images.append(telecharger_image(reference) if genre == "google" else ouvrir_image(TELEVERSEES[reference][0]))
+                except (ErreurMotion, KeyError) as erreur:
+                    raise ErreurMotion(f"Photo {numero} indisponible : {erreur}") from erreur
+            logo = None
+            if source_logo:
+                try:
+                    genre, reference = source_logo
+                    logo = telecharger_image(reference, True, True) if genre == "url" else ouvrir_image(TELEVERSEES[reference][0], True)
+                except (ErreurMotion, KeyError):
+                    logo = None                     # un logo introuvable ne bloque pas la video
+            musique = None
+            if url_musique:
+                try:
+                    musique = telecharger_musique(url_musique, dossier)
+                except (requests.RequestException, OSError):
+                    musique = None                  # idem pour la musique
+            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm)
             etat.update(etat="termine", chemin=chemin, duree=round(duree, 1), progression=1.0)
         except Exception as erreur:
             etat.update(etat="erreur", erreur=str(erreur) or erreur.__class__.__name__)

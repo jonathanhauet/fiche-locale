@@ -7922,7 +7922,8 @@ def page_video_motion(request: Request, db: Session = Depends(obtenir_session)):
     if redirection:
         return redirection
     clients = db.query(models.Client).order_by(models.Client.nom).all()
-    return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db)})
+    pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
+    return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db), "pistes": pistes})
 
 
 @app.post("/video-motion/scenario")
@@ -7946,12 +7947,54 @@ async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_
     if not nom and not str(donnees.get("brief") or "").strip():
         return JSONResponse({"erreur": "Indiquez le nom de l'entreprise ou ce que la vidéo doit faire passer."}, status_code=400)
     try:
+        nb_photos = max(0, min(int(donnees.get("nb_photos") or 0), 12))
+    except (TypeError, ValueError):
+        nb_photos = 0
+    try:
         resultat = await run_in_threadpool(
             claude_generation.generer_scenario_motion, nom, str(donnees.get("ville") or ""), str(donnees.get("brief") or ""), str(donnees.get("faits") or ""),
-            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20)
+            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, nb_photos, bool(donnees.get("avec_logo")))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible d'écrire le scénario : {erreur}"}, status_code=500)
     return JSONResponse(resultat)
+
+
+@app.get("/video-motion/photos/{client_id}")
+def video_motion_photos(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Photos de la fiche Google du client (pour les scenes photo) et son logo. Jamais bloquant : sans compte Google valide, listes vides."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    resultat = {"photos": [], "logo": "", "avertissement": ""}
+    try:
+        resultat["logo"] = _logo_page_client(db, client)
+    except Exception:
+        pass
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.compte_google_id else None
+    if not (client.account_id and client.location_id and identifiants):
+        resultat["avertissement"] = "Pas de fiche Google reliée à ce client : importez vos propres images."
+        return JSONResponse(resultat)
+    try:
+        photos, _ = google_business.lister_photos_page(identifiants, client.account_id, client.location_id, None, 36)
+        resultat["photos"] = [{"url": p["url"], "miniature": p["miniature"] or p["url"], "categorie": p["categorie"]} for p in photos if p["categorie"] not in ("LOGO", "COVER", "PROFILE")][:30]
+    except Exception as erreur:
+        resultat["avertissement"] = f"Photos de la fiche illisibles pour le moment : {erreur}"
+    return JSONResponse(resultat)
+
+
+@app.post("/video-motion/televerser")
+async def video_motion_televerser(request: Request, fichier: UploadFile = File(...)):
+    """Image importee depuis l'ordinateur (une par appel) : gardee en memoire jusqu'a la generation de la video."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    octets = await fichier.read(motion_video.TAILLE_MAX_IMAGE + 1)
+    try:
+        identifiant = motion_video.enregistrer_import(octets)
+    except motion_video.ErreurMotion as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    return JSONResponse({"id": identifiant})
 
 
 @app.post("/video-motion/rendre")
@@ -7968,8 +8011,37 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
     if not motion_video.nettoyer_scenario(scenario):
         return JSONResponse({"erreur": "Le scénario ne contient aucune scène."}, status_code=400)
     charte = charte_montage.nettoyer({**charte_montage.lire(db), **{k: v for k, v in (("principale", donnees.get("couleur1")), ("secondaire", donnees.get("couleur2"))) if isinstance(v, str)}})
+    sources_images = []
+    for brut in (donnees.get("images") or [])[:12]:
+        if isinstance(brut, dict) and brut.get("type") == "google" and isinstance(brut.get("url"), str):
+            sources_images.append(("google", brut["url"]))
+        elif isinstance(brut, dict) and brut.get("type") == "import" and isinstance(brut.get("id"), str):
+            sources_images.append(("import", brut["id"]))
+    source_logo = None
+    logo = donnees.get("logo")
+    if isinstance(logo, dict) and logo.get("type") == "client":          # logo du client lu par le serveur (fiche Google ou identite visuelle)
+        try:
+            client = db.get(models.Client, int(logo.get("client_id") or 0))
+        except (TypeError, ValueError):
+            client = None
+        adresse = _logo_page_client(db, client) if client else ""
+        source_logo = ("url", adresse) if adresse.startswith("https://") else None
+    elif isinstance(logo, dict) and logo.get("type") == "import" and isinstance(logo.get("id"), str):
+        source_logo = ("import", logo["id"])
+    url_musique = ""
     try:
-        identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60])
+        piste = db.get(models.PisteMusicale, int(donnees.get("musique_id") or 0))
+    except (TypeError, ValueError):
+        piste = None
+    if piste and piste.fichier_url:
+        url_musique = piste.fichier_url
+    try:
+        bpm = float(donnees.get("bpm")) if donnees.get("bpm") not in (None, "") else None
+    except (TypeError, ValueError):
+        bpm = None
+    try:
+        identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60],
+                                            sources_images, source_logo, url_musique, bpm)
     except motion_video.ErreurMotion as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=409)
     return JSONResponse({"id": identifiant})

@@ -20,6 +20,16 @@
     {% for c in clients %}<option value="{{ c.id }}" data-nom="{{ c.nom }}">{{ c.nom }}</option>{% endfor %}
   </select>
 
+  <div class="vm-photos">
+    <label>Photos à utiliser dans la vidéo (cliquez pour choisir : photo 1, photo 2, etc.)</label>
+    <p id="vm-photos-avert" class="texte-discret"></p>
+    <div id="vm-grille" class="vm-grille"></div>
+    <label for="vm-fichiers">Ajouter vos propres images</label>
+    <input type="file" id="vm-fichiers" accept="image/*" multiple>
+    <div id="vm-choix" class="vm-grille"></div>
+    <label class="vm-case"><input type="checkbox" id="vm-logo" checked> Afficher le logo du client dans la scène « marque » (s'il en a un)</label>
+  </div>
+
   <div class="ligne-champs">
     <div><label for="vm-nom">Nom affiché dans la vidéo</label><input type="text" id="vm-nom" maxlength="80" placeholder="Ex : GoldUnion Agen"></div>
     <div><label for="vm-ville">Ville</label><input type="text" id="vm-ville" maxlength="60" placeholder="Ex : Agen"></div>
@@ -47,6 +57,14 @@
       <label for="vm-format">Format</label>
       <select id="vm-format"><option value="vertical">Vertical 9:16 (Reel, TikTok, Short)</option><option value="carre">Carré 1:1</option><option value="horizontal">Horizontal 16:9</option></select>
     </div>
+  </div>
+
+  <div class="ligne-champs">
+    <div>
+      <label for="vm-musique">Musique (bibliothèque musicale)</label>
+      <select id="vm-musique"><option value="">Aucune, bruitages seulement</option>{% for p in pistes %}<option value="{{ p.id }}">{{ p.nom }}</option>{% endfor %}</select>
+    </div>
+    <div><label for="vm-bpm">Tempo de la piste en BPM (facultatif : les scènes changent sur les temps)</label><input type="number" id="vm-bpm" min="50" max="200" placeholder="Ex : 120"></div>
   </div>
 
   <div class="ligne-champs">
@@ -89,6 +107,12 @@
   .vm-carte h3 { margin: 0 0 .5rem; font-size: .95rem; display: flex; justify-content: space-between; gap: 1rem; }
   .vm-carte label { font-size: .8rem; margin-top: .4rem; display: block; }
   .vm-carte input, .vm-carte textarea { width: 100%; }
+  .vm-grille { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
+  .vm-miniature { position: relative; width: 84px; height: 84px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid transparent; background: #0002; }
+  .vm-miniature img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .vm-miniature.choisie { border-color: #2f5eff; }
+  .vm-miniature .num { position: absolute; top: 3px; left: 3px; background: #2f5eff; color: #fff; font-size: .75rem; font-weight: 700; border-radius: 99px; min-width: 1.3rem; text-align: center; }
+  .vm-case { display: flex; gap: .5rem; align-items: center; margin-top: .6rem; }
   .vm-barre { height: 10px; background: rgba(127,127,127,.25); border-radius: 99px; overflow: hidden; margin: .6rem 0; }
   #vm-barre-remplissage { height: 100%; width: 0; background: #2f5eff; transition: width .3s; }
   #vm-resultat video { width: 100%; max-width: 380px; border-radius: 12px; background: #000; display: block; margin: .8rem 0; }
@@ -98,11 +122,13 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const LIBELLES = {
-    hook: "Accroche", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
+    hook: "Accroche", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
   };
   const CHAMPS = {
     hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"]],
     marque: [["nom", "Nom"], ["accroche", "Slogan"]],
+    photo: [["texte", "Texte sur la photo"], ["sous_texte", "Sous-texte"], ["photo", "Photo n°"]],
+    mosaique: [["titre", "Titre"], ["photos", "Photos (3 numéros séparés par des virgules)"]],
     chiffre: [["valeur", "Valeur"], ["suffixe", "Suffixe (/5, ans, %...)"], ["libelle", "Libellé"], ["legende", "Précision"]],
     liste: [["titre", "Titre"], ["items", "Éléments (un par ligne)"]],
     etape: [["numero", "Numéro"], ["kicker", "Mot-clé court"], ["titre", "Titre"], ["texte", "Texte"]],
@@ -113,9 +139,59 @@
 
   function statut(texte) { $("vm-statut").hidden = !texte; $("vm-statut").textContent = texte || ""; }
 
-  $("vm-client").addEventListener("change", () => {
+  let choix = [], logoClient = false;
+  const MAX_PHOTOS = 9;
+
+  function miniature(src, numero, auClic) {
+    const m = document.createElement("div"); m.className = "vm-miniature" + (numero ? " choisie" : "");
+    const img = document.createElement("img"); img.src = src; img.loading = "lazy"; img.alt = ""; m.appendChild(img);
+    if (numero) { const n = document.createElement("span"); n.className = "num"; n.textContent = numero; m.appendChild(n); }
+    m.addEventListener("click", auClic); return m;
+  }
+  function dessinerChoix() {
+    const zone = $("vm-choix"); zone.textContent = "";
+    choix.forEach((c, i) => zone.appendChild(miniature(c.vignette, i + 1, () => { choix.splice(i, 1); dessinerChoix(); dessinerGrille(); })));
+  }
+  let photosClient = [];
+  function dessinerGrille() {
+    const zone = $("vm-grille"); zone.textContent = "";
+    photosClient.forEach((p) => {
+      const rang = choix.findIndex((c) => c.url === p.url);
+      zone.appendChild(miniature(p.miniature, rang >= 0 ? rang + 1 : 0, () => {
+        if (rang >= 0) choix.splice(rang, 1);
+        else if (choix.length < MAX_PHOTOS) choix.push({ type: "google", url: p.url, vignette: p.miniature });
+        dessinerChoix(); dessinerGrille();
+      }));
+    });
+  }
+
+  $("vm-client").addEventListener("change", async () => {
     const o = $("vm-client").selectedOptions[0];
     if (o && o.dataset.nom && !$("vm-nom").value) $("vm-nom").value = o.dataset.nom;
+    photosClient = []; logoClient = false; choix = choix.filter((c) => c.type === "import"); dessinerChoix(); dessinerGrille();
+    $("vm-photos-avert").textContent = "";
+    if (!$("vm-client").value) return;
+    $("vm-photos-avert").textContent = "Chargement des photos de la fiche Google...";
+    try {
+      const r = await fetch("/video-motion/photos/" + $("vm-client").value); const d = await r.json();
+      if (!r.ok) { $("vm-photos-avert").textContent = d.erreur || ""; return; }
+      photosClient = d.photos || []; logoClient = !!d.logo;
+      $("vm-photos-avert").textContent = d.avertissement || (photosClient.length ? photosClient.length + " photos trouvées" + (logoClient ? " et un logo." : ".") : "Aucune photo trouvée sur la fiche.");
+      dessinerGrille();
+    } catch (e) { $("vm-photos-avert").textContent = "Photos indisponibles pour le moment."; }
+  });
+
+  $("vm-fichiers").addEventListener("change", async () => {
+    for (const f of Array.from($("vm-fichiers").files)) {
+      if (choix.length >= MAX_PHOTOS) break;
+      const form = new FormData(); form.append("fichier", f);
+      try {
+        const r = await fetch("/video-motion/televerser", { method: "POST", body: form }); const d = await r.json();
+        if (!r.ok) { $("vm-photos-avert").textContent = (f.name + " : ") + (d.erreur || "refusée"); continue; }
+        choix.push({ type: "import", id: d.id, vignette: URL.createObjectURL(f) });
+      } catch (e) { $("vm-photos-avert").textContent = "Import impossible pour le moment."; }
+    }
+    $("vm-fichiers").value = ""; dessinerChoix();
   });
 
   function dessiner() {
@@ -131,8 +207,13 @@
         const label = document.createElement("label"); label.textContent = libelle; carte.appendChild(label);
         const multi = cle === "items" || cle === "contact";
         const champ = document.createElement(multi ? "textarea" : "input"); if (multi) champ.rows = 3; else champ.type = "text";
-        champ.value = cle === "items" ? (sc.items || []).join("\n") : (sc[cle] || "");
-        champ.addEventListener("input", () => { if (cle === "items") sc.items = champ.value.split("\n").map((x) => x.trim()).filter(Boolean); else sc[cle] = champ.value; });
+        champ.value = cle === "items" ? (sc.items || []).join("\n") : cle === "photos" ? (sc.photos || []).join(", ") : (sc[cle] || "");
+        champ.addEventListener("input", () => {
+          if (cle === "items") sc.items = champ.value.split("\n").map((x) => x.trim()).filter(Boolean);
+          else if (cle === "photos") sc.photos = champ.value.split(/[ ,;]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 1 && x <= 12);
+          else if (cle === "photo") sc.photo = parseInt(champ.value, 10) || 0;
+          else sc[cle] = champ.value;
+        });
         carte.appendChild(champ);
       });
       zone.appendChild(carte);
@@ -146,7 +227,7 @@
     try {
       const r = await fetch("/video-motion/scenario", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value }),
+        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient) }),
       });
       const d = await r.json();
       if (!r.ok) { statut(d.erreur || "Échec de l'écriture du scénario."); return; }
@@ -163,7 +244,10 @@
     try {
       const r = await fetch("/video-motion/rendre", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenes: scenes, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value }),
+        body: JSON.stringify({ scenes: scenes, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
+          images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
+          logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
+          musique_id: $("vm-musique").value, bpm: $("vm-bpm").value }),
       });
       const d = await r.json();
       if (!r.ok) { $("vm-etape").textContent = d.erreur || "Échec."; $("vm-rendre").disabled = false; return; }
