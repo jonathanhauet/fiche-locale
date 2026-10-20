@@ -3697,3 +3697,67 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         raise RuntimeError("L'IA n'a renvoye aucune scene exploitable.")
     return {"titre": _nettoyer_texte_genere(donnees.get("titre", "")).replace("\u2014", "-")[:120], "legende": _nettoyer_texte_genere(donnees.get("legende", "")).replace("\u2014", "-")[:1200],
             "scenes": scenes}
+
+
+# --------------------------------------------------------------------------- suggestions pour la video motion design (a partir du site du client)
+
+SCHEMA_IDEES_MOTION = {
+    "type": "object",
+    "properties": {"idees": {"type": "array", "items": {
+        "type": "object", "properties": {"titre": {"type": "string"}, "brief": {"type": "string"}}, "required": ["titre", "brief"], "additionalProperties": False}}},
+    "required": ["idees"], "additionalProperties": False,
+}
+SCHEMA_FAITS_SITE = {"type": "object", "properties": {"faits": {"type": "array", "items": {"type": "string"}}}, "required": ["faits"], "additionalProperties": False}
+
+
+def _json_claude(prompt: str, schema: dict, max_tokens: int = 2500) -> dict:
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=max_tokens, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": schema}}, messages=[{"role": "user", "content": prompt}],
+    )
+    bloc = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not bloc:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    return json.loads(bloc)
+
+
+def suggerer_idees_video_motion(nom: str, contenu_site: str, deja: list = None) -> list:
+    """6 idees de videos de motion design pour un client, tirees uniquement du contenu de son site : [{"titre", "brief"}]."""
+    contenu = (contenu_site or "").strip()[:6000]
+    if not contenu:
+        raise RuntimeError("Aucun contenu de site enregistre pour ce client.")
+    exclusions = ("\nIdées déjà affichées (n'en reproduis aucune, propose des angles différents) :\n" + "\n".join(f"- {x[:120]}" for x in (deja or [])[:20]) + "\n") if deja else ""
+    prompt = (
+        f"Voici le contenu du site de l'entreprise « {(nom or '').strip()[:120]} » :\n\n{contenu}\n{exclusions}\n"
+        "Propose 6 idées de courtes vidéos de motion design (texte animé, sans tournage, 15 à 25 secondes) pour ses réseaux sociaux. "
+        "Chaque idée = un angle différent (un service précis, une question que se posent les clients, une promesse tenue, une façon de travailler, une zone desservie, "
+        "un avantage concret). titre : 3 à 7 mots. brief : 1 à 2 phrases qui disent ce que la vidéo doit faire passer, en t'appuyant UNIQUEMENT sur ce que dit le site. "
+        "Règles : français soigné avec accents ; jamais de tiret cadratin ; n'invente aucun chiffre, aucun délai, aucun prix, aucun avis ; rien de négatif ni de comparatif ; "
+        "pas de formule creuse."
+    )
+    idees = _json_claude(prompt, SCHEMA_IDEES_MOTION).get("idees", [])
+    propres = [{"titre": _nettoyer_texte_genere(i.get("titre", "")).replace("\u2014", "-")[:90], "brief": _nettoyer_texte_genere(i.get("brief", "")).replace("\u2014", "-")[:400]} for i in idees]
+    propres = [i for i in propres if i["titre"] and i["brief"]][:6]
+    if not propres:
+        raise RuntimeError("L'IA n'a propose aucune idee exploitable.")
+    return propres
+
+
+def extraire_faits_site(nom: str, contenu_site: str) -> list:
+    """Faits verifiables ECRITS sur le site du client (anciennete, zone, services, garanties, certifications, coordonnees...), jamais deduits ni inventes."""
+    contenu = (contenu_site or "").strip()[:8000]
+    if not contenu:
+        raise RuntimeError("Aucun contenu de site enregistre pour ce client.")
+    prompt = (
+        f"Voici le contenu du site de l'entreprise « {(nom or '').strip()[:120]} » :\n\n{contenu}\n\n"
+        "Relève les faits précis et vérifiables que le site AFFIRME lui-même et qui valorisent l'entreprise : ancienneté ou année de création, zone desservie, "
+        "services proposés, garanties, certifications ou labels, délais ou tarifs annoncés, moyens (matériel, équipe), site web, téléphone, adresse, horaires. "
+        "Une ligne par fait, courte, reprise fidèlement du site (n'arrondis pas, ne déduis rien, n'invente rien, ne mélange pas deux faits). "
+        "Si le site n'affirme rien de précis sur un sujet, ne le mentionne pas. Au plus 10 faits, les plus utiles pour une vidéo d'abord. "
+        "N'inclus aucun avis ni aucune note : ils ne figurent pas sur le site. Français soigné, jamais de tiret cadratin."
+    )
+    faits = _json_claude(prompt, SCHEMA_FAITS_SITE, 1500).get("faits", [])
+    return [_nettoyer_texte_genere(f).replace("\u2014", "-")[:200] for f in faits if str(f).strip()][:10]
