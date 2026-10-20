@@ -141,6 +141,7 @@ def theme(charte: dict) -> dict:
     return {
         "fond": melanger(principale, sombre, 0.92), "fond2": melanger(principale, sombre, 0.80), "carte": melanger(principale, sombre, 0.86),
         "texte": CREME, "accent": principale, "accent2": secondaire,
+        "accent_texte": principale if luminance(principale) > 0.55 else melanger(principale, (255, 255, 255), 0.45),
         "sur_accent": (17, 17, 17) if luminance(principale) > 0.5 else (255, 255, 255),
     }
 
@@ -176,6 +177,43 @@ def image_texte(texte: str, nom: str, taille: int, couleur: tuple, italique: boo
 
 def largeur_texte(texte: str, nom: str, taille: int) -> float:
     return police(nom, taille).getlength(texte)
+
+
+def sans_balises(texte: str) -> str:
+    """Texte sans les marques *surlignage* et _serif_ (pour les champs qui ne les gerent pas)."""
+    return re.sub(r"[*_]", "", texte or "")
+
+
+def bloc_texte(texte: str, nom: str, taille: int, largeur_max: float, hauteur_max: float, couleur: tuple, italique: bool = False, centre: bool = False,
+               interligne: float = 1.15) -> Image.Image:
+    """
+    Texte qui tient TOUJOURS dans une boite : passage a la ligne et, au besoin, taille reduite (jusqu'a 55 %). Renvoie un calque RGBA de la largeur de
+    la boite (+ marge de 20 px). Les textes ecrits par l'IA ne sont jamais coupes ni ne debordent de l'ecran.
+    """
+    texte = sans_balises(texte)
+    courante_taille = taille
+    while True:
+        lignes, ligne = [], ""
+        for mot in texte.split():
+            essai = (ligne + " " + mot).strip()
+            if ligne and largeur_texte(essai, nom, courante_taille) > largeur_max:
+                lignes.append(ligne)
+                ligne = mot
+            else:
+                ligne = essai
+        if ligne:
+            lignes.append(ligne)
+        hauteur_ligne = int(courante_taille * interligne * 1.18)
+        tient = len(lignes) * hauteur_ligne <= hauteur_max and all(largeur_texte(l, nom, courante_taille) <= largeur_max for l in lignes)
+        if tient or courante_taille <= taille * 0.55:
+            break
+        courante_taille = int(courante_taille * 0.92)
+    calque = Image.new("RGBA", (int(largeur_max) + 20, max(1, len(lignes)) * hauteur_ligne + 20), (0, 0, 0, 0))
+    for i, texte_ligne in enumerate(lignes):
+        img = image_texte(texte_ligne, nom, courante_taille, couleur, italique)
+        x = int((calque.size[0] - img.size[0]) / 2) if centre else 0
+        calque.paste(img, (x, i * hauteur_ligne), img)
+    return calque
 
 
 # --------------------------------------------------------------------------- contexte de rendu
@@ -318,11 +356,12 @@ def composer(ctx: Contexte, texte: str, taille: int, largeur_max: float, nom: st
 
 
 def dessiner_bloc(ctx: Contexte, image: Image.Image, bloc: dict, x0: int, y0: int, t: float, debut: float = 0.0, pas: float = 0.09, alignement: str = "gauche",
-                  largeur_zone: float = 0.0, couleur: tuple = None, couleur_accent: tuple = None) -> int:
+                  largeur_zone: float = 0.0, couleur: tuple = None, couleur_accent: tuple = None, couleur_serif: tuple = None) -> int:
     """Dessine un bloc compose, mot par mot (montee derriere un masque, pastille qui rebondit). Renvoie l'indice du dernier mot."""
     taille, nom, hauteur_ligne = bloc["taille"], bloc["nom"], bloc["hauteur_ligne"]
     couleur = couleur or ctx.t["texte"]
     couleur_accent = couleur_accent or ctx.t["accent"]
+    couleur_serif = couleur_serif or ctx.t["accent_texte"]
     rang = 0
     for numero, ligne in enumerate(bloc["lignes"]):
         total = ligne[-1][2] + ligne[-1][3] - ligne[0][2]
@@ -350,16 +389,32 @@ def dessiner_bloc(ctx: Contexte, image: Image.Image, bloc: dict, x0: int, y0: in
                 coller(image, calque, cx - calque.size[0] / 2, cy - calque.size[1] / 2, borne(avance * 3))
             else:
                 if style == "serif":
-                    calque = image_texte(mot, SERIF, int(taille * 1.12), couleur_accent, True)
+                    calque = image_texte(mot, SERIF, int(taille * 1.12), couleur_serif, True)
                 else:
                     calque = image_texte(mot, nom, taille, couleur)
                 calque_revele(image, calque, xm - 10, y, hauteur_ligne, sortie_expo(avance))
     return rang
 
 
+def echelle_pour(ctx: Contexte, mesure, zone: float = None, minimum: float = 0.5) -> float:
+    """Plus grande echelle (<= 1) pour laquelle le contenu (hauteur donnee par mesure(e)) tient dans la zone utile de l'ecran."""
+    zone = zone or ctx.h * 0.73
+    e = 1.0
+    while e > minimum:
+        if mesure(e) <= zone:
+            return e
+        e *= 0.92
+    return minimum
+
+
 def etiquette(ctx: Contexte, image: Image.Image, texte: str, x: int, y: int, couleur: tuple, taille: int = 26, opacite: float = 1.0) -> None:
-    """Petite etiquette en majuscules espacees (style « kicker »)."""
-    coller(image, image_texte(texte.upper(), NORMAL, ctx.px(taille), couleur, False, 0.16), x - 10, y - 10, opacite)
+    """Petite etiquette en majuscules espacees (style « kicker »), reduite si elle depasserait de l'ecran."""
+    texte = sans_balises(texte).upper()
+    taille_px = ctx.px(taille)
+    largeur_dispo = ctx.l - x - ctx.px(76)
+    while taille_px > 12 and sum(police(NORMAL, taille_px).getlength(c) + 0.16 * taille_px for c in texte) > largeur_dispo:
+        taille_px -= 1
+    coller(image, image_texte(texte, NORMAL, taille_px, couleur, False, 0.16), x - 10, y - 10, opacite)
 
 
 # --------------------------------------------------------------------------- scenes
@@ -367,15 +422,26 @@ def etiquette(ctx: Contexte, image: Image.Image, texte: str, x: int, y: int, cou
 def scene_hook(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
     marge = ctx.px(76)
-    bloc = composer(ctx, sc.get("texte", ""), ctx.px(122 if ctx.format != "horizontal" else 96), ctx.l - 2 * marge)
-    y0 = int((ctx.h - bloc["hauteur"]) / 2 - ctx.h * 0.04)
+    base = 122 if ctx.format != "horizontal" else 96
+
+    def blocs(e):
+        titre = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
+        petit = composer(ctx, sc["sous_texte"], ctx.px(44 * e), ctx.l - 2 * marge, NORMAL, 1.15) if sc.get("sous_texte") else None
+        return titre, petit
+
+    def mesure(e):
+        titre, petit = blocs(e)
+        return titre["hauteur"] + (ctx.px(36 * e) + petit["hauteur"] if petit else 0)
+
+    e = echelle_pour(ctx, mesure)
+    bloc, petit = blocs(e)
+    y0 = ctx.haut_centre(mesure(e), -0.01)
     dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.10)
-    if sc.get("sous_texte"):
+    if petit:
         suite = 0.1 + 0.09 * sum(len(l) for l in bloc["lignes"]) + 0.5
-        petit = composer(ctx, sc["sous_texte"], ctx.px(44), ctx.l - 2 * marge, NORMAL, 1.15)
         for i, ligne in enumerate(petit["lignes"]):
             texte = " ".join(m for m, _, _, _ in ligne)
-            coller(image, image_texte(texte, NORMAL, ctx.px(44), (210, 200, 190)), marge - 10, y0 + bloc["hauteur"] + ctx.px(36) + i * petit["hauteur_ligne"], borne((t - suite) / 0.5))
+            coller(image, image_texte(texte, NORMAL, ctx.px(44 * e), (210, 200, 190)), marge - 10, y0 + bloc["hauteur"] + ctx.px(36 * e) + i * petit["hauteur_ligne"], borne((t - suite) / 0.5))
     return image
 
 
@@ -393,37 +459,53 @@ def scene_chiffre(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     except ValueError:
         cible = 0.0
     decimales = len(brut.split(".")[1]) if "." in brut else 0
-    courant = cible * sortie_cubique(t / 1.5)
-    nombre = _formater_nombre(courant, decimales)
-    taille = ctx.px(430 if ctx.format != "horizontal" else 360)
+    marge = ctx.px(76)
+    cible_texte = _formater_nombre(cible, decimales)
+    mots_libelle = re.sub(r"[*_]", "", sc.get("libelle", "")).split()
+
+    def mesures(e):
+        taille = min(ctx.px((430 if ctx.format != "horizontal" else 360) * e), int(ctx.h * 0.26))
+        while taille > 60 and largeur_texte(cible_texte, GRAS, taille) + largeur_texte(sc.get("suffixe", ""), GRAS, int(taille * 0.38)) > ctx.l * 0.88:
+            taille = int(taille * 0.9)
+        libelle = composer(ctx, " ".join(f"_{m}_" for m in mots_libelle), ctx.px(78 * e), ctx.l - 2 * marge, NORMAL)
+        return taille, libelle
+
+    e = echelle_pour(ctx, lambda e: mesures(e)[0] * 1.3 + mesures(e)[1]["hauteur"])
+    taille, bloc = mesures(e)
+    haut = ctx.haut_centre(taille * 1.3 + bloc["hauteur"])
+    nombre = _formater_nombre(cible * sortie_cubique(t / 1.5), decimales)
     img_nombre = image_texte(nombre, GRAS, taille, encre)
     suffixe = sc.get("suffixe", "")
     img_suffixe = image_texte(suffixe, GRAS, int(taille * 0.38), encre) if suffixe else None
-    largeur_totale = img_nombre.size[0] + (img_suffixe.size[0] if img_suffixe else 0)
+    largeur_totale = image_texte(cible_texte, GRAS, taille, encre).size[0] + (img_suffixe.size[0] if img_suffixe else 0)
     x = int((ctx.l - largeur_totale) / 2)
-    y = int(ctx.h * 0.30)
-    coller(image, img_nombre, x, y, borne(t / 0.2))
+    coller(image, img_nombre, x, haut, borne(t / 0.2))
     if img_suffixe:
-        coller(image, img_suffixe, x + img_nombre.size[0] - 6, y + int(taille * 0.12), borne((t - 0.3) / 0.3))
-    marge = ctx.px(76)
-    mots_libelle = re.sub(r"[*_]", "", sc.get("libelle", "")).split()
-    bloc = composer(ctx, " ".join(f"_{m}_" for m in mots_libelle), ctx.px(78), ctx.l - 2 * marge, NORMAL)
-    dessiner_bloc(ctx, image, bloc, 0, int(ctx.h * 0.30 + taille * 1.3), t, 0.9, 0.07, "centre", ctx.l, encre, encre)
+        coller(image, img_suffixe, x + image_texte(cible_texte, GRAS, taille, encre).size[0] - 6, haut + int(taille * 0.12), borne((t - 0.3) / 0.3))
+    dessiner_bloc(ctx, image, bloc, 0, int(haut + taille * 1.3), t, 0.9, 0.07, "centre", ctx.l, encre, encre, encre)
     if sc.get("legende"):
-        etiquette(ctx, image, sc["legende"], marge, int(ctx.h * 0.86), encre, 26, borne((t - 1.4) / 0.4))
+        etiquette(ctx, image, sc["legende"], marge, int(ctx.h * 0.88), encre, 26, borne((t - 1.4) / 0.4))
     return image
 
 
 def scene_liste(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
     marge = ctx.px(76)
-    titre = composer(ctx, sc.get("titre", ""), ctx.px(92 if ctx.format != "horizontal" else 72), ctx.l - 2 * marge)
     elements = (sc.get("items") or [])[:5]
-    hauteur_carte = ctx.px(150 if ctx.format != "horizontal" else 120)
-    ecart = ctx.px(28)
-    haut = ctx.haut_centre(titre["hauteur"] + ctx.px(60) + len(elements) * (hauteur_carte + ecart))
+    base_carte = 150 if ctx.format != "horizontal" else 120
+
+    def titre_pour(e):
+        return composer(ctx, sc.get("titre", ""), ctx.px((92 if ctx.format != "horizontal" else 72) * e), ctx.l - 2 * marge)
+
+    def mesure(e):
+        return titre_pour(e)["hauteur"] + ctx.px(60 * e) + len(elements) * (ctx.px(base_carte * e) + ctx.px(28 * e))
+
+    e = echelle_pour(ctx, mesure)
+    titre = titre_pour(e)
+    hauteur_carte, ecart = ctx.px(base_carte * e), ctx.px(28 * e)
+    haut = ctx.haut_centre(mesure(e))
     dessiner_bloc(ctx, image, titre, marge, haut, t, 0.05)
-    y0 = haut + titre["hauteur"] + ctx.px(60)
+    y0 = haut + titre["hauteur"] + ctx.px(60 * e)
     for i, texte in enumerate(elements):
         debut = 0.7 + 0.45 * i
         avance = (t - debut) / 0.6
@@ -435,22 +517,23 @@ def scene_liste(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         largeur = ctx.l - 2 * marge
         calque = Image.new("RGBA", (largeur + 8, hauteur_carte + 8), (0, 0, 0, 0))
         d = ImageDraw.Draw(calque)
-        d.rounded_rectangle((4, 4, largeur + 4, hauteur_carte + 4), radius=ctx.px(28), fill=ctx.t["carte"] + (255,), outline=melanger(ctx.t["accent"], ctx.t["carte"], 0.45) + (255,), width=2)
-        rond = ctx.px(78)
-        cx, cy = ctx.px(48) + rond // 2, 4 + hauteur_carte // 2
+        d.rounded_rectangle((4, 4, largeur + 4, hauteur_carte + 4), radius=ctx.px(28 * e), fill=ctx.t["carte"] + (255,), outline=melanger(ctx.t["accent"], ctx.t["carte"], 0.45) + (255,), width=2)
+        rond = ctx.px(78 * e)
+        cx, cy = ctx.px(48 * e) + rond // 2, 4 + hauteur_carte // 2
         d.ellipse((cx - rond // 2, cy - rond // 2, cx + rond // 2, cy + rond // 2), fill=ctx.t["accent"] + (255,))
         trace = borne((t - debut - 0.25) / 0.3)
         points = [(cx - rond * 0.22, cy + rond * 0.02), (cx - rond * 0.06, cy + rond * 0.18), (cx + rond * 0.24, cy - rond * 0.16)]
         if trace > 0:
             if trace < 0.5:
                 fin = (points[0][0] + (points[1][0] - points[0][0]) * trace * 2, points[0][1] + (points[1][1] - points[0][1]) * trace * 2)
-                d.line([points[0], fin], fill=ctx.t["sur_accent"] + (255,), width=ctx.px(9), joint="curve")
+                d.line([points[0], fin], fill=ctx.t["sur_accent"] + (255,), width=max(2, ctx.px(9 * e)), joint="curve")
             else:
                 reste = (trace - 0.5) * 2
                 fin = (points[1][0] + (points[2][0] - points[1][0]) * reste, points[1][1] + (points[2][1] - points[1][1]) * reste)
-                d.line([points[0], points[1], fin], fill=ctx.t["sur_accent"] + (255,), width=ctx.px(9), joint="curve")
-        texte_img = image_texte(texte, GRAS, ctx.px(50 if len(texte) < 28 else 42), ctx.t["texte"])
-        calque.paste(texte_img, (ctx.px(48) + rond + ctx.px(34), 4 + int((hauteur_carte - texte_img.size[1]) / 2)), texte_img)
+                d.line([points[0], points[1], fin], fill=ctx.t["sur_accent"] + (255,), width=max(2, ctx.px(9 * e)), joint="curve")
+        x_texte = ctx.px(48 * e) + rond + ctx.px(34 * e)
+        texte_img = bloc_texte(texte, GRAS, ctx.px(50 * e), largeur - x_texte - ctx.px(40), hauteur_carte - ctx.px(30 * e), ctx.t["texte"])
+        calque.paste(texte_img, (x_texte, 4 + int((hauteur_carte - texte_img.size[1]) / 2)), texte_img)
         coller(image, calque, x - 4, y - 4, borne(avance * 4))
     return image
 
@@ -459,19 +542,29 @@ def scene_etape(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
     marge = ctx.px(76)
     numero = str(sc.get("numero", "01"))
-    img_numero = image_texte(numero, SERIF, ctx.px(330), ctx.t["accent"], True)
-    titre = composer(ctx, sc.get("titre", ""), ctx.px(96 if ctx.format != "horizontal" else 76), ctx.l - 2 * marge)
-    petit = composer(ctx, sc.get("texte", ""), ctx.px(46), ctx.l - 2 * marge, NORMAL, 1.2)
-    y = ctx.haut_centre(img_numero.size[1] + titre["hauteur"] + ctx.px(44) + petit["hauteur"])
-    calque_revele(image, img_numero, marge - 10, y, img_numero.size[1] - ctx.px(40), sortie_expo(t / 0.7), 0)
+
+    def elements(e):
+        img_numero = image_texte(numero, SERIF, ctx.px(330 * e), ctx.t["accent_texte"], True)
+        titre = composer(ctx, sc.get("titre", ""), ctx.px((96 if ctx.format != "horizontal" else 76) * e), ctx.l - 2 * marge)
+        petit = composer(ctx, sc.get("texte", ""), ctx.px(46 * e), ctx.l - 2 * marge, NORMAL, 1.2)
+        return img_numero, titre, petit
+
+    def mesure(e):
+        img_numero, titre, petit = elements(e)
+        return img_numero.size[1] + titre["hauteur"] + ctx.px(44 * e) + petit["hauteur"]
+
+    e = echelle_pour(ctx, mesure)
+    img_numero, titre, petit = elements(e)
+    y = ctx.haut_centre(mesure(e))
+    calque_revele(image, img_numero, marge - 10, y, img_numero.size[1] - ctx.px(40 * e), sortie_expo(t / 0.7), 0)
     if sc.get("kicker"):
         etiquette(ctx, image, sc["kicker"], marge + img_numero.size[0] - ctx.px(10), y + int(img_numero.size[1] * 0.72), ctx.t["texte"], 28, borne((t - 0.4) / 0.4))
-    y_titre = y + img_numero.size[1] + ctx.px(10)
+    y_titre = y + img_numero.size[1] + ctx.px(10 * e)
     dessiner_bloc(ctx, image, titre, marge, y_titre, t, 0.35)
     debut = 0.35 + 0.09 * sum(len(l) for l in titre["lignes"]) + 0.4
     for i, ligne in enumerate(petit["lignes"]):
         texte = " ".join(m for m, _, _, _ in ligne)
-        coller(image, image_texte(texte, NORMAL, ctx.px(46), (214, 204, 194)), marge - 10, y_titre + titre["hauteur"] + ctx.px(34) + i * petit["hauteur_ligne"], borne((t - debut - 0.12 * i) / 0.5))
+        coller(image, image_texte(texte, NORMAL, ctx.px(46 * e), (214, 204, 194)), marge - 10, y_titre + titre["hauteur"] + ctx.px(34 * e) + i * petit["hauteur_ligne"], borne((t - debut - 0.12 * i) / 0.5))
     return image
 
 
@@ -487,25 +580,32 @@ def _etoile(centre: tuple, rayon: float, rotation: float = -math.pi / 2) -> list
 def scene_citation(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
     marge = ctx.px(76)
-    guillemet = image_texte("“", SERIF, ctx.px(420), ctx.t["accent"])
-    bloc = composer(ctx, sc.get("texte", ""), ctx.px(76 if ctx.format != "horizontal" else 60), ctx.l - 2 * marge, SERIF, 1.15)
-    haut = ctx.haut_centre(ctx.px(300) + bloc["hauteur"] + ctx.px(50) + ctx.px(100) + ctx.px(60))
-    calque_revele(image, guillemet, marge - 10, haut, guillemet.size[1] - ctx.px(120), sortie_expo(t / 0.6), 0)
-    y0 = haut + ctx.px(300)
+    base = 76 if ctx.format != "horizontal" else 60
+
+    def mesure(e):
+        bloc = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge, SERIF, 1.15)
+        return ctx.px(300 * e) + bloc["hauteur"] + ctx.px(210 * e)
+
+    e = echelle_pour(ctx, mesure)
+    guillemet = image_texte(chr(0x201C), SERIF, ctx.px(420 * e), ctx.t["accent_texte"])
+    bloc = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge, SERIF, 1.15)
+    haut = ctx.haut_centre(mesure(e))
+    calque_revele(image, guillemet, marge - 10, haut, guillemet.size[1] - ctx.px(120 * e), sortie_expo(t / 0.6), 0)
+    y0 = haut + ctx.px(300 * e)
     lignes_texte = [" ".join(m for m, _, _, _ in l) for l in bloc["lignes"]]
     for i, texte in enumerate(lignes_texte):
-        calque = image_texte(texte, SERIF, ctx.px(76 if ctx.format != "horizontal" else 60), ctx.t["texte"])
+        calque = image_texte(texte, SERIF, ctx.px(base * e), ctx.t["texte"])
         calque_revele(image, calque, marge - 10, y0 + i * bloc["hauteur_ligne"], bloc["hauteur_ligne"], sortie_expo((t - 0.35 - 0.16 * i) / 0.6))
-    y_bas = y0 + bloc["hauteur"] + ctx.px(50)
+    y_bas = y0 + bloc["hauteur"] + ctx.px(50 * e)
     for i in range(5):
         p = sortie_rebond((t - 1.0 - 0.12 * i) / 0.4)
         if p > 0:
-            rayon = ctx.px(34) * max(0.01, p)
-            calque = Image.new("RGBA", (ctx.px(90), ctx.px(90)), (0, 0, 0, 0))
-            ImageDraw.Draw(calque).polygon(_etoile((ctx.px(45), ctx.px(45)), rayon), fill=ctx.t["accent2"] + (255,))
-            coller(image, calque, marge - 10 + i * ctx.px(78), y_bas, borne(p * 3))
+            rayon = ctx.px(34 * e) * max(0.01, p)
+            calque = Image.new("RGBA", (ctx.px(90 * e), ctx.px(90 * e)), (0, 0, 0, 0))
+            ImageDraw.Draw(calque).polygon(_etoile((ctx.px(45 * e), ctx.px(45 * e)), rayon), fill=ctx.t["accent2"] + (255,))
+            coller(image, calque, marge - 10 + i * ctx.px(78 * e), y_bas, borne(p * 3))
     if sc.get("auteur"):
-        coller(image, image_texte(sc["auteur"], NORMAL, ctx.px(40), (214, 204, 194)), marge - 10, y_bas + ctx.px(100), borne((t - 1.7) / 0.5))
+        coller(image, bloc_texte(sc["auteur"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(110 * e), (214, 204, 194)), marge - 10, y_bas + ctx.px(100 * e), borne((t - 1.7) / 0.5))
     return image
 
 
@@ -513,7 +613,7 @@ def scene_marque(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     accent = ctx.t["accent"]
     image = ctx.fond(ctx.t["fond"], t, accent)
     d = ImageDraw.Draw(image)
-    horizontal = ctx.format == "horizontal"
+    horizontal = ctx.format != "vertical"          # carre et horizontal : mise en page compacte
     cx, cy = ctx.l // 2, int(ctx.h * (0.30 if horizontal else 0.34))
     rayon = ctx.px(120 if horizontal else 190) * sortie_expo(t / 0.9)
     # forme qui passe du cercle au carre arrondi, entouree de points en orbite
@@ -531,15 +631,12 @@ def scene_marque(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         pr = ctx.px(11 if i % 3 else 17)
         d.ellipse((px_ - pr, py_ - pr, px_ + pr, py_ + pr), fill=ctx.t["texte"] if i % 3 else ctx.t["accent2"])
     marge = ctx.px(60)
-    nom = sc.get("nom") or ctx.marque
-    taille = ctx.px(110 if horizontal else 150)
+    nom = sans_balises(sc.get("nom") or ctx.marque)
     y_nom = int(ctx.h * (0.55 if horizontal else 0.60))
-    while largeur_texte(nom, GRAS, taille) > ctx.l - 2 * marge and taille > 40:
-        taille = int(taille * 0.92)
-    image_nom = image_texte(nom, GRAS, taille, ctx.t["texte"])
+    image_nom = bloc_texte(nom, GRAS, ctx.px(110 if horizontal else 150), ctx.l - 2 * marge, ctx.px(250 if horizontal else 340), ctx.t["texte"], False, True, 1.0)
     calque_revele(image, image_nom, int((ctx.l - image_nom.size[0]) / 2), y_nom, image_nom.size[1], sortie_expo((t - 0.6) / 0.7), 0)
     if sc.get("accroche"):
-        img = image_texte(sc["accroche"], SERIF, ctx.px(64), ctx.t["accent"], True)
+        img = bloc_texte(sc["accroche"], SERIF, ctx.px(64), ctx.l - 2 * marge, ctx.px(230), ctx.t["accent_texte"], True, True)
         calque_revele(image, img, int((ctx.l - img.size[0]) / 2), y_nom + image_nom.size[1] + ctx.px(10), img.size[1], sortie_expo((t - 0.95) / 0.7), 0)
     return image
 
@@ -548,16 +645,23 @@ def scene_cta(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     accent = ctx.t["accent"]
     image = ctx.fond(ctx.t["fond"], t, accent)
     marge = ctx.px(76)
-    bloc = composer(ctx, sc.get("texte", ""), ctx.px(118 if ctx.format != "horizontal" else 92), ctx.l - 2 * marge)
-    nombre_contacts = len([l for l in (sc.get("contact") or "").split("\n") if l.strip()][:3])
-    y0 = ctx.haut_centre(bloc["hauteur"] + ctx.px(70) + ctx.px(220) + nombre_contacts * ctx.px(74))
+    contacts = [l for l in (sc.get("contact") or "").split(chr(10)) if l.strip()][:3]
+    base = 118 if ctx.format != "horizontal" else 92
+
+    def mesure(e):
+        bloc = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
+        return bloc["hauteur"] + ctx.px(70 * e) + ctx.px(220 * e) + len(contacts) * ctx.px(74 * e)
+
+    e = echelle_pour(ctx, mesure)
+    bloc = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
+    y0 = ctx.haut_centre(mesure(e))
     dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.05)
-    y_bouton = y0 + bloc["hauteur"] + ctx.px(70)
+    y_bouton = y0 + bloc["hauteur"] + ctx.px(70 * e)
     p = sortie_rebond((t - 0.9) / 0.5)
     if p > 0:
         texte = sc.get("bouton", "Contactez-nous")
-        img_texte = image_texte(texte, GRAS, ctx.px(58), ctx.t["sur_accent"])
-        largeur, hauteur = img_texte.size[0] + ctx.px(110), ctx.px(150)
+        img_texte = bloc_texte(texte, GRAS, ctx.px(58 * e), ctx.l - 2 * marge - ctx.px(130), ctx.px(130 * e), ctx.t["sur_accent"], False, True)
+        largeur, hauteur = img_texte.size[0] + ctx.px(90 * e), max(ctx.px(150 * e), img_texte.size[1] + ctx.px(50 * e))
         pulse = 1 + 0.025 * math.sin(t * 5)
         calque = Image.new("RGBA", (largeur + 80, hauteur + 80), (0, 0, 0, 0))
         halo = Image.new("RGBA", calque.size, (0, 0, 0, 0))
@@ -565,11 +669,11 @@ def scene_cta(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         calque = Image.alpha_composite(calque, halo.filter(ImageFilter.GaussianBlur(ctx.px(22))))
         ImageDraw.Draw(calque).rounded_rectangle((40, 40, largeur + 40, hauteur + 40), radius=hauteur // 2, fill=accent + (255,))
         calque.paste(img_texte, (40 + int((largeur - img_texte.size[0]) / 2), 40 + int((hauteur - img_texte.size[1]) / 2)), img_texte)
-        s = max(0.05, p) * pulse
-        calque = calque.resize((max(1, int(calque.size[0] * s)), max(1, int(calque.size[1] * s))), Image.BILINEAR)
+        s_ = max(0.05, p) * pulse
+        calque = calque.resize((max(1, int(calque.size[0] * s_)), max(1, int(calque.size[1] * s_))), Image.BILINEAR)
         coller(image, calque, marge - 40 + (largeur + 80 - calque.size[0]) / 2, y_bouton - 40 + (hauteur + 80 - calque.size[1]) / 2, borne(p * 2))
-    for i, ligne in enumerate([l for l in (sc.get("contact") or "").split("\n") if l.strip()][:3]):
-        coller(image, image_texte(ligne.strip(), NORMAL, ctx.px(48), (220, 210, 200)), marge - 10, y_bouton + ctx.px(220) + i * ctx.px(74), borne((t - 1.3 - 0.15 * i) / 0.5))
+    for i, ligne in enumerate(contacts):
+        coller(image, bloc_texte(ligne.strip(), NORMAL, ctx.px(48 * e), ctx.l - 2 * marge, ctx.px(72 * e), (220, 210, 200)), marge - 10, y_bouton + ctx.px(220 * e) + i * ctx.px(74 * e), borne((t - 1.3 - 0.15 * i) / 0.5))
     return image
 
 
@@ -582,13 +686,24 @@ def scene_photo(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     image = recadrer(photo, ctx.l, ctx.h, 1.0 + 0.14 * sortie_cubique(avance), 0.42 + 0.16 * avance, 0.5)
     image.paste(Image.new("RGB", (ctx.l, ctx.h), (6, 5, 6)), (0, 0), ctx.degrade_bas())
     marge = ctx.px(76)
-    bloc = composer(ctx, sc.get("texte", ""), ctx.px(112 if ctx.format != "horizontal" else 88), ctx.l - 2 * marge)
-    bas = ctx.h * 0.80
-    y0 = int(max(ctx.h * 0.40, bas - bloc["hauteur"]))
+    base = 112 if ctx.format != "horizontal" else 88
+
+    def blocs(e):
+        titre = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
+        petit = bloc_texte(sc["sous_texte"], NORMAL, ctx.px(44 * e), ctx.l - 2 * marge, ctx.px(150 * e), (235, 228, 220)) if sc.get("sous_texte") else None
+        return titre, petit
+
+    def mesure(e):
+        titre, petit = blocs(e)
+        return titre["hauteur"] + (ctx.px(20 * e) + petit.size[1] if petit else 0)
+
+    e = echelle_pour(ctx, mesure, ctx.h * 0.5)
+    bloc, petit = blocs(e)
+    y0 = int(ctx.h * 0.80 - mesure(e))
     dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.25)
-    if sc.get("sous_texte"):
+    if petit is not None:
         suite = 0.25 + 0.09 * sum(len(l) for l in bloc["lignes"]) + 0.4
-        coller(image, image_texte(sc["sous_texte"], NORMAL, ctx.px(44), (235, 228, 220)), marge - 10, y0 + bloc["hauteur"] + ctx.px(20), borne((t - suite) / 0.5))
+        coller(image, petit, marge - 10, y0 + bloc["hauteur"] + ctx.px(20 * e), borne((t - suite) / 0.5))
     return image
 
 
@@ -666,7 +781,8 @@ def nettoyer_scenario(scenario: dict) -> list:
         scene = {"type": brut["type"], "duree": max(1.8, min(float(brut.get("duree") or 3.0), 6.0))}
         for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact"):
             if brut.get(cle) is not None:
-                scene[cle] = str(brut[cle]).replace("—", "-").strip()[:180]
+                valeur = str(brut[cle]).replace("—", "-").strip()[:180]
+                scene[cle] = valeur if cle in ("texte", "titre", "sous_texte") else sans_balises(valeur)          # *surlignage* et _serif_ : seulement ou ils sont geres
         if brut.get("photo") not in (None, "", 0, "0"):
             try:
                 scene["photo"] = max(1, min(int(brut["photo"]), 12))
@@ -675,7 +791,7 @@ def nettoyer_scenario(scenario: dict) -> list:
         if isinstance(brut.get("photos"), list):
             scene["photos"] = [n for n in (int(x) if str(x).strip().isdigit() else 0 for x in brut["photos"]) if 1 <= n <= 12][:3]
         if isinstance(brut.get("items"), list):
-            scene["items"] = [str(x).replace("—", "-").strip()[:80] for x in brut["items"] if str(x).strip()][:5]
+            scene["items"] = [sans_balises(str(x).replace("—", "-")).strip()[:80] for x in brut["items"] if str(x).strip()][:5]
         scenes.append(scene)
     return scenes[:12]
 
