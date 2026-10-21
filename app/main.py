@@ -9512,6 +9512,54 @@ def _bloc_local_client(db: Session, client) -> str:
         return ""
 
 
+def _identifiants_wordpress(db: Session, client_id: int, request: Request):
+    """(client, reponse d'erreur) : le client doit exister et avoir son WordPress configure."""
+    if not utilisateur_connecte(request):
+        return None, JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return None, JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    if not (client.wordpress_url and client.wordpress_utilisateur and client.wordpress_mot_de_passe):
+        return client, JSONResponse({"erreur": "WordPress n'est pas configuré pour ce client."}, status_code=400)
+    return client, None
+
+
+@app.get("/publication-multi/{client_id}/categories_wordpress")
+async def publication_multi_categories_wordpress(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Categories qui existent deja sur le WordPress du client (pour classer l'article publie)."""
+    client, erreur = _identifiants_wordpress(db, client_id, request)
+    if erreur:
+        return erreur
+    try:
+        categories = await run_in_threadpool(wordpress_publish.lister_categories, client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe)
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=502)
+    return JSONResponse({"categories": [c for c in categories if not c["defaut"]]})
+
+
+@app.post("/publication-multi/{client_id}/categorie_wordpress/suggerer")
+async def publication_multi_suggerer_categorie(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """L'IA choisit, parmi les categories existantes du site, celle qui convient a l'article. Corps : texte (markdown, 1re ligne « # Titre »)."""
+    client, erreur = _identifiants_wordpress(db, client_id, request)
+    if erreur:
+        return erreur
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    texte = str((donnees if isinstance(donnees, dict) else {}).get("texte") or "").strip()
+    if not texte:
+        return JSONResponse({"erreur": "Rédigez d'abord l'article."}, status_code=400)
+    titre, corps = wordpress_publish.decouper_titre(texte)
+    try:
+        categories = await run_in_threadpool(wordpress_publish.lister_categories, client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe)
+        identifiant = await run_in_threadpool(claude_generation.choisir_categorie_wordpress, titre or texte[:120], corps or texte, categories)
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=502)
+    nom = next((c["nom"] for c in categories if c["id"] == identifiant), "")
+    return JSONResponse({"id": identifiant, "nom": nom})
+
+
 @app.post("/publication-multi/{client_id}/controle_seo")
 async def publication_multi_controle_seo(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Verifications SEO de l'article tel qu'il est dans le composeur (a relancer apres chaque modification)."""
@@ -11700,11 +11748,13 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     )
                 extrait_article = wordpress_publish.extrait_depuis_corps(corps_article)
                 mot_cle_seo = " ".join(str(formulaire.get("mot_cle_wordpress") or "").split())[:120]
+                categorie_choisie = str(formulaire.get("categorie_wordpress") or "").strip()
                 article_cree = wordpress_publish.creer_article(
                     client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe,
                     titre_article, wordpress_publish.markdown_vers_html(corps_article, couleur_marque_client(client)),
                     publier_le_reseau, image_id, extrait_article,
                     meta=seo_article.meta_seo(client.wordpress_url, extrait_article, mot_cle_seo) or None,
+                    categories=[int(categorie_choisie)] if categorie_choisie.isdigit() and int(categorie_choisie) > 0 else None,
                 )
                 # Trace locale, pour que l'article apparaisse dans le resume et l'historique des publications.
                 try:

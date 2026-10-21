@@ -337,7 +337,7 @@ def envoyer_image(url_site: str, utilisateur: str, mot_de_passe: str, octets: by
 
 def creer_article(
     url_site: str, utilisateur: str, mot_de_passe: str, titre: str, contenu_html: str,
-    publier_le: datetime = None, image_id: int = None, extrait: str = "", meta: dict = None,
+    publier_le: datetime = None, image_id: int = None, extrait: str = "", meta: dict = None, categories: list = None,
 ) -> dict:
     """
     Cree l'article : publie tout de suite, ou programme (statut "future", gere par
@@ -356,9 +356,14 @@ def creer_article(
         corps["excerpt"] = extrait
     if meta:
         corps["meta"] = meta          # description et mot-cle SEO (Yoast / Rank Math), seulement si le site les expose (voir seo_article.meta_seo)
+    if categories:
+        corps["categories"] = [int(c) for c in categories]       # categories EXISTANTES du site (voir lister_categories) ; jamais de creation
     reponse = _appeler("POST", url_site, "posts", utilisateur, mot_de_passe, json=corps)
     if meta and reponse.status_code == 400:
         corps.pop("meta")             # le site refuse ces champs : on publie sans eux plutot que d'echouer
+        reponse = _appeler("POST", url_site, "posts", utilisateur, mot_de_passe, json=corps)
+    if categories and reponse.status_code == 400:
+        corps.pop("categories")       # categorie supprimee ou inconnue : l'article est publie dans la categorie par defaut du site
         reponse = _appeler("POST", url_site, "posts", utilisateur, mot_de_passe, json=corps)
     if reponse.status_code not in (200, 201):
         raise RuntimeError(f"Échec de la création de l'article (code {reponse.status_code}) : {reponse.text[:300]}")
@@ -386,3 +391,36 @@ def publier_article_maintenant(url_site: str, utilisateur: str, mot_de_passe: st
     reponse = _appeler("POST", url_site, f"posts/{int(wp_id)}", utilisateur, mot_de_passe, json={"status": "publish"})
     if reponse.status_code not in (200, 201):
         raise RuntimeError(f"Publication de l'article impossible (code {reponse.status_code}) : {reponse.text[:200]}")
+
+
+_CACHE_CATEGORIES = {}
+DUREE_CACHE_CATEGORIES = 600
+
+
+def lister_categories(url_site: str, utilisateur: str, mot_de_passe: str, forcer: bool = False) -> list:
+    """
+    Categories des articles du site : [{"id", "nom", "nombre", "parent", "defaut"}], les plus utilisees d'abord (« defaut » : la categorie
+    « Non classe » que WordPress attribue sans choix). Gardees en memoire 10 minutes ; leve RuntimeError si le site refuse la lecture.
+    """
+    import html
+    import time as _temps
+    cle = normaliser_url(url_site)
+    en_cache = _CACHE_CATEGORIES.get(cle)
+    if en_cache and not forcer and _temps.time() - en_cache[0] < DUREE_CACHE_CATEGORIES:
+        return en_cache[1]
+    brutes = []
+    for page in (1, 2, 3):
+        reponse = _appeler("GET", url_site, "categories", utilisateur, mot_de_passe,
+                           params={"per_page": 100, "page": page, "orderby": "count", "order": "desc", "hide_empty": "false", "_fields": "id,name,slug,count,parent"})
+        if reponse.status_code == 400 and page > 1:       # au-dela de la derniere page, WordPress repond 400
+            break
+        if reponse.status_code != 200:
+            raise RuntimeError(f"Lecture des catégories impossible (code {reponse.status_code}).")
+        lot = reponse.json()
+        brutes += lot if isinstance(lot, list) else []
+        if not isinstance(lot, list) or len(lot) < 100:
+            break
+    categories = [{"id": int(c["id"]), "nom": html.unescape(str(c.get("name", ""))).strip(), "nombre": int(c.get("count") or 0), "parent": int(c.get("parent") or 0),
+                   "defaut": str(c.get("slug", "")) in ("uncategorized", "non-classe", "sans-categorie")} for c in brutes if c.get("id") and str(c.get("name", "")).strip()]
+    _CACHE_CATEGORIES[cle] = (_temps.time(), categories)
+    return categories

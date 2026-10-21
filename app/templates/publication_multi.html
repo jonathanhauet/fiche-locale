@@ -655,6 +655,14 @@
           <label>Ville ou zone <input type="text" id="seo-ville" maxlength="80" value="{{ client.localisation_ville or '' }}" placeholder="ex : Marseille"></label>
         </div>
         <input type="hidden" name="mot_cle_wordpress" id="seo-mot-cle-envoi">
+        <div class="ligne-champs" id="champ-categorie-wordpress">
+          <label>Catégorie de l'article sur le site
+            <select id="seo-categorie"><option value="">Aucune (catégorie par défaut du site)</option></select>
+          </label>
+          <button type="button" class="bouton-secondaire" id="seo-categorie-suggerer">🤖 Choisir la catégorie (IA)</button>
+        </div>
+        <input type="hidden" name="categorie_wordpress" id="seo-categorie-envoi">
+        <p class="texte-discret" id="seo-categorie-statut" style="margin:.2rem 0"></p>
         <p class="texte-discret" style="margin:.2rem 0">À remplir avant « Rédiger » : l'article place le mot-clé et la ville aux bons endroits, ajoute des liens vers de vraies pages du site (récupérées automatiquement), une FAQ et un bloc « Où nous trouver » avec la fiche Google.</p>
         <div class="ligne-champs"><button type="button" class="bouton-secondaire" id="seo-controler">🔍 Contrôle SEO de l'article</button></div>
         <div id="seo-resultat" class="seo-resultat" hidden></div>
@@ -2695,6 +2703,31 @@
       if (nbPages !== undefined) { const n = document.createElement("p"); n.className = "texte-discret"; n.style.margin = "0"; n.textContent = nbPages ? nbPages + " pages du site utilisées pour les liens internes." : "Aucune page du site n'a pu être récupérée : pas de liens internes."; zone.appendChild(n); }
     }
     document.getElementById("seo-mot-cle").addEventListener("input", (e) => { document.getElementById("seo-mot-cle-envoi").value = e.target.value; });
+    // Catégories qui existent déjà sur le WordPress du client : l'article est classé dans l'une d'elles (jamais de catégorie créée).
+    const selectCategorie = document.getElementById("seo-categorie"), statutCategorie = document.getElementById("seo-categorie-statut");
+    selectCategorie.addEventListener("change", () => { document.getElementById("seo-categorie-envoi").value = selectCategorie.value; });
+    (async () => {
+      try {
+        const r = await fetch("/publication-multi/{{ client.id }}/categories_wordpress"); const d = await r.json();
+        if (!r.ok) { statutCategorie.textContent = d.erreur || ""; return; }
+        d.categories.forEach((c) => { const o = document.createElement("option"); o.value = c.id; o.textContent = (c.parent ? "\u2014 " : "") + c.nom + " (" + c.nombre + ")"; selectCategorie.appendChild(o); });
+        statutCategorie.textContent = d.categories.length ? d.categories.length + " catégories existent sur le site." : "Le site n'a pas de catégorie : l'article sera classé par défaut.";
+      } catch (e) { statutCategorie.textContent = "Catégories indisponibles pour le moment."; }
+    })();
+    async function suggererCategorie(auto) {
+      const texte = document.getElementById("texte-wordpress").value;
+      if (auto && selectCategorie.value) return;                       // un choix déjà fait n'est jamais écrasé
+      if (!texte.trim()) { statutCategorie.textContent = "Rédigez d'abord l'article."; return; }
+      statutCategorie.textContent = "Choix de la catégorie...";
+      try {
+        const r = await fetch("/publication-multi/{{ client.id }}/categorie_wordpress/suggerer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte: texte }) });
+        const d = await r.json();
+        if (!r.ok) { statutCategorie.textContent = d.erreur || "Choix impossible."; return; }
+        if (d.id) { selectCategorie.value = String(d.id); document.getElementById("seo-categorie-envoi").value = selectCategorie.value; statutCategorie.textContent = "Catégorie proposée : « " + d.nom + " » (modifiable)."; }
+        else statutCategorie.textContent = "Aucune catégorie du site ne correspond vraiment : choisissez-en une ou laissez la catégorie par défaut.";
+      } catch (e) { statutCategorie.textContent = "Choix impossible pour le moment."; }
+    }
+    document.getElementById("seo-categorie-suggerer").addEventListener("click", () => suggererCategorie(false));
     document.getElementById("seo-controler").addEventListener("click", async () => {
       const bouton = document.getElementById("seo-controler"); bouton.disabled = true;
       try {
@@ -2725,6 +2758,7 @@
         rendreApercuTexte("wordpress", donnees.article);
         if (donnees.controle) afficherControleSeo(donnees.controle, donnees.doublons, donnees.nb_pages);
         onStatut("Article rédigé : relisez-le avant de publier.");
+        suggererCategorie(true);
       } catch (erreur) {
         onStatut("Erreur réseau lors de la rédaction de l'article.");
       } finally {

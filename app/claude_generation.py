@@ -3803,3 +3803,25 @@ def extraire_faits_site(nom: str, contenu_site: str) -> list:
     )
     faits = _json_claude(prompt, SCHEMA_FAITS_SITE, 1500).get("faits", [])
     return [_nettoyer_texte_genere(f).replace("\u2014", "-")[:200] for f in faits if str(f).strip()][:10]
+
+
+SCHEMA_CATEGORIE = {"type": "object", "properties": {"categorie_id": {"type": ["integer", "null"]}}, "required": ["categorie_id"], "additionalProperties": False}
+
+
+def choisir_categorie_wordpress(titre: str, texte: str, categories: list) -> int:
+    """
+    Choisit parmi les categories EXISTANTES du site celle qui convient le mieux a un article (jamais de nouvelle categorie) : renvoie son identifiant,
+    ou None si aucune ne convient vraiment. categories : [{"id", "nom", "nombre", "defaut"}] ; la categorie par defaut (« Non classe ») n'est pas proposee.
+    """
+    utiles = [c for c in (categories or []) if not c.get("defaut")]
+    if not utiles or not (titre or texte or "").strip():
+        return None
+    liste = "\n".join(f"- {c['id']} : {c['nom']} ({c.get('nombre', 0)} articles)" for c in utiles[:60])
+    prompt = (
+        f"Article de blog :\nTitre : {(titre or '').strip()[:200]}\nDébut du texte : {(texte or '').strip()[:1500]}\n\n"
+        f"Catégories qui existent déjà sur le site :\n{liste}\n\n"
+        "Choisis la catégorie la plus adaptée à cet article, d'après son sujet principal. Réponds par son identifiant. "
+        "Si aucune catégorie ne correspond vraiment (même de loin), réponds null : n'en invente pas et ne force pas un choix."
+    )
+    identifiant = _json_claude(prompt, SCHEMA_CATEGORIE, 200).get("categorie_id")
+    return identifiant if identifiant in {c["id"] for c in utiles} else None
