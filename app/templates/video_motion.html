@@ -31,6 +31,12 @@
   </select>
   <p id="vm-modele-aide" class="texte-discret" hidden></p>
 
+  <label for="vm-style">Style visuel</label>
+  <select id="vm-style">
+    <option value="">Aux couleurs du client (fond sombre)</option>
+    <option value="google">Style Google : fond blanc, bleu, rouge, jaune, vert, personnage en illustration</option>
+  </select>
+
   <div class="ligne-champs">
     <button type="button" id="vm-idees" class="bouton-secondaire"><span class="spinner" id="vm-spinner-idees" hidden></span>💡 Idées de vidéo (d'après le site du client)</button>
     <button type="button" id="vm-faits-site" class="bouton-secondaire"><span class="spinner" id="vm-spinner-faits" hidden></span>📌 Reprendre les faits du site</button>
@@ -212,7 +218,7 @@
   };
   const CHOIX = {
     action: [["explique", "Explique (les mains parlent)"], ["salut", "Salue"], ["pointe", "Montre le texte du doigt"], ["idee", "A une idée"], ["celebre", "Fête le résultat"], ["reflechit", "Réfléchit"]],
-    accessoire: [["aucun", "Aucun"], ["ampoule", "Ampoule"], ["cle", "Clé"], ["maison", "Maison"], ["voiture", "Voiture"], ["coeur", "Cœur"], ["etoile", "Étoile"], ["telephone", "Téléphone"], ["goutte", "Goutte d'eau"], ["calendrier", "Calendrier"], ["bouclier", "Bouclier"]],
+    accessoire: [["aucun", "Aucun"], ["ampoule", "Ampoule"], ["cle", "Clé"], ["maison", "Maison"], ["voiture", "Voiture"], ["coeur", "Cœur"], ["etoile", "Étoile"], ["telephone", "Téléphone"], ["goutte", "Goutte d'eau"], ["calendrier", "Calendrier"], ["bouclier", "Bouclier"], ["epingle", "Repère de localisation (Google)"], ["etoiles", "Cinq étoiles d'avis (Google)"], ["recherche", "Barre de recherche (Google)"], ["fiche", "Fiche d'établissement (Google)"], ["avis", "Avis client (Google)"], ["carte", "Plan Maps (Google)"]],
     perso: [["1", "Personnage 1 (cheveux courts)"], ["2", "Personnage 2 (chignon)"], ["3", "Personnage 3 (casquette)"], ["4", "Personnage 4 (cheveux longs)"]],
   };
   const CHARTE_DEFAUT = { principale: "{{ charte.principale }}", secondaire: "{{ charte.secondaire }}" };
@@ -474,7 +480,7 @@
     try {
       const r = await fetch("/video-motion/scenario", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient), modele: modele }),
+        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient), modele: modele, style: $("vm-style").value }),
       });
       const d = await r.json();
       if (!r.ok) { statut(d.erreur || "Échec de l'écriture du scénario."); return; }
@@ -546,7 +552,7 @@
   async function rendreVideo(i) {
     const v = serie[i];
     v.etat = "en_cours"; v.progression = 0; v.erreur = ""; dessinerOnglets(); if (i === courant) montrerRendu();
-    const corps = JSON.stringify({ scenes: v.scenes, client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
+    const corps = JSON.stringify({ scenes: v.scenes, style: $("vm-style").value, client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
       images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
       logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
       musique_id: $("vm-musique").value, bpm: $("vm-bpm").value });

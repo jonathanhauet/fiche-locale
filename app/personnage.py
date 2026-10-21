@@ -14,7 +14,7 @@ PIEDS = (650, 1210)
 HAUTEUR_VISIBLE = 1000                   # hauteur du personnage debout, en unites de dessin (pour le placer a l'ecran)
 
 ACTIONS = ("explique", "salut", "pointe", "idee", "celebre", "reflechit")
-ACCESSOIRES = ("aucun", "ampoule", "cle", "maison", "voiture", "coeur", "etoile", "telephone", "goutte", "calendrier", "bouclier")
+ACCESSOIRES = ("aucun", "ampoule", "cle", "maison", "voiture", "coeur", "etoile", "telephone", "goutte", "calendrier", "bouclier", "epingle", "etoiles", "recherche", "fiche", "avis", "carte")
 TENUS_EN_MAIN = ("cle", "telephone")     # ces objets sont portes par le personnage au lieu de flotter a cote de lui
 LOOKS = (
     {"peau": (243, 200, 170), "cheveux": (66, 44, 32), "style": "court", "barbe": False, "lunettes": False, "cils": False},
@@ -23,6 +23,11 @@ LOOKS = (
     {"peau": (250, 213, 184), "cheveux": (192, 122, 58), "style": "long", "barbe": False, "lunettes": True, "cils": True},
 )
 NOMBRE_LOOKS = len(LOOKS)
+
+# Palette Google (bleu, rouge, jaune, vert) : couleurs des vetements du personnage et des objets en « style Google »
+GOOGLE_BLEU, GOOGLE_ROUGE, GOOGLE_JAUNE, GOOGLE_VERT = (66, 133, 244), (234, 67, 53), (251, 188, 4), (52, 168, 83)
+GOOGLE_COULEURS = (GOOGLE_BLEU, GOOGLE_ROUGE, GOOGLE_JAUNE, GOOGLE_VERT)
+GOOGLE_BORD = (218, 220, 224)
 
 LONGUEUR_BRAS, LONGUEUR_AVANT_BRAS = 185, 170
 EPAULE_DX = 128                          # ecart de chaque epaule par rapport a l'axe du corps
@@ -216,10 +221,11 @@ def _melange_peau(peau: tuple) -> tuple:
     return (min(255, peau[0] + 6), int(peau[1] * 0.78), int(peau[2] * 0.78), 255)
 
 
-def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussures: tuple, accent: tuple, badge: Image.Image = None) -> Image.Image:
+def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussures: tuple, accent: tuple, badge: Image.Image = None, google: bool = False) -> Image.Image:
     """
     Personnage de la hauteur voulue (en pixels, canvas compris) ; les pieds sont a (PIEDS / dimensions du canevas). Renvoie un calque RGBA dont `info` donne la position
-    de la tete et de la main droite (« tete », « main »). badge : petit logo (RGBA) pose sur la poitrine.
+    de la tete et de la main droite (« tete », « main »). badge : petit logo (RGBA) pose sur la poitrine. google : tenue simple en aplats (t-shirt colore, pantalon gris,
+    baskets blanches), sans ceinture a outils ni col.
     """
     k = hauteur / HAUTEUR_REF * SURECHANTILLON
     calque = Image.new("RGBA", (int(LARGEUR_REF * k), int(HAUTEUR_REF * k)), (0, 0, 0, 0))
@@ -239,9 +245,9 @@ def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussu
         d.polygon([P(a[0] - cote * 6, a[1] + 30), P(b[0] - cote * 44, b[1]), P(b[0] - cote * 14, b[1]), P(a[0] + cote * 10, a[1] + 40)] if cote > 0 else
                   [P(a[0] + 6, a[1] + 30), P(b[0] + 44, b[1]), P(b[0] + 14, b[1]), P(a[0] - 10, a[1] + 40)], fill=bas_sombre + (255,))       # pli interieur du pantalon
         bx = b[0] + cote * 20
-        d.rounded_rectangle(P(bx - 66, pieds_y - 62) + P(bx + 66, pieds_y + 2), radius=int(28 * k), fill=chaussures + (255,))
-        d.rounded_rectangle(P(bx - 68, pieds_y - 16) + P(bx + 68, pieds_y + 4), radius=int(10 * k), fill=(236, 232, 226, 255))                  # semelle
-        d.rounded_rectangle(P(bx + cote * 8 - 18, pieds_y - 52) + P(bx + cote * 8 + 34, pieds_y - 40), radius=int(6 * k), fill=_clair(chaussures, 0.22) + (255,))
+        d.rounded_rectangle(P(bx - 66, pieds_y - 62) + P(bx + 66, pieds_y + 2), radius=int(28 * k), fill=(chaussures if not google else (246, 247, 248)) + (255,))
+        d.rounded_rectangle(P(bx - 68, pieds_y - 16) + P(bx + 68, pieds_y + 4), radius=int(10 * k), fill=((236, 232, 226) if not google else accent) + (255,))                  # semelle
+        d.rounded_rectangle(P(bx + cote * 8 - 18, pieds_y - 52) + P(bx + cote * 8 + 34, pieds_y - 40), radius=int(6 * k), fill=(_clair(chaussures, 0.22) if not google else GOOGLE_BORD) + (255,))
     # bras arriere (celui de gauche a l'ecran), puis buste, cou, tete, bras avant
     epaule_g, epaule_d = (axe - EPAULE_DX, epaules_y + 48), (axe + EPAULE_DX, epaules_y + 48)
     _bras(d, k, epaule_g, p["gauche"], -1, haut, peau)
@@ -251,18 +257,22 @@ def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussu
     for cote in (-1, 1):
         _cercle(d, k, (axe + cote * 104, epaules_y + 46), 46, haut)
     d.polygon([P(axe - 150, epaules_y + 46), P(axe - 84, epaules_y + 8), P(pieds_x - 52, taille_y), P(pieds_x - 118, taille_y)], fill=haut_sombre + (255,))   # cote ombre
-    d.rounded_rectangle(P(pieds_x - 124, taille_y - 34) + P(pieds_x + 124, taille_y + 22), radius=int(10 * k), fill=(94, 66, 44, 255))              # ceinture a outils
-    d.rounded_rectangle(P(pieds_x - 18, taille_y - 28) + P(pieds_x + 18, taille_y + 16), radius=int(6 * k), fill=(214, 184, 96, 255))
-    d.rounded_rectangle(P(pieds_x + 62, taille_y) + P(pieds_x + 126, taille_y + 96), radius=int(14 * k), fill=(120, 86, 58, 255))               # poche
-    d.rounded_rectangle(P(pieds_x + 70, taille_y + 8) + P(pieds_x + 118, taille_y + 24), radius=int(6 * k), fill=(94, 66, 44, 255))
-    d.rounded_rectangle(P(pieds_x + 88, taille_y - 62) + P(pieds_x + 104, taille_y + 8), radius=int(6 * k), fill=(176, 176, 188, 255))            # tournevis dans la poche
-    d.rounded_rectangle(P(pieds_x + 86, taille_y - 78) + P(pieds_x + 106, taille_y - 54), radius=int(8 * k), fill=accent + (255,))
+    if not google:
+        d.rounded_rectangle(P(pieds_x - 124, taille_y - 34) + P(pieds_x + 124, taille_y + 22), radius=int(10 * k), fill=(94, 66, 44, 255))              # ceinture a outils
+        d.rounded_rectangle(P(pieds_x - 18, taille_y - 28) + P(pieds_x + 18, taille_y + 16), radius=int(6 * k), fill=(214, 184, 96, 255))
+        d.rounded_rectangle(P(pieds_x + 62, taille_y) + P(pieds_x + 126, taille_y + 96), radius=int(14 * k), fill=(120, 86, 58, 255))               # poche
+        d.rounded_rectangle(P(pieds_x + 70, taille_y + 8) + P(pieds_x + 118, taille_y + 24), radius=int(6 * k), fill=(94, 66, 44, 255))
+        d.rounded_rectangle(P(pieds_x + 88, taille_y - 62) + P(pieds_x + 104, taille_y + 8), radius=int(6 * k), fill=(176, 176, 188, 255))            # tournevis dans la poche
+        d.rounded_rectangle(P(pieds_x + 86, taille_y - 78) + P(pieds_x + 106, taille_y - 54), radius=int(8 * k), fill=accent + (255,))
     # cou, col de polo
     d.rounded_rectangle(P(axe - 32, epaules_y - 86) + P(axe + 32, epaules_y + 14), radius=int(16 * k), fill=_sombre(peau, 0.1) + (255,))
-    d.polygon([P(axe - 54, epaules_y - 4), P(axe + 54, epaules_y - 4), P(axe, epaules_y + 70)], fill=_sombre(peau, 0.06) + (255,))
-    blanc = _clair(haut, 0.72)
-    d.polygon([P(axe - 64, epaules_y - 10), P(axe - 8, epaules_y + 6), P(axe - 2, epaules_y + 78), P(axe - 40, epaules_y + 36)], fill=blanc + (255,))
-    d.polygon([P(axe + 64, epaules_y - 10), P(axe + 8, epaules_y + 6), P(axe + 2, epaules_y + 78), P(axe + 40, epaules_y + 36)], fill=_sombre(blanc, 0.06) + (255,))
+    if google:                                                         # encolure ronde de t-shirt
+        d.pieslice(P(axe - 52, epaules_y - 34) + P(axe + 52, epaules_y + 58), 0, 180, fill=_sombre(peau, 0.06) + (255,))
+    else:
+        d.polygon([P(axe - 54, epaules_y - 4), P(axe + 54, epaules_y - 4), P(axe, epaules_y + 70)], fill=_sombre(peau, 0.06) + (255,))
+        blanc = _clair(haut, 0.72)
+        d.polygon([P(axe - 64, epaules_y - 10), P(axe - 8, epaules_y + 6), P(axe - 2, epaules_y + 78), P(axe - 40, epaules_y + 36)], fill=blanc + (255,))
+        d.polygon([P(axe + 64, epaules_y - 10), P(axe + 8, epaules_y + 6), P(axe + 2, epaules_y + 78), P(axe + 40, epaules_y + 36)], fill=_sombre(blanc, 0.06) + (255,))
     if badge is not None:
         taille_badge = int(64 * k)
         petit = badge.resize((taille_badge, taille_badge), Image.LANCZOS)
@@ -274,7 +284,6 @@ def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussu
     for cote in (-1, 1):
         _cercle(d, k, (tete[0] + cote * rayon * 0.97, tete[1] + 26), 22, _sombre(peau, 0.05))
     d.ellipse(P(tete[0] - rayon, tete[1] - rayon) + P(tete[0] + rayon, tete[1] + rayon * 1.06), fill=peau + (255,))
-    d.pieslice(P(tete[0] - rayon, tete[1] - rayon) + P(tete[0] + rayon, tete[1] + rayon * 1.06), 40, 140, fill=_sombre(peau, 0.05) + (255,))
     _cheveux(d, k, tete, rayon, look, accent, True)
     _visage(d, k, tete, rayon, p, look)
     main = _bras(d, k, epaule_d, p["droit"], 1, haut, peau)
@@ -358,4 +367,77 @@ def accessoire(nom: str, taille: int, principale: tuple, secondaire: tuple, clai
     elif nom == "bouclier":
         d.polygon([P(50, 4), P(90, 18), P(86, 58), P(50, 96), P(14, 58), P(10, 18)], fill=principale + (255,))
         d.line([P(30, 50), P(46, 66), P(72, 34)], fill=clair + (255,), width=int(9 * k), joint="curve")
+    elif nom == "epingle":                              # repere de localisation rouge (comme sur la carte)
+        d.ellipse(P(30, 86) + P(70, 96), fill=(0, 0, 0, 40))
+        d.polygon([P(24, 52), P(76, 52), P(50, 94)], fill=GOOGLE_ROUGE + (255,))
+        d.ellipse(P(20, 6) + P(80, 66), fill=GOOGLE_ROUGE + (255,))
+        d.ellipse(P(38, 24) + P(62, 48), fill=(255, 255, 255, 255))
+        d.pieslice(P(20, 6) + P(80, 66), 200, 250, fill=_sombre(GOOGLE_ROUGE, 0.15) + (255,))
+    elif nom == "etoiles":                              # cinq etoiles d'avis
+        d.rounded_rectangle(P(3, 34) + P(97, 72), radius=int(19 * k), fill=(0, 0, 0, 28))
+        d.rounded_rectangle(P(3, 30) + P(97, 68), radius=int(19 * k), fill=(255, 255, 255, 255), outline=GOOGLE_BORD + (255,), width=int(2.2 * k))
+        for i in range(5):
+            cx, cy = 14 + i * 18, 49
+            pts = []
+            for j in range(10):
+                r = 9.2 if j % 2 == 0 else 3.9
+                a = -math.pi / 2 + j * math.pi / 5
+                pts.append(P(cx + r * math.cos(a), cy + r * math.sin(a)))
+            d.polygon(pts, fill=GOOGLE_JAUNE + (255,))
+    elif nom == "recherche":                            # barre de recherche avec loupe
+        d.rounded_rectangle(P(4, 36) + P(96, 70), radius=int(17 * k), fill=(0, 0, 0, 30))
+        d.rounded_rectangle(P(4, 32) + P(96, 66), radius=int(17 * k), fill=(255, 255, 255, 255), outline=GOOGLE_BORD + (255,), width=int(2.2 * k))
+        d.ellipse(P(14, 40) + P(30, 56), outline=GOOGLE_BLEU + (255,), width=int(3.4 * k))
+        d.line([P(28, 54), P(35, 61)], fill=GOOGLE_BLEU + (255,), width=int(3.6 * k))
+        d.rounded_rectangle(P(44, 44) + P(86, 50), radius=int(3 * k), fill=(95, 99, 104, 255))
+        d.ellipse(P(80, 42) + P(88, 50), fill=GOOGLE_ROUGE + (255,))
+    elif nom == "fiche":                                # fiche d'etablissement : photo, nom, etoiles, boutons
+        d.rounded_rectangle(P(16, 10) + P(86, 96), radius=int(8 * k), fill=(0, 0, 0, 28))
+        d.rounded_rectangle(P(14, 6) + P(84, 92), radius=int(8 * k), fill=(255, 255, 255, 255), outline=GOOGLE_BORD + (255,), width=int(2 * k))
+        d.rounded_rectangle(P(14, 6) + P(84, 40), radius=int(8 * k), fill=(232, 240, 254, 255))
+        d.rectangle(P(15, 30) + P(83, 40), fill=(232, 240, 254, 255))
+        d.polygon([P(30, 34), P(49, 16), P(68, 34)], fill=GOOGLE_BLEU + (255,))
+        d.rectangle(P(36, 34) + P(62, 40), fill=GOOGLE_BLEU + (255,))
+        d.rounded_rectangle(P(22, 48) + P(62, 55), radius=int(3 * k), fill=(32, 33, 36, 255))
+        for i in range(5):
+            cx = 26 + i * 9
+            pts = []
+            for j in range(10):
+                r = 4.2 if j % 2 == 0 else 1.8
+                a = -math.pi / 2 + j * math.pi / 5
+                pts.append(P(cx + r * math.cos(a), 65 + r * math.sin(a)))
+            d.polygon(pts, fill=GOOGLE_JAUNE + (255,))
+        d.rounded_rectangle(P(22, 76) + P(46, 86), radius=int(5 * k), fill=GOOGLE_BLEU + (255,))
+        d.rounded_rectangle(P(52, 76) + P(76, 86), radius=int(5 * k), fill=(232, 240, 254, 255))
+    elif nom == "avis":                                 # bulle d'avis client : avatar, etoiles, texte
+        d.rounded_rectangle(P(8, 16) + P(94, 76), radius=int(10 * k), fill=(0, 0, 0, 28))
+        d.rounded_rectangle(P(6, 12) + P(92, 72), radius=int(10 * k), fill=(255, 255, 255, 255), outline=GOOGLE_BORD + (255,), width=int(2 * k))
+        d.polygon([P(24, 71), P(38, 71), P(26, 88)], fill=(255, 255, 255, 255))
+        d.line([P(24, 72), P(26, 88), P(38, 71)], fill=GOOGLE_BORD + (255,), width=int(2 * k))
+        d.polygon([P(25, 71), P(38, 71), P(26, 86)], fill=(255, 255, 255, 255))
+        d.ellipse(P(14, 20) + P(34, 40), fill=GOOGLE_VERT + (255,))
+        d.ellipse(P(20, 24) + P(28, 32), fill=(255, 255, 255, 255))
+        d.pieslice(P(16, 32) + P(32, 48), 180, 360, fill=(255, 255, 255, 255))
+        for i in range(5):
+            cx = 44 + i * 9
+            pts = []
+            for j in range(10):
+                r = 4.4 if j % 2 == 0 else 1.9
+                a = -math.pi / 2 + j * math.pi / 5
+                pts.append(P(cx + r * math.cos(a), 28 + r * math.sin(a)))
+            d.polygon(pts, fill=GOOGLE_JAUNE + (255,))
+        for y, fin in ((40, 84), (50, 78), (60, 66)):
+            d.rounded_rectangle(P(14, y) + P(fin, y + 4.4), radius=int(2.2 * k), fill=(189, 193, 198, 255))
+    elif nom == "carte":                                # morceau de plan avec un repere
+        d.rounded_rectangle(P(8, 14) + P(92, 88), radius=int(10 * k), fill=(232, 234, 237, 255))
+        d.rounded_rectangle(P(8, 14) + P(92, 88), radius=int(10 * k), outline=GOOGLE_BORD + (255,), width=int(2 * k))
+        d.polygon([P(14, 60), P(40, 56), P(46, 80), P(20, 84)], fill=(200, 230, 201, 255))
+        d.line([P(8, 40), P(40, 46), P(70, 30), P(92, 36)], fill=(255, 255, 255, 255), width=int(6 * k), joint="curve")
+        d.line([P(50, 14), P(56, 50), P(66, 88)], fill=(255, 255, 255, 255), width=int(6 * k), joint="curve")
+        d.line([P(8, 70), P(92, 64)], fill=(255, 230, 160, 255), width=int(5 * k))
+        d.line([P(8, 22), P(30, 36), P(92, 16)], fill=(168, 218, 220, 255), width=int(7 * k), joint="curve")
+        d.ellipse(P(60, 62) + P(80, 72), fill=(0, 0, 0, 36))
+        d.polygon([P(62, 40), P(78, 40), P(70, 66)], fill=GOOGLE_ROUGE + (255,))
+        d.ellipse(P(60, 26) + P(80, 46), fill=GOOGLE_ROUGE + (255,))
+        d.ellipse(P(66, 32) + P(74, 40), fill=(255, 255, 255, 255))
     return img.resize((taille, taille), Image.LANCZOS)

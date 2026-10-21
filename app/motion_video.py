@@ -35,6 +35,10 @@ HOTES_IMAGES = (".googleusercontent.com", ".ggpht.com", ".google.com")
 TAILLE_MAX_IMAGE = 8 * 1024 * 1024
 GRAS, NORMAL, SERIF = "Poppins-Bold.ttf", "Poppins-Regular.ttf", "DMSerifDisplay-Regular.ttf"
 CREME = (250, 244, 235)
+GOOGLE_BORD_CLAIR = (218, 220, 224)
+GOOGLE_BLEU, GOOGLE_ROUGE, GOOGLE_JAUNE, GOOGLE_VERT = personnage.GOOGLE_BLEU, personnage.GOOGLE_ROUGE, personnage.GOOGLE_JAUNE, personnage.GOOGLE_VERT
+STYLES = ("", "google")                  # "" : couleurs du client sur fond sombre ; "google" : fond blanc et palette Google
+_REMPLACE_SERIF = False                  # vrai pendant un rendu « google » (voir Contexte)
 
 
 class ErreurMotion(Exception):
@@ -134,8 +138,14 @@ def luminance(rgb: tuple) -> float:
     return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
 
 
-def theme(charte: dict) -> dict:
-    """Palette de la video a partir de la charte du montage (couleur principale = accent, fond tres sombre teinte de cette couleur)."""
+def theme(charte: dict, style: str = "") -> dict:
+    """Palette de la video a partir de la charte du montage (couleur principale = accent, fond tres sombre teinte de cette couleur) ; style « google » : fond blanc, bleu, rouge, jaune, vert."""
+    if style == "google":
+        return {
+            "fond": (255, 255, 255), "fond2": (248, 249, 250), "carte": (241, 243, 244), "texte": (32, 33, 36), "texte2": (95, 99, 104), "texte3": (154, 160, 166),
+            "accent": GOOGLE_BLEU, "accent2": GOOGLE_JAUNE, "accent_texte": (26, 115, 232), "sur_accent": (255, 255, 255), "marque_hab": (26, 115, 232),
+            "google": True, "points": (GOOGLE_BLEU, GOOGLE_ROUGE, GOOGLE_JAUNE, GOOGLE_VERT),
+        }
     principale = tuple(int(charte["principale"][i:i + 2], 16) for i in (1, 3, 5))
     secondaire = tuple(int(charte["secondaire"][i:i + 2], 16) for i in (1, 3, 5))
     sombre = (9, 8, 9)
@@ -144,16 +154,27 @@ def theme(charte: dict) -> dict:
         "texte": CREME, "accent": principale, "accent2": secondaire,
         "accent_texte": principale if luminance(principale) > 0.55 else melanger(principale, (255, 255, 255), 0.45),
         "sur_accent": (17, 17, 17) if luminance(principale) > 0.5 else (255, 255, 255),
+        "texte2": (214, 204, 194), "texte3": (190, 180, 170), "marque_hab": melanger(principale, (255, 255, 255), 0.35), "google": False, "points": None,
     }
 
 
 @functools.lru_cache(maxsize=96)
-def police(nom: str, taille: int) -> ImageFont.FreeTypeFont:
+def _police(nom: str, taille: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(os.path.join(DOSSIER_POLICES, nom), max(8, int(taille)))
 
 
-@functools.lru_cache(maxsize=1024)
+def police(nom: str, taille: int) -> ImageFont.FreeTypeFont:
+    return _police(GRAS if (_REMPLACE_SERIF and nom == SERIF) else nom, taille)
+
+
 def image_texte(texte: str, nom: str, taille: int, couleur: tuple, italique: bool = False, espacement: float = 0.0) -> Image.Image:
+    if _REMPLACE_SERIF and nom == SERIF:
+        nom, italique = GRAS, False
+    return _image_texte(texte, nom, taille, couleur, italique, espacement)
+
+
+@functools.lru_cache(maxsize=1024)
+def _image_texte(texte: str, nom: str, taille: int, couleur: tuple, italique: bool = False, espacement: float = 0.0) -> Image.Image:
     """Texte rendu sur fond transparent (marge de 10 px autour). italique : penche (la police serif n'a pas d'italique). espacement : lettres ecartees."""
     f = police(nom, taille)
     marge = 10
@@ -195,7 +216,13 @@ def bloc_texte(texte: str, nom: str, taille: int, largeur_max: float, hauteur_ma
     courante_taille = taille
     while True:
         lignes, ligne = [], ""
+        mots = []
         for mot in texte.split():
+            if mots and mot in ("?", "!", ":", ";", "%", "»"):          # une ponctuation seule reste collee au mot qui precede (jamais seule en debut de ligne)
+                mots[-1] += " " + mot
+            else:
+                mots.append(mot)
+        for mot in mots:
             essai = (ligne + " " + mot).strip()
             if ligne and largeur_texte(essai, nom, courante_taille) > largeur_max:
                 lignes.append(ligne)
@@ -220,11 +247,14 @@ def bloc_texte(texte: str, nom: str, taille: int, largeur_max: float, hauteur_ma
 # --------------------------------------------------------------------------- contexte de rendu
 
 class Contexte:
-    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None):
+    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None, style: str = ""):
+        global _REMPLACE_SERIF
         self.l, self.h = FORMATS[format_video]
         self.format = format_video
         self.u = min(self.l, self.h) / 1080            # echelle : les tailles ci-dessous sont donnees pour 1080 px
-        self.t = theme(charte)
+        self.google = style == "google"
+        _REMPLACE_SERIF = self.google                  # un seul rendu a la fois : le reglage vaut pour toute la video
+        self.t = theme(charte, style)
         self.marque, self.ville = marque, ville
         self.images, self.logo = list(images or []), logo
         self._fonds = {}
@@ -263,9 +293,12 @@ class Contexte:
 
     def fond(self, couleur: tuple, t: float, glow: tuple = None) -> Image.Image:
         """Fond en degrade vertical (mis en cache) avec une lueur douce qui derive lentement."""
+        clair = luminance(couleur) > 0.85                # fond blanc du style Google : degrade vers un gris tres doux, lueur bleutee a peine visible
+        if clair and glow is not None:
+            glow = melanger(glow, (255, 255, 255), 0.84)
         cle = (couleur, glow)
         if cle not in self._fonds:
-            haut, bas = couleur, melanger(couleur, (0, 0, 0), 0.45)
+            haut, bas = couleur, melanger(couleur, (206, 212, 222), 0.30) if clair else melanger(couleur, (0, 0, 0), 0.45)
             ligne = Image.new("RGB", (1, self.h))
             ligne.putdata([melanger(haut, bas, y / max(1, self.h - 1)) for y in range(self.h)])
             self._fonds[cle] = ligne.resize((self.l, self.h))
@@ -465,7 +498,7 @@ def scene_hook(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         suite = 0.1 + 0.09 * sum(len(l) for l in bloc["lignes"]) + 0.5
         for i, ligne in enumerate(petit["lignes"]):
             texte = " ".join(m for m, _, _, _ in ligne)
-            coller(image, image_texte(texte, NORMAL, ctx.px(44 * e), (210, 200, 190)), marge - 10, y0 + bloc["hauteur"] + ctx.px(36 * e) + i * petit["hauteur_ligne"], borne((t - suite) / 0.5))
+            coller(image, image_texte(texte, NORMAL, ctx.px(44 * e), ctx.t["texte2"]), marge - 10, y0 + bloc["hauteur"] + ctx.px(36 * e) + i * petit["hauteur_ligne"], borne((t - suite) / 0.5))
     return image
 
 
@@ -588,7 +621,7 @@ def scene_etape(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     debut = 0.35 + 0.09 * sum(len(l) for l in titre["lignes"]) + 0.4
     for i, ligne in enumerate(petit["lignes"]):
         texte = " ".join(m for m, _, _, _ in ligne)
-        coller(image, image_texte(texte, NORMAL, ctx.px(46 * e), (214, 204, 194)), marge - 10, y_titre + titre["hauteur"] + ctx.px(34 * e) + i * petit["hauteur_ligne"], borne((t - debut - 0.12 * i) / 0.5))
+        coller(image, image_texte(texte, NORMAL, ctx.px(46 * e), ctx.t["texte2"]), marge - 10, y_titre + titre["hauteur"] + ctx.px(34 * e) + i * petit["hauteur_ligne"], borne((t - debut - 0.12 * i) / 0.5))
     return image
 
 
@@ -629,7 +662,7 @@ def scene_citation(ctx: Contexte, sc: dict, t: float) -> Image.Image:
             ImageDraw.Draw(calque).polygon(_etoile((ctx.px(45 * e), ctx.px(45 * e)), rayon), fill=ctx.t["accent2"] + (255,))
             coller(image, calque, marge - 10 + i * ctx.px(78 * e), y_bas, borne(p * 3))
     if sc.get("auteur"):
-        coller(image, bloc_texte(sc["auteur"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(110 * e), (214, 204, 194)), marge - 10, y_bas + ctx.px(100 * e), borne((t - 1.7) / 0.5))
+        coller(image, bloc_texte(sc["auteur"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(110 * e), ctx.t["texte2"]), marge - 10, y_bas + ctx.px(100 * e), borne((t - 1.7) / 0.5))
     return image
 
 
@@ -653,7 +686,7 @@ def scene_marque(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         rr = ctx.px(190 if horizontal else 300) * sortie_expo((t - 0.2) / 0.9)
         px_, py_ = cx + rr * math.cos(angle), cy + rr * math.sin(angle)
         pr = ctx.px(11 if i % 3 else 17)
-        d.ellipse((px_ - pr, py_ - pr, px_ + pr, py_ + pr), fill=ctx.t["texte"] if i % 3 else ctx.t["accent2"])
+        d.ellipse((px_ - pr, py_ - pr, px_ + pr, py_ + pr), fill=ctx.t["points"][i % 4] if ctx.google else (ctx.t["texte"] if i % 3 else ctx.t["accent2"]))
     marge = ctx.px(60)
     nom = sans_balises(sc.get("nom") or ctx.marque)
     y_nom = int(ctx.h * (0.55 if horizontal else 0.60))
@@ -697,7 +730,7 @@ def scene_cta(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         calque = calque.resize((max(1, int(calque.size[0] * s_)), max(1, int(calque.size[1] * s_))), Image.BILINEAR)
         coller(image, calque, marge - 40 + (largeur + 80 - calque.size[0]) / 2, y_bouton - 40 + (hauteur + 80 - calque.size[1]) / 2, borne(p * 2))
     for i, ligne in enumerate(contacts):
-        coller(image, bloc_texte(ligne.strip(), NORMAL, ctx.px(48 * e), ctx.l - 2 * marge, ctx.px(72 * e), (220, 210, 200)), marge - 10, y_bouton + ctx.px(220 * e) + i * ctx.px(74 * e), borne((t - 1.3 - 0.15 * i) / 0.5))
+        coller(image, bloc_texte(ligne.strip(), NORMAL, ctx.px(48 * e), ctx.l - 2 * marge, ctx.px(72 * e), ctx.t["texte2"]), marge - 10, y_bouton + ctx.px(220 * e) + i * ctx.px(74 * e), borne((t - 1.3 - 0.15 * i) / 0.5))
     return image
 
 
@@ -724,7 +757,7 @@ def scene_photo(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     e = echelle_pour(ctx, mesure, ctx.h * 0.5)
     bloc, petit = blocs(e)
     y0 = int(ctx.h * 0.80 - mesure(e))
-    dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.25)
+    dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.25, couleur=CREME, couleur_serif=(138, 180, 248) if ctx.google else None)
     if petit is not None:
         suite = 0.25 + 0.09 * sum(len(l) for l in bloc["lignes"]) + 0.4
         coller(image, petit, marge - 10, y0 + bloc["hauteur"] + ctx.px(20 * e), borne((t - suite) / 0.5))
@@ -795,7 +828,7 @@ def scene_avant_apres(ctx: Contexte, sc: dict, t: float) -> Image.Image:
 
     def blocs(e):
         titre = composer(ctx, sc.get("titre", ""), ctx.px((80 if ctx.format != "horizontal" else 64) * e), ctx.l - 2 * marge)
-        legende = bloc_texte(sc["legende"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(110 * e), (214, 204, 194)) if sc.get("legende") else None
+        legende = bloc_texte(sc["legende"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(110 * e), ctx.t["texte2"]) if sc.get("legende") else None
         return titre, legende
 
     def mesure(e):
@@ -850,7 +883,7 @@ def scene_realisation(ctx: Contexte, sc: dict, t: float) -> Image.Image:
 
     def elements(e):
         titre = composer(ctx, sc.get("titre", ""), ctx.px((76 if ctx.format != "horizontal" else 60) * e), ctx.l - 2 * marge)
-        description = bloc_texte(sc["texte"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(190 * e), (214, 204, 194)) if sc.get("texte") else None
+        description = bloc_texte(sc["texte"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(190 * e), ctx.t["texte2"]) if sc.get("texte") else None
         return titre, description
 
     def mesure(e):
@@ -891,7 +924,7 @@ def scene_realisation(ctx: Contexte, sc: dict, t: float) -> Image.Image:
             rayon_pin = ctx.px(17 * e)
             calque = Image.new("RGBA", (ctx.l - 2 * marge, ctx.px(76 * e)), (0, 0, 0, 0))
             dessin = ImageDraw.Draw(calque)
-            _epingle(dessin, rayon_pin + 4, ctx.px(26 * e), rayon_pin, ctx.t["accent_texte"], (20, 20, 20))
+            _epingle(dessin, rayon_pin + 4, ctx.px(26 * e), rayon_pin, ctx.t["accent_texte"], ctx.t["fond"])
             texte_lieu = bloc_texte(lieu, GRAS, ctx.px(46 * e), ctx.l - 2 * marge - ctx.px(80 * e), ctx.px(60 * e), ctx.t["texte"])
             calque.paste(texte_lieu, (ctx.px(52 * e), 0), texte_lieu)
             coller(image, calque, marge - 4, y_bas + ctx.px(20 * e), avance)
@@ -911,17 +944,18 @@ def _bulle(ctx: Contexte, image: Image.Image, texte_img: Image.Image, x: int, y:
     ImageDraw.Draw(ombre).rounded_rectangle((marge, marge + ctx.px(10), marge + l, marge + h + ctx.px(10)), radius=ctx.px(48), fill=(0, 0, 0, 90))
     calque = Image.alpha_composite(calque, ombre.filter(ImageFilter.GaussianBlur(ctx.px(14))))
     d = ImageDraw.Draw(calque)
-    d.rounded_rectangle((marge, marge, marge + l, marge + h), radius=ctx.px(48), fill=CREME + (255,))
+    papier = (255, 255, 255) if ctx.google else CREME
+    d.rounded_rectangle((marge, marge, marge + l, marge + h), radius=ctx.px(48), fill=papier + (255,), outline=GOOGLE_BORD_CLAIR + (255,) if ctx.google else None, width=max(2, ctx.px(4)))
     px_, py_ = pointe[0] - x + marge, pointe[1] - y + marge
     cx = max(marge + ctx.px(70), min(px_, marge + l - ctx.px(70)))
     if px_ < marge or px_ > marge + l:                                 # personnage a cote de la bulle : pointe sur le cote
         cy = max(marge + h * 0.3, min(py_, marge + h * 0.7))
         bord = marge + 4 if px_ < marge else marge + l - 4
-        d.polygon([(bord, cy - ctx.px(30)), (bord, cy + ctx.px(30)), (px_, py_)], fill=CREME + (255,))
+        d.polygon([(bord, cy - ctx.px(30)), (bord, cy + ctx.px(30)), (px_, py_)], fill=papier + (255,))
     elif py_ > marge + h / 2:                                            # pointe vers le bas
-        d.polygon([(cx - ctx.px(34), marge + h - 4), (cx + ctx.px(34), marge + h - 4), (px_, py_)], fill=CREME + (255,))
+        d.polygon([(cx - ctx.px(34), marge + h - 4), (cx + ctx.px(34), marge + h - 4), (px_, py_)], fill=papier + (255,))
     else:                                                              # pointe vers le haut
-        d.polygon([(cx - ctx.px(34), marge + 4), (cx + ctx.px(34), marge + 4), (px_, py_)], fill=CREME + (255,))
+        d.polygon([(cx - ctx.px(34), marge + 4), (cx + ctx.px(34), marge + 4), (px_, py_)], fill=papier + (255,))
     calque.paste(texte_img, (marge + pad - 10, marge + pad - 10), texte_img)
     if p <= 0:
         return
@@ -936,8 +970,13 @@ def _badge_personnage(ctx: Contexte) -> Image.Image:
     if getattr(ctx, "_badge", None) is None:
         n = 160
         img = Image.new("RGBA", (n * 2, n * 2), (0, 0, 0, 0))
-        ImageDraw.Draw(img).ellipse((0, 0, n * 2 - 1, n * 2 - 1), fill=CREME + (255,))
-        if ctx.logo is not None:
+        ImageDraw.Draw(img).ellipse((0, 0, n * 2 - 1, n * 2 - 1), fill=((255, 255, 255) if ctx.google else CREME) + (255,))
+        if ctx.google:
+            quatre = ImageDraw.Draw(img)
+            for i, couleur in enumerate(ctx.t["points"]):
+                cx, cy = n * (0.62 if i % 2 == 0 else 1.38), n * (0.62 if i < 2 else 1.38)
+                quatre.ellipse((cx - n * 0.3, cy - n * 0.3, cx + n * 0.3, cy + n * 0.3), fill=couleur + (255,))
+        elif ctx.logo is not None:
             logo = ctx.logo.copy()
             logo.thumbnail((int(n * 1.5), int(n * 1.5)))
             img.paste(logo, (int(n - logo.size[0] / 2), int(n - logo.size[1] / 2)), logo if logo.mode == "RGBA" else None)
@@ -991,6 +1030,26 @@ def _decor_personnage(ctx: Contexte, image: Image.Image, t: float, pieds: tuple,
     _plante(d, ctx, plante_x, sol_y, unite, t)
 
 
+def _decor_google(ctx: Contexte, image: Image.Image, t: float, pieds: tuple, unite: float, cote: int, horizontal: bool) -> None:
+    """Fond « illustration Google » : grand disque bleu pale, formes pastel qui flottent, et quatre points (bleu, rouge, jaune, vert) qui tournent autour du personnage."""
+    d = ImageDraw.Draw(image)
+    cx, cy = pieds[0], pieds[1] - int(unite * 460)
+    pousse = sortie_expo(t / 0.8)
+    rayon = unite * 470
+    d.ellipse((cx - rayon * pousse, cy - rayon * pousse, cx + rayon * pousse, cy + rayon * pousse), fill=(232, 240, 254))
+    for i, (fx, fy, fr, couleur) in enumerate(((-0.95, -0.55, 0.20, (252, 232, 230)), (0.9, -0.7, 0.16, (254, 247, 224)), (-0.85, 0.5, 0.14, (230, 244, 234)), (0.95, 0.45, 0.22, (252, 232, 230)))):
+        rr = rayon * fr * pousse
+        x, y = cx + fx * rayon + math.sin(t * 0.8 + i) * ctx.px(10), cy + fy * rayon + math.cos(t * 0.7 + i) * ctx.px(10)
+        d.ellipse((x - rr, y - rr, x + rr, y + rr), fill=couleur)
+    for i, couleur in enumerate(ctx.t["points"]):
+        angle = t * 0.6 + i * math.pi / 2
+        x, y = cx + rayon * 1.1 * pousse * math.cos(angle), cy + rayon * 0.95 * pousse * math.sin(angle)
+        pr = ctx.px(16)
+        d.ellipse((x - pr, y - pr, x + pr, y + pr), fill=couleur)
+    sol = pieds[1] - int(unite * 34)
+    d.line((cx - unite * 380, sol + 8, cx + unite * 380, sol + 8), fill=GOOGLE_BORD_CLAIR, width=max(3, ctx.px(5)))
+
+
 def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     """Un personnage anime (voir personnage.py) arrive, dit la phrase dans une bulle et joue l'action choisie, avec un objet a ses cotes."""
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
@@ -1005,14 +1064,14 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     marge = ctx.px(76)
     duree = sc.get("duree", 3.0)
     if horizontal:
-        hauteur_canevas = int(ctx.h * 0.78 * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
+        hauteur_canevas = int(ctx.h * 0.70 * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
         pieds = (int(ctx.l * (0.5 + cote * 0.24)), int(ctx.h * 0.89))
     else:
         visible = 0.50 if ctx.format == "vertical" else 0.56
         hauteur_canevas = int(ctx.h * visible * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
         pieds = (int(ctx.l * (0.5 + cote * 0.15)), int(ctx.h * (0.905 if ctx.format == "vertical" else 0.93)))
     unite = hauteur_canevas / personnage.HAUTEUR_REF
-    _decor_personnage(ctx, image, t, pieds, unite, cote, horizontal)
+    (_decor_google if ctx.google else _decor_personnage)(ctx, image, t, pieds, unite, cote, horizontal)
     # arrivee : le personnage saute depuis le bord de l'ecran, puis joue son action
     arrivee = sortie_rebond(t / 0.7)
     sortie_x = pieds[0] + cote * int(ctx.l * 0.55) * (1 - sortie_cubique(t / 0.6))
@@ -1020,9 +1079,11 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     t_action = max(0.0, t - 0.5)
     p = personnage.pose(action, t_action, parle, -cote)
     p["saut"] += max(0.0, math.sin(min(1.0, t / 0.7) * math.pi)) * 60 * (1 - borne((t - 0.7) / 0.1)) if t < 0.8 else 0
-    haut = ctx.t["accent"]
-    bas = melanger(ctx.t["accent"], (14, 18, 36), 0.80)
-    perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), ctx.t["accent"], _badge_personnage(ctx))
+    if ctx.google:                                                     # t-shirt de l'une des quatre couleurs Google selon le personnage, pantalon gris
+        haut, bas = personnage.GOOGLE_COULEURS[(int(sc.get("perso", 1)) - 1) % 4], (60, 64, 67)
+    else:
+        haut, bas = ctx.t["accent"], melanger(ctx.t["accent"], (14, 18, 36), 0.80)
+    perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), haut, _badge_personnage(ctx), ctx.google)
     reception = t - 0.66                                               # ecrasement a la reception du saut d'arrivee, puis retour souple
     ecrase = max(0.0, math.exp(-reception * 7) * math.sin(reception * 16)) if 0 <= reception < 0.7 else 0.0
     sx, sy = 1 + 0.07 * ecrase, 1 - 0.09 * ecrase
@@ -1032,7 +1093,7 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         perso.info["tete"], perso.info["main"] = (perso_info["tete"][0] * sx, perso_info["tete"][1] * sy), (perso_info["main"][0] * sx, perso_info["main"][1] * sy)
     ombre_rayon = int(unite * 190 * (1 - 0.35 * borne(p["saut"] / 80)))
     ombre = Image.new("RGBA", (ombre_rayon * 2, ombre_rayon // 2), (0, 0, 0, 0))
-    ImageDraw.Draw(ombre).ellipse((0, 0, ombre_rayon * 2 - 1, ombre_rayon // 2 - 1), fill=(0, 0, 0, 110))
+    ImageDraw.Draw(ombre).ellipse((0, 0, ombre_rayon * 2 - 1, ombre_rayon // 2 - 1), fill=(0, 0, 0, 34 if ctx.google else 110))
     coller(image, ombre, int(sortie_x - ombre_rayon), pieds[1] - ombre_rayon // 5, borne(t / 0.3))
     origine = (sortie_x - personnage.PIEDS[0] * unite * sx, pieds[1] - personnage.PIEDS[1] * unite * sy)
     coller(image, perso, int(origine[0]), int(origine[1]), borne(t / 0.15))
@@ -1043,7 +1104,7 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         pm = sortie_rebond((t - 0.9) / 0.4)
         if pm > 0:
             cote_main = int(unite * 300)
-            sprite = personnage.accessoire(objet, cote_main, ctx.t["accent"], ctx.t["accent2"], CREME, t)
+            sprite = personnage.accessoire(objet, cote_main, ctx.t["accent"], ctx.t["accent2"], (255, 255, 255) if ctx.google else CREME, t)
             sprite = sprite.rotate(-22 + 7 * math.sin(t * 3), resample=Image.BICUBIC, expand=True)
             s_ = max(0.05, pm)
             sprite = sprite.resize((max(1, int(sprite.size[0] * s_)), max(1, int(sprite.size[1] * s_))), Image.BILINEAR)
@@ -1053,7 +1114,7 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         taille = int(min(ctx.l, ctx.h) * (0.25 if not horizontal else 0.28))
         po = sortie_rebond((t - 1.0) / 0.55)
         if po > 0:
-            sprite = personnage.accessoire(objet, taille, ctx.t["accent"], ctx.t["accent2"], CREME, t)
+            sprite = personnage.accessoire(objet, taille, ctx.t["accent"], ctx.t["accent2"], (255, 255, 255) if ctx.google else CREME, t)
             if action == "idee":                                       # l'ampoule s'allume au-dessus de la tete
                 ox, oy = int(tete[0] + cote * unite * 150), int(tete[1] - unite * 330)
             elif horizontal:
@@ -1074,7 +1135,7 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
             y = tete[1] - unite * 120 + age * ctx.px(380 + (i % 5) * 60) - ctx.px(420) * (1 - borne(age / 0.5)) ** 2
             if y > ctx.h * 0.86:
                 continue
-            couleur = (ctx.t["accent"], ctx.t["accent2"], CREME)[i % 3]
+            couleur = ctx.t["points"][i % 4] if ctx.google else (ctx.t["accent"], ctx.t["accent2"], CREME)[i % 3]
             r = ctx.px(9 + (i % 3) * 3)
             d.rectangle((x - r, y - r / 2, x + r, y + r / 2), fill=couleur)
     if action == "reflechit":                                          # points d'interrogation
@@ -1113,12 +1174,12 @@ SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "e
 
 def habillage(ctx: Contexte, image: Image.Image, avancement: float, numero: int, total: int, sur_accent: bool = False) -> None:
     """Elements constants : nom en haut, barre de progression et compteur en bas (comme les slides)."""
-    couleur = ctx.t["sur_accent"] if sur_accent else (190, 180, 170)
+    couleur = ctx.t["sur_accent"] if sur_accent else ctx.t["texte3"]
     marge = ctx.px(76)
-    etiquette(ctx, image, f"× {ctx.marque} ×" if ctx.marque else "", marge, ctx.px(70), ctx.t["sur_accent"] if sur_accent else melanger(ctx.t["accent"], (255, 255, 255), 0.35), 30)
+    etiquette(ctx, image, f"× {ctx.marque} ×" if ctx.marque else "", marge, ctx.px(70), ctx.t["sur_accent"] if sur_accent else ctx.t["marque_hab"], 30)
     y = ctx.h - ctx.px(96)
     d = ImageDraw.Draw(image)
-    d.rounded_rectangle((marge, y, ctx.l - marge, y + 4), radius=2, fill=melanger(couleur, (0, 0, 0), 0.7))
+    d.rounded_rectangle((marge, y, ctx.l - marge, y + 4), radius=2, fill=(GOOGLE_BORD_CLAIR if ctx.google and not sur_accent else melanger(couleur, (0, 0, 0), 0.7)))
     d.rounded_rectangle((marge, y, marge + (ctx.l - 2 * marge) * borne(avancement), y + 4), radius=2, fill=couleur)
     compteur = image_texte(f"{numero} / {total}", NORMAL, ctx.px(24), couleur, False, 0.08)
     image.paste(compteur.convert("RGB"), (ctx.l - marge - compteur.size[0] + 10, y + ctx.px(16)), compteur.getchannel("A"))
@@ -1272,7 +1333,7 @@ def image_a(ctx: Contexte, scenes: list, positions: list, t: float) -> Image.Ima
 
 
 def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque: str = "", ville: str = "", progression=None, musique: str = None,
-           images: list = None, logo: Image.Image = None, bpm: float = None) -> float:
+           images: list = None, logo: Image.Image = None, bpm: float = None, style: str = "") -> float:
     """Rend la video MP4 (image par image vers ffmpeg, bruitages inclus). Renvoie sa duree en secondes."""
     if format_video not in FORMATS:
         raise ErreurMotion("Format inconnu.")
@@ -1281,7 +1342,7 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
         raise ErreurMotion("Le scenario ne contient aucune scene valide.")
     if bpm:
         scenes = caler_sur_tempo(scenes, bpm)
-    ctx = Contexte(format_video, charte, marque, ville, images, logo)
+    ctx = Contexte(format_video, charte, marque, ville, images, logo, style if style in STYLES else "")
     positions = minutage(scenes)
     duree = positions[-1][1]
     total_images = int(duree * FPS)
@@ -1374,7 +1435,7 @@ def telecharger_musique(url: str, dossier: str) -> str:
 
 
 def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
-             url_musique: str = "", bpm: float = None, archiver=None) -> str:
+             url_musique: str = "", bpm: float = None, archiver=None, style: str = "") -> str:
     """
     Lance le rendu en tache de fond (un seul a la fois : il occupe le processeur) et renvoie son identifiant. sources_images : [("google", url) ou
     ("import", identifiant)] dans l'ordre des numeros de photos ; source_logo : ("url", adresse) ou ("import", identifiant).
@@ -1411,7 +1472,7 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
                     musique = telecharger_musique(url_musique, dossier)
                 except (requests.RequestException, OSError):
                     musique = None                  # idem pour la musique
-            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm)
+            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm, style)
             if archiver:                       # archive automatique (hebergement + trace par client) : jamais bloquante pour la video elle-meme
                 try:
                     etat["archive"] = archiver(chemin, round(duree, 1))

@@ -3647,7 +3647,7 @@ CONSIGNES_MODELES = {
         "MODÈLE « PERSONNAGE ANIMÉ » : un petit personnage en illustration parle au spectateur dans des bulles de dialogue. Écris EXACTEMENT 5 scènes, dans cet ordre : "
         "1) hook : accroche (texte de 4 à 9 mots) ; 2), 3) et 4) personnage : texte = ce que dit le personnage, à la 1re personne du pluriel ou du singulier, comme l'entreprise parlerait "
         "(8 à 16 mots, une idée par bulle : le besoin du client, ce que l'entreprise fait, le bénéfice), action (une seule parmi : salut, explique, pointe, idee, celebre, reflechit), "
-        "accessoire (un seul parmi : aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier ; choisis celui qui illustre le métier) ; la 2e scène "
+        "accessoire (un seul parmi : aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier, epingle, etoiles, recherche, fiche, avis, carte ; choisis celui qui illustre le sujet) ; la 2e scène "
         "personnage commence par saluer (action salut), la dernière fête le résultat (action celebre) ; perso : 1, 2, 3 ou 4 (le personnage, le même dans les 3 scènes) ; "
         "5) cta : texte (3 à 6 mots), bouton, contact."
     ),
@@ -3660,8 +3660,16 @@ CONSIGNES_MODELES = {
 }
 
 
+CONSIGNE_STYLE_GOOGLE = (
+    "Style visuel GOOGLE (fond blanc, couleurs de Google, illustrations) : la vidéo explique à des chefs d'entreprise comment fonctionne la présence locale sur Google "
+    "(fiche d'établissement, avis, recherche locale, Google Maps). Ton pédagogique et factuel, aucune promesse de résultat, aucun chiffre qui ne figure pas dans les faits. "
+    "Pour les scènes personnage, privilégie ces objets : epingle (localisation), etoiles (note d'avis), recherche (barre de recherche), fiche (fiche d'établissement), "
+    "avis (avis client), carte (plan Maps).\n"
+)
+
+
 def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 20,
-                            nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre") -> dict:
+                            nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre", style: str = "") -> dict:
     """
     Scenario d'une video de motion design (sans tournage) pour un client, rendue par motion_video.py : accroche, revelation, 2 a 3 temps forts, chute.
     Renvoie {"titre", "legende", "scenes": [...]} ; les scenes sont nettoyees par motion_video.nettoyer_scenario. Les chiffres viennent
@@ -3690,6 +3698,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
            "et répartis les numéros pour que chaque photo serve.\n" if nb_photos else "Aucune photo disponible : n'utilise ni scène photo ni scène mosaique.\n")
         + ("Le logo du client sera affiché dans la scène marque.\n" if avec_logo else "")
         + f"Ton : {consigne_ton}.\n"
+        + (CONSIGNE_STYLE_GOOGLE if style == "google" else "")
         + (CONSIGNES_MODELES[modele] + "\n\n" if structure else f"Durée visée : environ {duree_cible} secondes, soit {nombre_scenes} scènes de 2,5 à 4 secondes.\n\n")
         + "Types de scènes disponibles (remplis uniquement les champs utiles à la scène, laisse les autres vides) :\n"
         "- hook : accroche d'ouverture. texte (4 à 9 mots), sous_texte (une phrase courte, facultative).\n"
@@ -3704,7 +3713,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "- avant_apres : curseur qui révèle la photo « après ». titre, photos (2 numéros : avant puis après), legende (une phrase).\n"
         "- realisation : une réalisation. kicker, titre, sous_texte (la commune), texte (description), photos (1 à 3 numéros).\n"
         "- personnage : un personnage animé qui parle dans une bulle (maximum 3 scènes de ce type, de préférence à la suite). texte (8 à 16 mots, ce qu'il dit), "
-        "action (salut, explique, pointe, idee, celebre ou reflechit), accessoire (aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier ou bouclier), "
+        "action (salut, explique, pointe, idee, celebre ou reflechit), accessoire (aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier, epingle, etoiles, recherche, fiche, avis ou carte), "
         "perso (1 à 4, le même numéro dans toutes les scènes personnage).\n\n"
         "Dans les champs texte, texte et titre uniquement : entoure UN mot clé de *astérisques* pour le surligner sur une pastille de couleur, et "
         "UN autre mot de _tirets bas_ pour le mettre en serif italique.\n\n"

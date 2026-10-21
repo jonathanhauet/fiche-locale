@@ -7971,7 +7971,8 @@ async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_
     try:
         resultat = await run_in_threadpool(
             claude_generation.generer_scenario_motion, nom, str(donnees.get("ville") or ""), str(donnees.get("brief") or ""), str(donnees.get("faits") or ""),
-            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, nb_photos, bool(donnees.get("avec_logo")), modele)
+            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, nb_photos, bool(donnees.get("avec_logo")), modele,
+            **({"style": "google"} if donnees.get("style") == "google" else {}))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible d'écrire le scénario : {erreur}"}, status_code=500)
     return JSONResponse(resultat)
@@ -8336,7 +8337,7 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
         id_client = 0
     titre_archive = " ".join(str(donnees.get("titre") or donnees.get("nom") or "Vidéo motion design").split())[:150]
     meta_archive = {"legende": str(donnees.get("legende") or "")[:3000], "scenes": scenario["scenes"][:12], "couleurs": [charte["principale"], charte["secondaire"]],
-                    "nom": str(donnees.get("nom") or "")[:80], "ville": str(donnees.get("ville") or "")[:60], "source": "motion_design"}
+                    "nom": str(donnees.get("nom") or "")[:80], "ville": str(donnees.get("ville") or "")[:60], "source": "motion_design", "style": "google" if donnees.get("style") == "google" else ""}
 
     def archiver(chemin_video: str, duree_video: float) -> dict:
         with open(chemin_video, "rb") as fichier:
@@ -8352,7 +8353,7 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
 
     try:
         identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60],
-                                            sources_images, source_logo, url_musique, bpm, archiver)
+                                            sources_images, source_logo, url_musique, bpm, archiver, "google" if donnees.get("style") == "google" else "")
     except motion_video.ErreurMotion as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=409)
     return JSONResponse({"id": identifiant})
