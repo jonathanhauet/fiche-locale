@@ -1153,7 +1153,7 @@ def telecharger_musique(url: str, dossier: str) -> str:
 
 
 def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
-             url_musique: str = "", bpm: float = None) -> str:
+             url_musique: str = "", bpm: float = None, archiver=None) -> str:
     """
     Lance le rendu en tache de fond (un seul a la fois : il occupe le processeur) et renvoie son identifiant. sources_images : [("google", url) ou
     ("import", identifiant)] dans l'ordre des numeros de photos ; source_logo : ("url", adresse) ou ("import", identifiant).
@@ -1191,6 +1191,11 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
                 except (requests.RequestException, OSError):
                     musique = None                  # idem pour la musique
             duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm)
+            if archiver:                       # archive automatique (hebergement + trace par client) : jamais bloquante pour la video elle-meme
+                try:
+                    etat["archive"] = archiver(chemin, round(duree, 1))
+                except Exception as erreur_archive:
+                    etat["archive_erreur"] = str(erreur_archive)[:200]
             etat.update(etat="termine", chemin=chemin, duree=round(duree, 1), progression=1.0)
         except Exception as erreur:
             etat.update(etat="erreur", erreur=str(erreur) or erreur.__class__.__name__)
@@ -1208,6 +1213,9 @@ def heberger(identifiant: str, heberger_fichier) -> dict:
     if not etat or etat["etat"] != "termine" or not os.path.exists(etat["chemin"]):
         raise ErreurMotion("La video n'est pas prete (ou n'est plus disponible) : regenerez-la.")
     hebergement = etat.setdefault("hebergement", {"etat": "absent", "url": "", "nom_distant": "", "erreur": ""})
+    archive = etat.get("archive")
+    if archive and archive.get("url") and hebergement["etat"] in ("absent", "erreur"):
+        hebergement.update(etat="pret", url=archive["url"], nom_distant=archive.get("nom_distant", ""), erreur="")      # deja hebergee par l'archive : pas de second envoi
     if hebergement["etat"] in ("absent", "erreur"):
         hebergement.update(etat="en_cours", erreur="")
         chemin_video = etat["chemin"]

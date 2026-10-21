@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% set page_actuelle = "creations" %}
+{% block titre %}Créations par client — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+
+<div class="barre-titre">
+  <h1>Créations par client</h1>
+</div>
+
+<p class="texte-vide">
+  Tout ce que vous créez est gardé ici automatiquement : vidéos (motion design, montages, vidéos IA), visuels et carrousels, hébergés sur votre
+  hébergement OVH. Retrouvez, téléchargez ou republiez en un clic. Les scripts vidéo sont listés en bas.
+</p>
+
+<form method="get" class="ligne-champs cr-filtres">
+  <label for="cr-client">Client</label>
+  <select id="cr-client" name="client_id" onchange="this.form.submit()">
+    <option value="">Tous les clients</option>
+    {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+  </select>
+  <label for="cr-genre">Type</label>
+  <select id="cr-genre" name="genre" onchange="this.form.submit()">
+    <option value="">Tout</option>
+    {% for cle, libelle in genres.items() %}<option value="{{ cle }}" {% if genre == cle %}selected{% endif %}>{{ libelle }}s</option>{% endfor %}
+    <option value="script" {% if genre == "script" %}selected{% endif %}>Scripts vidéo</option>
+  </select>
+</form>
+
+{% if elements %}
+<div class="cr-grille">
+  {% for e in elements %}
+  <div class="cr-carte" data-id="{{ e.id }}">
+    <div class="cr-media">
+      {% if e.genre == "video" %}
+        <video src="{{ e.urls[0] }}" controls preload="metadata" playsinline></video>
+      {% else %}
+        <div class="cr-images">{% for u in e.urls[:4] %}<img src="{{ u }}" loading="lazy" alt="">{% endfor %}</div>
+        {% if e.urls|length > 4 %}<span class="cr-plus">+{{ e.urls|length - 4 }}</span>{% endif %}
+      {% endif %}
+    </div>
+    <div class="cr-corps">
+      <b>{{ e.titre }}</b>
+      <span class="texte-discret">{{ e.genre_libelle }}{% if e.format %} · {{ e.format }}{% endif %}{% if e.duree %} · {{ e.duree|round(0)|int }} s{% endif %} · {{ e.date }}</span>
+      <span class="texte-discret">{{ e.client_nom }}</span>
+      {% if not e.client_id %}
+      <div class="cr-attribuer">
+        <select class="cr-choix-client">{% for c in clients %}<option value="{{ c.id }}">{{ c.nom }}</option>{% endfor %}</select>
+        <button type="button" class="bouton-secondaire bouton-mini cr-attribuer-bouton">Attribuer</button>
+      </div>
+      {% endif %}
+      <div class="cr-actions">
+        <a class="bouton-secondaire bouton-mini" href="{{ e.urls[0] }}" target="_blank" rel="noopener" download>⬇ Télécharger{% if e.urls|length > 1 %} (1re){% endif %}</a>
+        <button type="button" class="bouton-secondaire bouton-mini cr-republier">📤 Republier</button>
+        <button type="button" class="bouton-secondaire bouton-mini cr-supprimer">🗑 Supprimer</button>
+      </div>
+      <p class="texte-discret cr-statut" hidden></p>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% elif genre != "script" %}
+<p class="texte-vide">Aucune création pour ces filtres. Les vidéos et visuels que vous créez à partir de maintenant apparaîtront ici.</p>
+{% endif %}
+
+{% if scripts %}
+<h2>Scripts vidéo</h2>
+<p class="texte-discret">Les scripts sont ceux de votre page « Scripts vidéo (IA) ».</p>
+{% for sc in scripts %}
+<details class="cr-script">
+  <summary><b>{{ sc.sujet }}</b> <span class="texte-discret">{{ sc.cree_le.strftime("%d/%m/%Y") if sc.cree_le else "" }}</span></summary>
+  <textarea rows="10" readonly>{{ sc.script }}</textarea>
+  <div class="ligne-champs">
+    <button type="button" class="bouton-secondaire bouton-mini cr-copier">📋 Copier</button>
+    <form method="post" action="/scripts-video/{{ sc.id }}/supprimer" onsubmit="return confirm('Supprimer ce script ?')" style="display:inline"><button class="bouton-secondaire bouton-mini">🗑 Supprimer</button></form>
+  </div>
+</details>
+{% endfor %}
+{% endif %}
+
+<style>
+  .cr-filtres { align-items: center; gap: .6rem; }
+  .cr-filtres label { margin: 0; }
+  .cr-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin: 1rem 0; }
+  .cr-carte { border: 1px solid var(--bordure, #d9dce3); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; background: var(--fond-carte, transparent); }
+  .cr-media { position: relative; background: #0002; }
+  .cr-media video { width: 100%; max-height: 360px; display: block; background: #000; }
+  .cr-images { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; }
+  .cr-images img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+  .cr-images img:only-child { grid-column: 1 / -1; aspect-ratio: auto; max-height: 360px; }
+  .cr-plus { position: absolute; right: 6px; bottom: 6px; background: #000a; color: #fff; border-radius: 99px; padding: 0 .5rem; font-size: .8rem; }
+  .cr-corps { padding: .7rem .9rem; display: flex; flex-direction: column; gap: .3rem; }
+  .cr-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .3rem; }
+  .cr-attribuer { display: flex; gap: .4rem; }
+  .cr-script { border: 1px solid var(--bordure, #d9dce3); border-radius: 10px; padding: .5rem .8rem; margin: .5rem 0; }
+  .cr-script textarea { width: 100%; margin: .5rem 0; }
+</style>
+
+<script>
+(function () {
+  const post = async (chemin, corps) => { const r = await fetch(chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps || {}) }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.erreur || "Échec."); return d; };
+  document.querySelectorAll(".cr-carte").forEach((carte) => {
+    const id = carte.dataset.id, statut = carte.querySelector(".cr-statut");
+    const dire = (t) => { statut.hidden = !t; statut.textContent = t || ""; };
+    carte.querySelector(".cr-supprimer").addEventListener("click", async () => {
+      if (!confirm("Supprimer cette création et son fichier sur l'hébergement ? Cette action est définitive.")) return;
+      try { await post("/creations/" + id + "/supprimer"); carte.remove(); } catch (e) { dire(e.message); }
+    });
+    carte.querySelector(".cr-republier").addEventListener("click", async () => {
+      const choix = carte.querySelector(".cr-choix-client");
+      dire("Ouverture du composeur...");
+      try { const d = await post("/creations/" + id + "/composeur", choix ? { client_id: choix.value } : {}); window.location.href = d.url; } catch (e) { dire(e.message); }
+    });
+    const attribuer = carte.querySelector(".cr-attribuer-bouton");
+    if (attribuer) attribuer.addEventListener("click", async () => {
+      try { const d = await post("/creations/" + id + "/client", { client_id: carte.querySelector(".cr-choix-client").value }); dire("Attribuée à " + d.client + "."); carte.querySelector(".cr-attribuer").remove(); } catch (e) { dire(e.message); }
+    });
+  });
+  document.querySelectorAll(".cr-copier").forEach((b) => b.addEventListener("click", async () => {
+    const t = b.closest("details").querySelector("textarea"); try { await navigator.clipboard.writeText(t.value); b.textContent = "✅ Copié"; } catch (e) { t.select(); }
+  }));
+})();
+</script>
+{% endblock %}
