@@ -3594,7 +3594,7 @@ def contenu_modele_visuel(modele: str, texte_base: str, contexte: str, nb: int) 
 
 # --------------------------------------------------------------------------- video motion design (voir motion_video.py)
 
-_CHAMPS_SCENE_MOTION = ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact")
+_CHAMPS_SCENE_MOTION = ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire")
 SCHEMA_SCENARIO_MOTION = {
     "type": "object",
     "properties": {
@@ -3605,14 +3605,15 @@ SCHEMA_SCENARIO_MOTION = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation"]},
+                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage"]},
                     "duree": {"type": "number"},
+                    "perso": {"type": "integer"},
                     **{champ: {"type": "string"} for champ in _CHAMPS_SCENE_MOTION},
                     "items": {"type": "array", "items": {"type": "string"}},
                     "photo": {"type": "integer"},
                     "photos": {"type": "array", "items": {"type": "integer"}},
                 },
-                "required": ["type", "duree", *_CHAMPS_SCENE_MOTION, "items", "photo", "photos"],
+                "required": ["type", "duree", "perso", *_CHAMPS_SCENE_MOTION, "items", "photo", "photos"],
                 "additionalProperties": False,
             },
         },
@@ -3634,12 +3635,21 @@ TONS_MOTION = {
 MODELES_MOTION = {
     "avant_apres": {"scenes": ("hook", "avant_apres", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 2},
     "realisation": {"scenes": ("hook", "realisation", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 1},
+    "personnage": {"scenes": ("hook", "personnage", "personnage", "personnage", "cta"), "durees": (2.6, 4.2, 4.2, 4.4, 3.2), "photos_min": 0},
 }
 CONSIGNES_MODELES = {
     "avant_apres": (
         "MODÈLE « AVANT / APRÈS » : écris EXACTEMENT 3 scènes, dans cet ordre : 1) hook : accroche qui annonce le chantier et la commune (texte de 4 à 9 mots, sous_texte facultatif) ; "
         "2) avant_apres : titre (3 à 8 mots, du type « Avant / Après : une toiture *nettoyée* à Pessac »), legende (une phrase sur ce qui a été fait, sans promesse non fournie) ; "
         "3) cta : texte (3 à 6 mots), bouton, contact. Les photos « avant » puis « après » sont choisies par l'utilisateur : ne mets aucun numéro de photo et ne décris pas les images."
+    ),
+    "personnage": (
+        "MODÈLE « PERSONNAGE ANIMÉ » : un petit personnage en illustration parle au spectateur dans des bulles de dialogue. Écris EXACTEMENT 5 scènes, dans cet ordre : "
+        "1) hook : accroche (texte de 4 à 9 mots) ; 2), 3) et 4) personnage : texte = ce que dit le personnage, à la 1re personne du pluriel ou du singulier, comme l'entreprise parlerait "
+        "(8 à 16 mots, une idée par bulle : le besoin du client, ce que l'entreprise fait, le bénéfice), action (une seule parmi : salut, explique, pointe, idee, celebre, reflechit), "
+        "accessoire (un seul parmi : aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier ; choisis celui qui illustre le métier) ; la 2e scène "
+        "personnage commence par saluer (action salut), la dernière fête le résultat (action celebre) ; perso : 1, 2, 3 ou 4 (le personnage, le même dans les 3 scènes) ; "
+        "5) cta : texte (3 à 6 mots), bouton, contact."
     ),
     "realisation": (
         "MODÈLE « RÉALISATION DE LA SEMAINE » : écris EXACTEMENT 3 scènes, dans cet ordre : 1) hook : accroche qui présente la réalisation (texte de 4 à 9 mots) ; "
@@ -3692,7 +3702,10 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "- photo : une photo du client en plein cadre. photo (son numéro), texte (4 à 9 mots posés sur l'image), sous_texte (facultatif).\n"
         "- mosaique : trois photos en cartes. titre (3 à 7 mots), photos (3 numéros).\n"
         "- avant_apres : curseur qui révèle la photo « après ». titre, photos (2 numéros : avant puis après), legende (une phrase).\n"
-        "- realisation : une réalisation. kicker, titre, sous_texte (la commune), texte (description), photos (1 à 3 numéros).\n\n"
+        "- realisation : une réalisation. kicker, titre, sous_texte (la commune), texte (description), photos (1 à 3 numéros).\n"
+        "- personnage : un personnage animé qui parle dans une bulle (maximum 3 scènes de ce type, de préférence à la suite). texte (8 à 16 mots, ce qu'il dit), "
+        "action (salut, explique, pointe, idee, celebre ou reflechit), accessoire (aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier ou bouclier), "
+        "perso (1 à 4, le même numéro dans toutes les scènes personnage).\n\n"
         "Dans les champs texte, texte et titre uniquement : entoure UN mot clé de *astérisques* pour le surligner sur une pastille de couleur, et "
         "UN autre mot de _tirets bas_ pour le mettre en serif italique.\n\n"
         "Trame obligatoire : une accroche (hook) qui arrête le pouce, la révélation (marque), 2 ou 3 temps forts (chiffre, liste, etape, citation), "
@@ -3722,6 +3735,8 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
             retenues.append(trouvee)
         for scene, duree_scene in zip(retenues, structure["durees"]):
             scene["duree"] = duree_scene
+            if scene["type"] == "personnage":
+                scene["perso"] = 1
             if scene["type"] == "avant_apres":
                 scene["photos"] = [1, 2]
             elif scene["type"] == "realisation":

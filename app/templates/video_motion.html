@@ -27,6 +27,7 @@
     <option value="libre">Libre : l'IA compose le scénario</option>
     <option value="avant_apres">Avant / Après : un curseur révèle le résultat (2 photos)</option>
     <option value="realisation">Réalisation de la semaine : photos, commune et description</option>
+    <option value="personnage">Personnage animé : un personnage explique dans des bulles</option>
   </select>
   <p id="vm-modele-aide" class="texte-discret" hidden></p>
 
@@ -193,7 +194,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const LIBELLES = {
-    hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
+    hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", personnage: "Personnage animé", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
   };
   const CHAMPS = {
     hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"]],
@@ -202,11 +203,17 @@
     avant_apres: [["titre", "Titre"], ["photos", "Photos : n° avant, n° après (2 numéros séparés par une virgule)"], ["legende", "Légende"]],
     realisation: [["kicker", "Étiquette"], ["titre", "Titre"], ["sous_texte", "Commune"], ["texte", "Description"], ["photos", "Photos (1 à 3 numéros séparés par des virgules)"]],
     mosaique: [["titre", "Titre"], ["photos", "Photos (3 numéros séparés par des virgules)"]],
+    personnage: [["texte", "Ce que dit le personnage"], ["action", "Ce qu'il fait"], ["accessoire", "Objet à côté de lui"], ["perso", "Personnage"]],
     chiffre: [["valeur", "Valeur"], ["suffixe", "Suffixe (/5, ans, %...)"], ["libelle", "Libellé"], ["legende", "Précision"]],
     liste: [["titre", "Titre"], ["items", "Éléments (un par ligne)"]],
     etape: [["numero", "Numéro"], ["kicker", "Mot-clé court"], ["titre", "Titre"], ["texte", "Texte"]],
     citation: [["texte", "Avis"], ["auteur", "Auteur"]],
     cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"]],
+  };
+  const CHOIX = {
+    action: [["explique", "Explique (les mains parlent)"], ["salut", "Salue"], ["pointe", "Montre le texte du doigt"], ["idee", "A une idée"], ["celebre", "Fête le résultat"], ["reflechit", "Réfléchit"]],
+    accessoire: [["aucun", "Aucun"], ["ampoule", "Ampoule"], ["cle", "Clé"], ["maison", "Maison"], ["voiture", "Voiture"], ["coeur", "Cœur"], ["etoile", "Étoile"], ["telephone", "Téléphone"], ["goutte", "Goutte d'eau"], ["calendrier", "Calendrier"], ["bouclier", "Bouclier"]],
+    perso: [["1", "Personnage 1 (cheveux courts)"], ["2", "Personnage 2 (chignon)"], ["3", "Personnage 3 (casquette)"], ["4", "Personnage 4 (cheveux longs)"]],
   };
   const CHARTE_DEFAUT = { principale: "{{ charte.principale }}", secondaire: "{{ charte.secondaire }}" };
   // Une « série » est une liste de vidéos (une seule quand on écrit un scénario seul) ; l'onglet courant est celui qu'on relit et qu'on publie.
@@ -427,6 +434,15 @@
       entete.appendChild(nom); entete.appendChild(bouton); carte.appendChild(entete);
       (CHAMPS[sc.type] || []).forEach(([cle, libelle]) => {
         const label = document.createElement("label"); label.textContent = libelle; carte.appendChild(label);
+        if (CHOIX[cle]) {
+          const liste = document.createElement("select");
+          CHOIX[cle].forEach(([valeur, texte]) => { const o = document.createElement("option"); o.value = valeur; o.textContent = texte; liste.appendChild(o); });
+          liste.value = String(sc[cle] || CHOIX[cle][0][0]); if (liste.value !== String(sc[cle] || CHOIX[cle][0][0])) liste.value = CHOIX[cle][0][0];
+          sc[cle] = liste.value;
+          liste.addEventListener("change", () => { sc[cle] = liste.value; });
+          carte.appendChild(liste);
+          return;
+        }
         const multi = cle === "items" || cle === "contact";
         const champ = document.createElement(multi ? "textarea" : "input"); if (multi) champ.rows = 3; else champ.type = "text";
         champ.value = cle === "items" ? (sc.items || []).join("\n") : cle === "photos" ? (sc.photos || []).join(", ") : (sc[cle] || "");
@@ -446,6 +462,7 @@
   const AIDES_MODELES = {
     avant_apres: "Choisissez 2 photos dans l'ordre : la 1re sera l'avant, la 2e l'après. Décrivez le chantier et la commune dans « Ce que la vidéo doit faire passer ».",
     realisation: "Choisissez 1 à 3 photos du chantier. Indiquez ce qui a été fait et la commune dans « Ce que la vidéo doit faire passer ».",
+    personnage: "Un petit personnage en illustration salue, explique et fête le résultat dans des bulles de dialogue, aux couleurs du client. Les photos sont facultatives. Décrivez le métier et ce qu'il faut dire dans « Ce que la vidéo doit faire passer ».",
   };
   $("vm-modele").addEventListener("change", () => { const aide = AIDES_MODELES[$("vm-modele").value]; $("vm-modele-aide").hidden = !aide; $("vm-modele-aide").textContent = aide || ""; });
 

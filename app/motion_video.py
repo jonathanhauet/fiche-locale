@@ -23,14 +23,14 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from . import sons
+from . import personnage, sons
 from .montage_video import FFMPEG
 
 DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "polices")
 FPS = 30
 FORMATS = {"vertical": (1080, 1920), "carre": (1080, 1080), "horizontal": (1920, 1080)}
 DUREE_TRANSITION = 0.45
-TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation")
+TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage")
 HOTES_IMAGES = (".googleusercontent.com", ".ggpht.com", ".google.com")
 TAILLE_MAX_IMAGE = 8 * 1024 * 1024
 GRAS, NORMAL, SERIF = "Poppins-Bold.ttf", "Poppins-Regular.ttf", "DMSerifDisplay-Regular.ttf"
@@ -900,7 +900,139 @@ def scene_realisation(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     return image
 
 
-SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique, "avant_apres": scene_avant_apres, "realisation": scene_realisation}
+def _bulle(ctx: Contexte, image: Image.Image, texte_img: Image.Image, x: int, y: int, pointe: tuple, p: float, t_texte: float) -> None:
+    """Bulle de dialogue (fond creme, texte fonce) qui apparait en rebondissant, avec sa pointe tournee vers le personnage."""
+    pad = ctx.px(42)
+    l, h = texte_img.size[0] + 2 * pad, texte_img.size[1] + 2 * pad
+    marge = ctx.px(60)
+    calque = Image.new("RGBA", (l + 2 * marge, h + 2 * marge), (0, 0, 0, 0))
+    d = ImageDraw.Draw(calque)
+    ombre = Image.new("RGBA", calque.size, (0, 0, 0, 0))
+    ImageDraw.Draw(ombre).rounded_rectangle((marge, marge + ctx.px(10), marge + l, marge + h + ctx.px(10)), radius=ctx.px(48), fill=(0, 0, 0, 90))
+    calque = Image.alpha_composite(calque, ombre.filter(ImageFilter.GaussianBlur(ctx.px(14))))
+    d = ImageDraw.Draw(calque)
+    d.rounded_rectangle((marge, marge, marge + l, marge + h), radius=ctx.px(48), fill=CREME + (255,))
+    px_, py_ = pointe[0] - x + marge, pointe[1] - y + marge
+    cx = max(marge + ctx.px(70), min(px_, marge + l - ctx.px(70)))
+    if px_ < marge or px_ > marge + l:                                 # personnage a cote de la bulle : pointe sur le cote
+        cy = max(marge + h * 0.3, min(py_, marge + h * 0.7))
+        bord = marge + 4 if px_ < marge else marge + l - 4
+        d.polygon([(bord, cy - ctx.px(30)), (bord, cy + ctx.px(30)), (px_, py_)], fill=CREME + (255,))
+    elif py_ > marge + h / 2:                                            # pointe vers le bas
+        d.polygon([(cx - ctx.px(34), marge + h - 4), (cx + ctx.px(34), marge + h - 4), (px_, py_)], fill=CREME + (255,))
+    else:                                                              # pointe vers le haut
+        d.polygon([(cx - ctx.px(34), marge + 4), (cx + ctx.px(34), marge + 4), (px_, py_)], fill=CREME + (255,))
+    calque.paste(texte_img, (marge + pad - 10, marge + pad - 10), texte_img)
+    if p <= 0:
+        return
+    echelle = max(0.05, p)
+    cible = (pointe[0] - x + marge, pointe[1] - y + marge)
+    reduit = calque.resize((max(1, int(calque.size[0] * echelle)), max(1, int(calque.size[1] * echelle))), Image.BILINEAR)
+    coller(image, reduit, x - marge + cible[0] * (1 - echelle), y - marge + cible[1] * (1 - echelle), borne(p * 2.5))
+
+
+def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Un personnage anime (voir personnage.py) arrive, dit la phrase dans une bulle et joue l'action choisie, avec un objet a ses cotes."""
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    d = ImageDraw.Draw(image)
+    action = sc.get("action") if sc.get("action") in personnage.ACTIONS else "explique"
+    objet = sc.get("accessoire") if sc.get("accessoire") in personnage.ACCESSOIRES else "aucun"
+    if objet == "aucun" and action == "idee":
+        objet = "ampoule"
+    cote = -1 if sc.get("cote") == -1 else 1                          # cote de l'ecran ou se tient le personnage
+    look = personnage.LOOKS[(int(sc.get("perso", 1)) - 1) % personnage.NOMBRE_LOOKS]
+    horizontal = ctx.format == "horizontal"
+    marge = ctx.px(76)
+    duree = sc.get("duree", 3.0)
+    if horizontal:
+        hauteur_canevas = int(ctx.h * 0.66 * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
+        pieds = (int(ctx.l * (0.5 + cote * 0.24)), int(ctx.h * 0.89))
+    else:
+        visible = 0.50 if ctx.format == "vertical" else 0.56
+        hauteur_canevas = int(ctx.h * visible * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
+        pieds = (int(ctx.l * (0.5 + cote * 0.15)), int(ctx.h * (0.905 if ctx.format == "vertical" else 0.93)))
+    unite = hauteur_canevas / personnage.HAUTEUR_REF
+    # grand disque de couleur derriere le personnage, qui grandit a son arrivee
+    rayon_disque = int(unite * 470) * sortie_expo(t / 0.8)
+    cx_disque, cy_disque = pieds[0], pieds[1] - int(unite * 430)
+    disque = Image.new("RGBA", (ctx.l, ctx.h), (0, 0, 0, 0))
+    ImageDraw.Draw(disque).ellipse((cx_disque - rayon_disque, cy_disque - rayon_disque, cx_disque + rayon_disque, cy_disque + rayon_disque), fill=melanger(ctx.t["fond"], ctx.t["accent"], 0.38) + (255,))
+    image.paste(disque.convert("RGB"), (0, 0), disque.getchannel("A"))
+    # arrivee : le personnage saute depuis le bord de l'ecran, puis joue son action
+    arrivee = sortie_rebond(t / 0.7)
+    sortie_x = pieds[0] + cote * int(ctx.l * 0.55) * (1 - sortie_cubique(t / 0.6))
+    parle = 0.7 < t < duree - 0.35
+    t_action = max(0.0, t - 0.5)
+    p = personnage.pose(action, t_action, parle, -cote)
+    p["saut"] += max(0.0, math.sin(min(1.0, t / 0.7) * math.pi)) * 60 * (1 - borne((t - 0.7) / 0.1)) if t < 0.8 else 0
+    haut = ctx.t["accent"]
+    bas = melanger(ctx.t["accent"], (14, 18, 36), 0.80)
+    perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), ctx.t["accent"])
+    ombre_rayon = int(unite * 190 * (1 - 0.35 * borne(p["saut"] / 80)))
+    ombre = Image.new("RGBA", (ombre_rayon * 2, ombre_rayon // 2), (0, 0, 0, 0))
+    ImageDraw.Draw(ombre).ellipse((0, 0, ombre_rayon * 2 - 1, ombre_rayon // 2 - 1), fill=(0, 0, 0, 110))
+    coller(image, ombre, int(sortie_x - ombre_rayon), pieds[1] - ombre_rayon // 5, borne(t / 0.3))
+    coller(image, perso, int(sortie_x - personnage.PIEDS[0] * unite), int(pieds[1] - personnage.PIEDS[1] * unite), borne(t / 0.15))
+    tete = (sortie_x - personnage.PIEDS[0] * unite + perso.info["tete"][0], pieds[1] - personnage.PIEDS[1] * unite + perso.info["tete"][1])
+    # objet pose a l'autre bout de l'ecran, qui rebondit a son apparition puis flotte
+    if objet != "aucun":
+        taille = int(min(ctx.l, ctx.h) * (0.25 if not horizontal else 0.28))
+        po = sortie_rebond((t - 1.0) / 0.55)
+        if po > 0:
+            sprite = personnage.accessoire(objet, taille, ctx.t["accent"], ctx.t["accent2"], CREME, t)
+            if action == "idee":                                       # l'ampoule s'allume au-dessus de la tete
+                ox, oy = int(tete[0] + cote * unite * 150), int(tete[1] - unite * 330)
+            elif horizontal:
+                ox, oy = int(ctx.l * (0.5 - cote * 0.12)) - taille // 2, int(ctx.h * 0.14)
+            else:
+                ox, oy = int(ctx.l * (0.5 - cote * 0.24)) - taille // 2, int(pieds[1] - unite * 560)
+            oy += int(math.sin(t * 2.2) * ctx.px(10))
+            s_ = max(0.05, po)
+            sprite = sprite.resize((max(1, int(taille * s_)), max(1, int(taille * s_))), Image.BILINEAR)
+            coller(image, sprite, ox + (taille - sprite.size[0]) // 2, oy + (taille - sprite.size[1]) // 2, borne(po * 2))
+    if action == "celebre":                                            # confettis
+        for i in range(26):
+            depart = 0.6 + (i % 9) * 0.05
+            age = t - depart
+            if age <= 0:
+                continue
+            x = tete[0] + math.sin(i * 12.9898) * unite * 240 + math.sin(age * 3 + i) * ctx.px(24)
+            y = tete[1] - unite * 120 + age * ctx.px(380 + (i % 5) * 60) - ctx.px(420) * (1 - borne(age / 0.5)) ** 2
+            if y > ctx.h * 0.86:
+                continue
+            couleur = (ctx.t["accent"], ctx.t["accent2"], CREME)[i % 3]
+            r = ctx.px(9 + (i % 3) * 3)
+            d.rectangle((x - r, y - r / 2, x + r, y + r / 2), fill=couleur)
+    if action == "reflechit":                                          # points d'interrogation
+        for i in range(2):
+            pq = sortie_rebond((t - 1.0 - 0.4 * i) / 0.5)
+            if pq > 0:
+                img = image_texte("?", SERIF, int(ctx.px(150 - 40 * i) * max(0.05, pq)), ctx.t["accent_texte"], True)
+                coller(image, img, int(tete[0] + cote * -1 * unite * (130 + 120 * i)) - img.size[0] // 2, int(tete[1] - unite * (170 + 60 * i)), borne(pq * 2))
+    # bulle de dialogue : au-dessus du personnage (vertical, carre) ou de l'autre cote (horizontal)
+    texte = sc.get("texte", "")
+    if texte:
+        if horizontal:
+            largeur_max = ctx.l * 0.40
+            hauteur_max = ctx.h * 0.46
+            img_texte = bloc_texte(texte, GRAS, ctx.px(64), largeur_max, hauteur_max, (28, 24, 30), False, True, 1.05)
+            bx = int(ctx.l * (0.5 - cote * 0.24) - img_texte.size[0] / 2 - ctx.px(42))
+            by = int(ctx.h * 0.52 - img_texte.size[1] / 2)
+            pointe = (int(tete[0] - cote * unite * 120), int(tete[1] - unite * 30))
+            bx = max(ctx.px(40), min(bx, ctx.l - ctx.px(40) - img_texte.size[0] - 2 * ctx.px(42)))
+        else:
+            largeur_max = ctx.l - 2 * marge - 2 * ctx.px(42)
+            ecart = 290 if action in ("salut", "idee", "celebre") else 150              # bras leves : la bulle monte pour ne pas cacher les mains
+            hauteur_max = tete[1] - unite * ecart - ctx.h * 0.13 - 2 * ctx.px(42)
+            img_texte = bloc_texte(texte, GRAS, ctx.px(74), largeur_max, max(ctx.px(180), hauteur_max), (28, 24, 30), False, True, 1.05)
+            bx = int((ctx.l - img_texte.size[0]) / 2 - ctx.px(42))
+            by = int(max(ctx.h * 0.12, tete[1] - unite * ecart - img_texte.size[1] - 2 * ctx.px(42)))
+            pointe = (int(tete[0]), int(tete[1] - unite * 138))
+        _bulle(ctx, image, img_texte, bx, by, pointe, sortie_rebond((t - 0.45) / 0.5), 0.9)
+    return image
+
+
+SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique, "avant_apres": scene_avant_apres, "realisation": scene_realisation, "personnage": scene_personnage}
 
 
 # --------------------------------------------------------------------------- habillage, transitions, assemblage
@@ -939,7 +1071,7 @@ def nettoyer_scenario(scenario: dict) -> list:
         if not isinstance(brut, dict) or brut.get("type") not in TYPES_SCENES:
             continue
         scene = {"type": brut["type"], "duree": max(1.8, min(float(brut.get("duree") or 3.0), 6.0))}
-        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact"):
+        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire"):
             if brut.get(cle) is not None:
                 valeur = str(brut[cle]).replace("—", "-").strip()[:180]
                 scene[cle] = valeur if cle in ("texte", "titre", "sous_texte") else sans_balises(valeur)          # *surlignage* et _serif_ : seulement ou ils sont geres
@@ -954,6 +1086,17 @@ def nettoyer_scenario(scenario: dict) -> list:
             scene["items"] = [sans_balises(str(x).replace("—", "-")).strip()[:80] for x in brut["items"] if str(x).strip()][:5]
         scenes.append(scene)
     scenes = scenes[:12]
+    perso_commun = next((int(b["perso"]) for b in (scenario or {}).get("scenes", []) if isinstance(b, dict) and b.get("type") == "personnage" and str(b.get("perso", "")).strip() in ("1", "2", "3", "4")), 1)
+    rang_perso = 0
+    for scene in scenes:
+        if scene["type"] == "personnage":
+            scene["action"] = scene.get("action", "").lower() if scene.get("action", "").lower() in personnage.ACTIONS else "explique"
+            scene["accessoire"] = scene.get("accessoire", "").lower() if scene.get("accessoire", "").lower() in personnage.ACCESSOIRES else "aucun"
+            scene["perso"], scene["cote"] = perso_commun, 1 if rang_perso % 2 == 0 else -1          # meme personnage dans toute la video, qui change de cote a chaque scene
+            rang_perso += 1
+        else:
+            scene.pop("action", None)
+            scene.pop("accessoire", None)
     etapes = [sc for sc in scenes if sc["type"] == "etape"]
     if len(etapes) == 1:                  # une etape « 01 » sans « 02 » n'a pas de sens : elle devient une scene d'accroche
         unique = etapes[0]
@@ -1006,6 +1149,10 @@ def evenements_sons(scenes: list) -> list:
             evenements.append((debut + 1.05, "ding"))
         if scene["type"] == "photo":
             evenements.append((debut + 0.3, "pop"))
+        if scene["type"] == "personnage":
+            evenements += [(debut + 0.5, "pop"), (debut + 1.05, "pop")]
+            if scene.get("action") == "celebre":
+                evenements.append((debut + 0.8, "ding"))
         if scene["type"] == "mosaique":
             evenements += [(debut + 0.35 + 0.28 * k + 0.1, "pop") for k in range(len(scene.get("photos", [])))]
         if scene["type"] == "avant_apres":
