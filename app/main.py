@@ -330,6 +330,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE posts_linkedin_programmes ADD COLUMN document_titre TEXT DEFAULT ''"))
         if "favori_publication_multi" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
+        if inspecteur.has_table("creations") and "epingle" not in {c["name"] for c in inspecteur.get_columns("creations")}:
+            connexion.execute(text("ALTER TABLE creations ADD COLUMN epingle BOOLEAN DEFAULT FALSE"))
 
         if "leads_audit" in inspecteur.get_table_names():
             colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
@@ -683,6 +685,18 @@ planificateur.add_job(
     lambda: performance_articles.suivi_quotidien(SessionLocal, _question_visee_article),
     "cron", hour=6, minute=40, timezone="Europe/Brussels", id="suivi_articles_wordpress",
 )
+def _purge_archive_quotidienne():
+    """Supprime chaque nuit les creations plus anciennes que la duree de conservation choisie (voir creations.purger ; 0 = jamais)."""
+    session = SessionLocal()
+    try:
+        creations.purger(session, creations.mois_conservation(session))
+    except Exception:
+        session.rollback()
+    finally:
+        session.close()
+
+
+planificateur.add_job(_purge_archive_quotidienne, "cron", hour=4, minute=10, timezone="Europe/Brussels", id="purge_archive_creations")
 planificateur.start()
 
 
@@ -8126,9 +8140,52 @@ def page_creations(request: Request, client_id: int = None, genre: str = "", db:
     personnel = _client_marque_personnelle(db)
     scripts_concernes = (not client_id or (personnel is not None and personnel.id == client_id)) and (not genre or genre == "script")
     scripts = db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(100).all() if scripts_concernes else []
+    mois = creations.mois_conservation(db)
+    reglage = db.query(models.ParametreArchive).first()
+    a_supprimer, protegees = creations.a_purger(db, mois)
     return templates.TemplateResponse(request, "creations.html", {
         "page_actuelle": "creations", "clients": clients, "elements": elements, "scripts": scripts, "client_id": client_id, "genre": genre, "genres": creations.GENRES,
+        "mois": mois, "choix_conservation": creations.CHOIX_CONSERVATION, "nb_a_supprimer": len(a_supprimer), "nb_protegees": protegees,
+        "derniere_purge": reglage.derniere_purge.strftime("%d/%m/%Y") if reglage and reglage.derniere_purge else "", "derniere_purge_nombre": reglage.derniere_purge_nombre if reglage else 0,
     })
+
+
+@app.post("/creations/reglages")
+async def creations_reglages(request: Request, db: Session = Depends(obtenir_session)):
+    """Duree de conservation des creations avant suppression automatique (0 = jamais). Corps : mois."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        corps = await request.json()
+        mois = creations.enregistrer_reglage(db, corps.get("mois"))
+    except (ValueError, AttributeError):
+        return JSONResponse({"erreur": "Durée invalide."}, status_code=400)
+    a_supprimer, protegees = creations.a_purger(db, mois)
+    return JSONResponse({"ok": True, "mois": mois, "a_supprimer": len(a_supprimer), "protegees": protegees})
+
+
+@app.post("/creations/purger")
+def creations_purger_maintenant(request: Request, db: Session = Depends(obtenir_session)):
+    """Lance tout de suite la suppression des anciennes creations (selon la duree choisie)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    mois = creations.mois_conservation(db)
+    if not mois:
+        return JSONResponse({"erreur": "La suppression automatique est désactivée (durée : jamais)."}, status_code=400)
+    return JSONResponse({"ok": True, **creations.purger(db, mois)})
+
+
+@app.post("/creations/{creation_id}/epingler")
+def creations_epingler(creation_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Epingle (ou desepingle) une creation : une creation epinglee n'est jamais supprimee automatiquement."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Creation, creation_id)
+    if not ligne:
+        return JSONResponse({"erreur": "Création introuvable."}, status_code=404)
+    ligne.epingle = not bool(ligne.epingle)
+    db.commit()
+    return JSONResponse({"ok": True, "epingle": ligne.epingle})
 
 
 @app.post("/creations/{creation_id}/supprimer")

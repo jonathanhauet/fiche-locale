@@ -13,6 +13,20 @@
   hébergement OVH. Retrouvez, téléchargez ou republiez en un clic. Les scripts vidéo sont listés en bas.
 </p>
 
+<div class="cr-conservation">
+  <label for="cr-mois">Suppression automatique des créations de plus de</label>
+  <select id="cr-mois">
+    {% for m in choix_conservation %}<option value="{{ m }}" {% if m == mois %}selected{% endif %}>{{ "jamais (tout est gardé)" if m == 0 else (m ~ " mois") }}</option>{% endfor %}
+  </select>
+  <button type="button" id="cr-mois-ok" class="bouton-secondaire bouton-mini">Enregistrer</button>
+  <button type="button" id="cr-purger" class="bouton-secondaire bouton-mini" {% if not mois %}disabled{% endif %}>🧹 Supprimer maintenant</button>
+  <p id="cr-conservation-info" class="texte-discret">
+    {% if mois %}Chaque nuit, les créations de plus de {{ mois }} mois sont supprimées de l'archive et de votre hébergement OVH, sauf celles que vous avez <b>épinglées</b> (⭐) et celles utilisées par une publication à venir.
+    Actuellement : {{ nb_a_supprimer }} création(s) à supprimer{% if nb_protegees %}, {{ nb_protegees }} protégée(s) par une publication à venir{% endif %}.{% else %}Rien n'est supprimé automatiquement.{% endif %}
+    {% if derniere_purge %} Dernière suppression : {{ derniere_purge }} ({{ derniere_purge_nombre }} création(s)).{% endif %}
+  </p>
+</div>
+
 <form method="get" class="ligne-champs cr-filtres">
   <label for="cr-client">Client</label>
   <select id="cr-client" name="client_id" onchange="this.form.submit()">
@@ -50,6 +64,7 @@
       </div>
       {% endif %}
       <div class="cr-actions">
+        <button type="button" class="bouton-secondaire bouton-mini cr-epingler">{{ "⭐ Épinglée" if e.epingle else "☆ Garder" }}</button>
         <a class="bouton-secondaire bouton-mini" href="{{ e.urls[0] }}" target="_blank" rel="noopener" download>⬇ Télécharger{% if e.urls|length > 1 %} (1re){% endif %}</a>
         <button type="button" class="bouton-secondaire bouton-mini cr-republier">📤 Republier</button>
         <button type="button" class="bouton-secondaire bouton-mini cr-supprimer">🗑 Supprimer</button>
@@ -79,6 +94,9 @@
 {% endif %}
 
 <style>
+  .cr-conservation { border: 1px solid var(--bordure, #d9dce3); border-radius: 12px; padding: .7rem 1rem; margin: .8rem 0; display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+  .cr-conservation label { margin: 0; }
+  .cr-conservation p { flex-basis: 100%; margin: .2rem 0 0; }
   .cr-filtres { align-items: center; gap: .6rem; }
   .cr-filtres label { margin: 0; }
   .cr-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin: 1rem 0; }
@@ -106,6 +124,9 @@
       if (!confirm("Supprimer cette création et son fichier sur l'hébergement ? Cette action est définitive.")) return;
       try { await post("/creations/" + id + "/supprimer"); carte.remove(); } catch (e) { dire(e.message); }
     });
+    carte.querySelector(".cr-epingler").addEventListener("click", async (ev) => {
+      try { const d = await post("/creations/" + id + "/epingler"); ev.target.textContent = d.epingle ? "⭐ Épinglée" : "☆ Garder"; dire(d.epingle ? "Gardée : elle ne sera jamais supprimée automatiquement." : ""); } catch (e) { dire(e.message); }
+    });
     carte.querySelector(".cr-republier").addEventListener("click", async () => {
       const choix = carte.querySelector(".cr-choix-client");
       dire("Ouverture du composeur...");
@@ -115,6 +136,14 @@
     if (attribuer) attribuer.addEventListener("click", async () => {
       try { const d = await post("/creations/" + id + "/client", { client_id: carte.querySelector(".cr-choix-client").value }); dire("Attribuée à " + d.client + "."); carte.querySelector(".cr-attribuer").remove(); } catch (e) { dire(e.message); }
     });
+  });
+  const info = document.getElementById("cr-conservation-info");
+  document.getElementById("cr-mois-ok").addEventListener("click", async () => {
+    try { const d = await post("/creations/reglages", { mois: parseInt(document.getElementById("cr-mois").value, 10) }); window.location.reload(); } catch (e) { info.textContent = e.message; }
+  });
+  document.getElementById("cr-purger").addEventListener("click", async () => {
+    if (!confirm("Supprimer maintenant les créations de plus de " + document.getElementById("cr-mois").value + " mois (sauf celles épinglées ou utilisées par une publication à venir) ? Cette action est définitive.")) return;
+    try { const d = await post("/creations/purger"); info.textContent = d.supprimees + " création(s) supprimée(s)" + (d.protegees ? ", " + d.protegees + " protégée(s)" : "") + "."; setTimeout(() => window.location.reload(), 1200); } catch (e) { info.textContent = e.message; }
   });
   document.querySelectorAll(".cr-copier").forEach((b) => b.addEventListener("click", async () => {
     const t = b.closest("details").querySelector("textarea"); try { await navigator.clipboard.writeText(t.value); b.textContent = "✅ Copié"; } catch (e) { t.select(); }

@@ -1285,4 +1285,17 @@ class Creation(Base):
     format = Column(String, default="")
     duree = Column(Float, default=0.0)
     meta_json = Column(Text, default="{}")
+    epingle = Column(Boolean, default=False)                    # une creation epinglee n'est jamais supprimee par la purge automatique
     cree_le = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ParametreArchive(Base):
+    """Reglage de l'archive des creations (voir creations.py) : duree de conservation avant suppression automatique. Une seule ligne attendue."""
+
+    __tablename__ = "parametre_archive"
+
+    id = Column(Integer, primary_key=True)
+    mois_conservation = Column(Integer, default=3)            # 0 = jamais supprimer
+    derniere_purge = Column(DateTime, nullable=True)
+    derniere_purge_nombre = Column(Integer, default=0)
+    maj_le = Column(DateTime, default=datetime.utcnow)
