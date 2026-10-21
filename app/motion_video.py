@@ -931,6 +931,66 @@ def _bulle(ctx: Contexte, image: Image.Image, texte_img: Image.Image, x: int, y:
     coller(image, reduit, x - marge + cible[0] * (1 - echelle), y - marge + cible[1] * (1 - echelle), borne(p * 2.5))
 
 
+def _badge_personnage(ctx: Contexte) -> Image.Image:
+    """Pastille posee sur la poitrine du personnage : le logo du client, ou l'initiale de son nom."""
+    if getattr(ctx, "_badge", None) is None:
+        n = 160
+        img = Image.new("RGBA", (n * 2, n * 2), (0, 0, 0, 0))
+        ImageDraw.Draw(img).ellipse((0, 0, n * 2 - 1, n * 2 - 1), fill=CREME + (255,))
+        if ctx.logo is not None:
+            logo = ctx.logo.copy()
+            logo.thumbnail((int(n * 1.5), int(n * 1.5)))
+            img.paste(logo, (int(n - logo.size[0] / 2), int(n - logo.size[1] / 2)), logo if logo.mode == "RGBA" else None)
+        else:
+            initiale = (sans_balises(ctx.marque).strip()[:1] or "*").upper()
+            lettre = image_texte(initiale, GRAS, int(n * 1.15), ctx.t["accent"])
+            img.paste(lettre, (int(n - lettre.size[0] / 2), int(n - lettre.size[1] / 2)), lettre)
+        ctx._badge = img.resize((n, n), Image.LANCZOS)
+    return ctx._badge
+
+
+def _plante(d: ImageDraw.ImageDraw, ctx: Contexte, x: int, sol_y: int, unite: float, t: float) -> None:
+    """Plante en pot posee sur le sol : les feuilles se balancent doucement."""
+    vert, vert_clair = melanger((46, 120, 84), ctx.t["accent"], 0.12), melanger((84, 160, 108), ctx.t["accent"], 0.12)
+    for i, angle in enumerate((-58, -30, -8, 16, 40, 62)):
+        a = math.radians(angle + math.sin(t * 1.4 + i) * 3.5)
+        longueur, largeur = unite * (190 + 40 * (i % 3)), unite * 62
+        base = (x, sol_y - unite * 80)
+        points = []
+        for (u, v) in ((0, 0), (0.55, 0.28), (0.38, 0.72), (0, 1.0), (-0.38, 0.72), (-0.55, 0.28)):
+            lx, ly = u * largeur, -v * longueur
+            points.append((base[0] + lx * math.cos(a) - ly * math.sin(a), base[1] + lx * math.sin(a) + ly * math.cos(a)))
+        d.polygon(points, fill=vert if i % 2 else vert_clair)
+    d.polygon([(x - unite * 54, sol_y - unite * 84), (x + unite * 54, sol_y - unite * 84), (x + unite * 40, sol_y), (x - unite * 40, sol_y)], fill=melanger(ctx.t["accent2"], (30, 20, 20), 0.35))
+    d.rectangle((x - unite * 60, sol_y - unite * 96, x + unite * 60, sol_y - unite * 78), fill=melanger(ctx.t["accent2"], (30, 20, 20), 0.2))
+
+
+def _decor_personnage(ctx: Contexte, image: Image.Image, t: float, pieds: tuple, unite: float, cote: int, horizontal: bool) -> None:
+    """Petite piece derriere le personnage : fenetre en arche (qui s'ouvre a son arrivee), sol, plante en pot."""
+    d = ImageDraw.Draw(image)
+    accent, fond = ctx.t["accent"], ctx.t["fond"]
+    sol_y = pieds[1] - int(unite * 34)
+    cx = pieds[0]
+    pousse = sortie_expo(t / 0.8)
+    largeur = int(unite * 760)
+    haut = int(sol_y - unite * 1040 * pousse)
+    d.rectangle((cx - largeur // 2, min(haut + largeur // 2, sol_y), cx + largeur // 2, sol_y), fill=melanger(fond, accent, 0.30))               # (au debut, l'arche est encore plus basse que sa courbe)
+    d.ellipse((cx - largeur // 2, haut, cx + largeur // 2, haut + largeur), fill=melanger(fond, accent, 0.30))
+    interieur = int(largeur * 0.84)
+    haut_i = haut + int(largeur * 0.08)
+    bas_i = sol_y - int(unite * 40)
+    d.rectangle((cx - interieur // 2, min(haut_i + interieur // 2, bas_i), cx + interieur // 2, bas_i), fill=melanger(fond, accent, 0.48))
+    d.ellipse((cx - interieur // 2, haut_i, cx + interieur // 2, haut_i + interieur), fill=melanger(fond, accent, 0.48))
+    trait = melanger(fond, accent, 0.30)
+    d.line((cx, haut_i, cx, sol_y - int(unite * 40)), fill=trait, width=max(3, int(unite * 12)))
+    d.line((cx - interieur // 2, haut_i + interieur // 2 + int(unite * 120), cx + interieur // 2, haut_i + interieur // 2 + int(unite * 120)), fill=trait, width=max(3, int(unite * 12)))
+    # sol
+    d.rectangle((0, sol_y, ctx.l, ctx.h), fill=melanger(fond, (0, 0, 0), 0.34))
+    d.rectangle((0, sol_y, ctx.l, sol_y + max(3, int(unite * 9))), fill=melanger(fond, accent, 0.40))
+    plante_x = int(ctx.l * (0.5 + cote * 0.46)) if horizontal else int(ctx.l * (0.5 - cote * 0.42))
+    _plante(d, ctx, plante_x, sol_y, unite, t)
+
+
 def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     """Un personnage anime (voir personnage.py) arrive, dit la phrase dans une bulle et joue l'action choisie, avec un objet a ses cotes."""
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
@@ -945,19 +1005,14 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     marge = ctx.px(76)
     duree = sc.get("duree", 3.0)
     if horizontal:
-        hauteur_canevas = int(ctx.h * 0.66 * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
+        hauteur_canevas = int(ctx.h * 0.78 * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
         pieds = (int(ctx.l * (0.5 + cote * 0.24)), int(ctx.h * 0.89))
     else:
         visible = 0.50 if ctx.format == "vertical" else 0.56
         hauteur_canevas = int(ctx.h * visible * personnage.HAUTEUR_REF / personnage.HAUTEUR_VISIBLE)
         pieds = (int(ctx.l * (0.5 + cote * 0.15)), int(ctx.h * (0.905 if ctx.format == "vertical" else 0.93)))
     unite = hauteur_canevas / personnage.HAUTEUR_REF
-    # grand disque de couleur derriere le personnage, qui grandit a son arrivee
-    rayon_disque = int(unite * 470) * sortie_expo(t / 0.8)
-    cx_disque, cy_disque = pieds[0], pieds[1] - int(unite * 430)
-    disque = Image.new("RGBA", (ctx.l, ctx.h), (0, 0, 0, 0))
-    ImageDraw.Draw(disque).ellipse((cx_disque - rayon_disque, cy_disque - rayon_disque, cx_disque + rayon_disque, cy_disque + rayon_disque), fill=melanger(ctx.t["fond"], ctx.t["accent"], 0.38) + (255,))
-    image.paste(disque.convert("RGB"), (0, 0), disque.getchannel("A"))
+    _decor_personnage(ctx, image, t, pieds, unite, cote, horizontal)
     # arrivee : le personnage saute depuis le bord de l'ecran, puis joue son action
     arrivee = sortie_rebond(t / 0.7)
     sortie_x = pieds[0] + cote * int(ctx.l * 0.55) * (1 - sortie_cubique(t / 0.6))
@@ -967,15 +1022,34 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     p["saut"] += max(0.0, math.sin(min(1.0, t / 0.7) * math.pi)) * 60 * (1 - borne((t - 0.7) / 0.1)) if t < 0.8 else 0
     haut = ctx.t["accent"]
     bas = melanger(ctx.t["accent"], (14, 18, 36), 0.80)
-    perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), ctx.t["accent"])
+    perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), ctx.t["accent"], _badge_personnage(ctx))
+    reception = t - 0.66                                               # ecrasement a la reception du saut d'arrivee, puis retour souple
+    ecrase = max(0.0, math.exp(-reception * 7) * math.sin(reception * 16)) if 0 <= reception < 0.7 else 0.0
+    sx, sy = 1 + 0.07 * ecrase, 1 - 0.09 * ecrase
+    if ecrase > 0.01:
+        perso_info = dict(perso.info)
+        perso = perso.resize((max(1, int(perso.size[0] * sx)), max(1, int(perso.size[1] * sy))), Image.BILINEAR)
+        perso.info["tete"], perso.info["main"] = (perso_info["tete"][0] * sx, perso_info["tete"][1] * sy), (perso_info["main"][0] * sx, perso_info["main"][1] * sy)
     ombre_rayon = int(unite * 190 * (1 - 0.35 * borne(p["saut"] / 80)))
     ombre = Image.new("RGBA", (ombre_rayon * 2, ombre_rayon // 2), (0, 0, 0, 0))
     ImageDraw.Draw(ombre).ellipse((0, 0, ombre_rayon * 2 - 1, ombre_rayon // 2 - 1), fill=(0, 0, 0, 110))
     coller(image, ombre, int(sortie_x - ombre_rayon), pieds[1] - ombre_rayon // 5, borne(t / 0.3))
-    coller(image, perso, int(sortie_x - personnage.PIEDS[0] * unite), int(pieds[1] - personnage.PIEDS[1] * unite), borne(t / 0.15))
-    tete = (sortie_x - personnage.PIEDS[0] * unite + perso.info["tete"][0], pieds[1] - personnage.PIEDS[1] * unite + perso.info["tete"][1])
+    origine = (sortie_x - personnage.PIEDS[0] * unite * sx, pieds[1] - personnage.PIEDS[1] * unite * sy)
+    coller(image, perso, int(origine[0]), int(origine[1]), borne(t / 0.15))
+    tete = (origine[0] + perso.info["tete"][0], origine[1] + perso.info["tete"][1])
+    main = (origine[0] + perso.info["main"][0], origine[1] + perso.info["main"][1])
+    tient = objet in personnage.TENUS_EN_MAIN and action != "celebre"
+    if tient:                                                          # l'objet est dans la main du personnage
+        pm = sortie_rebond((t - 0.9) / 0.4)
+        if pm > 0:
+            cote_main = int(unite * 300)
+            sprite = personnage.accessoire(objet, cote_main, ctx.t["accent"], ctx.t["accent2"], CREME, t)
+            sprite = sprite.rotate(-22 + 7 * math.sin(t * 3), resample=Image.BICUBIC, expand=True)
+            s_ = max(0.05, pm)
+            sprite = sprite.resize((max(1, int(sprite.size[0] * s_)), max(1, int(sprite.size[1] * s_))), Image.BILINEAR)
+            coller(image, sprite, int(main[0] - sprite.size[0] / 2 + unite * 20 * s_), int(main[1] - sprite.size[1] * 0.62), borne(pm * 2))
     # objet pose a l'autre bout de l'ecran, qui rebondit a son apparition puis flotte
-    if objet != "aucun":
+    if objet != "aucun" and not tient:
         taille = int(min(ctx.l, ctx.h) * (0.25 if not horizontal else 0.28))
         po = sortie_rebond((t - 1.0) / 0.55)
         if po > 0:
@@ -985,7 +1059,7 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
             elif horizontal:
                 ox, oy = int(ctx.l * (0.5 - cote * 0.12)) - taille // 2, int(ctx.h * 0.14)
             else:
-                ox, oy = int(ctx.l * (0.5 - cote * 0.24)) - taille // 2, int(pieds[1] - unite * 560)
+                ox, oy = int(ctx.l * (0.5 - cote * 0.24)) - taille // 2, int(pieds[1] - unite * 640)
             oy += int(math.sin(t * 2.2) * ctx.px(10))
             s_ = max(0.05, po)
             sprite = sprite.resize((max(1, int(taille * s_)), max(1, int(taille * s_))), Image.BILINEAR)

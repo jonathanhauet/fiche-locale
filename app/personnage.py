@@ -1,6 +1,6 @@
 """
-Personnages animes en aplats (style illustration d'entreprise) pour les videos de motion design : un petit personnage dessine par le code, qui salue, explique,
-montre du doigt, a une idee, reflechit ou fete quelque chose, avec des objets (cle, maison, voiture...) qui apparaissent a cote de lui.
+Personnages animes en aplats (style illustration d'entreprise) pour les videos de motion design : un personnage dessine par le code, en tenue de travail aux couleurs
+du client, qui salue, explique, montre du doigt, a une idee, reflechit ou fete quelque chose, avec des objets (cle, maison, voiture...) qu'il peut tenir en main.
 Tout est dessine avec Pillow, image par image, a partir de la charte du client : aucun fichier image n'est necessaire.
 """
 
@@ -9,21 +9,23 @@ import math
 from PIL import Image, ImageDraw
 
 SURECHANTILLON = 2                      # le personnage est dessine 2 fois plus grand puis reduit : bords lisses
-LARGEUR_REF, HAUTEUR_REF = 1100, 1250   # espace de dessin (les bras tendus et le saut tiennent dedans) : pieds en (550, 1210), sommet de la tete vers y = 272
-PIEDS = (550, 1210)
-HAUTEUR_VISIBLE = 940                    # hauteur du personnage debout, en unites de dessin (pour le placer a l'ecran)
+LARGEUR_REF, HAUTEUR_REF = 1300, 1250   # espace de dessin (les bras tendus et le saut tiennent dedans) : pieds en (650, 1210), sommet de la tete vers y = 255
+PIEDS = (650, 1210)
+HAUTEUR_VISIBLE = 1000                   # hauteur du personnage debout, en unites de dessin (pour le placer a l'ecran)
 
 ACTIONS = ("explique", "salut", "pointe", "idee", "celebre", "reflechit")
 ACCESSOIRES = ("aucun", "ampoule", "cle", "maison", "voiture", "coeur", "etoile", "telephone", "goutte", "calendrier", "bouclier")
+TENUS_EN_MAIN = ("cle", "telephone")     # ces objets sont portes par le personnage au lieu de flotter a cote de lui
 LOOKS = (
-    {"peau": (244, 200, 168), "cheveux": (62, 42, 30), "style": "court"},
-    {"peau": (198, 138, 98), "cheveux": (28, 22, 20), "style": "chignon"},
-    {"peau": (140, 92, 62), "cheveux": (24, 20, 20), "style": "casquette"},
-    {"peau": (250, 214, 184), "cheveux": (196, 132, 62), "style": "long"},
+    {"peau": (243, 200, 170), "cheveux": (66, 44, 32), "style": "court", "barbe": False, "lunettes": False, "cils": False},
+    {"peau": (202, 142, 104), "cheveux": (30, 22, 22), "style": "chignon", "barbe": False, "lunettes": False, "cils": True},
+    {"peau": (141, 94, 66), "cheveux": (26, 22, 22), "style": "casquette", "barbe": True, "lunettes": False, "cils": False},
+    {"peau": (250, 213, 184), "cheveux": (192, 122, 58), "style": "long", "barbe": False, "lunettes": True, "cils": True},
 )
 NOMBRE_LOOKS = len(LOOKS)
 
-LONGUEUR_BRAS, LONGUEUR_AVANT_BRAS = 190, 170
+LONGUEUR_BRAS, LONGUEUR_AVANT_BRAS = 185, 170
+EPAULE_DX = 128                          # ecart de chaque epaule par rapport a l'axe du corps
 
 
 def _sombre(rgb: tuple, part: float = 0.25) -> tuple:
@@ -38,6 +40,11 @@ def _borne(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+def _lisse(x: float) -> float:
+    x = _borne(x)
+    return x * x * (3 - 2 * x)
+
+
 # --------------------------------------------------------------------------- poses : angle de chaque bras et mouvement du corps en fonction du temps
 
 def pose(action: str, t: float, parle: bool = True, vers: int = 1) -> dict:
@@ -46,147 +53,230 @@ def pose(action: str, t: float, parle: bool = True, vers: int = 1) -> dict:
     Un bras est un couple (epaule, coude) : angle du haut du bras et angle absolu de l'avant-bras.
     vers : +1 si le texte est a droite du personnage, -1 s'il est a gauche (le personnage le montre et le regarde).
     """
-    respiration = math.sin(t * 2.4) * 5
-    repos = (14, 10)
+    respiration = math.sin(t * 2.4) * 6
+    repos = (12 + 2 * math.sin(t * 1.7), 8 + 3 * math.sin(t * 1.7 + 1))
     gauche, droit = repos, repos
     saut = 0.0
-    penche = 0.0
+    penche = 3 * math.sin(t * 1.3)
+    tete_inclinee = 0.0
     if action == "salut":
-        droit = (150, 150 + 24 * math.sin(t * 9))
+        droit = (148 + 4 * math.sin(t * 3), 150 + 26 * math.sin(t * 9))
         gauche = (18 + 4 * math.sin(t * 2), 12)
-        penche = -8 * vers
+        penche = -10 * vers
+        tete_inclinee = 5 * vers
     elif action == "pointe":
-        bras = (96 + 4 * math.sin(t * 4), 100 + 8 * math.sin(t * 4 + 1))
+        presse = 0.5 + 0.5 * math.sin(t * 3.2)
+        bras = (92 + 6 * presse, 96 + 10 * presse)
         gauche, droit = (bras, repos) if vers < 0 else (repos, bras)
-        penche = 14 * vers
+        penche = 16 * vers
+        tete_inclinee = 4 * vers
     elif action == "idee":
-        droit = (155 + 5 * math.sin(t * 6), 172 + 8 * math.sin(t * 6))
-        gauche = (30, 70 + 10 * math.sin(t * 3))
-        saut = max(0.0, math.sin(t * 5)) * 18
+        droit = (152 + 6 * math.sin(t * 5), 170 + 8 * math.sin(t * 5))
+        gauche = (28, 72 + 10 * math.sin(t * 3))
+        saut = max(0.0, math.sin(t * 5)) * 22
+        tete_inclinee = -6 * vers
     elif action == "celebre":
-        gauche = (158 + 10 * math.sin(t * 8), 176 + 6 * math.sin(t * 8 + 1))
-        droit = (158 + 10 * math.sin(t * 8 + 2), 176 + 6 * math.sin(t * 8 + 3))
+        gauche = (160 + 10 * math.sin(t * 8), 176 + 6 * math.sin(t * 8 + 1))
+        droit = (160 + 10 * math.sin(t * 8 + 2), 176 + 6 * math.sin(t * 8 + 3))
         saut = abs(math.sin(t * 4.2)) * 70
     elif action == "reflechit":
         droit = (28, 176 + 3 * math.sin(t * 2))
         gauche = (30, 95)
         penche = 10 * vers
+        tete_inclinee = 8 * vers
     else:                                  # explique : les deux mains accompagnent la parole, a tour de role
         rythme = 2.3 if parle else 1.0
         gauche = (38 + 14 * math.sin(t * rythme), 92 + 22 * math.sin(t * rythme + 1.0))
         droit = (44 + 14 * math.sin(t * rythme + 2.4), 104 + 22 * math.sin(t * rythme + 3.4))
-        penche = 5 * vers * math.sin(t * 1.3)
+        penche = 6 * vers * math.sin(t * 1.3)
+        tete_inclinee = 3 * math.sin(t * 1.9)
     clignement = 1.0 if (t % 3.4) < 0.13 else 0.0
     bouche = (0.5 + 0.5 * math.sin(t * 15) * math.sin(t * 4.1 + 0.7)) if parle and action != "reflechit" else 0.0
     if action == "celebre":
         bouche = 1.0
     return {"gauche": gauche, "droit": droit, "respiration": respiration, "saut": saut, "penche": penche, "clignement": clignement, "bouche": _borne(bouche), "regard": vers,
-            "sourire": 0.0 if action == "reflechit" else 1.0, "sourcils": -6 if action == "reflechit" else (8 if action in ("idee", "celebre") else 0)}
+            "sourire": 0.0 if action == "reflechit" else 1.0, "sourcils": -7 if action == "reflechit" else (9 if action in ("idee", "celebre") else 0), "tete": tete_inclinee}
 
 
-# --------------------------------------------------------------------------- dessin
+# --------------------------------------------------------------------------- dessin : formes de base
 
-def _membre(d: ImageDraw.ImageDraw, a: tuple, b: tuple, largeur: float, couleur: tuple) -> None:
-    d.line([a, b], fill=couleur + (255,), width=int(largeur))
-    r = largeur / 2
-    for x, y in (a, b):
-        d.ellipse((x - r, y - r, x + r, y + r), fill=couleur + (255,))
+def _cercle(d, k, centre: tuple, rayon: float, couleur: tuple) -> None:
+    d.ellipse(((centre[0] - rayon) * k, (centre[1] - rayon) * k, (centre[0] + rayon) * k, (centre[1] + rayon) * k), fill=couleur + (255,))
+
+
+def _conique(d, k, a: tuple, b: tuple, ra: float, rb: float, couleur: tuple) -> None:
+    """Membre qui s'affine de a (rayon ra) vers b (rayon rb), bouts arrondis."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    longueur = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / longueur, dx / longueur
+    d.polygon([((a[0] + nx * ra) * k, (a[1] + ny * ra) * k), ((b[0] + nx * rb) * k, (b[1] + ny * rb) * k),
+               ((b[0] - nx * rb) * k, (b[1] - ny * rb) * k), ((a[0] - nx * ra) * k, (a[1] - ny * ra) * k)], fill=couleur + (255,))
+    _cercle(d, k, a, ra, couleur)
+    _cercle(d, k, b, rb, couleur)
+
+
+def _main(d, k, poignet: tuple, direction: tuple, peau: tuple, cote: int) -> None:
+    """Main arrondie avec le pouce du cote interieur, dans le prolongement de l'avant-bras."""
+    ux, uy = direction
+    nx, ny = -uy * cote, ux * cote
+    centre = (poignet[0] + ux * 30, poignet[1] + uy * 30)
+    _cercle(d, k, centre, 40, peau)
+    _conique(d, k, (centre[0] + nx * 26 - ux * 4, centre[1] + ny * 26 - uy * 4), (centre[0] + nx * 40 + ux * 22, centre[1] + ny * 40 + uy * 22), 15, 12, _sombre(peau, 0.04))
+    for i in (-1, 0, 1):                                              # doigts : trois petits bourrelets au bout de la main
+        _cercle(d, k, (centre[0] + ux * 38 - nx * i * 17, centre[1] + uy * 38 - ny * i * 17), 17, peau)
 
 
 def _bras(d, k, epaule: tuple, angles: tuple, cote: int, manche: tuple, peau: tuple) -> tuple:
-    """Dessine un bras (manche puis avant-bras nu puis main) ; renvoie la position de la main en unites de dessin."""
+    """Dessine un bras (avant-bras nu, manche, main) ; renvoie la position de la main en unites de dessin."""
     a1, a2 = math.radians(angles[0]), math.radians(angles[1])
     coude = (epaule[0] + cote * LONGUEUR_BRAS * math.sin(a1), epaule[1] + LONGUEUR_BRAS * math.cos(a1))
-    main = (coude[0] + cote * LONGUEUR_AVANT_BRAS * math.sin(a2), coude[1] + LONGUEUR_AVANT_BRAS * math.cos(a2))
-    P = lambda p: (p[0] * k, p[1] * k)
-    _membre(d, P(coude), P(main), 66 * k, peau)
-    _membre(d, P(epaule), P(coude), 86 * k, manche)
-    d.ellipse((P(main)[0] - 42 * k, P(main)[1] - 42 * k, P(main)[0] + 42 * k, P(main)[1] + 42 * k), fill=peau + (255,))
-    return main
+    poignet = (coude[0] + cote * (LONGUEUR_AVANT_BRAS - 30) * math.sin(a2), coude[1] + (LONGUEUR_AVANT_BRAS - 30) * math.cos(a2))
+    direction = (cote * math.sin(a2), math.cos(a2))
+    _conique(d, k, coude, poignet, 38, 31, peau)
+    _main(d, k, poignet, direction, peau, -cote)
+    _conique(d, k, epaule, coude, 52, 45, manche)
+    _cercle(d, k, coude, 45, manche)
+    return (poignet[0] + direction[0] * 30, poignet[1] + direction[1] * 30)
 
 
 def _cheveux(d, k, centre: tuple, rayon: float, look: dict, accent: tuple, avant: bool) -> None:
     cx, cy = centre
-    couleur = look["cheveux"] + (255,)
+    couleur = look["cheveux"]
+    reflet = _clair(couleur, 0.18)
     style = look["style"]
-    boite = ((cx - rayon * 1.04) * k, (cy - rayon * 1.04) * k, (cx + rayon * 1.04) * k, (cy + rayon * 1.04) * k)
+    r = rayon
+    boite = lambda f: ((cx - r * f) * k, (cy - r * f) * k, (cx + r * f) * k, (cy + r * f) * k)
     if not avant:                          # derriere la tete
         if style == "long":
-            d.rounded_rectangle(((cx - rayon * 1.1) * k, (cy - rayon * 0.2) * k, (cx + rayon * 1.1) * k, (cy + rayon * 1.65) * k), radius=int(rayon * 0.6 * k), fill=couleur)
+            d.rounded_rectangle(((cx - r * 1.12) * k, (cy - r * 0.3) * k, (cx + r * 1.12) * k, (cy + r * 1.85) * k), radius=int(r * 0.62 * k), fill=couleur + (255,))
         if style == "chignon":
-            r = rayon * 0.42
-            d.ellipse(((cx - r) * k, (cy - rayon * 1.32 - r) * k, (cx + r) * k, (cy - rayon * 1.32 + r) * k), fill=couleur)
+            _cercle(d, k, (cx, cy - r * 1.22), r * 0.44, couleur)
+            _cercle(d, k, (cx - r * 0.1, cy - r * 1.3), r * 0.16, reflet)
         return
-    d.pieslice(boite, 188, 352, fill=couleur)           # calotte sur le haut du crane
-    if style in ("court", "long"):
-        d.polygon([((cx - rayon * 1.0) * k, (cy - rayon * 0.28) * k), ((cx - rayon * 0.2) * k, (cy - rayon * 0.62) * k), ((cx + rayon * 0.9) * k, (cy - rayon * 0.5) * k),
-                   ((cx + rayon * 0.99) * k, (cy - rayon * 0.24) * k), ((cx + rayon * 0.5) * k, (cy - rayon * 0.5) * k), ((cx - rayon * 0.3) * k, (cy - rayon * 0.38) * k)], fill=couleur)
     if style == "casquette":
-        d.pieslice(boite, 180, 360, fill=accent + (255,))
-        d.rounded_rectangle(((cx - rayon * 0.95) * k, (cy - rayon * 0.42) * k, (cx + rayon * 1.45) * k, (cy - rayon * 0.22) * k), radius=int(rayon * 0.1 * k), fill=_sombre(accent, 0.2) + (255,))
+        d.pieslice(boite(1.07), 182, 358, fill=accent + (255,))
+        d.pieslice(boite(1.07), 182, 215, fill=_sombre(accent, 0.2) + (255,))
+        d.rounded_rectangle(((cx - r * 0.9) * k, (cy - r * 0.62) * k, (cx + r * 1.42) * k, (cy - r * 0.44) * k), radius=int(r * 0.1 * k), fill=_sombre(accent, 0.22) + (255,))
+        _cercle(d, k, (cx, cy - r * 1.06), r * 0.07, _sombre(accent, 0.3))
+        return
+    d.pieslice(boite(1.07), 186, 354, fill=couleur + (255,))
+    for cote in (-1, 1):                                                # meches sur les tempes
+        d.polygon([((cx + cote * r * 0.98) * k, (cy - r * 0.55) * k), ((cx + cote * r * 1.04) * k, (cy + r * 0.1) * k), ((cx + cote * r * 0.82) * k, (cy - r * 0.2) * k)], fill=couleur + (255,))
+    if style in ("court", "long"):
+        d.polygon([((cx - r * 1.02) * k, (cy - r * 0.2) * k), ((cx - r * 0.45) * k, (cy - r * 0.72) * k), ((cx + r * 0.7) * k, (cy - r * 0.64) * k), ((cx + r * 1.02) * k, (cy - r * 0.3) * k),
+                   ((cx + r * 0.36) * k, (cy - r * 0.56) * k), ((cx - r * 0.2) * k, (cy - r * 0.44) * k)], fill=couleur + (255,))
+        d.arc(boite(0.98), 235, 290, fill=reflet + (255,), width=int(9 * k))
+    elif style == "chignon":
+        d.polygon([((cx - r * 1.0) * k, (cy - r * 0.12) * k), ((cx - r * 0.1) * k, (cy - r * 0.66) * k), ((cx + r * 1.0) * k, (cy - r * 0.12) * k), ((cx + r * 0.1) * k, (cy - r * 0.42) * k)], fill=couleur + (255,))
 
 
-def _visage(d, k, centre: tuple, rayon: float, p: dict, peau: tuple) -> None:
+def _visage(d, k, centre: tuple, rayon: float, p: dict, look: dict) -> None:
     cx, cy = centre
-    sombre = (38, 30, 34, 255)
-    regard = p["regard"] * 5
+    peau = look["peau"]
+    sombre = (36, 28, 32, 255)
+    regard = p["regard"] * 6
+    d.ellipse(((cx - 8) * k, (cy + rayon * 0.05) * k, (cx + 8) * k, (cy + rayon * 0.34) * k), fill=_sombre(peau, 0.1) + (255,))      # nez
     for cote in (-1, 1):
-        ex, ey = cx + cote * rayon * 0.38, cy - rayon * 0.02
+        ex, ey = cx + cote * rayon * 0.4, cy - rayon * 0.06
         if p["clignement"]:
-            d.line([((ex - 15) * k, ey * k), ((ex + 15) * k, ey * k)], fill=sombre, width=int(6 * k))
+            d.arc(((ex - 17) * k, (ey - 12) * k, (ex + 17) * k, (ey + 12) * k), 0, 180, fill=sombre, width=int(6 * k))
         else:
-            d.ellipse(((ex - 14) * k, (ey - 18) * k, (ex + 14) * k, (ey + 18) * k), fill=(255, 255, 255, 255))
-            d.ellipse(((ex - 8 + regard) * k, (ey - 11) * k, (ex + 8 + regard) * k, (ey + 11) * k), fill=sombre)
-        d.line([((ex - 20) * k, (ey - 34 - p["sourcils"] * (0.4 if cote < 0 else 1)) * k), ((ex + 20) * k, (ey - 38 - p["sourcils"]) * k)], fill=sombre, width=int(7 * k))
-        d.ellipse(((cx + cote * rayon * 0.62 - 17) * k, (cy + rayon * 0.28 - 11) * k, (cx + cote * rayon * 0.62 + 17) * k, (cy + rayon * 0.28 + 11) * k), fill=(240, 130, 130, 110))
-    my = cy + rayon * 0.42
+            d.ellipse(((ex - 17) * k, (ey - 22) * k, (ex + 17) * k, (ey + 22) * k), fill=(255, 255, 255, 255))
+            d.ellipse(((ex - 10 + regard) * k, (ey - 14) * k, (ex + 10 + regard) * k, (ey + 14) * k), fill=(52, 38, 34, 255))
+            d.ellipse(((ex - 5 + regard) * k, (ey - 8) * k, (ex + 5 + regard) * k, (ey + 8) * k), fill=sombre)
+            d.ellipse(((ex - 7 + regard) * k, (ey - 12) * k, (ex - 1 + regard) * k, (ey - 6) * k), fill=(255, 255, 255, 255))
+        if look["cils"]:
+            d.line([((ex + cote * 14) * k, (ey - 12) * k), ((ex + cote * 26) * k, (ey - 22) * k)], fill=sombre, width=int(5 * k))
+        haut_sourcil = ey - 40 - p["sourcils"] * (0.5 if cote < 0 else 1)
+        exterieur, interieur = (ex + cote * 22, haut_sourcil + 5), (ex - cote * 22, haut_sourcil - 2)                 # sourcils arques, plus hauts vers le nez : regard aimable
+        d.line([(exterieur[0] * k, (exterieur[1] - 8) * k), (interieur[0] * k, (interieur[1] - 8) * k)], fill=_sombre(look["cheveux"], 0.1) + (255,), width=int(8 * k))
+        d.ellipse(((cx + cote * rayon * 0.66 - 19) * k, (cy + rayon * 0.3 - 12) * k, (cx + cote * rayon * 0.66 + 19) * k, (cy + rayon * 0.3 + 12) * k), fill=_melange_peau(peau))
+    if look["lunettes"]:
+        for cote in (-1, 1):
+            ex, ey = cx + cote * rayon * 0.4, cy - rayon * 0.06
+            d.ellipse(((ex - 30) * k, (ey - 30) * k, (ex + 30) * k, (ey + 30) * k), outline=(40, 40, 52, 255), width=int(6 * k))
+        d.line([((cx - rayon * 0.4 + 30) * k, (cy - rayon * 0.1) * k), ((cx + rayon * 0.4 - 30) * k, (cy - rayon * 0.1) * k)], fill=(40, 40, 52, 255), width=int(5 * k))
+    my = cy + rayon * 0.46
+    if look["barbe"]:                                                   # barbe courte autour de la bouche
+        d.pieslice(((cx - rayon * 0.9) * k, (cy - rayon * 0.2) * k, (cx + rayon * 0.9) * k, (cy + rayon * 1.0) * k), 40, 140, fill=_clair(look["cheveux"], 0.12) + (255,))
+        d.ellipse(((cx - 44) * k, (my - 32) * k, (cx + 44) * k, (my + 18) * k), fill=peau + (255,))
     if p["bouche"] > 0.12:
-        h = 10 + 28 * p["bouche"]
-        d.pieslice(((cx - 28) * k, (my - 14) * k, (cx + 28) * k, (my - 14 + 2 * h) * k), 0, 180, fill=(120, 36, 52, 255))
-        d.pieslice(((cx - 18) * k, (my - 14 + h * 0.9) * k, (cx + 18) * k, (my - 14 + 2 * h - 2) * k), 0, 180, fill=(226, 110, 120, 255))
+        h = 12 + 30 * p["bouche"]
+        d.pieslice(((cx - 32) * k, (my - 16) * k, (cx + 32) * k, (my - 16 + 2 * h) * k), 0, 180, fill=(112, 32, 50, 255))
+        if h > 24:
+            d.rectangle(((cx - 27) * k, (my - 15) * k, (cx + 27) * k, (my - 6) * k), fill=(255, 255, 255, 255))
+        d.pieslice(((cx - 20) * k, (my - 16 + h * 0.9) * k, (cx + 20) * k, (my - 16 + 2 * h - 2) * k), 0, 180, fill=(226, 110, 120, 255))
     elif p["sourire"]:
-        d.arc(((cx - 30) * k, (my - 24) * k, (cx + 30) * k, (my + 14) * k), 15, 165, fill=sombre, width=int(7 * k))
+        d.arc(((cx - 34) * k, (my - 28) * k, (cx + 34) * k, (my + 16) * k), 15, 165, fill=sombre, width=int(7 * k))
     else:
-        d.line([((cx - 16) * k, (my + 4) * k), ((cx + 16) * k, (my - 2) * k)], fill=sombre, width=int(7 * k))
+        d.line([((cx - 18) * k, (my + 4) * k), ((cx + 18) * k, (my - 2) * k)], fill=sombre, width=int(7 * k))
 
 
-def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussures: tuple, accent: tuple) -> Image.Image:
-    """Personnage de la hauteur voulue (en pixels, canvas compris) ; les pieds sont au centre du bord bas (a ~3 % du bord). Renvoie un calque RGBA."""
+def _melange_peau(peau: tuple) -> tuple:
+    return (min(255, peau[0] + 6), int(peau[1] * 0.78), int(peau[2] * 0.78), 255)
+
+
+def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussures: tuple, accent: tuple, badge: Image.Image = None) -> Image.Image:
+    """
+    Personnage de la hauteur voulue (en pixels, canvas compris) ; les pieds sont a (PIEDS / dimensions du canevas). Renvoie un calque RGBA dont `info` donne la position
+    de la tete et de la main droite (« tete », « main »). badge : petit logo (RGBA) pose sur la poitrine.
+    """
     k = hauteur / HAUTEUR_REF * SURECHANTILLON
-    larg, haut_px = int(LARGEUR_REF * k), int(HAUTEUR_REF * k)
-    calque = Image.new("RGBA", (larg, haut_px), (0, 0, 0, 0))
+    calque = Image.new("RGBA", (int(LARGEUR_REF * k), int(HAUTEUR_REF * k)), (0, 0, 0, 0))
     d = ImageDraw.Draw(calque)
     P = lambda x, y: (x * k, y * k)
     peau = look["peau"]
-    saut = p["saut"]
-    pieds_x, pieds_y = PIEDS[0], PIEDS[1] - saut
-    hanches = (pieds_x, pieds_y - 430)
+    pieds_x, pieds_y = PIEDS[0], PIEDS[1] - p["saut"]
+    hanche_y = pieds_y - 410
     penche = p["penche"]
     epaules_y = pieds_y - 690 + p["respiration"] * 0.4
-    centre_epaules = (pieds_x + penche, epaules_y)
-    # jambes et chaussures
+    axe = pieds_x + penche
+    haut_sombre, bas_sombre = _sombre(haut, 0.2), _sombre(bas, 0.22)
+    # jambes (pantalon, chaussures de securite)
     for cote in (-1, 1):
-        haut_jambe = (hanches[0] + cote * 52, hanches[1])
-        bas_jambe = (pieds_x + cote * 66, pieds_y - 36)
-        _membre(d, P(*haut_jambe), P(*bas_jambe), 92 * k, bas)
-        d.rounded_rectangle(((bas_jambe[0] + cote * 14 - 62) * k, (pieds_y - 44) * k, (bas_jambe[0] + cote * 14 + 62) * k, (pieds_y + 2) * k), radius=int(22 * k), fill=chaussures + (255,))
-    # bras arriere (celui qui est « derriere » le corps : le gauche de l'ecran), puis buste, tete, bras avant
-    epaule_g = (centre_epaules[0] - 118, epaules_y + 20)
-    epaule_d = (centre_epaules[0] + 118, epaules_y + 20)
+        a, b = (pieds_x + cote * 56, hanche_y), (pieds_x + cote * 74, pieds_y - 46)
+        _conique(d, k, a, b, 64, 50, bas)
+        d.polygon([P(a[0] - cote * 6, a[1] + 30), P(b[0] - cote * 44, b[1]), P(b[0] - cote * 14, b[1]), P(a[0] + cote * 10, a[1] + 40)] if cote > 0 else
+                  [P(a[0] + 6, a[1] + 30), P(b[0] + 44, b[1]), P(b[0] + 14, b[1]), P(a[0] - 10, a[1] + 40)], fill=bas_sombre + (255,))       # pli interieur du pantalon
+        bx = b[0] + cote * 20
+        d.rounded_rectangle(P(bx - 66, pieds_y - 62) + P(bx + 66, pieds_y + 2), radius=int(28 * k), fill=chaussures + (255,))
+        d.rounded_rectangle(P(bx - 68, pieds_y - 16) + P(bx + 68, pieds_y + 4), radius=int(10 * k), fill=(236, 232, 226, 255))                  # semelle
+        d.rounded_rectangle(P(bx + cote * 8 - 18, pieds_y - 52) + P(bx + cote * 8 + 34, pieds_y - 40), radius=int(6 * k), fill=_clair(chaussures, 0.22) + (255,))
+    # bras arriere (celui de gauche a l'ecran), puis buste, cou, tete, bras avant
+    epaule_g, epaule_d = (axe - EPAULE_DX, epaules_y + 48), (axe + EPAULE_DX, epaules_y + 48)
     _bras(d, k, epaule_g, p["gauche"], -1, haut, peau)
-    torse = [P(hanches[0] - 96, hanches[1] + 20), P(hanches[0] + 96, hanches[1] + 20), P(centre_epaules[0] + 128, epaules_y + 8), P(centre_epaules[0] - 128, epaules_y + 8)]
+    taille_y = hanche_y - 10
+    torse = [P(axe - 104, epaules_y), P(axe + 104, epaules_y), P(axe + 150, epaules_y + 46), P(pieds_x + 118, taille_y), P(pieds_x - 118, taille_y), P(axe - 150, epaules_y + 46)]
     d.polygon(torse, fill=haut + (255,))
-    d.ellipse(P(centre_epaules[0] - 128, epaules_y - 22) + P(centre_epaules[0] + 128, epaules_y + 38), fill=haut + (255,))
-    d.rounded_rectangle(P(hanches[0] - 100, hanches[1] - 10) + P(hanches[0] + 100, hanches[1] + 40), radius=int(12 * k), fill=bas + (255,))
-    d.rounded_rectangle(P(centre_epaules[0] - 28, epaules_y - 70) + P(centre_epaules[0] + 28, epaules_y + 6), radius=int(14 * k), fill=_sombre(peau, 0.08) + (255,))   # cou
-    rayon = 118
-    tete = (centre_epaules[0] + penche * 0.4, epaules_y - 140 + p["respiration"] * 0.2)
-    _cheveux(d, k, tete, rayon, look, accent, False)
-    d.ellipse(P(tete[0] - rayon, tete[1] - rayon) + P(tete[0] + rayon, tete[1] + rayon), fill=peau + (255,))
     for cote in (-1, 1):
-        d.ellipse(P(tete[0] + cote * rayon * 0.98 - 17, tete[1] + 6) + P(tete[0] + cote * rayon * 0.98 + 17, tete[1] + 46), fill=_sombre(peau, 0.06) + (255,))      # oreilles
+        _cercle(d, k, (axe + cote * 104, epaules_y + 46), 46, haut)
+    d.polygon([P(axe - 150, epaules_y + 46), P(axe - 84, epaules_y + 8), P(pieds_x - 52, taille_y), P(pieds_x - 118, taille_y)], fill=haut_sombre + (255,))   # cote ombre
+    d.rounded_rectangle(P(pieds_x - 124, taille_y - 34) + P(pieds_x + 124, taille_y + 22), radius=int(10 * k), fill=(94, 66, 44, 255))              # ceinture a outils
+    d.rounded_rectangle(P(pieds_x - 18, taille_y - 28) + P(pieds_x + 18, taille_y + 16), radius=int(6 * k), fill=(214, 184, 96, 255))
+    d.rounded_rectangle(P(pieds_x + 62, taille_y) + P(pieds_x + 126, taille_y + 96), radius=int(14 * k), fill=(120, 86, 58, 255))               # poche
+    d.rounded_rectangle(P(pieds_x + 70, taille_y + 8) + P(pieds_x + 118, taille_y + 24), radius=int(6 * k), fill=(94, 66, 44, 255))
+    d.rounded_rectangle(P(pieds_x + 88, taille_y - 62) + P(pieds_x + 104, taille_y + 8), radius=int(6 * k), fill=(176, 176, 188, 255))            # tournevis dans la poche
+    d.rounded_rectangle(P(pieds_x + 86, taille_y - 78) + P(pieds_x + 106, taille_y - 54), radius=int(8 * k), fill=accent + (255,))
+    # cou, col de polo
+    d.rounded_rectangle(P(axe - 32, epaules_y - 86) + P(axe + 32, epaules_y + 14), radius=int(16 * k), fill=_sombre(peau, 0.1) + (255,))
+    d.polygon([P(axe - 54, epaules_y - 4), P(axe + 54, epaules_y - 4), P(axe, epaules_y + 70)], fill=_sombre(peau, 0.06) + (255,))
+    blanc = _clair(haut, 0.72)
+    d.polygon([P(axe - 64, epaules_y - 10), P(axe - 8, epaules_y + 6), P(axe - 2, epaules_y + 78), P(axe - 40, epaules_y + 36)], fill=blanc + (255,))
+    d.polygon([P(axe + 64, epaules_y - 10), P(axe + 8, epaules_y + 6), P(axe + 2, epaules_y + 78), P(axe + 40, epaules_y + 36)], fill=_sombre(blanc, 0.06) + (255,))
+    if badge is not None:
+        taille_badge = int(64 * k)
+        petit = badge.resize((taille_badge, taille_badge), Image.LANCZOS)
+        calque.paste(petit, (int((axe + 70) * k - taille_badge / 2), int((epaules_y + 120) * k - taille_badge / 2)), petit)
+    # tete (legerement inclinee par decalage lateral)
+    rayon = 136
+    tete = (axe + penche * 0.35 + p["tete"] * 1.4, epaules_y - 168 + p["respiration"] * 0.2)
+    _cheveux(d, k, tete, rayon, look, accent, False)
+    for cote in (-1, 1):
+        _cercle(d, k, (tete[0] + cote * rayon * 0.97, tete[1] + 26), 22, _sombre(peau, 0.05))
+    d.ellipse(P(tete[0] - rayon, tete[1] - rayon) + P(tete[0] + rayon, tete[1] + rayon * 1.06), fill=peau + (255,))
+    d.pieslice(P(tete[0] - rayon, tete[1] - rayon) + P(tete[0] + rayon, tete[1] + rayon * 1.06), 40, 140, fill=_sombre(peau, 0.05) + (255,))
     _cheveux(d, k, tete, rayon, look, accent, True)
-    _visage(d, k, tete, rayon, p, peau)
+    _visage(d, k, tete, rayon, p, look)
     main = _bras(d, k, epaule_d, p["droit"], 1, haut, peau)
     final = calque.resize((int(LARGEUR_REF * k / SURECHANTILLON), int(HAUTEUR_REF * k / SURECHANTILLON)), Image.LANCZOS)
     final.info["tete"] = (tete[0] * k / SURECHANTILLON, tete[1] * k / SURECHANTILLON)
@@ -213,11 +303,13 @@ def accessoire(nom: str, taille: int, principale: tuple, secondaire: tuple, clai
         for a in range(-60, 61, 30):                     # rayons
             r = math.radians(a - 90)
             d.line([P(50 + 46 * math.cos(r), 36 + 46 * math.sin(r)), P(50 + 56 * math.cos(r), 36 + 56 * math.sin(r))], fill=(255, 214, 86, 255), width=int(4 * k))
-    elif nom == "cle":
-        d.ellipse(P(10, 8) + P(52, 50), fill=principale + (255,))
-        d.ellipse(P(22, 20) + P(40, 38), fill=ombre + (255,))
-        d.polygon([P(40, 36), P(52, 48), P(88, 84), P(80, 94), P(46, 60)], fill=principale + (255,))
-        d.rounded_rectangle(P(62, 66) + P(94, 80), radius=int(3 * k), fill=ombre + (255,))
+    elif nom == "cle":                                  # cle a molette, manche en bas (se tient par le manche)
+        d.rounded_rectangle(P(41, 40) + P(59, 98), radius=int(8 * k), fill=ombre + (255,))
+        d.rounded_rectangle(P(41, 40) + P(59, 70), radius=int(8 * k), fill=principale + (255,))
+        d.ellipse(P(26, 4) + P(74, 52), fill=principale + (255,))
+        d.polygon([P(42, 12), P(58, 12), P(58, 30), P(42, 30)], fill=ombre + (255,))
+        d.ellipse(P(40, 18) + P(60, 38), fill=ombre + (255,))
+        d.rectangle(P(41, 22) + P(59, 34), fill=ombre + (255,))
     elif nom == "maison":
         d.polygon([P(8, 48), P(50, 10), P(92, 48)], fill=secondaire + (255,))
         d.rectangle(P(18, 46) + P(82, 90), fill=clair + (255,))
