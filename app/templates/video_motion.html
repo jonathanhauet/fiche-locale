@@ -20,6 +20,8 @@
     {% for c in clients %}<option value="{{ c.id }}" data-nom="{{ c.nom }}">{{ c.nom }}</option>{% endfor %}
   </select>
 
+  <p id="vm-profil-statut" class="texte-discret" hidden></p>
+
   <label for="vm-modele">Modèle de vidéo</label>
   <select id="vm-modele">
     <option value="libre">Libre : l'IA compose le scénario</option>
@@ -104,12 +106,23 @@
   </div>
 
   <div class="ligne-champs">
+    <button type="button" id="vm-profil-enregistrer" class="bouton-secondaire" title="Couleurs, nom, ville, ton, format et logo : retrouvés automatiquement quand vous choisissez ce client">💾 Enregistrer ces réglages pour ce client</button>
+  </div>
+
+  <div class="ligne-champs">
     <button type="button" id="vm-scenario" class="bouton"><span class="spinner" id="vm-spinner" hidden></span>🎬 Écrire le scénario</button>
   </div>
+  <div class="ligne-champs vm-serie">
+    <label for="vm-nb-serie">Série de vidéos</label>
+    <select id="vm-nb-serie"><option value="3">3 vidéos</option><option value="4" selected>4 vidéos</option><option value="5">5 vidéos</option><option value="6">6 vidéos</option></select>
+    <button type="button" id="vm-serie" class="bouton-secondaire"><span class="spinner" id="vm-spinner-serie" hidden></span>📅 Préparer les vidéos du mois</button>
+  </div>
+  <p class="texte-discret">La série reprend le contenu du site du client : chaque vidéo traite un sujet différent, et les sujets déjà utilisés les mois précédents ne reviennent pas.</p>
   <p id="vm-statut" class="texte-vide" hidden></p>
 </div>
 
 <div id="vm-zone-scenario" hidden>
+  <div id="vm-onglets" class="vm-onglets" hidden></div>
   <h2>Scénario (modifiable)</h2>
   <p class="texte-discret">
     Dans un texte, <code>*mot*</code> est surligné sur une pastille de couleur et <code>_mot_</code> passe en serif italique.
@@ -118,6 +131,7 @@
   <div id="vm-scenes"></div>
   <div class="ligne-champs">
     <button type="button" id="vm-rendre" class="bouton">🎞️ Générer la vidéo</button>
+    <button type="button" id="vm-rendre-tout" class="bouton-secondaire" hidden>🎞️ Générer toutes les vidéos de la série</button>
   </div>
   <div id="vm-progression" hidden>
     <div class="vm-barre"><div id="vm-barre-remplissage"></div></div>
@@ -163,6 +177,13 @@
   .vm-idee:hover { border-color: #2f5eff; }
   .vm-idee b { display: block; }
   .vm-idee span { font-size: .85rem; opacity: .8; }
+  .vm-serie { align-items: center; gap: .6rem; }
+  .vm-serie label { margin: 0; }
+  .vm-onglets { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
+  .vm-onglet { border: 1px solid var(--bordure, #d9dce3); border-radius: 10px; padding: .45rem .8rem; background: transparent; color: inherit; cursor: pointer; font: inherit; max-width: 16rem; text-align: left; }
+  .vm-onglet.actif { border-color: #2f5eff; box-shadow: 0 0 0 1px #2f5eff inset; }
+  .vm-onglet b { display: block; font-size: .8rem; }
+  .vm-onglet span { font-size: .78rem; opacity: .8; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vm-barre { height: 10px; background: rgba(127,127,127,.25); border-radius: 99px; overflow: hidden; margin: .6rem 0; }
   #vm-barre-remplissage { height: 100%; width: 0; background: #2f5eff; transition: width .3s; }
   #vm-resultat video { width: 100%; max-width: 380px; border-radius: 12px; background: #000; display: block; margin: .8rem 0; }
@@ -187,7 +208,10 @@
     citation: [["texte", "Avis"], ["auteur", "Auteur"]],
     cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"]],
   };
-  let scenes = [], legende = "", titre = "", identifiantVideo = "";
+  const CHARTE_DEFAUT = { principale: "{{ charte.principale }}", secondaire: "{{ charte.secondaire }}" };
+  // Une « série » est une liste de vidéos (une seule quand on écrit un scénario seul) ; l'onglet courant est celui qu'on relit et qu'on publie.
+  let serie = [], courant = 0;
+  const item = () => serie[courant] || { titre: "", legende: "", scenes: [], id: "", etat: "pret", duree: 0, progression: 0 };
 
   // ---------- couleurs : sélecteur, code hexadécimal (#rrggbb ou #rgb) et pipette (prélèvement à l'écran, Chrome et Edge)
   function normaliserHex(texte) {
@@ -222,10 +246,10 @@
   function statutPublication(texte) { $("vm-pub-statut").hidden = !texte; $("vm-pub-statut").textContent = texte || ""; }
   // La video est d'abord hebergee (quelques secondes), puis envoyee au composeur multi-reseaux ou gardee dans la bibliotheque.
   async function hebergerVideo() {
-    const r = await fetch("/video-motion/" + identifiantVideo + "/publication/preparer", { method: "POST" });
+    const r = await fetch("/video-motion/" + item().id + "/publication/preparer", { method: "POST" });
     if (!r.ok) throw new Error((await r.json()).erreur || "Préparation impossible.");
     for (let i = 0; i < 120; i++) {
-      const e = await (await fetch("/video-motion/" + identifiantVideo + "/etat")).json();
+      const e = await (await fetch("/video-motion/" + item().id + "/etat")).json();
       if (e.hebergement === "pret") return;
       if (e.hebergement === "erreur") throw new Error(e.erreur_hebergement || "Hébergement impossible.");
       await new Promise((ok) => setTimeout(ok, 1500));
@@ -237,8 +261,8 @@
     statutPublication("Préparation de la vidéo (hébergement)...");
     try {
       await hebergerVideo();
-      const corps = destination === "composeur" ? { client_id: $("vm-pub-client").value, texte: $("vm-legende").value } : { titre: titre || $("vm-nom").value, texte: $("vm-legende").value };
-      const r = await fetch("/video-motion/" + identifiantVideo + "/publication/" + destination, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      const corps = destination === "composeur" ? { client_id: $("vm-pub-client").value, texte: $("vm-legende").value } : { titre: item().titre || $("vm-nom").value, texte: $("vm-legende").value };
+      const r = await fetch("/video-motion/" + item().id + "/publication/" + destination, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erreur || "Échec.");
       if (destination === "composeur") { statutPublication("Ouverture de la publication multi-réseaux..."); window.location.href = d.url; return; }
@@ -323,8 +347,44 @@
     if (o && o.dataset.nom && !$("vm-nom").value) $("vm-nom").value = o.dataset.nom;
     photosClient = []; jetonSuivant = ""; logoClient = false; choix = choix.filter((c) => c.type === "import"); dessinerChoix(); dessinerGrille();
     $("vm-photos-avert").textContent = ""; $("vm-plus").hidden = true;
+    await chargerProfil();
     if (!$("vm-client").value) return;
     await chargerPhotos(true);
+  });
+
+  // ---------- réglages enregistrés par client : couleurs, nom, ville, ton, format, logo
+  function poserCouleur(n, valeur) { const v = normaliserHex(valeur); if (v) { $("vm-couleur" + n).value = v; $("vm-hex" + n).value = v; } }
+  async function chargerProfil() {
+    const zone = $("vm-profil-statut"), id = $("vm-client").value;
+    if (!id) { zone.hidden = true; return; }
+    let d;
+    try { const r = await fetch("/video-motion/profil/" + id); d = await r.json(); if (!r.ok) return; } catch (e) { return; }
+    zone.hidden = false;
+    if (!d.profil) {
+      poserCouleur(1, CHARTE_DEFAUT.principale); poserCouleur(2, CHARTE_DEFAUT.secondaire);
+      const o = $("vm-client").selectedOptions[0];                      // un autre client : on repart de zero (rien du client precedent ne doit rester)
+      $("vm-nom").value = (o && o.dataset.nom) || ""; $("vm-ville").value = ""; $("vm-ton").value = "dynamique"; $("vm-format").value = "vertical"; $("vm-logo").checked = true;
+      zone.textContent = "Aucun réglage enregistré pour ce client : réglez les couleurs, le ton et le format, puis cliquez sur « Enregistrer ces réglages pour ce client ».";
+      return;
+    }
+    const p = d.profil;
+    poserCouleur(1, p.couleur_principale || CHARTE_DEFAUT.principale); poserCouleur(2, p.couleur_secondaire || CHARTE_DEFAUT.secondaire);
+    if (p.nom_affiche) $("vm-nom").value = p.nom_affiche;
+    if (p.ville) $("vm-ville").value = p.ville;
+    if (p.ton) $("vm-ton").value = p.ton;
+    if (p.format_video) $("vm-format").value = p.format_video;
+    $("vm-logo").checked = p.avec_logo !== false;
+    zone.textContent = "Réglages enregistrés de ce client appliqués : couleurs, nom, ville, ton, format et logo.";
+  }
+  $("vm-profil-enregistrer").addEventListener("click", async () => {
+    const id = $("vm-client").value, zone = $("vm-profil-statut");
+    zone.hidden = false;
+    if (!id) { zone.textContent = "Choisissez d'abord un client pour enregistrer ses réglages."; return; }
+    try {
+      const r = await fetch("/video-motion/profil/" + id, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value, nom: $("vm-nom").value, ville: $("vm-ville").value, ton: $("vm-ton").value, format: $("vm-format").value, avec_logo: $("vm-logo").checked }) });
+      zone.textContent = r.ok ? "Réglages enregistrés : ils seront appliqués automatiquement à chaque vidéo de ce client." : "Enregistrement impossible : " + ((await r.json()).erreur || "erreur");
+    } catch (e) { zone.textContent = "Enregistrement impossible pour le moment."; }
   });
 
   async function chargerPhotos(premiere) {
@@ -358,12 +418,12 @@
 
   function dessiner() {
     const zone = $("vm-scenes"); zone.textContent = "";
-    scenes.forEach((sc, i) => {
+    item().scenes.forEach((sc, i) => {
       const carte = document.createElement("div"); carte.className = "vm-carte";
       const entete = document.createElement("h3");
       const nom = document.createElement("span"); nom.textContent = (i + 1) + ". " + (LIBELLES[sc.type] || sc.type);
       const bouton = document.createElement("button"); bouton.type = "button"; bouton.className = "bouton-secondaire bouton-mini"; bouton.textContent = "Retirer";
-      bouton.addEventListener("click", () => { scenes.splice(i, 1); dessiner(); });
+      bouton.addEventListener("click", () => { item().scenes.splice(i, 1); dessiner(); });
       entete.appendChild(nom); entete.appendChild(bouton); carte.appendChild(entete);
       (CHAMPS[sc.type] || []).forEach(([cle, libelle]) => {
         const label = document.createElement("label"); label.textContent = libelle; carte.appendChild(label);
@@ -380,7 +440,7 @@
       });
       zone.appendChild(carte);
     });
-    $("vm-rendre").disabled = !scenes.length;
+    $("vm-rendre").disabled = !item().scenes.length || item().etat === "en_cours";
   }
 
   const AIDES_MODELES = {
@@ -392,7 +452,7 @@
   $("vm-scenario").addEventListener("click", async () => {
     const modele = $("vm-modele").value, minimum = { avant_apres: 2, realisation: 1 }[modele] || 0;
     if (choix.length < minimum) { statut(modele === "avant_apres" ? "Choisissez d'abord 2 photos : la 1re sera l'avant, la 2e l'après." : "Choisissez d'abord au moins 1 photo du chantier."); return; }
-    $("vm-scenario").disabled = true; $("vm-spinner").hidden = false; $("vm-resultat").hidden = true;
+    $("vm-scenario").disabled = true; $("vm-spinner").hidden = false;
     statut("Écriture du scénario en cours (environ 20 secondes)...");
     try {
       const r = await fetch("/video-motion/scenario", {
@@ -401,45 +461,114 @@
       });
       const d = await r.json();
       if (!r.ok) { statut(d.erreur || "Échec de l'écriture du scénario."); return; }
-      scenes = d.scenes; legende = d.legende || ""; titre = d.titre || "";
-      $("vm-zone-scenario").hidden = false; dessiner();
+      serie = [{ titre: d.titre || "", legende: d.legende || "", scenes: d.scenes, id: "", etat: "pret", duree: 0, progression: 0 }]; afficherSerie(0);
       statut("Scénario prêt : relisez-le, corrigez ce qui doit l'être, puis générez la vidéo.");
     } catch (e) { statut("Erreur réseau."); }
     finally { $("vm-scenario").disabled = false; $("vm-spinner").hidden = true; }
   });
 
-  $("vm-rendre").addEventListener("click", async () => {
-    $("vm-rendre").disabled = true; $("vm-resultat").hidden = true; $("vm-progression").hidden = false; $("vm-barre-remplissage").style.width = "0%";
-    $("vm-etape").textContent = "Démarrage...";
+  // ---------- série de vidéos : N sujets différents tirés du site du client, un scénario chacun
+  $("vm-serie").addEventListener("click", async () => {
+    if (!$("vm-client").value) { statut("Choisissez d'abord un client : la série s'appuie sur le contenu de son site."); return; }
+    $("vm-serie").disabled = true; $("vm-spinner-serie").hidden = false;
+    statut("Préparation de la série (environ 1 minute : recherche des sujets, puis écriture de chaque scénario)...");
     try {
-      const r = await fetch("/video-motion/rendre", {
+      const r = await fetch("/video-motion/serie", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenes: scenes, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
-          images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
-          logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
-          musique_id: $("vm-musique").value, bpm: $("vm-bpm").value }),
+        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value,
+                               nb_videos: $("vm-nb-serie").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient) }),
       });
       const d = await r.json();
-      if (!r.ok) { $("vm-etape").textContent = d.erreur || "Échec."; $("vm-rendre").disabled = false; return; }
-      suivre(d.id);
-    } catch (e) { $("vm-etape").textContent = "Erreur réseau."; $("vm-rendre").disabled = false; }
+      if (!r.ok) { statut(d.erreur || "Échec de la préparation de la série."); return; }
+      serie = d.videos.map((v) => ({ titre: v.titre || (v.idee || {}).titre || "", legende: v.legende || "", scenes: v.scenes, id: "", etat: "pret", duree: 0, progression: 0, sujet: (v.idee || {}).titre || "" }));
+      afficherSerie(0);
+      statut(serie.length + " vidéos prêtes à relire" + (d.echecs ? " (" + d.echecs + " scénario(s) n'ont pas pu être écrits : relancez la série pour en obtenir d'autres)" : "") + ". Relisez chaque onglet, puis « Générer toutes les vidéos de la série ».");
+    } catch (e) { statut("Erreur réseau."); }
+    finally { $("vm-serie").disabled = false; $("vm-spinner-serie").hidden = true; }
   });
 
-  async function suivre(id) {
-    let e;
-    try { e = await (await fetch("/video-motion/" + id + "/etat")).json(); } catch (x) { setTimeout(() => suivre(id), 3000); return; }
-    $("vm-barre-remplissage").style.width = Math.round((e.progression || 0) * 100) + "%";
-    $("vm-etape").textContent = "Génération de la vidéo (" + Math.round((e.progression || 0) * 100) + " %)";
-    if (e.etat === "en_cours") { setTimeout(() => suivre(id), 1500); return; }
-    $("vm-rendre").disabled = false; $("vm-progression").hidden = true;
-    if (e.etat === "erreur") { $("vm-etape").textContent = ""; statut("La génération a échoué : " + e.erreur); return; }
-    identifiantVideo = id;
-    if ($("vm-client").value) $("vm-pub-client").value = $("vm-client").value;
-    const url = "/video-motion/" + id + "/video.mp4";
-    $("vm-resultat").hidden = false; $("vm-video").src = url + "?v=" + Date.now(); $("vm-telecharger").href = url + "?telecharger=1"; $("vm-legende").value = legende;
-    statut("Vidéo prête (" + e.duree + " s). Regardez-la avant de la publier.");
-    $("vm-resultat").scrollIntoView({ behavior: "smooth", block: "start" });
+  function afficherSerie(i) {
+    courant = Math.max(0, Math.min(i, serie.length - 1));
+    $("vm-zone-scenario").hidden = !serie.length;
+    dessinerOnglets(); dessiner();
+    $("vm-legende").value = item().legende || "";
+    $("vm-rendre-tout").hidden = serie.length < 2;
+    montrerRendu();
   }
+  $("vm-legende").addEventListener("input", () => { if (serie[courant]) serie[courant].legende = $("vm-legende").value; });
+  const ICONES = { pret: "✏️ À relire", en_cours: "⏳ Génération...", rendu: "✅ Vidéo prête", erreur: "⚠ Échec" };
+  function dessinerOnglets() {
+    const zone = $("vm-onglets"); zone.textContent = ""; zone.hidden = serie.length < 2;
+    serie.forEach((v, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "vm-onglet" + (i === courant ? " actif" : "");
+      const t = document.createElement("b"); t.textContent = "Vidéo " + (i + 1) + " · " + (ICONES[v.etat] || "");
+      const sujet = document.createElement("span"); sujet.textContent = v.sujet || v.titre || "";
+      b.appendChild(t); b.appendChild(sujet); b.addEventListener("click", () => afficherSerie(i)); zone.appendChild(b);
+    });
+  }
+  // Zone sous le scénario : barre de progression si cette vidéo se génère, sinon la vidéo terminée avec ses boutons de publication.
+  function montrerRendu() {
+    const v = item();
+    $("vm-progression").hidden = v.etat !== "en_cours";
+    $("vm-barre-remplissage").style.width = Math.round((v.progression || 0) * 100) + "%";
+    $("vm-etape").textContent = v.etat === "en_cours" ? "Génération de la vidéo (" + Math.round((v.progression || 0) * 100) + " %)" : (v.etat === "erreur" ? "La génération a échoué : " + (v.erreur || "") : "");
+    const pret = v.etat === "rendu" && v.id;
+    $("vm-resultat").hidden = !pret;
+    if (pret) {
+      const url = "/video-motion/" + v.id + "/video.mp4";
+      if ($("vm-video").dataset.id !== v.id) { $("vm-video").src = url; $("vm-video").dataset.id = v.id; }
+      $("vm-telecharger").href = url + "?telecharger=1";
+      if ($("vm-client").value) $("vm-pub-client").value = $("vm-client").value;
+      statutPublication("");
+    }
+    $("vm-rendre").disabled = !v.scenes.length || v.etat === "en_cours";
+  }
+
+  const attendre = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  // Génère la vidéo i (un seul rendu à la fois côté serveur : en cas d'occupation, on réessaie). Renvoie true si la vidéo est prête.
+  async function rendreVideo(i) {
+    const v = serie[i];
+    v.etat = "en_cours"; v.progression = 0; v.erreur = ""; dessinerOnglets(); if (i === courant) montrerRendu();
+    const corps = JSON.stringify({ scenes: v.scenes, client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
+      images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
+      logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
+      musique_id: $("vm-musique").value, bpm: $("vm-bpm").value });
+    let d = null;
+    try {
+      for (let essai = 0; essai < 90; essai++) {
+        const r = await fetch("/video-motion/rendre", { method: "POST", headers: { "Content-Type": "application/json" }, body: corps });
+        d = await r.json();
+        if (r.ok) break;
+        if (r.status !== 409) { v.etat = "erreur"; v.erreur = d.erreur || "Échec."; return false; }
+        await attendre(3000);                                          // une autre vidéo se génère : on patiente
+        d = null;
+      }
+      if (!d) { v.etat = "erreur"; v.erreur = "Le serveur est occupé : réessayez dans un instant."; return false; }
+      for (;;) {
+        let e;
+        try { e = await (await fetch("/video-motion/" + d.id + "/etat")).json(); } catch (x) { await attendre(3000); continue; }
+        v.progression = e.progression || 0;
+        if (i === courant) montrerRendu();
+        if (e.etat === "en_cours") { await attendre(1500); continue; }
+        if (e.etat === "erreur") { v.etat = "erreur"; v.erreur = e.erreur || "Échec."; return false; }
+        v.id = d.id; v.etat = "rendu"; v.duree = e.duree; return true;
+      }
+    } catch (e) { v.etat = "erreur"; v.erreur = "Erreur réseau."; return false; }
+    finally { dessinerOnglets(); if (i === courant) montrerRendu(); }
+  }
+  async function lancerRendu(indices) {
+    $("vm-rendre").disabled = $("vm-rendre-tout").disabled = true;
+    let reussies = 0;
+    for (const i of indices) {
+      statut("Génération de la vidéo " + (i + 1) + " sur " + serie.length + "...");
+      if (await rendreVideo(i)) reussies++;
+    }
+    $("vm-rendre-tout").disabled = false; montrerRendu();
+    statut(reussies + " vidéo(s) prête(s) sur " + indices.length + ". Regardez chaque vidéo avant de la publier : l'onglet de chaque vidéo contient ses boutons de publication.");
+    if (reussies && serie[courant] && serie[courant].etat === "rendu") $("vm-resultat").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  $("vm-rendre").addEventListener("click", () => lancerRendu([courant]));
+  $("vm-rendre-tout").addEventListener("click", () => lancerRendu(serie.map((_, i) => i).filter((i) => serie[i].etat !== "rendu")));
 })();
 </script>
 {% endblock %}

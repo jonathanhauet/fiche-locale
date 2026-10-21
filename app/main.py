@@ -88,6 +88,7 @@ from . import (
     motion_video,
     cartes_montage,
     charte_montage,
+    creations,
     modeles_visuels,
     montage_parole,
     style_reference,
@@ -8007,6 +8008,186 @@ async def video_motion_faits(request: Request, db: Session = Depends(obtenir_ses
     return JSONResponse({"faits": faits})
 
 
+_COULEUR_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _profil_video_en_dict(profil) -> dict:
+    return {"couleur_principale": profil.couleur_principale or "", "couleur_secondaire": profil.couleur_secondaire or "", "nom_affiche": profil.nom_affiche or "",
+            "ville": profil.ville or "", "ton": profil.ton or "", "format_video": profil.format_video or "", "avec_logo": bool(profil.avec_logo)}
+
+
+@app.get("/video-motion/profil/{client_id}")
+def video_motion_profil(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Reglages enregistres des videos de ce client (ou null), pour pre-remplir la page."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    if not db.get(models.Client, client_id):
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    profil = db.query(models.ProfilVideoClient).filter_by(client_id=client_id).first()
+    return JSONResponse({"profil": _profil_video_en_dict(profil) if profil else None, "defauts": charte_montage.lire(db)})
+
+
+@app.post("/video-motion/profil/{client_id}")
+async def video_motion_profil_enregistrer(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Enregistre les reglages des videos de ce client : couleurs, nom, ville, ton, format, logo (les valeurs invalides sont ignorees)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    if not db.get(models.Client, client_id):
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    profil = db.query(models.ProfilVideoClient).filter_by(client_id=client_id).first() or models.ProfilVideoClient(client_id=client_id, sujets_deja="[]")
+    profil.couleur_principale = donnees["couleur1"].lower() if isinstance(donnees.get("couleur1"), str) and _COULEUR_HEX.match(donnees["couleur1"]) else ""
+    profil.couleur_secondaire = donnees["couleur2"].lower() if isinstance(donnees.get("couleur2"), str) and _COULEUR_HEX.match(donnees["couleur2"]) else ""
+    profil.nom_affiche = " ".join(str(donnees.get("nom") or "").split())[:80]
+    profil.ville = " ".join(str(donnees.get("ville") or "").split())[:60]
+    profil.ton = donnees["ton"] if donnees.get("ton") in claude_generation.TONS_MOTION else ""
+    profil.format_video = donnees["format"] if donnees.get("format") in motion_video.FORMATS else ""
+    profil.avec_logo = bool(donnees.get("avec_logo", True))
+    profil.maj_le = datetime.utcnow()
+    db.add(profil)
+    db.commit()
+    return JSONResponse({"ok": True, "profil": _profil_video_en_dict(profil)})
+
+
+@app.post("/video-motion/serie")
+async def video_motion_serie(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Serie de videos (« les videos du mois ») : N idees DIFFERENTES tirees du site du client (en excluant celles des series precedentes), puis un scenario
+    par idee, ecrits en parallele. Corps : client_id, nom, ville, faits, ton, duree, nb_videos (2 a 6), nb_photos, avec_logo.
+    """
+    client, contenu, erreur, donnees = await _client_et_site(request, db)
+    if erreur:
+        return erreur
+    try:
+        nombre = max(2, min(int(donnees.get("nb_videos") or 4), 6))
+        nb_photos = max(0, min(int(donnees.get("nb_photos") or 0), 12))
+    except (TypeError, ValueError):
+        nombre, nb_photos = 4, 0
+    profil = db.query(models.ProfilVideoClient).filter_by(client_id=client.id).first()
+    try:
+        deja = [str(x) for x in json.loads(profil.sujets_deja or "[]")] if profil else []
+    except ValueError:
+        deja = []
+    nom, ville = str(donnees.get("nom") or client.nom).strip(), str(donnees.get("ville") or "").strip()
+    faits, ton, duree, avec_logo = str(donnees.get("faits") or ""), str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, bool(donnees.get("avec_logo"))
+    try:
+        idees = await run_in_threadpool(claude_generation.suggerer_idees_video_motion, client.nom, contenu, deja[-40:], nombre)
+    except Exception as e:
+        return JSONResponse({"erreur": f"Impossible de proposer des idées : {e}"}, status_code=502)
+
+    def ecrire(idee):
+        try:
+            resultat = claude_generation.generer_scenario_motion(nom, ville, f"{idee['titre']} : {idee['brief']}", faits, contenu, ton, duree, nb_photos, avec_logo, "libre")
+            return {**resultat, "idee": idee}
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=3) as groupe:
+        resultats = list(await run_in_threadpool(lambda: list(groupe.map(ecrire, idees[:nombre]))))
+    videos = [r for r in resultats if r]
+    if not videos:
+        return JSONResponse({"erreur": "Aucun scénario n'a pu être écrit : réessayez dans un instant."}, status_code=502)
+    if not profil:
+        profil = models.ProfilVideoClient(client_id=client.id, sujets_deja="[]")
+    profil.sujets_deja = json.dumps((deja + [v["idee"]["titre"] for v in videos])[-60:], ensure_ascii=False)
+    db.add(profil)
+    db.commit()
+    return JSONResponse({"videos": videos, "echecs": len(resultats) - len(videos)})
+
+
+def _archiver_creation(db: Session, client_id, genre: str, titre: str, urls, **autres) -> None:
+    """Garde une trace de ce qui vient d'etre cree (archive par client, voir creations.py). Jamais bloquant : une erreur ici ne doit pas faire echouer la creation."""
+    try:
+        creations.enregistrer(db, client_id, genre, titre, urls if isinstance(urls, list) else [urls], **autres)
+    except Exception:
+        db.rollback()
+
+
+@app.get("/creations", response_class=HTMLResponse)
+def page_creations(request: Request, client_id: int = None, genre: str = "", db: Session = Depends(obtenir_session)):
+    """Archive des creations (videos, visuels, carrousels) et des scripts video, par client."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    clients = db.query(models.Client).order_by(models.Client.favori_publication_multi.desc(), models.Client.nom).all()
+    noms = {c.id: c.nom for c in clients}
+    requete = db.query(models.Creation)
+    if client_id:
+        requete = requete.filter(models.Creation.client_id == client_id)
+    if genre in creations.GENRES:
+        requete = requete.filter(models.Creation.genre == genre)
+    elements = [] if genre == "script" else [creations.en_dict(c) for c in requete.order_by(models.Creation.cree_le.desc(), models.Creation.id.desc()).limit(300).all()]
+    for element in elements:
+        element["client_nom"] = noms.get(element["client_id"], "Sans client")
+    personnel = _client_marque_personnelle(db)
+    scripts_concernes = (not client_id or (personnel is not None and personnel.id == client_id)) and (not genre or genre == "script")
+    scripts = db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(100).all() if scripts_concernes else []
+    return templates.TemplateResponse(request, "creations.html", {
+        "page_actuelle": "creations", "clients": clients, "elements": elements, "scripts": scripts, "client_id": client_id, "genre": genre, "genres": creations.GENRES,
+    })
+
+
+@app.post("/creations/{creation_id}/supprimer")
+def creations_supprimer(creation_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Retire la creation de l'archive et supprime ses fichiers sur l'hebergement OVH."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Creation, creation_id)
+    if not ligne:
+        return JSONResponse({"erreur": "Création introuvable."}, status_code=404)
+    return JSONResponse({"ok": True, "fichiers": creations.supprimer(db, ligne)})
+
+
+@app.post("/creations/{creation_id}/client")
+async def creations_attribuer_client(creation_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Rattache une creation archivee « sans client » (ou la change de client). Corps : client_id."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Creation, creation_id)
+    if not ligne:
+        return JSONResponse({"erreur": "Création introuvable."}, status_code=404)
+    try:
+        corps = await request.json()
+        client = db.get(models.Client, int(corps.get("client_id")))
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    ligne.client_id = client.id
+    db.commit()
+    return JSONResponse({"ok": True, "client": client.nom})
+
+
+@app.post("/creations/{creation_id}/composeur")
+async def creations_vers_composeur(creation_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Republie : ouvre le composeur multi-reseaux du client avec le fichier (video ou 1re image) et le texte d'origine. Corps : client_id (facultatif)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Creation, creation_id)
+    if not ligne:
+        return JSONResponse({"erreur": "Création introuvable."}, status_code=404)
+    try:
+        corps = await request.json()
+    except Exception:
+        corps = {}
+    corps = corps if isinstance(corps, dict) else {}
+    try:
+        client = db.get(models.Client, int(corps.get("client_id") or ligne.client_id or 0))
+    except (TypeError, ValueError):
+        client = None
+    if not client:
+        return JSONResponse({"erreur": "Choisissez la fiche pour laquelle publier."}, status_code=400)
+    element = creations.en_dict(ligne)
+    brouillon = {"client_id": client.id, "texte": str(element["meta"].get("legende") or element["titre"])[:3000]}
+    brouillon["video_url" if ligne.genre == "video" else "image_url"] = element["urls"][0]
+    request.session["brouillon_vocal"] = brouillon
+    return JSONResponse({"url": f"/publication-multi?client_id={client.id}"})
+
+
 @app.get("/video-motion/photos/{client_id}")
 def video_motion_photos(client_id: int, request: Request, page: str = "", db: Session = Depends(obtenir_session)):
     """
@@ -8093,8 +8274,28 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
     except (TypeError, ValueError):
         bpm = None
     try:
+        id_client = int(donnees.get("client_id") or 0)
+    except (TypeError, ValueError):
+        id_client = 0
+    titre_archive = " ".join(str(donnees.get("titre") or donnees.get("nom") or "Vidéo motion design").split())[:150]
+    meta_archive = {"legende": str(donnees.get("legende") or "")[:3000], "scenes": scenario["scenes"][:12], "couleurs": [charte["principale"], charte["secondaire"]],
+                    "nom": str(donnees.get("nom") or "")[:80], "ville": str(donnees.get("ville") or "")[:60], "source": "motion_design"}
+
+    def archiver(chemin_video: str, duree_video: float) -> dict:
+        with open(chemin_video, "rb") as fichier:
+            octets = fichier.read()
+        nom_fichier = f"motion-{uuid.uuid4().hex[:12]}.mp4"
+        url = ovh_upload.envoyer_octets(octets, nom_fichier)
+        session = SessionLocal()
+        try:
+            creations.enregistrer(session, id_client or None, "video", titre_archive, [url], format_video, duree_video, meta_archive)
+        finally:
+            session.close()
+        return {"url": url, "nom_distant": nom_fichier}
+
+    try:
         identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60],
-                                            sources_images, source_logo, url_musique, bpm)
+                                            sources_images, source_logo, url_musique, bpm, archiver)
     except motion_video.ErreurMotion as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=409)
     return JSONResponse({"id": identifiant})
@@ -8860,6 +9061,7 @@ async def montage_publication_vers_composeur(identifiant: str, numero: int, requ
     if etat["hebergement"] != "pret":
         return JSONResponse({"erreur": "La vidéo n'est pas encore prête à être publiée : lancez la préparation."}, status_code=409)
     request.session["brouillon_vocal"] = {"client_id": client.id, "texte": texte, "video_url": etat["url"]}
+    _archiver_creation(db, client.id, "video", sortie["titre"], [etat["url"]], format_video=sortie["format"], duree=sortie["duree"], meta={"legende": texte, "source": "montage"})
     return JSONResponse({"url": f"/publication-multi?client_id={client.id}"})
 
 
@@ -8884,6 +9086,7 @@ async def montage_publication_vers_bibliotheque(identifiant: str, numero: int, r
     )
     db.add(ligne)
     db.commit()
+    _archiver_creation(db, None, "video", ligne.titre, [ligne.url], format_video=sortie["format"], duree=sortie["duree"], meta={"legende": ((etat["kit"] or {}).get("texte") or ""), "source": "montage"})
     return JSONResponse({"id": ligne.id, "deja": False})
 
 
@@ -9920,6 +10123,9 @@ async def publication_multi_modele_rendu(client_id: int, request: Request, db: S
         resultat = await run_in_threadpool(fabriquer)
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin du visuel : {str(erreur)[:250]}"}, status_code=500)
+    if final:
+        _archiver_creation(db, client_id, "video" if en_video else "visuel", f"Visuel {modele}".strip(), [resultat["video"]] if en_video else list(resultat.get("images") or []),
+                           format_video="vertical" if en_video else "", meta={"modele": modele, "source": "modele_visuel"})
     return JSONResponse(resultat)
 
 
@@ -10095,6 +10301,8 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
         resultat = await run_in_threadpool(fabriquer)
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin du carrousel : {erreur}"}, status_code=500)
+    if final:
+        _archiver_creation(db, client_id, "carrousel", "Carrousel", list(resultat), meta={"slides": len(resultat), "source": "carrousel"})
     return JSONResponse({"images": resultat})
 
 
@@ -10271,6 +10479,8 @@ async def publication_multi_titre_photo(client_id: int, request: Request, db: Se
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin de l'image : {erreur}"}, status_code=500)
+    if final:
+        _archiver_creation(db, client_id, "carrousel" if len(resultat) > 1 else "visuel", "Titre sur photo", list(resultat), meta={"titre": str(donnees.get("titre") or "")[:200], "source": "titre_photo"})
     return JSONResponse({"images": resultat} if final else {"image": resultat})
 
 
@@ -10395,6 +10605,8 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
         resultat = await run_in_threadpool(fabriquer)
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin du visuel : {erreur}"}, status_code=500)
+    if final:
+        _archiver_creation(db, client_id, "visuel", "Visuel avis Google", [resultat], meta={"auteur": auteur, "note": note, "source": "avis"})
     return JSONResponse({"image": resultat})
 
 
@@ -11292,6 +11504,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation de l'image : {e}"}, status_code=500)
 
+    _archiver_creation(db, client_id, "visuel", "Image IA", [url_image], format_video="1:1", meta={"prompt": prompt_image[:1500], "source": "image_ia"})
     if varier:
         try:
             db.add(models.PromptImageGenere(client_id=client_id, prompt=prompt_image[:1500]))
@@ -11361,6 +11574,7 @@ async def publication_multi_generer_carrousel_images_ia(client_id: int, request:
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
 
+    _archiver_creation(db, client_id, "carrousel", "Carrousel d'images IA", list(urls), format_video="1:1", meta={"prompts": prompts[:12], "source": "carrousel_ia"})
     return JSONResponse({"urls": urls, "prompts": prompts})
 
 
@@ -11409,6 +11623,7 @@ async def publication_multi_generer_video(client_id: int, request: Request, db: 
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation de la vidéo : {e}"}, status_code=500)
 
+    _archiver_creation(db, client_id, "video", "Vidéo IA", [url_video], meta={"prompt": prompt_video[:1500], "source": "video_ia"})
     return JSONResponse({"url": url_video, "prompt_utilise": prompt_video if prompt_genere else "", "prompt_genere": prompt_genere})
 
 

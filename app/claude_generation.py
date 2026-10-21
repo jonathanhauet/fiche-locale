@@ -3768,15 +3768,16 @@ def _json_claude(prompt: str, schema: dict, max_tokens: int = 2500) -> dict:
     return json.loads(bloc)
 
 
-def suggerer_idees_video_motion(nom: str, contenu_site: str, deja: list = None) -> list:
-    """6 idees de videos de motion design pour un client, tirees uniquement du contenu de son site : [{"titre", "brief"}]."""
+def suggerer_idees_video_motion(nom: str, contenu_site: str, deja: list = None, nombre: int = 6) -> list:
+    """Idees (6 par defaut, jusqu'a 10) de videos de motion design pour un client, tirees uniquement du contenu de son site : [{"titre", "brief"}]."""
+    nombre = max(1, min(int(nombre or 6), 10))
     contenu = (contenu_site or "").strip()[:6000]
     if not contenu:
         raise RuntimeError("Aucun contenu de site enregistre pour ce client.")
     exclusions = ("\nIdées déjà affichées (n'en reproduis aucune, propose des angles différents) :\n" + "\n".join(f"- {x[:120]}" for x in (deja or [])[:20]) + "\n") if deja else ""
     prompt = (
         f"Voici le contenu du site de l'entreprise « {(nom or '').strip()[:120]} » :\n\n{contenu}\n{exclusions}\n"
-        "Propose 6 idées de courtes vidéos de motion design (texte animé, sans tournage, 15 à 25 secondes) pour ses réseaux sociaux. "
+        f"Propose {nombre} idées de courtes vidéos de motion design (texte animé, sans tournage, 15 à 25 secondes) pour ses réseaux sociaux. "
         "Chaque idée = un angle différent (un service précis, une question que se posent les clients, une promesse tenue, une façon de travailler, une zone desservie, "
         "un avantage concret). titre : 3 à 7 mots. brief : 1 à 2 phrases qui disent ce que la vidéo doit faire passer, en t'appuyant UNIQUEMENT sur ce que dit le site. "
         "Règles : français soigné avec accents ; jamais de tiret cadratin ; n'invente aucun chiffre, aucun délai, aucun prix, aucun avis ; rien de négatif ni de comparatif ; "
@@ -3784,7 +3785,7 @@ def suggerer_idees_video_motion(nom: str, contenu_site: str, deja: list = None) 
     )
     idees = _json_claude(prompt, SCHEMA_IDEES_MOTION).get("idees", [])
     propres = [{"titre": _nettoyer_texte_genere(i.get("titre", "")).replace("\u2014", "-")[:90], "brief": _nettoyer_texte_genere(i.get("brief", "")).replace("\u2014", "-")[:400]} for i in idees]
-    propres = [i for i in propres if i["titre"] and i["brief"]][:6]
+    propres = [i for i in propres if i["titre"] and i["brief"]][:nombre]
     if not propres:
         raise RuntimeError("L'IA n'a propose aucune idee exploitable.")
     return propres

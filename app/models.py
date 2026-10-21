@@ -1246,3 +1246,43 @@ class DemandeClient(Base):
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="demandes_client")
+
+
+class ProfilVideoClient(Base):
+    """
+    Reglages des videos de motion design d'un client, enregistres une fois (voir /video-motion) : couleurs, nom affiche, ville, ton, format,
+    logo ; et les sujets deja traites, pour que les series de videos des mois suivants ne les repetent pas.
+    """
+
+    __tablename__ = "profils_video_client"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, unique=True)
+    couleur_principale = Column(String, default="")
+    couleur_secondaire = Column(String, default="")
+    nom_affiche = Column(String, default="")
+    ville = Column(String, default="")
+    ton = Column(String, default="")
+    format_video = Column(String, default="")
+    avec_logo = Column(Boolean, default=True)
+    sujets_deja = Column(Text, default="[]")          # JSON : titres des idees deja utilisees (les plus recentes en dernier)
+    maj_le = Column(DateTime, default=datetime.utcnow)
+
+
+class Creation(Base):
+    """
+    Creation gardee dans l'archive d'un client (voir creations.py et la page /creations) : video, visuel ou carrousel dont les fichiers sont heberges
+    sur OVH. client_id vide = creation faite sans client. meta_json : reglages et textes utiles pour la republier (legende, scenes, couleurs...).
+    """
+
+    __tablename__ = "creations"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    genre = Column(String, default="visuel", index=True)       # video / visuel / carrousel
+    titre = Column(String, default="")
+    urls_json = Column(Text, default="[]")                      # adresses publiques des fichiers (une pour une video, plusieurs pour un carrousel)
+    format = Column(String, default="")
+    duree = Column(Float, default=0.0)
+    meta_json = Column(Text, default="{}")
+    cree_le = Column(DateTime, default=datetime.utcnow, index=True)
