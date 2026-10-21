@@ -7950,10 +7950,13 @@ async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_
         nb_photos = max(0, min(int(donnees.get("nb_photos") or 0), 12))
     except (TypeError, ValueError):
         nb_photos = 0
+    modele = donnees.get("modele") if donnees.get("modele") in claude_generation.MODELES_MOTION else "libre"
+    if modele != "libre" and nb_photos < claude_generation.MODELES_MOTION[modele]["photos_min"]:
+        return JSONResponse({"erreur": "Choisissez d'abord " + ("2 photos : la 1re sera l'avant, la 2e l'après." if modele == "avant_apres" else "au moins 1 photo du chantier.")}, status_code=400)
     try:
         resultat = await run_in_threadpool(
             claude_generation.generer_scenario_motion, nom, str(donnees.get("ville") or ""), str(donnees.get("brief") or ""), str(donnees.get("faits") or ""),
-            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, nb_photos, bool(donnees.get("avec_logo")))
+            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, nb_photos, bool(donnees.get("avec_logo")), modele)
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible d'écrire le scénario : {erreur}"}, status_code=500)
     return JSONResponse(resultat)

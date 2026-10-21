@@ -20,6 +20,14 @@
     {% for c in clients %}<option value="{{ c.id }}" data-nom="{{ c.nom }}">{{ c.nom }}</option>{% endfor %}
   </select>
 
+  <label for="vm-modele">Modèle de vidéo</label>
+  <select id="vm-modele">
+    <option value="libre">Libre : l'IA compose le scénario</option>
+    <option value="avant_apres">Avant / Après : un curseur révèle le résultat (2 photos)</option>
+    <option value="realisation">Réalisation de la semaine : photos, commune et description</option>
+  </select>
+  <p id="vm-modele-aide" class="texte-discret" hidden></p>
+
   <div class="ligne-champs">
     <button type="button" id="vm-idees" class="bouton-secondaire"><span class="spinner" id="vm-spinner-idees" hidden></span>💡 Idées de vidéo (d'après le site du client)</button>
     <button type="button" id="vm-faits-site" class="bouton-secondaire"><span class="spinner" id="vm-spinner-faits" hidden></span>📌 Reprendre les faits du site</button>
@@ -76,8 +84,23 @@
   </div>
 
   <div class="ligne-champs">
-    <div><label for="vm-couleur1">Couleur principale</label><input type="color" id="vm-couleur1" value="{{ charte.principale }}"></div>
-    <div><label for="vm-couleur2">Couleur secondaire</label><input type="color" id="vm-couleur2" value="{{ charte.secondaire }}"></div>
+    <div class="vm-couleur">
+      <label for="vm-couleur1">Couleur principale</label>
+      <div class="vm-couleur-ligne">
+        <input type="color" id="vm-couleur1" value="{{ charte.principale }}" title="Choisir une couleur">
+        <input type="text" id="vm-hex1" class="vm-hex" maxlength="7" value="{{ charte.principale }}" placeholder="#2f5eff" spellcheck="false" autocomplete="off" aria-label="Couleur principale en hexadécimal">
+        <button type="button" class="bouton-secondaire bouton-mini vm-pipette" data-cible="1" title="Prélever une couleur n'importe où sur l'écran">💧 Pipette</button>
+      </div>
+    </div>
+    <div class="vm-couleur">
+      <label for="vm-couleur2">Couleur secondaire</label>
+      <div class="vm-couleur-ligne">
+        <input type="color" id="vm-couleur2" value="{{ charte.secondaire }}" title="Choisir une couleur">
+        <input type="text" id="vm-hex2" class="vm-hex" maxlength="7" value="{{ charte.secondaire }}" placeholder="#ffd60a" spellcheck="false" autocomplete="off" aria-label="Couleur secondaire en hexadécimal">
+        <button type="button" class="bouton-secondaire bouton-mini vm-pipette" data-cible="2" title="Prélever une couleur n'importe où sur l'écran">💧 Pipette</button>
+      </div>
+    </div>
+    <p id="vm-couleur-statut" class="texte-discret" hidden></p>
   </div>
 
   <div class="ligne-champs">
@@ -129,6 +152,10 @@
   .vm-miniature img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .vm-miniature.choisie { border-color: #2f5eff; }
   .vm-miniature .num { position: absolute; top: 3px; left: 3px; background: #2f5eff; color: #fff; font-size: .75rem; font-weight: 700; border-radius: 99px; min-width: 1.3rem; text-align: center; }
+  .vm-couleur-ligne { display: flex; align-items: center; gap: .5rem; }
+  .vm-couleur-ligne input[type=color] { width: 3.2rem; height: 2.4rem; padding: 2px; flex: none; cursor: pointer; }
+  .vm-hex { width: 7.5rem; flex: none; font-family: ui-monospace, Consolas, monospace; text-transform: lowercase; }
+  .vm-hex.invalide { outline: 2px solid #d64545; }
   .vm-case { display: flex; gap: .5rem; align-items: center; justify-content: flex-start; text-align: left; margin-top: .6rem; }
   .vm-case input { width: auto; flex: none; margin: 0; }
   .vm-idees { display: flex; flex-direction: column; gap: .4rem; margin: .4rem 0 .8rem; }
@@ -145,12 +172,14 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const LIBELLES = {
-    hook: "Accroche", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
+    hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
   };
   const CHAMPS = {
     hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"]],
     marque: [["nom", "Nom"], ["accroche", "Slogan"]],
     photo: [["texte", "Texte sur la photo"], ["sous_texte", "Sous-texte"], ["photo", "Photo n°"]],
+    avant_apres: [["titre", "Titre"], ["photos", "Photos : n° avant, n° après (2 numéros séparés par une virgule)"], ["legende", "Légende"]],
+    realisation: [["kicker", "Étiquette"], ["titre", "Titre"], ["sous_texte", "Commune"], ["texte", "Description"], ["photos", "Photos (1 à 3 numéros séparés par des virgules)"]],
     mosaique: [["titre", "Titre"], ["photos", "Photos (3 numéros séparés par des virgules)"]],
     chiffre: [["valeur", "Valeur"], ["suffixe", "Suffixe (/5, ans, %...)"], ["libelle", "Libellé"], ["legende", "Précision"]],
     liste: [["titre", "Titre"], ["items", "Éléments (un par ligne)"]],
@@ -159,6 +188,36 @@
     cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"]],
   };
   let scenes = [], legende = "", titre = "", identifiantVideo = "";
+
+  // ---------- couleurs : sélecteur, code hexadécimal (#rrggbb ou #rgb) et pipette (prélèvement à l'écran, Chrome et Edge)
+  function normaliserHex(texte) {
+    let h = String(texte || "").trim().toLowerCase().replace(/^#/, "");
+    if (/^[0-9a-f]{3}$/.test(h)) h = h.split("").map((c) => c + c).join("");
+    return /^[0-9a-f]{6}$/.test(h) ? "#" + h : "";
+  }
+  function messageCouleur(texte) { $("vm-couleur-statut").hidden = !texte; $("vm-couleur-statut").textContent = texte || ""; }
+  function lierCouleur(n) {
+    const roue = $("vm-couleur" + n), hex = $("vm-hex" + n);
+    roue.addEventListener("input", () => { hex.value = roue.value; hex.classList.remove("invalide"); messageCouleur(""); });
+    hex.addEventListener("input", () => {
+      const valeur = normaliserHex(hex.value);
+      if (valeur) { roue.value = valeur; hex.classList.remove("invalide"); messageCouleur(""); }
+      else hex.classList.toggle("invalide", hex.value.trim() !== "");
+    });
+    hex.addEventListener("blur", () => { hex.value = roue.value; hex.classList.remove("invalide"); });       // un code incomplet revient a la couleur valide
+  }
+  lierCouleur(1); lierCouleur(2);
+  document.querySelectorAll(".vm-pipette").forEach((bouton) => {
+    if (!("EyeDropper" in window)) { bouton.disabled = true; bouton.title = "La pipette n'existe que dans Chrome et Edge : saisissez le code hexadécimal ou utilisez le sélecteur."; return; }
+    bouton.addEventListener("click", async () => {
+      try {
+        const resultat = await new window.EyeDropper().open();         // curseur en loupe : un clic n'importe ou sur l'ecran prend la couleur
+        const valeur = normaliserHex(resultat.sRGBHex);
+        if (valeur) { $("vm-couleur" + bouton.dataset.cible).value = valeur; $("vm-hex" + bouton.dataset.cible).value = valeur; messageCouleur(""); }
+      } catch (e) { /* Echap : prelevement annule */ }
+    });
+  });
+  if (!("EyeDropper" in window)) messageCouleur("La pipette n'est disponible que dans Chrome et Edge. Dans ce navigateur, utilisez le sélecteur ou saisissez le code hexadécimal (ex : #2f5eff).");
 
   function statutPublication(texte) { $("vm-pub-statut").hidden = !texte; $("vm-pub-statut").textContent = texte || ""; }
   // La video est d'abord hebergee (quelques secondes), puis envoyee au composeur multi-reseaux ou gardee dans la bibliotheque.
@@ -324,13 +383,21 @@
     $("vm-rendre").disabled = !scenes.length;
   }
 
+  const AIDES_MODELES = {
+    avant_apres: "Choisissez 2 photos dans l'ordre : la 1re sera l'avant, la 2e l'après. Décrivez le chantier et la commune dans « Ce que la vidéo doit faire passer ».",
+    realisation: "Choisissez 1 à 3 photos du chantier. Indiquez ce qui a été fait et la commune dans « Ce que la vidéo doit faire passer ».",
+  };
+  $("vm-modele").addEventListener("change", () => { const aide = AIDES_MODELES[$("vm-modele").value]; $("vm-modele-aide").hidden = !aide; $("vm-modele-aide").textContent = aide || ""; });
+
   $("vm-scenario").addEventListener("click", async () => {
+    const modele = $("vm-modele").value, minimum = { avant_apres: 2, realisation: 1 }[modele] || 0;
+    if (choix.length < minimum) { statut(modele === "avant_apres" ? "Choisissez d'abord 2 photos : la 1re sera l'avant, la 2e l'après." : "Choisissez d'abord au moins 1 photo du chantier."); return; }
     $("vm-scenario").disabled = true; $("vm-spinner").hidden = false; $("vm-resultat").hidden = true;
     statut("Écriture du scénario en cours (environ 20 secondes)...");
     try {
       const r = await fetch("/video-motion/scenario", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient) }),
+        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient), modele: modele }),
       });
       const d = await r.json();
       if (!r.ok) { statut(d.erreur || "Échec de l'écriture du scénario."); return; }

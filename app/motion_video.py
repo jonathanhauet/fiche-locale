@@ -30,7 +30,7 @@ DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stat
 FPS = 30
 FORMATS = {"vertical": (1080, 1920), "carre": (1080, 1080), "horizontal": (1920, 1080)}
 DUREE_TRANSITION = 0.45
-TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique")
+TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation")
 HOTES_IMAGES = (".googleusercontent.com", ".ggpht.com", ".google.com")
 TAILLE_MAX_IMAGE = 8 * 1024 * 1024
 GRAS, NORMAL, SERIF = "Poppins-Bold.ttf", "Poppins-Regular.ttf", "DMSerifDisplay-Regular.ttf"
@@ -84,8 +84,9 @@ def recadrer(image: Image.Image, l: int, h: int, zoom: float = 1.0, cx: float = 
     iw, ih = image.size
     echelle = max(l / iw, h / ih) * max(1.0, zoom)
     fw, fh = l / echelle, h / echelle
-    x0, y0 = (iw - fw) * borne(cx), (ih - fh) * borne(cy)
-    return image.resize((l, h), Image.BILINEAR, box=(x0, y0, x0 + fw, y0 + fh))
+    fw, fh = min(fw, iw), min(fh, ih)                       # jamais plus grand que l'image (arrondis de calcul)
+    x0, y0 = max(0.0, (iw - fw) * borne(cx)), max(0.0, (ih - fh) * borne(cy))
+    return image.resize((l, h), Image.BILINEAR, box=(x0, y0, min(iw, x0 + fw), min(ih, y0 + fh)))
 
 
 def carte_photo(image: Image.Image, l: int, h: int, rayon: int, zoom: float = 1.0) -> Image.Image:
@@ -763,7 +764,143 @@ def scene_mosaique(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     return image
 
 
-SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique}
+def _pastille_texte(ctx: Contexte, d: ImageDraw.ImageDraw, image: Image.Image, texte: str, x: int, y: int, fond: tuple, encre: tuple, opacite: float = 1.0) -> None:
+    """Petite etiquette arrondie (« AVANT », « APRES ») posee sur une photo."""
+    if opacite <= 0:
+        return
+    img = image_texte(texte.upper(), GRAS, ctx.px(34), encre, False, 0.1)
+    l, h = img.size[0] + ctx.px(20), img.size[1] + ctx.px(6)
+    calque = Image.new("RGBA", (l, h), (0, 0, 0, 0))
+    ImageDraw.Draw(calque).rounded_rectangle((0, 0, l - 1, h - 1), radius=h // 2, fill=fond + (int(235 * opacite),))
+    calque.paste(img, (ctx.px(10) - 10, (h - img.size[1]) // 2), img)
+    image.paste(calque.convert("RGB"), (x, y), calque.getchannel("A"))
+
+
+def _epingle(d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, couleur: tuple, trou: tuple) -> None:
+    """Icone de localisation (goutte avec un point au centre)."""
+    d.polygon([(cx - r * 0.82, cy + r * 0.45), (cx + r * 0.82, cy + r * 0.45), (cx, cy + r * 2.0)], fill=couleur)
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=couleur)
+    d.ellipse((cx - r * 0.4, cy - r * 0.4, cx + r * 0.4, cy + r * 0.4), fill=trou)
+
+
+def scene_avant_apres(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Avant / apres : la photo « avant » puis un curseur la balaie pour reveler la photo « apres »."""
+    numeros = [n for n in (sc.get("photos") or []) if ctx.photo(n) is not None][:2]
+    if len(numeros) < 2:                                   # une seule photo disponible : repli sur une scene photo
+        return scene_photo(ctx, {**sc, "photo": numeros[0] if numeros else None, "texte": sc.get("titre", "")}, t)
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    marge = ctx.px(76)
+    boite_h = int(ctx.h * (0.46 if ctx.format == "vertical" else 0.50))
+    boite_l = ctx.l - 2 * marge if ctx.format != "horizontal" else min(ctx.l - 2 * marge, int(boite_h * 1.6))
+
+    def blocs(e):
+        titre = composer(ctx, sc.get("titre", ""), ctx.px((80 if ctx.format != "horizontal" else 64) * e), ctx.l - 2 * marge)
+        legende = bloc_texte(sc["legende"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(110 * e), (214, 204, 194)) if sc.get("legende") else None
+        return titre, legende
+
+    def mesure(e):
+        titre, legende = blocs(e)
+        return titre["hauteur"] + ctx.px(36 * e) + boite_h + (ctx.px(28 * e) + legende.size[1] if legende else 0)
+
+    e = echelle_pour(ctx, mesure)
+    titre, legende = blocs(e)
+    haut = ctx.haut_centre(mesure(e))
+    dessiner_bloc(ctx, image, titre, marge, haut, t, 0.0)
+    boite_x, boite_y = (ctx.l - boite_l) // 2, haut + titre["hauteur"] + ctx.px(36 * e)
+    duree = max(2.0, sc.get("duree", 4.5))
+    zoom = 1.0 + 0.05 * borne(t / duree)
+    avant = recadrer(ctx.photo(numeros[0]), boite_l, boite_h, zoom)
+    apres = recadrer(ctx.photo(numeros[1]), boite_l, boite_h, zoom)
+    balayage = entree_sortie((t - 1.1) / 1.4)
+    x_curseur = int(boite_l * balayage)
+    composition = avant.copy()
+    if x_curseur > 0:
+        composition.paste(apres.crop((0, 0, x_curseur, boite_h)), (0, 0))
+    d = ImageDraw.Draw(composition)
+    if 0.9 < t and 0 < x_curseur < boite_l:                # poignee du curseur : trait blanc et rond d'accent avec deux fleches
+        d.line((x_curseur, 0, x_curseur, boite_h), fill=(255, 255, 255), width=ctx.px(6))
+        rayon = ctx.px(36)
+        d.ellipse((x_curseur - rayon, boite_h // 2 - rayon, x_curseur + rayon, boite_h // 2 + rayon), fill=ctx.t["accent"], outline=(255, 255, 255), width=ctx.px(5))
+        f = rayon * 0.42
+        d.polygon([(x_curseur - f * 1.5, boite_h // 2), (x_curseur - f * 0.4, boite_h // 2 - f), (x_curseur - f * 0.4, boite_h // 2 + f)], fill=ctx.t["sur_accent"])
+        d.polygon([(x_curseur + f * 1.5, boite_h // 2), (x_curseur + f * 0.4, boite_h // 2 - f), (x_curseur + f * 0.4, boite_h // 2 + f)], fill=ctx.t["sur_accent"])
+    sombre, clair = (15, 15, 15), (255, 255, 255)
+    _pastille_texte(ctx, d, composition, "Avant", boite_l - ctx.px(190), ctx.px(24), sombre, clair, borne((0.82 - balayage) / 0.15) * borne(t / 0.4))
+    _pastille_texte(ctx, d, composition, "Après", ctx.px(24), ctx.px(24), ctx.t["accent"], ctx.t["sur_accent"], borne((balayage - 0.18) / 0.15))
+    carte = composition.convert("RGBA")
+    masque = Image.new("L", (boite_l, boite_h), 0)
+    ImageDraw.Draw(masque).rounded_rectangle((0, 0, boite_l - 1, boite_h - 1), radius=ctx.px(36), fill=255)
+    carte.putalpha(masque)
+    coller(image, carte, boite_x, boite_y + (1 - sortie_cubique(t / 0.5)) * ctx.px(40), borne(t / 0.35))
+    if legende is not None:
+        coller(image, legende, marge - 10, boite_y + boite_h + ctx.px(28 * e), borne((t - 2.4) / 0.5))
+    return image
+
+
+def scene_realisation(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Realisation de la semaine : titre, 1 a 3 photos du chantier, commune et description."""
+    numeros = [n for n in (sc.get("photos") or []) if ctx.photo(n) is not None][:3]
+    if not numeros:
+        return scene_hook(ctx, {**sc, "texte": sc.get("titre") or sc.get("texte", ""), "sous_texte": sc.get("sous_texte", "")}, t)
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    marge = ctx.px(76)
+    zone_h = int(ctx.h * {"vertical": 0.33, "carre": 0.28, "horizontal": 0.36}[ctx.format])
+    largeur_zone = ctx.l - 2 * marge if ctx.format != "horizontal" else min(ctx.l - 2 * marge, int(zone_h * 1.9))
+    lieu = sans_balises(sc.get("sous_texte", "")).strip()
+
+    def elements(e):
+        titre = composer(ctx, sc.get("titre", ""), ctx.px((76 if ctx.format != "horizontal" else 60) * e), ctx.l - 2 * marge)
+        description = bloc_texte(sc["texte"], NORMAL, ctx.px(40 * e), ctx.l - 2 * marge, ctx.px(190 * e), (214, 204, 194)) if sc.get("texte") else None
+        return titre, description
+
+    def mesure(e):
+        titre, description = elements(e)
+        return ctx.px(50 * e) + titre["hauteur"] + ctx.px(28 * e) + zone_h + (ctx.px(76 * e) if lieu else 0) + (ctx.px(14 * e) + description.size[1] if description else 0)
+
+    e = echelle_pour(ctx, mesure)
+    titre, description = elements(e)
+    haut = ctx.haut_centre(mesure(e))
+    etiquette(ctx, image, sc.get("kicker") or "Réalisation de la semaine", marge, haut + ctx.px(20), ctx.t["accent_texte"], 28, borne(t / 0.4))
+    y_titre = haut + ctx.px(50 * e)
+    dessiner_bloc(ctx, image, titre, marge, y_titre, t, 0.1)
+    y_photos = y_titre + titre["hauteur"] + ctx.px(28 * e)
+    x0, ecart, rayon = (ctx.l - largeur_zone) // 2, ctx.px(18), ctx.px(30)
+    if len(numeros) == 1:
+        cases = [(x0, y_photos, largeur_zone, zone_h)]
+    elif len(numeros) == 2:
+        grand = int(largeur_zone * 0.6)
+        cases = [(x0, y_photos, grand, zone_h), (x0 + grand + ecart, y_photos, largeur_zone - grand - ecart, zone_h)]
+    else:
+        grand = int(largeur_zone * 0.56)
+        moitie = (zone_h - ecart) // 2
+        cases = [(x0, y_photos, grand, zone_h), (x0 + grand + ecart, y_photos, largeur_zone - grand - ecart, moitie),
+                 (x0 + grand + ecart, y_photos + moitie + ecart, largeur_zone - grand - ecart, zone_h - moitie - ecart)]
+    for i, numero in enumerate(numeros):
+        x, y, l, h = cases[i]
+        p = sortie_rebond((t - 0.45 - 0.25 * i) / 0.55)
+        if p <= 0:
+            continue
+        carte = ctx.carte(numero, l, h, rayon)
+        facteur = max(0.05, p)
+        reduite = carte.resize((max(1, int(l * facteur)), max(1, int(h * facteur))), Image.BILINEAR) if abs(facteur - 1) > 0.002 else carte
+        coller(image, reduite, x + (l - reduite.size[0]) / 2, y + (h - reduite.size[1]) / 2, borne(p * 3))
+    y_bas = y_photos + zone_h
+    if lieu:
+        avance = borne((t - 1.2) / 0.5)
+        if avance > 0:
+            rayon_pin = ctx.px(17 * e)
+            calque = Image.new("RGBA", (ctx.l - 2 * marge, ctx.px(76 * e)), (0, 0, 0, 0))
+            dessin = ImageDraw.Draw(calque)
+            _epingle(dessin, rayon_pin + 4, ctx.px(26 * e), rayon_pin, ctx.t["accent_texte"], (20, 20, 20))
+            texte_lieu = bloc_texte(lieu, GRAS, ctx.px(46 * e), ctx.l - 2 * marge - ctx.px(80 * e), ctx.px(60 * e), ctx.t["texte"])
+            calque.paste(texte_lieu, (ctx.px(52 * e), 0), texte_lieu)
+            coller(image, calque, marge - 4, y_bas + ctx.px(20 * e), avance)
+    if description is not None:
+        coller(image, description, marge - 10, y_bas + (ctx.px(76 * e) if lieu else 0) + ctx.px(14 * e), borne((t - 1.6) / 0.5))
+    return image
+
+
+SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique, "avant_apres": scene_avant_apres, "realisation": scene_realisation}
 
 
 # --------------------------------------------------------------------------- habillage, transitions, assemblage
@@ -871,6 +1008,10 @@ def evenements_sons(scenes: list) -> list:
             evenements.append((debut + 0.3, "pop"))
         if scene["type"] == "mosaique":
             evenements += [(debut + 0.35 + 0.28 * k + 0.1, "pop") for k in range(len(scene.get("photos", [])))]
+        if scene["type"] == "avant_apres":
+            evenements += [(debut + 0.35, "pop"), (debut + 1.05, "whoosh"), (debut + 2.4, "ding")]
+        if scene["type"] == "realisation":
+            evenements += [(debut + 0.5 + 0.25 * k + 0.1, "pop") for k in range(min(3, len(scene.get("photos", []))))]
     brut = sorted(evenements)
     gardes, dernier = [], -1.0
     for t, nom in brut:

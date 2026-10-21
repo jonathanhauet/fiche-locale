@@ -3603,7 +3603,7 @@ SCHEMA_SCENARIO_MOTION = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique"]},
+                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation"]},
                     "duree": {"type": "number"},
                     **{champ: {"type": "string"} for champ in _CHAMPS_SCENE_MOTION},
                     "items": {"type": "array", "items": {"type": "string"}},
@@ -3628,8 +3628,28 @@ TONS_MOTION = {
 }
 
 
+# Modeles a structure imposee : l'IA n'ecrit que les textes, la structure et les photos sont fixees par le code (elle ne voit pas les photos).
+MODELES_MOTION = {
+    "avant_apres": {"scenes": ("hook", "avant_apres", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 2},
+    "realisation": {"scenes": ("hook", "realisation", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 1},
+}
+CONSIGNES_MODELES = {
+    "avant_apres": (
+        "MODÈLE « AVANT / APRÈS » : écris EXACTEMENT 3 scènes, dans cet ordre : 1) hook : accroche qui annonce le chantier et la commune (texte de 4 à 9 mots, sous_texte facultatif) ; "
+        "2) avant_apres : titre (3 à 8 mots, du type « Avant / Après : une toiture *nettoyée* à Pessac »), legende (une phrase sur ce qui a été fait, sans promesse non fournie) ; "
+        "3) cta : texte (3 à 6 mots), bouton, contact. Les photos « avant » puis « après » sont choisies par l'utilisateur : ne mets aucun numéro de photo et ne décris pas les images."
+    ),
+    "realisation": (
+        "MODÈLE « RÉALISATION DE LA SEMAINE » : écris EXACTEMENT 3 scènes, dans cet ordre : 1) hook : accroche qui présente la réalisation (texte de 4 à 9 mots) ; "
+        "2) realisation : kicker (« Réalisation de la semaine » ou variante courte), titre (3 à 8 mots : ce qui a été fait), sous_texte (la COMMUNE seule), texte (une ou deux phrases sur le "
+        "chantier, uniquement d'après le brief et les faits) ; 3) cta : texte (3 à 6 mots), bouton, contact. Les photos sont choisies par l'utilisateur : ne mets aucun numéro de photo "
+        "et ne décris pas les images."
+    ),
+}
+
+
 def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 20,
-                            nb_photos: int = 0, avec_logo: bool = False) -> dict:
+                            nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre") -> dict:
     """
     Scenario d'une video de motion design (sans tournage) pour un client, rendue par motion_video.py : accroche, revelation, 2 a 3 temps forts, chute.
     Renvoie {"titre", "legende", "scenes": [...]} ; les scenes sont nettoyees par motion_video.nettoyer_scenario. Les chiffres viennent
@@ -3643,6 +3663,9 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
     duree_cible = max(12, min(int(duree_cible or 20), 30))
     nombre_scenes = max(4, min(round(duree_cible / 3), 9))
     consigne_ton = TONS_MOTION.get(ton, TONS_MOTION["dynamique"])
+    structure = MODELES_MOTION.get(modele)
+    if structure and nb_photos < structure["photos_min"]:
+        raise ValueError("Ce modèle demande au moins " + ("2 photos : la 1re avant, la 2e après." if modele == "avant_apres" else "1 photo du chantier."))
     prompt = (
         "Tu écris le scénario d'une courte vidéo de motion design (aucun tournage : texte animé, formes, chiffres, couleurs), pour les réseaux "
         "sociaux, au format Reel. Elle est montrée au client lui-même : elle doit le valoriser.\n\n"
@@ -3654,8 +3677,9 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
            "Utilise-les avec des scènes « photo » et « mosaique » : jamais deux scènes photo de suite, au plus 3 scènes photo ou mosaïque en tout, "
            "et répartis les numéros pour que chaque photo serve.\n" if nb_photos else "Aucune photo disponible : n'utilise ni scène photo ni scène mosaique.\n")
         + ("Le logo du client sera affiché dans la scène marque.\n" if avec_logo else "")
-        + f"Ton : {consigne_ton}.\nDurée visée : environ {duree_cible} secondes, soit {nombre_scenes} scènes de 2,5 à 4 secondes.\n\n"
-        "Types de scènes disponibles (remplis uniquement les champs utiles à la scène, laisse les autres vides) :\n"
+        + f"Ton : {consigne_ton}.\n"
+        + (CONSIGNES_MODELES[modele] + "\n\n" if structure else f"Durée visée : environ {duree_cible} secondes, soit {nombre_scenes} scènes de 2,5 à 4 secondes.\n\n")
+        + "Types de scènes disponibles (remplis uniquement les champs utiles à la scène, laisse les autres vides) :\n"
         "- hook : accroche d'ouverture. texte (4 à 9 mots), sous_texte (une phrase courte, facultative).\n"
         "- marque : révélation du nom. nom, accroche (slogan de 3 à 6 mots).\n"
         "- chiffre : un chiffre fourni dans les faits. valeur (nombre seul, ex. 4,8 ou 127), suffixe (ex. /5, ans, %), libelle (3 à 6 mots), legende (source ou précision courte).\n"
@@ -3664,7 +3688,9 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "- citation : texte (un avis ou une phrase client, 8 à 20 mots, UNIQUEMENT s'il est fourni dans les faits), auteur.\n"
         "- cta : texte (3 à 6 mots), bouton (2 à 4 mots), contact (lignes : site, téléphone ou adresse, UNIQUEMENT ceux fournis).\n"
         "- photo : une photo du client en plein cadre. photo (son numéro), texte (4 à 9 mots posés sur l'image), sous_texte (facultatif).\n"
-        "- mosaique : trois photos en cartes. titre (3 à 7 mots), photos (3 numéros).\n\n"
+        "- mosaique : trois photos en cartes. titre (3 à 7 mots), photos (3 numéros).\n"
+        "- avant_apres : curseur qui révèle la photo « après ». titre, photos (2 numéros : avant puis après), legende (une phrase).\n"
+        "- realisation : une réalisation. kicker, titre, sous_texte (la commune), texte (description), photos (1 à 3 numéros).\n\n"
         "Dans les champs texte, texte et titre uniquement : entoure UN mot clé de *astérisques* pour le surligner sur une pastille de couleur, et "
         "UN autre mot de _tirets bas_ pour le mettre en serif italique.\n\n"
         "Trame obligatoire : une accroche (hook) qui arrête le pouce, la révélation (marque), 2 ou 3 temps forts (chiffre, liste, etape, citation), "
@@ -3684,8 +3710,24 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
     donnees = json.loads(bloc)
     scenes = motion_video.nettoyer_scenario({"scenes": [{**{k: v for k, v in scene.items() if v not in ("", [], 0)}} for scene in donnees.get("scenes", [])]})
+    if structure:                          # modele a structure imposee : seules les 3 scenes prevues, durees et photos fixees par le code
+        attendues = list(structure["scenes"])
+        retenues = []
+        for type_scene in attendues:
+            trouvee = next((s for s in scenes if s["type"] == type_scene and s not in retenues), None)
+            if trouvee is None:
+                raise RuntimeError(f"L'IA n'a pas ecrit la scene « {type_scene} » : reessayez.")
+            retenues.append(trouvee)
+        for scene, duree_scene in zip(retenues, structure["durees"]):
+            scene["duree"] = duree_scene
+            if scene["type"] == "avant_apres":
+                scene["photos"] = [1, 2]
+            elif scene["type"] == "realisation":
+                scene["photos"] = list(range(1, min(nb_photos, 3) + 1))
+        return {"titre": _nettoyer_texte_genere(donnees.get("titre", "")).replace("\u2014", "-")[:120], "legende": _nettoyer_texte_genere(donnees.get("legende", "")).replace("\u2014", "-")[:1200],
+                "scenes": retenues}
     if not nb_photos:                      # garde-fou : sans photo, jamais de scene photo
-        scenes = [s for s in scenes if s["type"] not in ("photo", "mosaique")]
+        scenes = [s for s in scenes if s["type"] not in ("photo", "mosaique", "avant_apres", "realisation")]
     else:                                  # numeros hors plage : ramenes dans les photos disponibles
         for s in scenes:
             if "photo" in s:
