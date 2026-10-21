@@ -293,6 +293,84 @@ def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussu
     return final
 
 
+# --------------------------------------------------------------------------- personnage geometrique (formes simples, visage minimal)
+
+FORMES = ("detaille", "geo")
+
+
+def _visage_geo(d, k, centre: tuple, rayon: float, p: dict, look: dict) -> None:
+    """Visage minimal : deux points pour les yeux, joues, petit sourire (bouche ouverte quand il parle)."""
+    cx, cy = centre
+    sombre = (38, 32, 42, 255)
+    regard = p["regard"] * 7
+    for cote in (-1, 1):
+        ex, ey = cx + cote * rayon * 0.36 + regard, cy - rayon * 0.02
+        if p["clignement"]:
+            d.line([((ex - 14) * k, ey * k), ((ex + 14) * k, ey * k)], fill=sombre, width=int(7 * k))
+        else:
+            _cercle(d, k, (ex, ey), 13, sombre[:3])
+        d.ellipse(((cx + cote * rayon * 0.66 - 20) * k, (cy + rayon * 0.3 - 13) * k, (cx + cote * rayon * 0.66 + 20) * k, (cy + rayon * 0.3 + 13) * k), fill=_melange_peau(look["peau"]))
+    my = cy + rayon * 0.4
+    if p["bouche"] > 0.15:
+        h = 10 + 26 * p["bouche"]
+        d.pieslice(((cx - 26) * k, (my - 14) * k, (cx + 26) * k, (my - 14 + 2 * h) * k), 0, 180, fill=(112, 32, 50, 255))
+    else:
+        d.arc(((cx - 28) * k, (my - 22) * k, (cx + 28) * k, (my + 12) * k), 20, 160, fill=sombre, width=int(7 * k))
+
+
+def _bras_geo(d, k, epaule: tuple, angles: tuple, cote: int, couleur: tuple, peau: tuple) -> tuple:
+    """Bras epais d'une seule couleur, termine par une main ronde ; renvoie la position de la main."""
+    a1, a2 = math.radians(angles[0]), math.radians(angles[1])
+    coude = (epaule[0] + cote * LONGUEUR_BRAS * math.sin(a1), epaule[1] + LONGUEUR_BRAS * math.cos(a1))
+    poignet = (coude[0] + cote * (LONGUEUR_AVANT_BRAS - 10) * math.sin(a2), coude[1] + (LONGUEUR_AVANT_BRAS - 10) * math.cos(a2))
+    _conique(d, k, epaule, coude, 44, 40, couleur)
+    _conique(d, k, coude, poignet, 40, 37, couleur)
+    _cercle(d, k, poignet, 44, peau)
+    return poignet
+
+
+def dessiner_geo(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, accent: tuple, badge: Image.Image = None) -> Image.Image:
+    """
+    Personnage « geometrique » : tete ronde, corps en gelule d'une couleur, jambes en gelules, bras epais, mains rondes. Meme calque et memes informations que
+    dessiner() (info « tete » et « main »), donc interchangeable dans la scene.
+    """
+    k = hauteur / HAUTEUR_REF * SURECHANTILLON
+    calque = Image.new("RGBA", (int(LARGEUR_REF * k), int(HAUTEUR_REF * k)), (0, 0, 0, 0))
+    d = ImageDraw.Draw(calque)
+    P = lambda x, y: (x * k, y * k)
+    peau = look["peau"]
+    pieds_x, pieds_y = PIEDS[0], PIEDS[1] - p["saut"]
+    hanche_y = pieds_y - 330
+    epaules_y = pieds_y - 690 + p["respiration"] * 0.4
+    axe = pieds_x + p["penche"] * 0.6
+    for cote in (-1, 1):                                               # jambes en gelules, baskets blanches a semelle de couleur
+        x = pieds_x + cote * 64
+        d.rounded_rectangle(P(x - 48, hanche_y - 20) + P(x + 48, pieds_y - 26), radius=int(48 * k), fill=bas + (255,))
+        d.rounded_rectangle(P(x - 68 + cote * 8, pieds_y - 46) + P(x + 68 + cote * 8, pieds_y + 4), radius=int(24 * k), fill=(234, 236, 240, 255))
+        d.rounded_rectangle(P(x - 68 + cote * 8, pieds_y - 12) + P(x + 68 + cote * 8, pieds_y + 4), radius=int(8 * k), fill=accent + (255,))
+    epaule_g, epaule_d = (axe - 126, epaules_y + 52), (axe + 126, epaules_y + 52)
+    _bras_geo(d, k, epaule_g, p["gauche"], -1, haut, peau)
+    d.rounded_rectangle(P(axe - 142, epaules_y - 4) + P(pieds_x + 142, hanche_y + 50), radius=int(104 * k), fill=haut + (255,))               # corps en gelule
+    d.rounded_rectangle(P(axe - 142, epaules_y - 4) + P(axe - 70, hanche_y + 50), radius=int(60 * k), fill=_sombre(haut, 0.14) + (255,))      # ombre du cote gauche
+    d.rounded_rectangle(P(axe - 112, epaules_y - 4) + P(pieds_x + 142, hanche_y + 50), radius=int(104 * k), fill=haut + (255,))
+    d.rounded_rectangle(P(axe - 34, epaules_y - 92) + P(axe + 34, epaules_y + 8), radius=int(17 * k), fill=_sombre(peau, 0.1) + (255,))
+    if badge is not None:
+        taille_badge = int(70 * k)
+        petit = badge.resize((taille_badge, taille_badge), Image.LANCZOS)
+        calque.paste(petit, (int((axe + 62) * k - taille_badge / 2), int((epaules_y + 120) * k - taille_badge / 2)), petit)
+    rayon = 132
+    tete = (axe + p["penche"] * 0.3 + p["tete"] * 1.4, epaules_y - 168 + p["respiration"] * 0.2)
+    _cheveux(d, k, tete, rayon, look, accent, False)
+    _cercle(d, k, tete, rayon, peau)
+    _cheveux(d, k, tete, rayon, look, accent, True)
+    _visage_geo(d, k, tete, rayon, p, look)
+    main = _bras_geo(d, k, epaule_d, p["droit"], 1, haut, peau)
+    final = calque.resize((int(LARGEUR_REF * k / SURECHANTILLON), int(HAUTEUR_REF * k / SURECHANTILLON)), Image.LANCZOS)
+    final.info["tete"] = (tete[0] * k / SURECHANTILLON, tete[1] * k / SURECHANTILLON)
+    final.info["main"] = (main[0] * k / SURECHANTILLON, main[1] * k / SURECHANTILLON)
+    return final
+
+
 # --------------------------------------------------------------------------- objets qui apparaissent a cote du personnage
 
 def accessoire(nom: str, taille: int, principale: tuple, secondaire: tuple, clair: tuple, t: float = 0.0) -> Image.Image:

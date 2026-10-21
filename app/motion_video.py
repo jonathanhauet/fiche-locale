@@ -30,7 +30,7 @@ DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stat
 FPS = 30
 FORMATS = {"vertical": (1080, 1920), "carre": (1080, 1080), "horizontal": (1920, 1080)}
 DUREE_TRANSITION = 0.45
-TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage")
+TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage", "recherche")
 HOTES_IMAGES = (".googleusercontent.com", ".ggpht.com", ".google.com")
 TAILLE_MAX_IMAGE = 8 * 1024 * 1024
 GRAS, NORMAL, SERIF = "Poppins-Bold.ttf", "Poppins-Regular.ttf", "DMSerifDisplay-Regular.ttf"
@@ -1050,6 +1050,333 @@ def _decor_google(ctx: Contexte, image: Image.Image, t: float, pieds: tuple, uni
     d.line((cx - unite * 380, sol + 8, cx + unite * 380, sol + 8), fill=GOOGLE_BORD_CLAIR, width=max(3, ctx.px(5)))
 
 
+# --------------------------------------------------------------------------- elements d'interface Google : puces flottantes, scene de recherche
+
+TEXTE_UI, BLANC = (32, 33, 36), (255, 255, 255)
+GRIS_UI, GRIS_CLAIR_UI = (95, 99, 104), (241, 243, 244)
+
+
+def _aa(largeur: int, hauteur: int, dessin, facteur: int = 3) -> Image.Image:
+    """Forme aux bords lisses : dessin(draw, f) trace a l'echelle f (toutes les coordonnees multipliees par f), puis l'image est reduite."""
+    img = Image.new("RGBA", (max(1, largeur) * facteur, max(1, hauteur) * facteur), (0, 0, 0, 0))
+    dessin(ImageDraw.Draw(img), facteur)
+    return img.resize((max(1, largeur), max(1, hauteur)), Image.LANCZOS)
+
+
+def _etoile_aa(d: ImageDraw.ImageDraw, f: int, cx: float, cy: float, rayon: float, couleur: tuple) -> None:
+    d.polygon([(f * p[0], f * p[1]) for p in _etoile((cx, cy), rayon)], fill=couleur + (255,))
+
+
+def _carte_ui(ctx: Contexte, l: int, h: int, rayon: int, contour: tuple = GOOGLE_BORD_CLAIR, fond: tuple = BLANC, marge: int = None) -> tuple:
+    """Carte blanche aux coins ronds, bord gris et ombre douce. Renvoie (calque RGBA avec marge, marge)."""
+    m = marge if marge is not None else ctx.px(26)
+    ombre = Image.new("RGBA", (l + 2 * m, h + 2 * m), (0, 0, 0, 0))
+    ImageDraw.Draw(ombre).rounded_rectangle((m, m + ctx.px(8), m + l, m + h + ctx.px(8)), radius=rayon, fill=(32, 33, 36, 60))
+    ombre = ombre.filter(ImageFilter.GaussianBlur(ctx.px(11)))
+    forme = _aa(l, h, lambda d, f: d.rounded_rectangle((0, 0, l * f - 1, h * f - 1), radius=rayon * f, fill=fond + (255,), outline=contour + (255,), width=max(f, int(ctx.px(2) * f))))
+    ombre.alpha_composite(forme, (m, m))
+    return ombre, m
+
+
+def _type_icone(texte: str) -> str:
+    t = (texte or "").lower()
+    if "ouvert" in t:
+        return "ouvert"
+    if "appel" in t or "tél" in t or "tel" in t.split():
+        return "appel"
+    if "itin" in t or "route" in t or "y aller" in t:
+        return "route"
+    return "point"
+
+
+def _icone_ui(d: ImageDraw.ImageDraw, f: int, type_icone: str, cx: float, cy: float, r: float) -> None:
+    """Icone ronde de couleur Google avec un pictogramme blanc (points, appel, itineraire)."""
+    couleur = {"ouvert": GOOGLE_VERT, "appel": GOOGLE_BLEU, "route": GOOGLE_BLEU, "point": GOOGLE_BLEU}[type_icone]
+    d.ellipse((f * (cx - r), f * (cy - r), f * (cx + r), f * (cy + r)), fill=couleur + (255,))
+    blanc = BLANC + (255,)
+    if type_icone == "ouvert":
+        d.line([(f * (cx - r * 0.42), f * (cy + r * 0.02)), (f * (cx - r * 0.1), f * (cy + r * 0.34)), (f * (cx + r * 0.46), f * (cy - r * 0.32))], fill=blanc, width=int(f * r * 0.24), joint="curve")
+    elif type_icone == "appel":
+        d.arc((f * (cx - r * 0.52), f * (cy - r * 0.52), f * (cx + r * 0.52), f * (cy + r * 0.52)), 20, 100, fill=blanc, width=int(f * r * 0.34))        # combine : arc epais, bouts arrondis
+        for angle in (20, 100):
+            a = math.radians(angle)
+            d.ellipse((f * (cx + r * 0.52 * math.cos(a) - r * 0.26), f * (cy + r * 0.52 * math.sin(a) - r * 0.26), f * (cx + r * 0.52 * math.cos(a) + r * 0.26), f * (cy + r * 0.52 * math.sin(a) + r * 0.26)), fill=blanc)
+    elif type_icone == "route":
+        d.polygon([(f * (cx - r * 0.4), f * (cy + r * 0.38)), (f * (cx + r * 0.44), f * cy), (f * (cx - r * 0.4), f * (cy - r * 0.38)), (f * (cx - r * 0.18), f * cy)], fill=blanc)
+    else:
+        d.ellipse((f * (cx - r * 0.36), f * (cy - r * 0.36), f * (cx + r * 0.36), f * (cy + r * 0.36)), fill=blanc)
+
+
+def _puce_ui(ctx: Contexte, texte: str, hauteur: int) -> Image.Image:
+    """Petite carte d'interface flottante (« Ouvert maintenant », « 4,9 ★ (128 avis) », « Appeler ») : icone ronde, texte, etoile dessinee a la place de ★."""
+    cle = (texte, hauteur)
+    cache = ctx.__dict__.setdefault("_puces", {})
+    if cle in cache:
+        return cache[cle]
+    taille_texte = int(hauteur * 0.42)
+    elements = []                                                       # [("texte", image) ou ("etoile", largeur)]
+    for morceau in re.split("(\u2605)", sans_balises(texte)):
+        if morceau == "\u2605":
+            elements.append(("etoile", int(taille_texte * 0.95)))
+        elif morceau.strip():
+            img = image_texte(morceau.strip(), GRAS, taille_texte, TEXTE_UI)
+            elements.append(("texte", img))
+    icone = None if "\u2605" in texte else _type_icone(texte)
+    ecart = int(hauteur * 0.14)
+    largeur_contenu = sum((e[1].size[0] - 20 if e[0] == "texte" else e[1]) + ecart for e in elements) - ecart
+    pad = int(hauteur * 0.34)
+    largeur = pad * 2 + largeur_contenu + (int(hauteur * 0.5) + ecart if icone else 0)
+    carte, m = _carte_ui(ctx, largeur, hauteur, hauteur // 2, marge=ctx.px(22))
+    x = m + pad
+    if icone:
+        r = hauteur * 0.25
+        pastille = _aa(int(r * 2) + 2, int(r * 2) + 2, lambda d, f: _icone_ui(d, f, icone, r + 1, r + 1, r))
+        carte.alpha_composite(pastille, (int(x), int(m + hauteur / 2 - r - 1)))
+        x += int(hauteur * 0.5) + ecart
+    for genre, valeur in elements:
+        if genre == "etoile":
+            rayon = valeur * 0.55
+            etoile = _aa(valeur + 2, valeur + 2, lambda d, f: _etoile_aa(d, f, valeur / 2 + 1, valeur / 2 + 1.5, rayon, GOOGLE_JAUNE))
+            carte.alpha_composite(etoile, (int(x), int(m + hauteur / 2 - valeur / 2 - 1)))
+            x += valeur + ecart
+        else:
+            carte.alpha_composite(valeur, (int(x - 10), int(m + (hauteur - valeur.size[1]) / 2)))
+            x += valeur.size[0] - 20 + ecart
+    cache[cle] = carte
+    return carte
+
+
+def _placer_puces(ctx: Contexte, image: Image.Image, puces: list, t: float, pieds: tuple, unite: float, cote: int, horizontal: bool) -> None:
+    """Les puces flottent a l'ecart du personnage et de son objet, apparaissent l'une apres l'autre en rebondissant."""
+    hauteur = ctx.px(78 if not horizontal else 64)
+    for i, texte in enumerate(puces[:2 if horizontal else 3]):
+        p = sortie_rebond((t - 1.3 - 0.28 * i) / 0.5)
+        if p <= 0:
+            continue
+        carte = _puce_ui(ctx, texte, hauteur)
+        if horizontal:
+            cx = ctx.l * (0.5 - cote * 0.24)
+            cy = ctx.h * (0.80 + 0.09 * i)
+        else:
+            cx = ctx.l * (0.5 - cote * 0.27) + (-1) ** i * ctx.px(34)
+            cy = pieds[1] - unite * (330 - 118 * i)
+        cx = max(carte.size[0] / 2 + ctx.px(24), min(cx, ctx.l - carte.size[0] / 2 - ctx.px(24)))
+        cy += math.sin(t * 1.8 + i * 1.7) * ctx.px(7)
+        s = max(0.05, p)
+        reduite = carte.resize((max(1, int(carte.size[0] * s)), max(1, int(carte.size[1] * s))), Image.BILINEAR) if abs(s - 1) > 0.002 else carte
+        coller(image, reduite, cx - reduite.size[0] / 2, cy - reduite.size[1] / 2, borne(p * 2.5))
+
+
+def _temps_recherche(sc: dict) -> dict:
+    """Chronologie de la scene de recherche (secondes) : frappe, carte, resultats, badge, legende."""
+    n = len(sans_balises(sc.get("texte", ""))[:40])
+    frappe = min(2.4, max(0.8, n / 13))
+    carte = 0.5 + frappe + 0.35
+    return {"frappe": frappe, "carte": carte, "cartes": [carte + 0.55 + 0.28 * i for i in range(3)], "badge": carte + 2.0, "legende": carte + 2.7}
+
+
+def _mise_en_page_recherche(ctx: Contexte) -> dict:
+    m = ctx.px(60)
+    if ctx.format == "horizontal":
+        gauche, largeur_g = m, int(ctx.l * 0.46)
+        droite = int(ctx.l * 0.54)
+        h_carte = int(ctx.h * 0.215)
+        return {"barre": (gauche, int(ctx.h * 0.14), largeur_g, int(ctx.h * 0.13)), "plan": (gauche, int(ctx.h * 0.31), largeur_g, int(ctx.h * 0.50)),
+                "cartes": [(droite, int(ctx.h * 0.14) + i * (h_carte + int(ctx.h * 0.03)), ctx.l - droite - m, h_carte) for i in range(3)], "legende": None}
+    if ctx.format == "carre":
+        h_carte = int(ctx.h * 0.12)
+        return {"barre": (m, int(ctx.h * 0.13), ctx.l - 2 * m, int(ctx.h * 0.095)), "plan": (m, int(ctx.h * 0.245), ctx.l - 2 * m, int(ctx.h * 0.20)),
+                "cartes": [(m, int(ctx.h * 0.47) + i * (h_carte + int(ctx.h * 0.012)), ctx.l - 2 * m, h_carte) for i in range(3)], "legende": None}
+    h_carte = int(ctx.h * 0.105)
+    return {"barre": (m, int(ctx.h * 0.13), ctx.l - 2 * m, int(ctx.h * 0.075)), "plan": (m, int(ctx.h * 0.23), ctx.l - 2 * m, int(ctx.h * 0.21)),
+            "cartes": [(m, int(ctx.h * 0.465) + i * (h_carte + int(ctx.h * 0.015)), ctx.l - 2 * m, h_carte) for i in range(3)], "legende": (m, int(ctx.h * 0.835), ctx.l - 2 * m)}
+
+
+def _barre_recherche(ctx: Contexte, l: int, h: int, texte: str, curseur: bool) -> Image.Image:
+    cle = ("barre", l, h)
+    cache = ctx.__dict__.setdefault("_ui", {})
+    if cle not in cache:
+        carte, m = _carte_ui(ctx, l, h, h // 2)
+        r = h * 0.19
+        loupe = _aa(int(h * 0.6), int(h * 0.6), lambda d, f: (d.ellipse((f * h * 0.08, f * h * 0.08, f * (h * 0.08 + r * 2), f * (h * 0.08 + r * 2)), outline=GOOGLE_BLEU + (255,), width=int(f * h * 0.065)),
+                                                                d.line([(f * (h * 0.08 + r * 1.75), f * (h * 0.08 + r * 1.75)), (f * h * 0.54, f * h * 0.54)], fill=GOOGLE_BLEU + (255,), width=int(f * h * 0.075))))
+        carte.alpha_composite(loupe, (m + int(h * 0.42), m + int(h * 0.2)))
+        cache[cle] = (carte, m)
+    base, m = cache[cle]
+    image = base.copy()
+    taille = int(h * 0.4)
+    x_texte = m + int(h * 1.2)
+    maxi = l - int(h * 1.6)
+    while taille > 12 and largeur_texte(texte or "M", NORMAL, taille) > maxi:
+        taille = int(taille * 0.93)
+    img = image_texte(texte, NORMAL, taille, TEXTE_UI) if texte else None
+    x_fin = x_texte
+    if img is not None:
+        image.alpha_composite(img, (x_texte - 10, m + int((h - img.size[1]) / 2)))
+        x_fin = x_texte - 10 + img.size[0] - 10
+    if curseur:
+        d = ImageDraw.Draw(image)
+        d.rectangle((x_fin + 4, m + int(h * 0.24), x_fin + 4 + max(2, int(h * 0.04)), m + int(h * 0.76)), fill=GOOGLE_BLEU)
+    return image
+
+
+def _plan_google(ctx: Contexte, l: int, h: int) -> Image.Image:
+    """Fond de plan (routes, parc, riviere) aux coins arrondis, sans les reperes."""
+    cle = ("plan", l, h)
+    cache = ctx.__dict__.setdefault("_ui", {})
+    if cle not in cache:
+        f = 2
+        L, H = l * f, h * f
+        contenu = Image.new("RGB", (L, H), (232, 234, 237))
+        d = ImageDraw.Draw(contenu)
+        d.polygon([(L * 0.04, H * 0.62), (L * 0.30, H * 0.56), (L * 0.36, H * 0.92), (L * 0.08, H * 0.96)], fill=(200, 230, 201))
+        d.polygon([(L * 0.66, H * 0.08), (L * 0.92, H * 0.04), (L * 0.96, H * 0.36), (L * 0.70, H * 0.4)], fill=(200, 230, 201))
+        d.line([(0, H * 0.18), (L * 0.28, H * 0.34), (L * 0.6, H * 0.22), (L, H * 0.3)], fill=(168, 218, 220), width=int(H * 0.09), joint="curve")
+        for pts, largeur in (([(0, H * 0.5), (L * 0.4, H * 0.58), (L * 0.7, H * 0.46), (L, H * 0.52)], 0.07), ([(L * 0.46, 0), (L * 0.52, H * 0.5), (L * 0.6, H)], 0.07),
+                             ([(L * 0.12, 0), (L * 0.2, H * 0.4), (L * 0.14, H)], 0.045), ([(L * 0.8, 0), (L * 0.84, H * 0.55), (L * 0.78, H)], 0.045)):
+            d.line([(x, y) for x, y in pts], fill=(255, 255, 255), width=int(H * largeur), joint="curve")
+        d.line([(0, H * 0.78), (L, H * 0.7)], fill=(255, 230, 160), width=int(H * 0.05))
+        masque = Image.new("L", (L, H), 0)
+        ImageDraw.Draw(masque).rounded_rectangle((0, 0, L - 1, H - 1), radius=ctx.px(30) * f, fill=255)
+        rgba = contenu.convert("RGBA")
+        rgba.putalpha(masque)
+        reduite = rgba.resize((l, h), Image.LANCZOS)
+        trait = _aa(l, h, lambda dd, ff: dd.rounded_rectangle((0, 0, l * ff - 1, h * ff - 1), radius=ctx.px(30) * ff, outline=GOOGLE_BORD_CLAIR + (255,), width=max(ff, ctx.px(2) * ff)))
+        reduite.alpha_composite(trait)
+        cache[cle] = reduite
+    return cache[cle]
+
+
+def _etoiles_note(d: ImageDraw.ImageDraw, f: int, x: float, y: float, rayon: float, note: float) -> None:
+    for i in range(5):
+        _etoile_aa(d, f, x + rayon + i * rayon * 2.15, y, rayon, GOOGLE_JAUNE if note >= i + 0.5 else (218, 220, 224))
+
+
+def _carte_resultat(ctx: Contexte, l: int, h: int, vedette: bool, nom: str, note: str, avis: str, categorie: str) -> Image.Image:
+    """Resultat de recherche locale : miniature, nom, note, categorie, boutons appel et itineraire. Les autres resultats sont de simples gabarits gris (jamais de faux noms)."""
+    cle = ("resultat", l, h, vedette, nom, note, avis, categorie)
+    cache = ctx.__dict__.setdefault("_ui", {})
+    if cle in cache:
+        return cache[cle]
+    carte, m = _carte_ui(ctx, l, h, int(h * 0.2), contour=GOOGLE_BLEU if vedette else GOOGLE_BORD_CLAIR)
+    pad = int(h * 0.14)
+    cote_img = h - 2 * pad
+    x_img, y_img = m + pad, m + pad
+    if vedette and ctx.photo(1) is not None:
+        miniature = ctx.carte(1, cote_img, cote_img, int(cote_img * 0.16))
+    else:
+        miniature = _aa(cote_img, cote_img, lambda d, f: d.rounded_rectangle((0, 0, cote_img * f - 1, cote_img * f - 1), radius=int(cote_img * 0.16 * f), fill=((232, 240, 254) if vedette else GRIS_CLAIR_UI) + (255,)))
+        if vedette:
+            maison = personnage.accessoire("maison", int(cote_img * 0.62), ctx.t["accent"], GOOGLE_JAUNE, BLANC)
+            miniature.alpha_composite(maison, (int(cote_img * 0.19), int(cote_img * 0.2)))
+    carte.alpha_composite(miniature, (x_img, y_img))
+    x_texte = x_img + cote_img + pad
+    x_boutons = m + l - pad - int(h * 0.4) * 2 - int(h * 0.1)
+    largeur_texte_dispo = x_boutons - x_texte - pad
+    if vedette:
+        img_nom = bloc_texte(nom, GRAS, int(h * 0.22), largeur_texte_dispo, h * 0.3, TEXTE_UI)
+        carte.alpha_composite(img_nom, (x_texte - 10, y_img - 6))
+        y = y_img + int(h * 0.3)
+        if note:
+            try:
+                valeur = float(note.replace(",", "."))
+            except ValueError:
+                valeur = 0.0
+            e = min(1.0, largeur_texte_dispo / max(1.0, largeur_texte(note, NORMAL, int(h * 0.15)) + h * 0.06 + h * 0.062 * 2.15 * 5 + (largeur_texte(f"({avis})", NORMAL, int(h * 0.15)) + h * 0.04 if avis else 0)))
+            img_note = image_texte(note, NORMAL, int(h * 0.15 * e), GRIS_UI)
+            carte.alpha_composite(img_note, (x_texte - 10, y - 4))
+            x_etoiles = x_texte + img_note.size[0] - 20 + int(h * 0.04 * e)
+            rayon = h * 0.062 * e
+            largeur_etoiles = int(rayon * 2.15 * 5 + 4)
+            bande = _aa(largeur_etoiles, int(rayon * 2.4), lambda d, f: _etoiles_note(d, f, 1, rayon * 1.2, rayon, valeur))
+            carte.alpha_composite(bande, (int(x_etoiles), int(y + h * 0.015)))
+            if avis:
+                img_avis = image_texte(f"({avis})", NORMAL, int(h * 0.15 * e), GRIS_UI)
+                carte.alpha_composite(img_avis, (int(x_etoiles + largeur_etoiles + h * 0.02) - 10, y - 4))
+            y += int(h * 0.23)
+        if categorie:
+            img_cat = image_texte(categorie + "  \u00b7", NORMAL, int(h * 0.15), GRIS_UI)
+            carte.alpha_composite(img_cat, (x_texte - 10, y - 4))
+            img_ouvert = image_texte("Ouvert", GRAS, int(h * 0.15), (24, 128, 56))
+            carte.alpha_composite(img_ouvert, (x_texte - 10 + img_cat.size[0] - 14, y - 4))
+    else:
+        for i, (largeur_rel, hauteur_rel, dy) in enumerate(((0.62, 0.15, 0.04), (0.42, 0.1, 0.34), (0.5, 0.1, 0.56))):
+            barre = _aa(int(largeur_texte_dispo * largeur_rel), int(h * hauteur_rel), lambda d, f, w=int(largeur_texte_dispo * largeur_rel), hh=int(h * hauteur_rel):
+                        d.rounded_rectangle((0, 0, w * f - 1, hh * f - 1), radius=hh * f // 2, fill=(218, 220, 224, 255)))
+            carte.alpha_composite(barre, (x_texte, y_img + int(h * dy)))
+    for i, genre in enumerate(("appel", "route")):
+        diametre = int(h * 0.4)
+        bouton = _aa(diametre + 2, diametre + 2, lambda d, f, i=i, genre=genre: (
+            d.ellipse((f, f, f * (diametre + 1), f * (diametre + 1)), outline=(GOOGLE_BLEU if vedette else (218, 220, 224)) + (255,), width=max(f, int(f * h * 0.025))),
+            _icone_ui(d, f, genre, diametre / 2 + 1, diametre / 2 + 1, diametre * 0.28) if vedette else None))
+        carte.alpha_composite(bouton, (x_boutons + i * (diametre + int(h * 0.1)), m + int((h - diametre) / 2)))
+    cache[cle] = carte
+    return carte
+
+
+def scene_recherche(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Recherche Google locale : la requete se tape, le plan apparait avec ses reperes, puis les resultats ; le premier (le client) est mis en avant."""
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    mp = _mise_en_page_recherche(ctx)
+    tt = _temps_recherche(sc)
+    requete = sans_balises(sc.get("texte", ""))[:40] or "entreprise près de moi"
+    nom = sans_balises(sc.get("nom") or ctx.marque or "Votre entreprise")
+    # barre de recherche : glisse depuis le haut puis la requete se tape lettre par lettre
+    x, y, l, h = mp["barre"]
+    entree = sortie_expo(t / 0.5)
+    frappe = borne((t - 0.5) / tt["frappe"])
+    tape = requete[:int(round(len(requete) * frappe))]
+    barre = _barre_recherche(ctx, l, h, tape, curseur=(frappe < 1.0) or int(t * 2.2) % 2 == 0)
+    coller(image, barre, x - ctx.px(26), y - ctx.px(26) - int((1 - entree) * ctx.px(60)), borne(entree * 2))
+    # plan et reperes qui tombent
+    xp, yp, lp, hp = mp["plan"]
+    pc = sortie_rebond((t - tt["carte"]) / 0.55)
+    if pc > 0:
+        plan = _plan_google(ctx, lp, hp)
+        s = max(0.05, pc)
+        reduit = plan.resize((max(1, int(lp * s)), max(1, int(hp * s))), Image.BILINEAR) if abs(s - 1) > 0.002 else plan
+        coller(image, reduit, xp + (lp - reduit.size[0]) / 2, yp + (hp - reduit.size[1]) / 2, borne(pc * 2.5))
+        for i, (fx, fy, grand) in enumerate(((0.62, 0.46, True), (0.27, 0.62, False), (0.82, 0.7, False))):
+            depart = tt["carte"] + 0.25 + 0.22 * i
+            chute = sortie_rebond((t - depart) / 0.45)
+            if chute <= 0:
+                continue
+            taille = int(hp * (0.42 if grand else 0.3))
+            repere = personnage.accessoire("epingle", taille, GOOGLE_ROUGE, GOOGLE_JAUNE, BLANC)
+            px_, py_ = xp + lp * fx - taille / 2, yp + hp * fy - taille * 0.92 - (1 - min(chute, 1.0)) * hp * 0.5
+            if grand and t > depart + 0.45:                             # onde autour du repere du client
+                onde = ((t - depart - 0.45) * 0.9) % 1.0
+                rayon = hp * (0.1 + 0.28 * onde)
+                halo = Image.new("RGBA", (int(rayon * 2) + 4, int(rayon * 2) + 4), (0, 0, 0, 0))
+                ImageDraw.Draw(halo).ellipse((2, 2, rayon * 2 + 2, rayon * 2 + 2), outline=GOOGLE_BLEU + (int(200 * (1 - onde)),), width=max(2, ctx.px(4)))
+                coller(image, halo, xp + lp * fx - rayon - 2, yp + hp * fy - rayon - 2)
+            coller(image, repere, px_, py_, borne(chute * 3))
+    # resultats qui montent l'un apres l'autre ; le premier est celui du client
+    for i, (xc, yc, lc, hc) in enumerate(mp["cartes"]):
+        pr = sortie_cubique((t - tt["cartes"][i]) / 0.5)
+        if pr <= 0:
+            continue
+        carte = _carte_resultat(ctx, lc, hc, i == 0, nom, sc.get("valeur", ""), sc.get("suffixe", ""), sc.get("libelle", ""))
+        coller(image, carte, xc - ctx.px(26), yc - ctx.px(26) + int((1 - pr) * ctx.px(90)), pr)
+    # pastille « Votre fiche » sur le premier resultat
+    pb = sortie_rebond((t - tt["badge"]) / 0.45)
+    if pb > 0:
+        xc, yc, lc, hc = mp["cartes"][0]
+        texte_badge = "Votre fiche"
+        img = image_texte(texte_badge, GRAS, int(hc * 0.17), BLANC)
+        lb, hb = img.size[0] - 20 + int(hc * 0.36), int(hc * 0.3)
+        pastille = _aa(lb, hb, lambda d, f: d.rounded_rectangle((0, 0, lb * f - 1, hb * f - 1), radius=hb * f // 2, fill=GOOGLE_BLEU + (255,)))
+        pastille.alpha_composite(img, (int(hc * 0.18) - 10, int((hb - img.size[1]) / 2)))
+        s = max(0.05, pb)
+        pastille = pastille.resize((max(1, int(lb * s)), max(1, int(hb * s))), Image.BILINEAR)
+        coller(image, pastille, xc + lc - lb - ctx.px(22) + (lb - pastille.size[0]) / 2, yc - hb * 0.45 + (hb - pastille.size[1]) / 2, borne(pb * 2.5))
+    if mp["legende"] and sc.get("legende"):
+        xl, yl, ll = mp["legende"]
+        img = bloc_texte(sc["legende"], NORMAL, ctx.px(40), ll, ctx.px(120), ctx.t["texte2"], False, True)
+        coller(image, img, xl + (ll - img.size[0]) / 2, yl, borne((t - tt["legende"]) / 0.5))
+    return image
+
+
 def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     """Un personnage anime (voir personnage.py) arrive, dit la phrase dans une bulle et joue l'action choisie, avec un objet a ses cotes."""
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
@@ -1083,7 +1410,10 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         haut, bas = personnage.GOOGLE_COULEURS[(int(sc.get("perso", 1)) - 1) % 4], (60, 64, 67)
     else:
         haut, bas = ctx.t["accent"], melanger(ctx.t["accent"], (14, 18, 36), 0.80)
-    perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), haut, _badge_personnage(ctx), ctx.google)
+    if sc.get("forme") == "geo":
+        perso = personnage.dessiner_geo(hauteur_canevas, p, look, haut, bas if ctx.google else melanger(ctx.t["accent"], (14, 18, 36), 0.80), haut, _badge_personnage(ctx))
+    else:
+        perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), haut, _badge_personnage(ctx), ctx.google)
     reception = t - 0.66                                               # ecrasement a la reception du saut d'arrivee, puis retour souple
     ecrase = max(0.0, math.exp(-reception * 7) * math.sin(reception * 16)) if 0 <= reception < 0.7 else 0.0
     sx, sy = 1 + 0.07 * ecrase, 1 - 0.09 * ecrase
@@ -1125,6 +1455,8 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
             s_ = max(0.05, po)
             sprite = sprite.resize((max(1, int(taille * s_)), max(1, int(taille * s_))), Image.BILINEAR)
             coller(image, sprite, ox + (taille - sprite.size[0]) // 2, oy + (taille - sprite.size[1]) // 2, borne(po * 2))
+    if sc.get("puces"):
+        _placer_puces(ctx, image, sc["puces"], t, pieds, unite, cote, horizontal)
     if action == "celebre":                                            # confettis
         for i in range(26):
             depart = 0.6 + (i % 9) * 0.05
@@ -1167,7 +1499,7 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     return image
 
 
-SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique, "avant_apres": scene_avant_apres, "realisation": scene_realisation, "personnage": scene_personnage}
+SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique, "avant_apres": scene_avant_apres, "realisation": scene_realisation, "personnage": scene_personnage, "recherche": scene_recherche}
 
 
 # --------------------------------------------------------------------------- habillage, transitions, assemblage
@@ -1206,7 +1538,7 @@ def nettoyer_scenario(scenario: dict) -> list:
         if not isinstance(brut, dict) or brut.get("type") not in TYPES_SCENES:
             continue
         scene = {"type": brut["type"], "duree": max(1.8, min(float(brut.get("duree") or 3.0), 6.0))}
-        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire"):
+        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "forme"):
             if brut.get(cle) is not None:
                 valeur = str(brut[cle]).replace("—", "-").strip()[:180]
                 scene[cle] = valeur if cle in ("texte", "titre", "sous_texte") else sans_balises(valeur)          # *surlignage* et _serif_ : seulement ou ils sont geres
@@ -1217,6 +1549,8 @@ def nettoyer_scenario(scenario: dict) -> list:
                 pass
         if isinstance(brut.get("photos"), list):
             scene["photos"] = [n for n in (int(x) if str(x).strip().isdigit() else 0 for x in brut["photos"]) if 1 <= n <= 12][:3]
+        if isinstance(brut.get("puces"), list):
+            scene["puces"] = [sans_balises(str(x).replace("\u2014", "-")).strip()[:28] for x in brut["puces"] if str(x).strip()][:3]
         if isinstance(brut.get("items"), list):
             scene["items"] = [sans_balises(str(x).replace("—", "-")).strip()[:80] for x in brut["items"] if str(x).strip()][:5]
         scenes.append(scene)
@@ -1228,10 +1562,14 @@ def nettoyer_scenario(scenario: dict) -> list:
             scene["action"] = scene.get("action", "").lower() if scene.get("action", "").lower() in personnage.ACTIONS else "explique"
             scene["accessoire"] = scene.get("accessoire", "").lower() if scene.get("accessoire", "").lower() in personnage.ACCESSOIRES else "aucun"
             scene["perso"], scene["cote"] = perso_commun, 1 if rang_perso % 2 == 0 else -1          # meme personnage dans toute la video, qui change de cote a chaque scene
+            scene["forme"] = scene.get("forme", "").lower() if scene.get("forme", "").lower() in personnage.FORMES else "detaille"
+            scene["puces"] = scene.get("puces", [])
             rang_perso += 1
         else:
-            scene.pop("action", None)
-            scene.pop("accessoire", None)
+            for cle in ("action", "accessoire", "forme", "puces"):
+                scene.pop(cle, None)
+        if scene["type"] == "recherche":
+            scene["texte"] = sans_balises(scene.get("texte", ""))[:40]
     etapes = [sc for sc in scenes if sc["type"] == "etape"]
     if len(etapes) == 1:                  # une etape « 01 » sans « 02 » n'a pas de sens : elle devient une scene d'accroche
         unique = etapes[0]
@@ -1284,8 +1622,12 @@ def evenements_sons(scenes: list) -> list:
             evenements.append((debut + 1.05, "ding"))
         if scene["type"] == "photo":
             evenements.append((debut + 0.3, "pop"))
+        if scene["type"] == "recherche":
+            tt = _temps_recherche(scene)
+            evenements += [(debut + 0.35, "pop"), (debut + tt["carte"], "pop")] + [(debut + c, "pop") for c in tt["cartes"]] + [(debut + tt["badge"], "ding")]
         if scene["type"] == "personnage":
             evenements += [(debut + 0.5, "pop"), (debut + 1.05, "pop")]
+            evenements += [(debut + 1.3 + 0.28 * k, "pop") for k in range(len(scene.get("puces", [])))]
             if scene.get("action") == "celebre":
                 evenements.append((debut + 0.8, "ding"))
         if scene["type"] == "mosaique":

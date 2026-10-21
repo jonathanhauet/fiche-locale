@@ -3605,15 +3605,16 @@ SCHEMA_SCENARIO_MOTION = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage"]},
+                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage", "recherche"]},
                     "duree": {"type": "number"},
+                    "puces": {"type": "array", "items": {"type": "string"}},
                     "perso": {"type": "integer"},
                     **{champ: {"type": "string"} for champ in _CHAMPS_SCENE_MOTION},
                     "items": {"type": "array", "items": {"type": "string"}},
                     "photo": {"type": "integer"},
                     "photos": {"type": "array", "items": {"type": "integer"}},
                 },
-                "required": ["type", "duree", "perso", *_CHAMPS_SCENE_MOTION, "items", "photo", "photos"],
+                "required": ["type", "duree", "perso", "puces", *_CHAMPS_SCENE_MOTION, "items", "photo", "photos"],
                 "additionalProperties": False,
             },
         },
@@ -3636,6 +3637,7 @@ MODELES_MOTION = {
     "avant_apres": {"scenes": ("hook", "avant_apres", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 2},
     "realisation": {"scenes": ("hook", "realisation", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 1},
     "personnage": {"scenes": ("hook", "personnage", "personnage", "personnage", "cta"), "durees": (2.6, 4.2, 4.2, 4.4, 3.2), "photos_min": 0},
+    "recherche_google": {"scenes": ("hook", "recherche", "personnage", "personnage", "cta"), "durees": (2.6, 7.6, 4.2, 4.4, 3.2), "photos_min": 0},
 }
 CONSIGNES_MODELES = {
     "avant_apres": (
@@ -3650,6 +3652,15 @@ CONSIGNES_MODELES = {
         "accessoire (un seul parmi : aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier, epingle, etoiles, recherche, fiche, avis, carte ; choisis celui qui illustre le sujet) ; la 2e scène "
         "personnage commence par saluer (action salut), la dernière fête le résultat (action celebre) ; perso : 1, 2, 3 ou 4 (le personnage, le même dans les 3 scènes) ; "
         "5) cta : texte (3 à 6 mots), bouton, contact."
+    ),
+    "recherche_google": (
+        "MODÈLE « RECHERCHE GOOGLE » : une recherche locale animée, puis un personnage qui en tire la leçon. Écris EXACTEMENT 5 scènes, dans cet ordre : 1) hook : accroche "
+        "(texte de 4 à 9 mots) ; 2) recherche : texte = la requête qu'un client taperait (2 à 4 mots, métier et ville, comme « plombier Pessac »), nom = nom de l'entreprise, "
+        "libelle = son métier (1 à 2 mots), valeur = sa note UNIQUEMENT si elle figure dans les faits (sinon vide), suffixe = son nombre d'avis UNIQUEMENT s'il figure dans les faits "
+        "(sinon vide), legende = une phrase pédagogique courte, sans chiffre ni promesse ; 3) et 4) personnage : texte = ce que dit le personnage (8 à 16 mots, une idée par bulle : "
+        "pourquoi la fiche compte, comment la compléter), action (salut, explique, pointe, idee, celebre ou reflechit), accessoire (parmi epingle, etoiles, recherche, fiche, avis, "
+        "carte, aucun), puces (0 à 3 mini-étiquettes d'interface de 2 à 4 mots, comme « Ouvert maintenant », « Itinéraire », « Appeler » ; une note comme « 4,9 ★ » UNIQUEMENT si elle "
+        "figure dans les faits), perso (1 à 4, le même dans les 2 scènes) ; 5) cta : texte (3 à 6 mots), bouton, contact."
     ),
     "realisation": (
         "MODÈLE « RÉALISATION DE LA SEMAINE » : écris EXACTEMENT 3 scènes, dans cet ordre : 1) hook : accroche qui présente la réalisation (texte de 4 à 9 mots) ; "
@@ -3714,7 +3725,11 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "- realisation : une réalisation. kicker, titre, sous_texte (la commune), texte (description), photos (1 à 3 numéros).\n"
         "- personnage : un personnage animé qui parle dans une bulle (maximum 3 scènes de ce type, de préférence à la suite). texte (8 à 16 mots, ce qu'il dit), "
         "action (salut, explique, pointe, idee, celebre ou reflechit), accessoire (aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier, epingle, etoiles, recherche, fiche, avis ou carte), "
-        "perso (1 à 4, le même numéro dans toutes les scènes personnage).\n\n"
+        "perso (1 à 4, le même numéro dans toutes les scènes personnage), puces (facultatif : 0 à 3 mini-étiquettes d'interface flottantes de 2 à 4 mots, comme « Ouvert maintenant », "
+        "« Itinéraire », « Appeler » ; une note comme « 4,9 ★ » UNIQUEMENT si elle figure dans les faits).\n"
+        "- recherche : une recherche Google locale animée (la requête se tape, le plan apparaît, puis les résultats dont le premier est l'entreprise). texte (la requête, 2 à 4 mots), "
+        "nom, libelle (le métier), valeur (note, UNIQUEMENT si fournie dans les faits), suffixe (nombre d'avis, UNIQUEMENT s'il est fourni), legende (phrase pédagogique, facultative). "
+        "Une seule scène de ce type par vidéo.\n\n"
         "Dans les champs texte, texte et titre uniquement : entoure UN mot clé de *astérisques* pour le surligner sur une pastille de couleur, et "
         "UN autre mot de _tirets bas_ pour le mettre en serif italique.\n\n"
         "Trame obligatoire : une accroche (hook) qui arrête le pouce, la révélation (marque), 2 ou 3 temps forts (chiffre, liste, etape, citation), "
@@ -3746,6 +3761,8 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
             scene["duree"] = duree_scene
             if scene["type"] == "personnage":
                 scene["perso"] = 1
+            if scene["type"] == "recherche":
+                scene["valeur"] = scene.get("valeur", "") if str(scene.get("valeur", "")).replace(",", "").replace(".", "").isdigit() else ""
             if scene["type"] == "avant_apres":
                 scene["photos"] = [1, 2]
             elif scene["type"] == "realisation":

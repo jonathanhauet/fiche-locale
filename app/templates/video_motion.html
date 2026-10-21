@@ -28,8 +28,15 @@
     <option value="avant_apres">Avant / Après : un curseur révèle le résultat (2 photos)</option>
     <option value="realisation">Réalisation de la semaine : photos, commune et description</option>
     <option value="personnage">Personnage animé : un personnage explique dans des bulles</option>
+    <option value="recherche_google">Recherche Google : la requête se tape, le plan et les résultats apparaissent</option>
   </select>
   <p id="vm-modele-aide" class="texte-discret" hidden></p>
+
+  <label for="vm-forme">Personnage</label>
+  <select id="vm-forme">
+    <option value="detaille">Détaillé (visage, tenue, mains)</option>
+    <option value="geo">Géométrique (formes simples, façon Google)</option>
+  </select>
 
   <label for="vm-style">Style visuel</label>
   <select id="vm-style">
@@ -200,7 +207,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const LIBELLES = {
-    hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", personnage: "Personnage animé", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
+    hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", personnage: "Personnage animé", recherche: "Recherche Google", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
   };
   const CHAMPS = {
     hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"]],
@@ -209,7 +216,8 @@
     avant_apres: [["titre", "Titre"], ["photos", "Photos : n° avant, n° après (2 numéros séparés par une virgule)"], ["legende", "Légende"]],
     realisation: [["kicker", "Étiquette"], ["titre", "Titre"], ["sous_texte", "Commune"], ["texte", "Description"], ["photos", "Photos (1 à 3 numéros séparés par des virgules)"]],
     mosaique: [["titre", "Titre"], ["photos", "Photos (3 numéros séparés par des virgules)"]],
-    personnage: [["texte", "Ce que dit le personnage"], ["action", "Ce qu'il fait"], ["accessoire", "Objet à côté de lui"], ["perso", "Personnage"]],
+    personnage: [["texte", "Ce que dit le personnage"], ["action", "Ce qu'il fait"], ["accessoire", "Objet à côté de lui"], ["perso", "Personnage"], ["puces", "Puces flottantes (une par ligne, 3 maximum : Ouvert maintenant, Appeler...)"]],
+    recherche: [["texte", "Recherche tapée (ex. plombier Pessac)"], ["nom", "Nom de l'entreprise (1er résultat)"], ["libelle", "Métier affiché (ex. Plombier)"], ["valeur", "Note (ex. 4,9), facultatif"], ["suffixe", "Nombre d'avis (ex. 128), facultatif"], ["legende", "Phrase du bas, facultatif"]],
     chiffre: [["valeur", "Valeur"], ["suffixe", "Suffixe (/5, ans, %...)"], ["libelle", "Libellé"], ["legende", "Précision"]],
     liste: [["titre", "Titre"], ["items", "Éléments (un par ligne)"]],
     etape: [["numero", "Numéro"], ["kicker", "Mot-clé court"], ["titre", "Titre"], ["texte", "Texte"]],
@@ -449,11 +457,12 @@
           carte.appendChild(liste);
           return;
         }
-        const multi = cle === "items" || cle === "contact";
+        const multi = cle === "items" || cle === "contact" || cle === "puces";
         const champ = document.createElement(multi ? "textarea" : "input"); if (multi) champ.rows = 3; else champ.type = "text";
-        champ.value = cle === "items" ? (sc.items || []).join("\n") : cle === "photos" ? (sc.photos || []).join(", ") : (sc[cle] || "");
+        champ.value = cle === "items" ? (sc.items || []).join("\n") : cle === "puces" ? (sc.puces || []).join("\n") : cle === "photos" ? (sc.photos || []).join(", ") : (sc[cle] || "");
         champ.addEventListener("input", () => {
           if (cle === "items") sc.items = champ.value.split("\n").map((x) => x.trim()).filter(Boolean);
+          else if (cle === "puces") sc.puces = champ.value.split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 3);
           else if (cle === "photos") sc.photos = champ.value.split(/[ ,;]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 1 && x <= 12);
           else if (cle === "photo") sc.photo = parseInt(champ.value, 10) || 0;
           else sc[cle] = champ.value;
@@ -468,6 +477,7 @@
   const AIDES_MODELES = {
     avant_apres: "Choisissez 2 photos dans l'ordre : la 1re sera l'avant, la 2e l'après. Décrivez le chantier et la commune dans « Ce que la vidéo doit faire passer ».",
     realisation: "Choisissez 1 à 3 photos du chantier. Indiquez ce qui a été fait et la commune dans « Ce que la vidéo doit faire passer ».",
+    recherche_google: "Choisissez le style Google. La vidéo montre une recherche locale tapée, le plan avec ses repères, puis les résultats dont le premier est l'entreprise. Indiquez le métier, la ville et, si vous les connaissez, la note et le nombre d'avis dans « Faits vérifiés ».",
     personnage: "Un petit personnage en illustration salue, explique et fête le résultat dans des bulles de dialogue, aux couleurs du client. Les photos sont facultatives. Décrivez le métier et ce qu'il faut dire dans « Ce que la vidéo doit faire passer ».",
   };
   $("vm-modele").addEventListener("change", () => { const aide = AIDES_MODELES[$("vm-modele").value]; $("vm-modele-aide").hidden = !aide; $("vm-modele-aide").textContent = aide || ""; });
@@ -552,7 +562,7 @@
   async function rendreVideo(i) {
     const v = serie[i];
     v.etat = "en_cours"; v.progression = 0; v.erreur = ""; dessinerOnglets(); if (i === courant) montrerRendu();
-    const corps = JSON.stringify({ scenes: v.scenes, style: $("vm-style").value, client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
+    const corps = JSON.stringify({ scenes: v.scenes.map((s) => s.type === "personnage" ? Object.assign({}, s, { forme: $("vm-forme").value }) : s), style: $("vm-style").value, client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
       images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
       logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
       musique_id: $("vm-musique").value, bpm: $("vm-bpm").value });
