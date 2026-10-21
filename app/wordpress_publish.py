@@ -424,3 +424,39 @@ def lister_categories(url_site: str, utilisateur: str, mot_de_passe: str, forcer
                    "defaut": str(c.get("slug", "")) in ("uncategorized", "non-classe", "sans-categorie")} for c in brutes if c.get("id") and str(c.get("name", "")).strip()]
     _CACHE_CATEGORIES[cle] = (_temps.time(), categories)
     return categories
+
+
+_CACHE_ARTICLES = {}
+
+
+def lister_articles(url_site: str, utilisateur: str, mot_de_passe: str, forcer: bool = False) -> list:
+    """
+    Articles PUBLIES du site, les plus recents d'abord : [{"id", "titre", "lien", "date", "categories": [identifiants]}] (300 au plus). Gardes en memoire
+    10 minutes ; leve RuntimeError si le site refuse la lecture.
+    """
+    import html
+    import time as _temps
+    cle = normaliser_url(url_site)
+    en_cache = _CACHE_ARTICLES.get(cle)
+    if en_cache and not forcer and _temps.time() - en_cache[0] < DUREE_CACHE_CATEGORIES:
+        return en_cache[1]
+    brutes = []
+    for page in (1, 2, 3):
+        reponse = _appeler("GET", url_site, "posts", utilisateur, mot_de_passe,
+                           params={"per_page": 100, "page": page, "status": "publish", "orderby": "date", "order": "desc", "_fields": "id,title,link,date,categories"})
+        if reponse.status_code == 400 and page > 1:
+            break
+        if reponse.status_code != 200:
+            raise RuntimeError(f"Lecture des articles impossible (code {reponse.status_code}).")
+        lot = reponse.json()
+        brutes += lot if isinstance(lot, list) else []
+        if not isinstance(lot, list) or len(lot) < 100:
+            break
+    articles = []
+    for a in brutes:
+        titre = html.unescape(str((a.get("title") or {}).get("rendered", "") if isinstance(a.get("title"), dict) else a.get("title", ""))).strip()
+        if a.get("id") and titre:
+            articles.append({"id": int(a["id"]), "titre": titre, "lien": a.get("link", ""), "date": str(a.get("date", ""))[:10],
+                             "categories": [int(c) for c in (a.get("categories") or []) if str(c).isdigit()]})
+    _CACHE_ARTICLES[cle] = (_temps.time(), articles)
+    return articles

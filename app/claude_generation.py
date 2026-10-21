@@ -4,7 +4,9 @@ en ligne de commande generer_posts.py (prompt SEO local + sortie structuree
 en JSON), adaptee en fonction pure pour la plateforme web.
 """
 
+import difflib
 import json
+import unicodedata
 import os
 import re
 from datetime import date
@@ -3825,3 +3827,61 @@ def choisir_categorie_wordpress(titre: str, texte: str, categories: list) -> int
     )
     identifiant = _json_claude(prompt, SCHEMA_CATEGORIE, 200).get("categorie_id")
     return identifiant if identifiant in {c["id"] for c in utiles} else None
+
+
+SCHEMA_IDEES_ARTICLES = {
+    "type": "object",
+    "properties": {"idees": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"categorie_id": {"type": ["integer", "null"]}, "titre": {"type": "string"}, "angle": {"type": "string"}, "mot_cle": {"type": "string"}},
+        "required": ["categorie_id", "titre", "angle", "mot_cle"], "additionalProperties": False}}},
+    "required": ["idees"], "additionalProperties": False,
+}
+
+
+def _normaliser_titre(titre: str) -> str:
+    sans_accents = "".join(c for c in unicodedata.normalize("NFKD", titre or "") if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9 ]+", " ", sans_accents.lower()).strip()
+
+
+def suggerer_articles_par_categorie(contexte_client: str, ville: str, categories: list, articles: list, nombre: int = 6) -> list:
+    """
+    Idees d'articles de blog qui comblent les categories peu fournies du site, sans repeter l'existant. categories : [{"id", "nom", "nombre"}] (sans la categorie par
+    defaut) ; articles : [{"titre", "categories": [ids]}] deja publies. Renvoie [{"categorie_id", "categorie", "titre", "angle", "mot_cle"}] ; les idees trop proches
+    d'un article existant sont retirees.
+    """
+    if not categories:
+        raise RuntimeError("Le site n'a aucune catégorie : créez-en une sur WordPress pour recevoir des idées par catégorie.")
+    nombre = max(3, min(int(nombre or 6), 10))
+    lignes = []
+    for c in sorted(categories, key=lambda c: (c.get("nombre", 0), c["nom"])):
+        titres = [a["titre"] for a in articles if c["id"] in a.get("categories", [])][:12]
+        lignes.append(f"- {c['id']} : {c['nom']} ({c.get('nombre', 0)} article(s))" + (" - titres existants : " + " | ".join(titres) if titres else " - aucun article pour l'instant"))
+    autres = [a["titre"] for a in articles][:40]
+    prompt = (
+        f"Contexte de l'entreprise :\n{(contexte_client or '').strip()[:2500]}\n" + (f"Zone principale : {ville.strip()[:80]}\n" if (ville or "").strip() else "") +
+        "\nCatégories du blog de son site, de la moins fournie à la plus fournie :\n" + "\n".join(lignes[:40]) + "\n\n"
+        f"Tous les titres déjà publiés (ne pas les répéter, même reformulés) :\n" + "\n".join(f"- {t}" for t in autres) + "\n\n"
+        f"Propose {nombre} idées d'articles de blog NOUVELLES. Priorité aux catégories les moins fournies (0 à 3 articles) : au plus 2 idées par catégorie, et répartis-les sur plusieurs catégories. "
+        "Chaque idée répond à une vraie question de client ou à un besoin concret (comment, quand, pourquoi, combien de temps, que faire si...), utile à quelqu'un qui cherche ce service "
+        "près de chez lui. titre : 70 caractères au plus. angle : une phrase qui dit ce que l'article apporte. mot_cle : la requête principale visée (service + sujet, avec la ville si pertinent). "
+        "categorie_id : l'identifiant de la catégorie la plus adaptée parmi celles listées, jamais une catégorie inventée. "
+        "Règles : français soigné avec accents ; jamais de tiret cadratin ; n'invente aucun chiffre, tarif, délai ou garantie ; rien de négatif sur un concurrent."
+    )
+    brutes = _json_claude(prompt, SCHEMA_IDEES_ARTICLES, 3000).get("idees", [])
+    existants = [_normaliser_titre(a["titre"]) for a in articles]
+    noms = {c["id"]: c["nom"] for c in categories}
+    idees, vus = [], []
+    for brute in brutes:
+        titre = _nettoyer_texte_genere(str(brute.get("titre", ""))).replace("\u2014", "-").strip()[:120]
+        norme = _normaliser_titre(titre)
+        if not norme or any(difflib.SequenceMatcher(None, norme, autre).ratio() > 0.8 for autre in existants + vus):
+            continue
+        vus.append(norme)
+        identifiant = brute.get("categorie_id") if brute.get("categorie_id") in noms else None
+        idees.append({"categorie_id": identifiant, "categorie": noms.get(identifiant, ""), "titre": titre,
+                      "angle": _nettoyer_texte_genere(str(brute.get("angle", ""))).replace("\u2014", "-").strip()[:300],
+                      "mot_cle": " ".join(str(brute.get("mot_cle", "")).split())[:120]})
+    if not idees:
+        raise RuntimeError("L'IA n'a proposé aucune idée nouvelle exploitable : réessayez.")
+    return idees[:10]

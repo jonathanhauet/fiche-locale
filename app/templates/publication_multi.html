@@ -663,6 +663,9 @@
         </div>
         <input type="hidden" name="categorie_wordpress" id="seo-categorie-envoi">
         <p class="texte-discret" id="seo-categorie-statut" style="margin:.2rem 0"></p>
+        <div class="ligne-champs"><button type="button" class="bouton-secondaire" id="seo-idees-articles"><span class="spinner" id="spinner-idees-articles" hidden></span>💡 Idées d'articles par catégorie (IA)</button></div>
+        <p id="seo-idees-statut" class="texte-discret" style="margin:.2rem 0" hidden></p>
+        <div id="seo-idees-zone" style="display:flex;flex-direction:column;gap:.4rem;margin:.3rem 0 .8rem"></div>
         <p class="texte-discret" style="margin:.2rem 0">À remplir avant « Rédiger » : l'article place le mot-clé et la ville aux bons endroits, ajoute des liens vers de vraies pages du site (récupérées automatiquement), une FAQ et un bloc « Où nous trouver » avec la fiche Google.</p>
         <div class="ligne-champs"><button type="button" class="bouton-secondaire" id="seo-controler">🔍 Contrôle SEO de l'article</button></div>
         <div id="seo-resultat" class="seo-resultat" hidden></div>
@@ -2728,6 +2731,37 @@
       } catch (e) { statutCategorie.textContent = "Choix impossible pour le moment."; }
     }
     document.getElementById("seo-categorie-suggerer").addEventListener("click", () => suggererCategorie(false));
+    // Idées d'articles : l'IA lit les catégories et les articles existants, propose des sujets pour celles qui sont peu fournies.
+    document.getElementById("seo-idees-articles").addEventListener("click", async () => {
+      const bouton = document.getElementById("seo-idees-articles"), spinner = document.getElementById("spinner-idees-articles"), statut = document.getElementById("seo-idees-statut"), zone = document.getElementById("seo-idees-zone");
+      bouton.disabled = true; spinner.hidden = false; statut.hidden = false; statut.textContent = "Lecture des catégories et des articles du site, puis recherche d'idées (30 secondes environ)...";
+      try {
+        const r = await fetch("/publication-multi/{{ client.id }}/idees_articles", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const d = await r.json();
+        if (!r.ok) { statut.textContent = d.erreur || "Impossible de proposer des idées."; return; }
+        zone.textContent = "";
+        const resume = document.createElement("p"); resume.className = "texte-discret"; resume.style.margin = "0";
+        resume.textContent = d.nb_articles + " articles lus. Catégories : " + d.categories.map((c) => c.nom + " " + c.nombre + (c.faible ? " (peu fournie)" : "")).join(" · ");
+        zone.appendChild(resume);
+        d.idees.forEach((idee) => {
+          const b = document.createElement("button"); b.type = "button";
+          b.style.cssText = "text-align:left;border:1px solid #8886;border-radius:10px;padding:.5rem .8rem;background:transparent;color:inherit;cursor:pointer;font:inherit";
+          const t = document.createElement("b"); t.textContent = idee.titre; t.style.display = "block";
+          const a = document.createElement("span"); a.style.cssText = "font-size:.85rem;opacity:.85"; a.textContent = idee.angle + (idee.categorie ? "  [" + idee.categorie + "]" : "") + (idee.mot_cle ? "  Mot-clé : " + idee.mot_cle : "");
+          b.appendChild(t); b.appendChild(a);
+          b.addEventListener("click", () => {
+            document.getElementById("texte-base").value = idee.titre + "\n\nAngle : " + idee.angle;
+            const mc = document.getElementById("seo-mot-cle"); mc.value = idee.mot_cle || ""; mc.dispatchEvent(new Event("input", { bubbles: true }));
+            if (idee.categorie_id) { selectCategorie.value = String(idee.categorie_id); document.getElementById("seo-categorie-envoi").value = selectCategorie.value; }
+            statut.textContent = "Idée reprise dans le texte de base, le mot-clé et la catégorie : cliquez sur 🔄 (rédiger l'article) pour l'écrire.";
+            document.getElementById("texte-base").scrollIntoView({ behavior: "smooth", block: "center" });
+          });
+          zone.appendChild(b);
+        });
+        statut.textContent = "Cliquez sur une idée pour la reprendre.";
+      } catch (e) { statut.textContent = "Erreur réseau."; }
+      finally { bouton.disabled = false; spinner.hidden = true; }
+    });
     document.getElementById("seo-controler").addEventListener("click", async () => {
       const bouton = document.getElementById("seo-controler"); bouton.disabled = true;
       try {

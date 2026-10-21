@@ -9537,6 +9537,22 @@ async def publication_multi_categories_wordpress(client_id: int, request: Reques
     return JSONResponse({"categories": [c for c in categories if not c["defaut"]]})
 
 
+@app.post("/publication-multi/{client_id}/idees_articles")
+async def publication_multi_idees_articles(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Idees d'articles qui comblent les categories peu fournies du WordPress du client, sans repeter ses articles existants."""
+    client, erreur = _identifiants_wordpress(db, client_id, request)
+    if erreur:
+        return erreur
+    try:
+        categories = [c for c in await run_in_threadpool(wordpress_publish.lister_categories, client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe) if not c["defaut"]]
+        articles = await run_in_threadpool(wordpress_publish.lister_articles, client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe)
+        idees = await run_in_threadpool(claude_generation.suggerer_articles_par_categorie, _contexte_ia_client(client), client.localisation_ville or "", categories, articles)
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=502)
+    resume = sorted(({"id": c["id"], "nom": c["nom"], "nombre": c["nombre"], "faible": c["nombre"] <= 2} for c in categories), key=lambda c: (c["nombre"], c["nom"]))
+    return JSONResponse({"idees": idees, "categories": resume, "nb_articles": len(articles)})
+
+
 @app.post("/publication-multi/{client_id}/categorie_wordpress/suggerer")
 async def publication_multi_suggerer_categorie(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """L'IA choisit, parmi les categories existantes du site, celle qui convient a l'article. Corps : texte (markdown, 1re ligne « # Titre »)."""
