@@ -724,6 +724,10 @@ class PisteMusicale(Base):
     fichier_url = Column(String, default="")
     duree_secondes = Column(Float, default=0.0)
     cree_le = Column(DateTime, default=datetime.utcnow)
+    source = Column(String, default="")                         # "ia" : composee par l'IA (Lyria) ; vide : ajoutee a la main
+    description = Column(Text, default="")                      # description envoyee a l'IA musicale
+    bpm = Column(Float, nullable=True)                          # tempo mesure (ou demande), pour caler les montages
+    ambiance = Column(String, default="")
 
 
 class PostLinkedInProgramme(Base):

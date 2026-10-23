@@ -117,10 +117,12 @@
   <div class="ligne-champs">
     <div>
       <label for="vm-musique">Musique (bibliothèque musicale)</label>
-      <select id="vm-musique"><option value="">Aucune, bruitages seulement</option>{% for p in pistes %}<option value="{{ p.id }}">{{ p.nom }}</option>{% endfor %}</select>
+      <select id="vm-musique"><option value="">Aucune, bruitages seulement</option>{% for p in pistes %}<option value="{{ p.id }}" data-bpm="{{ p.bpm|round|int if p.bpm else '' }}">{{ p.nom }}{% if p.source == "ia" %} (IA){% endif %}</option>{% endfor %}</select>
     </div>
     <div><label for="vm-bpm">Tempo de la piste en BPM (facultatif : les scènes changent sur les temps)</label><input type="number" id="vm-bpm" min="50" max="200" placeholder="Ex : 120"></div>
   </div>
+  {% set mia_select = "vm-musique" %}{% set mia_texte = "miaTexteVideo" %}{% set mia_bpm = "vm-bpm" %}
+  {% include "_musique_ia.html" %}
 
   <div class="ligne-champs">
     <div class="vm-couleur">
@@ -524,6 +526,14 @@
   ecouterVoix($("vm-voix-ecouter"), "vm-voix", "narration");
   ecouterVoix($("vm-voix-perso-ecouter"), "vm-voix-perso", "personnage");
   $("vm-modele").addEventListener("change", () => { const aide = AIDES_MODELES[$("vm-modele").value]; $("vm-modele-aide").hidden = !aide; $("vm-modele-aide").textContent = aide || ""; });
+
+  // texte sur lequel l'IA adapte la musique : le scénario s'il est écrit, sinon le brief
+  window.miaTexteVideo = () => {
+    const v = serie[courant] || serie[0], cles = ["texte", "sous_texte", "titre", "legende", "accroche", "libelle", "bouton"];
+    if (v && v.scenes && v.scenes.length) return [v.titre, v.legende].concat(v.scenes.flatMap((s) => cles.map((c) => s[c]))).filter((t) => typeof t === "string" && t.trim()).join(". ");
+    return [$("vm-brief").value, $("vm-faits").value].filter(Boolean).join(". ");
+  };
+  $("vm-musique").addEventListener("change", () => { const o = $("vm-musique").selectedOptions[0]; if (o && o.dataset.bpm) $("vm-bpm").value = o.dataset.bpm; });
 
   $("vm-scenario").addEventListener("click", async () => {
     const modele = $("vm-modele").value, minimum = { avant_apres: 2, realisation: 1 }[modele] || 0;

@@ -1,0 +1,150 @@
+{# Musique creee par l'IA, adaptee au texte a publier. Parametres (set avant l'include) : mia_select = id du <select> des pistes, mia_texte = nom de la fonction JS qui renvoie le texte, mia_bpm = id du champ tempo (facultatif), mia_ouvert = deplie d'emblee #}
+<details class="musique-ia" id="mia" data-select="{{ mia_select }}" data-texte="{{ mia_texte }}" data-bpm="{{ mia_bpm|default('') }}" {% if mia_ouvert %}open{% endif %}
+         style="margin:.6rem 0;padding:.6rem .8rem;border:1px solid var(--bordure, #d0d5dd);border-radius:10px;">
+  <summary style="cursor:pointer;font-weight:600;">🎵 Créer une musique par IA, adaptée à mon texte</summary>
+  <p class="texte-discret" style="margin:.4rem 0;">L'IA lit le texte à publier et propose le style de musique qui sert son message. Tu peux tout modifier avant de composer. Musique instrumentale, sans voix, gardée ensuite dans la bibliothèque.</p>
+
+  <div class="ligne-champs">
+    <button type="button" class="bouton" id="mia-proposer">✨ Proposer une musique adaptée au texte</button>
+  </div>
+  <p id="mia-resume" class="texte-discret" hidden style="margin:.4rem 0;"></p>
+
+  <div class="ligne-champs">
+    <div><label for="mia-ambiance">Ambiance</label><select id="mia-ambiance"></select></div>
+    <div><label for="mia-genre">Style</label><select id="mia-genre"></select></div>
+    <div><label for="mia-energie">Énergie</label><select id="mia-energie"></select></div>
+    <div><label for="mia-duree">Durée</label><select id="mia-duree"></select></div>
+  </div>
+  <div class="ligne-champs">
+    <div style="flex:3;"><label for="mia-libre">Précisions (facultatif, en français ou en anglais)</label><input type="text" id="mia-libre" maxlength="240" placeholder="Ex : piano doux qui démarre seul, puis la guitare arrive"></div>
+    <div><label for="mia-bpm">Tempo (BPM)</label><input type="number" id="mia-bpm" min="60" max="170" placeholder="auto"></div>
+  </div>
+
+  <label for="mia-description">Description envoyée à l'IA musicale (modifiable ; changer les choix ci-dessus la remplace)</label>
+  <textarea id="mia-description" rows="4" maxlength="900" spellcheck="false"></textarea>
+
+  <div class="ligne-champs">
+    <button type="button" class="bouton" id="mia-composer">🎶 Composer la musique</button>
+    <span class="texte-discret" id="mia-cout"></span>
+  </div>
+  <p id="mia-statut" class="texte-discret" hidden></p>
+
+  <div id="mia-resultat" hidden style="margin-top:.5rem;">
+    <audio id="mia-audio" controls style="width:100%;max-width:420px;"></audio>
+    <p class="texte-discret" id="mia-infos" style="margin:.3rem 0;"></p>
+    <div class="ligne-champs">
+      <input type="text" id="mia-nom" maxlength="100" placeholder="Nom de la musique" style="flex:1;">
+      <button type="button" class="bouton" id="mia-garder">✅ Garder et utiliser</button>
+      <button type="button" class="bouton-secondaire" id="mia-refaire">↻ Une autre version</button>
+    </div>
+  </div>
+</details>
+
+<script>
+(function () {
+  const racine = document.getElementById("mia");
+  if (!racine) return;
+  const $ = (id) => document.getElementById(id);
+  let options = null, idJob = "", minuteur = null, occupe = false;
+
+  function statut(texte, erreur) {
+    const zone = $("mia-statut");
+    zone.textContent = texte || ""; zone.hidden = !texte; zone.style.color = erreur ? "#c0392b" : "";
+  }
+  function remplir(id, liste, valeur) {
+    const s = $(id); s.innerHTML = "";
+    liste.forEach((o) => { const e = document.createElement("option"); e.value = o[0]; e.textContent = o[1]; s.appendChild(e); });
+    if (valeur) s.value = valeur;
+  }
+  async function charger() {
+    if (options) return;
+    try {
+      options = await (await fetch("/musiques/options")).json();
+      remplir("mia-ambiance", options.ambiances, options.defauts.ambiance); remplir("mia-genre", options.genres, options.defauts.genre);
+      remplir("mia-energie", options.energies, options.defauts.energie); remplir("mia-duree", options.durees, options.defauts.duree);
+      majCout(); await decrire();
+    } catch (e) { statut("Impossible de charger les réglages de musique.", true); }
+  }
+  function majCout() {
+    const d = options && options.durees.find((x) => x[0] === $("mia-duree").value);
+    $("mia-cout").textContent = d ? "Coût : environ " + d[2].toFixed(2).replace(".", ",") + " $ par composition." : "";
+  }
+  async function decrire() {
+    const p = new URLSearchParams({ ambiance: $("mia-ambiance").value, genre: $("mia-genre").value, energie: $("mia-energie").value, duree: $("mia-duree").value, bpm: $("mia-bpm").value, libre: $("mia-libre").value });
+    try { $("mia-description").value = (await (await fetch("/musiques/description?" + p)).json()).description || ""; } catch (e) { /* la description reste telle quelle */ }
+  }
+  racine.addEventListener("toggle", () => { if (racine.open) charger(); });
+  if (racine.open) charger();
+  ["mia-ambiance", "mia-genre", "mia-energie", "mia-duree"].forEach((id) => $(id).addEventListener("change", () => { majCout(); decrire(); }));
+  $("mia-libre").addEventListener("change", decrire); $("mia-bpm").addEventListener("change", decrire);
+  ["mia-libre", "mia-bpm", "mia-nom"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); }));   // Entree ne doit pas envoyer le formulaire de la page
+
+  $("mia-proposer").addEventListener("click", async () => {
+    if (occupe) return;
+    await charger();
+    const lire = window[racine.dataset.texte];
+    const texte = ((typeof lire === "function" ? lire() : "") || "").trim();
+    if (texte.length < 5) { statut("Écris ou génère d'abord le texte à publier : la musique s'adapte à son message.", true); return; }
+    occupe = true; $("mia-proposer").disabled = true; statut("L'IA choisit le style de musique qui correspond à ton message...");
+    try {
+      const r = await fetch("/musiques/suggerer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte: texte }) });
+      const d = await r.json();
+      if (!r.ok) { statut(d.erreur || "Proposition impossible pour le moment.", true); return; }
+      $("mia-ambiance").value = d.ambiance; $("mia-genre").value = d.genre; $("mia-energie").value = d.energie; $("mia-bpm").value = d.bpm; $("mia-libre").value = d.complement || "";
+      $("mia-description").value = d.description; $("mia-resume").textContent = "🎯 " + d.resume; $("mia-resume").hidden = !d.resume;
+      statut("Proposition prête : modifie-la si tu veux, puis clique sur « Composer la musique ».");
+    } catch (e) { statut("Erreur réseau.", true); }
+    finally { occupe = false; $("mia-proposer").disabled = false; }
+  });
+
+  async function composer() {
+    if (occupe) return;
+    await charger();
+    occupe = true; $("mia-composer").disabled = true; $("mia-refaire").disabled = true; $("mia-resultat").hidden = true;
+    statut("Composition en cours (environ 30 secondes à 1 minute)...");
+    try {
+      const r = await fetch("/musiques/generer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: $("mia-description").value, duree: $("mia-duree").value, bpm: $("mia-bpm").value }) });
+      const d = await r.json();
+      if (!r.ok) { statut(d.erreur || "Composition impossible pour le moment.", true); finir(); return; }
+      idJob = d.id; suivre();
+    } catch (e) { statut("Erreur réseau.", true); finir(); }
+  }
+  function finir() { occupe = false; $("mia-composer").disabled = false; $("mia-refaire").disabled = false; }
+  function suivre() {
+    clearTimeout(minuteur);
+    minuteur = setTimeout(async () => {
+      try {
+        const d = await (await fetch("/musiques/etat/" + idJob)).json();
+        if (d.etat === "en_cours") { suivre(); return; }
+        if (d.etat !== "termine") { statut(d.erreur || "La composition a échoué, réessaie.", true); finir(); return; }
+        $("mia-audio").src = "/musiques/essai/" + idJob; $("mia-audio").load();
+        const minutes = Math.floor(d.duree / 60), secondes = String(Math.round(d.duree % 60)).padStart(2, "0");
+        $("mia-infos").textContent = "Durée " + minutes + ":" + secondes + (d.bpm ? " · tempo " + Math.round(d.bpm) + " BPM" + (d.bpm_mesure ? " (mesuré)" : " (demandé)") : "") + " · musique générée par IA (Lyria), sans voix.";
+        if (!$("mia-nom").value) $("mia-nom").value = "Musique IA - " + ($("mia-ambiance").selectedOptions[0] || {}).textContent + " " + ($("mia-genre").selectedOptions[0] || {}).textContent;
+        $("mia-resultat").hidden = false; statut(""); finir();
+      } catch (e) { suivre(); }
+    }, 3000);
+  }
+  $("mia-composer").addEventListener("click", composer);
+  $("mia-refaire").addEventListener("click", composer);
+
+  $("mia-garder").addEventListener("click", async () => {
+    $("mia-garder").disabled = true;
+    try {
+      const r = await fetch("/musiques/garder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: idJob, nom: $("mia-nom").value, ambiance: $("mia-ambiance").value }) });
+      const d = await r.json();
+      if (!r.ok) { statut(d.erreur || "Enregistrement impossible.", true); return; }
+      const liste = $(racine.dataset.select);
+      if (liste) {
+        let o = Array.from(liste.options).find((x) => x.value === String(d.piste.id));
+        if (!o) { o = document.createElement("option"); o.value = d.piste.id; o.textContent = d.piste.nom; liste.appendChild(o); }
+        o.dataset.bpm = d.piste.bpm || ""; liste.value = String(d.piste.id); liste.dispatchEvent(new Event("change"));
+      }
+      const champBpm = racine.dataset.bpm && $(racine.dataset.bpm);
+      if (champBpm && d.piste.bpm) champBpm.value = Math.round(d.piste.bpm);
+      statut("✅ Musique gardée dans la bibliothèque et sélectionnée pour cette vidéo.");
+    } catch (e) { statut("Erreur réseau.", true); }
+    finally { $("mia-garder").disabled = false; }
+  });
+})();
+</script>

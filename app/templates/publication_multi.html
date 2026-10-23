@@ -606,12 +606,15 @@
     <select id="musique-montage">
       <option value="">Aucune musique</option>
       {% for piste in pistes_musicales %}
-      <option value="{{ piste.id }}">{{ piste.nom }}</option>
+      <option value="{{ piste.id }}">{{ piste.nom }}{% if piste.source == "ia" %} (IA){% endif %}</option>
       {% endfor %}
     </select>
     {% if not pistes_musicales %}
-    <p class="texte-discret">Aucune piste dans la <a href="/musiques" target="_blank">bibliothèque musicale</a> pour l'instant.</p>
+    <p class="texte-discret">Aucune piste dans la <a href="/musiques" target="_blank">bibliothèque musicale</a> pour l'instant : créez-en une par IA ci-dessous.</p>
     {% endif %}
+    {% set mia_select = "musique-montage" %}{% set mia_texte = "miaTextePublication" %}
+    {% include "_musique_ia.html" %}
+    <script>window.miaTextePublication = () => (document.getElementById("texte-base") || {}).value || "";</script>
     <button type="button" id="bouton-monter-video" class="bouton-secondaire">
       <span class="spinner" id="spinner-monter-video" hidden></span>
       🎬 Assembler le montage

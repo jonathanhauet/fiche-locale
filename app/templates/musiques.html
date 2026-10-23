@@ -9,8 +9,9 @@
 </div>
 
 <p class="texte-vide">
-  Musiques de fond utilisables dans le montage vidéo (composeur multi-réseaux, section « Monter une vidéo »).
-  Partagées entre tous les clients. Vérifiez la licence de chaque piste avant de l'ajouter (par exemple la
+  Musiques de fond utilisables dans les vidéos motion design, le montage vidéo et le composeur multi-réseaux.
+  Partagées entre tous les clients. Deux façons d'en ajouter : les composer par IA, adaptées à un texte (sans voix, libres de réutilisation
+  d'une vidéo à l'autre), ou téléverser un fichier dont vous avez vérifié la licence (par exemple la
   <a href="https://www.youtube.com/audiolibrary" target="_blank" rel="noopener">bibliothèque audio YouTube</a>,
   conçue spécifiquement pour être utilisée sans risque sur des vidéos publiées).
 </p>
@@ -19,6 +20,18 @@
 <div class="bandeau-avertissement">{{ erreur }}</div>
 {% endif %}
 
+<div class="formulaire">
+  <label for="mia-texte-source">Texte à publier (la musique s'adapte à son message ; colle ici une légende, un script ou une idée)</label>
+  <textarea id="mia-texte-source" rows="4" placeholder="Ex : Votre chauffe-eau lâche en plein hiver ? Notre équipe intervient en moins de 2 heures, 7 jours sur 7."></textarea>
+</div>
+{% set mia_select = "" %}{% set mia_texte = "miaTexteSource" %}{% set mia_ouvert = true %}
+{% include "_musique_ia.html" %}
+<script>
+  window.miaTexteSource = () => document.getElementById("mia-texte-source").value;
+  document.getElementById("mia-garder").addEventListener("click", () => setTimeout(() => { if (document.getElementById("mia-statut").textContent.startsWith("✅")) window.location.reload(); }, 1500));
+</script>
+
+<p class="texte-discret" style="margin:1rem 0 .3rem;">Ou ajouter un fichier :</p>
 <form method="post" action="/musiques/ajouter" enctype="multipart/form-data" class="formulaire ligne-champs">
   <input type="text" name="nom" placeholder="Nom de la piste (ex : Ambiance légère)" required style="flex:1;">
   <input type="file" name="fichier" accept="audio/mpeg,audio/mp4,audio/wav,.mp3,.m4a,.wav" required>
@@ -32,6 +45,7 @@
       <tr>
         <th>Piste</th>
         <th>Durée</th>
+        <th>Tempo</th>
         <th></th>
         <th></th>
       </tr>
@@ -39,8 +53,9 @@
     <tbody>
       {% for piste in pistes %}
       <tr>
-        <td>{{ piste.nom }}</td>
+        <td>{{ piste.nom }}{% if piste.source == "ia" %} <span class="texte-discret" title="{{ piste.description }}">🤖 IA</span>{% endif %}</td>
         <td>{{ (piste.duree_secondes // 60)|int }}:{{ "%02d"|format(piste.duree_secondes % 60) }}</td>
+        <td>{% if piste.bpm %}{{ piste.bpm|round|int }} BPM{% else %}<span class="texte-discret">-</span>{% endif %}</td>
         <td><audio controls src="{{ piste.fichier_url }}" style="height:32px; max-width:220px;"></audio></td>
         <td>
           <form method="post" action="/musiques/{{ piste.id }}/supprimer" onsubmit="return confirm('Supprimer cette piste ?');">

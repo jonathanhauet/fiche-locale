@@ -101,6 +101,7 @@ from . import (
     tics_ia,
     styles_montage,
     montage_video,
+    musique_ia,
     notifications,
     ovh_upload,
     qr_generateur,
@@ -336,6 +337,11 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
         if inspecteur.has_table("creations") and "epingle" not in {c["name"] for c in inspecteur.get_columns("creations")}:
             connexion.execute(text("ALTER TABLE creations ADD COLUMN epingle BOOLEAN DEFAULT FALSE"))
+        if inspecteur.has_table("pistes_musicales"):
+            colonnes_pistes = {c["name"] for c in inspecteur.get_columns("pistes_musicales")}
+            for nom_colonne, definition in (("source", "VARCHAR DEFAULT ''"), ("description", "TEXT DEFAULT ''"), ("bpm", "DOUBLE PRECISION"), ("ambiance", "VARCHAR DEFAULT ''")):
+                if nom_colonne not in colonnes_pistes:
+                    connexion.execute(text(f"ALTER TABLE pistes_musicales ADD COLUMN {nom_colonne} {definition}"))
 
         if "leads_audit" in inspecteur.get_table_names():
             colonnes_leads = [c["name"] for c in inspecteur.get_columns("leads_audit")]
@@ -7710,6 +7716,149 @@ async def ajouter_musique(request: Request, nom: str = Form(...), fichier: Uploa
     db.add(models.PisteMusicale(nom=(nom or "").strip()[:100] or "(sans titre)", fichier_url=url, duree_secondes=duree))
     db.commit()
     return RedirectResponse("/musiques", status_code=303)
+
+
+JOBS_MUSIQUE = {}                            # compositions en cours ou terminees (en memoire) : identifiant -> {"etat", "erreur", "octets", "duree", "bpm", ...}
+HISTORIQUE_MUSIQUES = []                     # horodatages (monotonic) des compositions lancees : plafond horaire, chaque composition etant facturee par Google
+LIMITE_MUSIQUES_PAR_HEURE = 30
+JOBS_MUSIQUE_CONSERVES = 8
+
+
+def _piste_en_dict(piste) -> dict:
+    return {"id": piste.id, "nom": piste.nom, "bpm": piste.bpm, "duree": piste.duree_secondes, "source": piste.source or ""}
+
+
+@app.get("/musiques/options")
+def musiques_options(request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    return JSONResponse({
+        "ambiances": [[cle, valeur[0]] for cle, valeur in musique_ia.AMBIANCES.items()], "genres": [[cle, valeur[0]] for cle, valeur in musique_ia.GENRES.items()],
+        "energies": [[cle, valeur[0]] for cle, valeur in musique_ia.ENERGIES.items()],
+        "durees": [[cle, valeur[0], musique_ia.cout_estime(cle)] for cle, valeur in musique_ia.DUREES.items()],
+        "defauts": {"ambiance": "chaleureuse", "genre": "acoustique", "energie": "modere", "duree": musique_ia.DUREE_DEFAUT},
+    })
+
+
+@app.get("/musiques/description")
+def musiques_description(request: Request, ambiance: str = "", genre: str = "", energie: str = "", duree: str = "", bpm: str = "", libre: str = ""):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    return JSONResponse({"description": musique_ia.construire_description(ambiance, genre, energie, duree, bpm, libre)})
+
+
+@app.post("/musiques/suggerer")
+async def musiques_suggerer(request: Request):
+    """Fait choisir par l'IA le style de musique qui sert le texte a publier."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    try:
+        return JSONResponse(await run_in_threadpool(musique_ia.suggerer, donnees.get("texte"), donnees.get("contexte")))
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"La proposition de musique a échoué : {str(erreur)[:160]}"}, status_code=502)
+
+
+@app.post("/musiques/generer")
+async def musiques_generer(request: Request):
+    """Compose un morceau avec Lyria en tache de fond (une seule composition a la fois, 30 par heure au plus). Rien n'est enregistre tant que l'utilisateur ne garde pas le morceau."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    description = " ".join(str(donnees.get("description") or "").split())[:musique_ia.TAILLE_MAX_DESCRIPTION]
+    if len(description) < 10:
+        return JSONResponse({"erreur": "Décris la musique souhaitée (ou clique sur « Proposer une musique adaptée »)."}, status_code=400)
+    duree = str(donnees.get("duree") or musique_ia.DUREE_DEFAUT)
+    try:
+        bpm_demande = float(donnees.get("bpm")) if donnees.get("bpm") not in (None, "") else None
+    except (TypeError, ValueError):
+        bpm_demande = None
+    if any(j["etat"] == "en_cours" for j in JOBS_MUSIQUE.values()):
+        return JSONResponse({"erreur": "Une composition est déjà en cours : attends qu'elle se termine."}, status_code=409)
+    maintenant = monotonic()
+    HISTORIQUE_MUSIQUES[:] = [t for t in HISTORIQUE_MUSIQUES if maintenant - t < 3600]
+    if len(HISTORIQUE_MUSIQUES) >= LIMITE_MUSIQUES_PAR_HEURE:
+        return JSONResponse({"erreur": f"Limite de {LIMITE_MUSIQUES_PAR_HEURE} compositions par heure atteinte : réessaie un peu plus tard."}, status_code=429)
+    HISTORIQUE_MUSIQUES.append(maintenant)
+    identifiant = uuid.uuid4().hex[:10]
+    job = {"etat": "en_cours", "erreur": "", "octets": b"", "duree": 0.0, "bpm": None, "bpm_mesure": False, "description": description, "piste_id": None}
+    JOBS_MUSIQUE[identifiant] = job
+    for ancien in list(JOBS_MUSIQUE)[:-JOBS_MUSIQUE_CONSERVES]:                  # on ne garde en memoire que les derniers essais
+        JOBS_MUSIQUE.pop(ancien, None)
+
+    def travail():
+        try:
+            octets = musique_ia.generer(description, duree)
+            job["duree"] = montage_video.duree_octets_audio(octets)
+            mesure = musique_ia.mesurer_bpm(octets)
+            job.update(octets=octets, bpm=mesure or bpm_demande, bpm_mesure=bool(mesure), etat="termine")
+        except Exception as erreur:
+            job.update(etat="erreur", erreur=str(erreur)[:300] or erreur.__class__.__name__)
+
+    threading.Thread(target=travail, daemon=True).start()
+    return JSONResponse({"id": identifiant})
+
+
+@app.get("/musiques/etat/{identifiant}")
+def musiques_etat(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    job = JOBS_MUSIQUE.get(identifiant)
+    if not job:
+        return JSONResponse({"etat": "erreur", "erreur": "Composition introuvable (le serveur a redémarré ?). Relance-la."})
+    return JSONResponse({"etat": job["etat"], "erreur": job["erreur"], "duree": job["duree"], "bpm": job["bpm"], "bpm_mesure": job["bpm_mesure"]})
+
+
+@app.get("/musiques/essai/{identifiant}")
+def musiques_essai(identifiant: str, request: Request):
+    """Ecoute d'une composition pas encore gardee."""
+    if not utilisateur_connecte(request):
+        return Response(status_code=401)
+    job = JOBS_MUSIQUE.get(identifiant)
+    if not job or job["etat"] != "termine":
+        return Response(status_code=404)
+    return Response(content=job["octets"], media_type="audio/mpeg")
+
+
+@app.post("/musiques/garder")
+async def musiques_garder(request: Request, db: Session = Depends(obtenir_session)):
+    """Garde une composition dans la bibliotheque musicale (copiee sur OVH comme les autres pistes), avec son tempo et la mention « IA »."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    job = JOBS_MUSIQUE.get(str(donnees.get("id") or ""))
+    if not job or job["etat"] != "termine":
+        return JSONResponse({"erreur": "Cette composition n'est plus disponible : relance-la."}, status_code=404)
+    if job["piste_id"]:
+        deja = db.get(models.PisteMusicale, job["piste_id"])
+        if deja:
+            return JSONResponse({"ok": True, "piste": _piste_en_dict(deja)})
+    nom = " ".join(str(donnees.get("nom") or "").split())[:100] or "Musique IA"
+    ambiance = str(donnees.get("ambiance") or "")
+    try:
+        url = await run_in_threadpool(ovh_upload.envoyer_octets, job["octets"], f"musique-{uuid.uuid4().hex[:10]}.mp3")
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de l'envoi : {str(erreur)[:160]}"}, status_code=502)
+    piste = models.PisteMusicale(nom=nom, fichier_url=url, duree_secondes=job["duree"], source="ia", description=job["description"], bpm=job["bpm"],
+                                 ambiance=ambiance if ambiance in musique_ia.AMBIANCES else "")
+    db.add(piste)
+    db.commit()
+    job["piste_id"] = piste.id
+    return JSONResponse({"ok": True, "piste": _piste_en_dict(piste)})
 
 
 @app.post("/musiques/{piste_id}/supprimer")

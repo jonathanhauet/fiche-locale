@@ -106,9 +106,12 @@
   <label for="montage-musique">Musique de fond (baisse automatiquement quand vous parlez)</label>
   <select id="montage-musique">
     <option value="">Aucune</option>
-    {% for piste in pistes %}<option value="{{ piste.id }}">{{ piste.nom }}</option>{% endfor %}
+    {% for piste in pistes %}<option value="{{ piste.id }}">{{ piste.nom }}{% if piste.source == "ia" %} (IA){% endif %}</option>{% endfor %}
   </select>
-  {% if not pistes %}<p class="texte-discret">Aucune musique enregistrée : ajoutez-en dans <a href="/musiques">Musiques</a>.</p>{% endif %}
+  {% if not pistes %}<p class="texte-discret">Aucune musique enregistrée : ajoutez-en dans <a href="/musiques">Musiques</a> ou créez-en une par IA ci-dessous.</p>{% endif %}
+  {% set mia_select = "montage-musique" %}{% set mia_texte = "miaTexteMontage" %}
+  {% include "_musique_ia.html" %}
+  <script>window.miaTexteMontage = () => ((document.getElementById("montage-script-texte") || {}).textContent || "").trim() || (document.getElementById("montage-consignes").value || "");</script>
 
   <label for="montage-consignes">Consignes de montage (facultatif)</label>
   <textarea id="montage-consignes" rows="3" placeholder="Ex : enlève la partie où je parle du prix, et coupe l'introduction"></textarea>
