@@ -8136,7 +8136,10 @@ def video_motion_profil(client_id: int, request: Request, db: Session = Depends(
     if not db.get(models.Client, client_id):
         return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
     profil = db.query(models.ProfilVideoClient).filter_by(client_id=client_id).first()
-    return JSONResponse({"profil": _profil_video_en_dict(profil) if profil else None, "defauts": charte_montage.lire(db)})
+    client = db.get(models.Client, client_id)
+    charte = _charte_client(db, client)
+    return JSONResponse({"profil": _profil_video_en_dict(profil) if profil else None, "defauts": charte_montage.lire(db),
+                         "charte": {"couleur_principale": charte["principale"], "couleur_secondaire": charte["secondaires"][0] if charte["secondaires"] else "", "nom": charte["nom"]}})
 
 
 @app.post("/video-motion/profil/{client_id}")
@@ -10336,6 +10339,85 @@ def _image_depuis_url_publique(url: str):
         return None
 
 
+def _hex_valide(valeur) -> str:
+    v = str(valeur or "").strip().lower()
+    return v if REGEX_COULEUR.fullmatch(v) else ""
+
+
+def _charte_client(db: Session, client) -> dict:
+    """
+    Charte graphique d'un client, rassemblee depuis tout ce qui a deja ete regle : identite visuelle (couleurs, logo, nom, decor), couleur d'accent WordPress et reglages des
+    videos motion design. Les valeurs de la charte enregistree priment ; a defaut, on reprend celles des autres outils (listees dans « reprises », a valider par un enregistrement).
+    « ecarts » signale les couleurs principales differentes d'un outil a l'autre.
+    """
+    profil = db.query(models.ProfilVideoClient).filter_by(client_id=client.id).first()
+    enregistree, wordpress = _hex_valide(client.couleur_marque), _hex_valide(client.wordpress_couleur)
+    video1, video2 = (_hex_valide(profil.couleur_principale), _hex_valide(profil.couleur_secondaire)) if profil else ("", "")
+    secondaires = couleurs_secondaires_client(client)
+    reprises, principale = [], enregistree
+    if not principale and wordpress:
+        principale = wordpress
+        reprises.append(f"Couleur principale {wordpress} : reprise de la couleur d'accent du WordPress.")
+    if not principale and video1:
+        principale = video1
+        reprises.append(f"Couleur principale {video1} : reprise des réglages des vidéos motion design.")
+    if not secondaires and video2:
+        secondaires = [video2]
+        reprises.append(f"Couleur secondaire {video2} : reprise des réglages des vidéos motion design.")
+    nom = nom_affiche_carrousel(client)
+    if not (client.nom_affiche_carrousel or "").strip() and profil and (profil.nom_affiche or "").strip() and profil.nom_affiche.strip() != nom:
+        nom = profil.nom_affiche.strip()
+        reprises.append(f"Nom « {nom} » : repris des réglages des vidéos motion design.")
+    sources = [(libelle, valeur) for libelle, valeur in (("charte", enregistree), ("WordPress", wordpress), ("vidéos motion design", video1)) if valeur]
+    ecarts = []
+    if len({valeur for _, valeur in sources}) > 1:
+        ecarts.append("Couleur principale : " + ", ".join(f"{libelle} {valeur}" for libelle, valeur in sources) + ".")
+    if secondaires and video2 and video2 != secondaires[0] and not reprises:
+        ecarts.append(f"Couleur secondaire : charte {secondaires[0]}, vidéos motion design {video2}.")
+    return {
+        "principale": principale, "secondaires": secondaires, "nom": nom, "logo_envoye": client.logo_url or "", "logo_google": client.logo_google_url or "",
+        "logo_position": logo_position_client(client), "logo_style": logo_style_client(client), "logo_fond": logo_couleur_fond_client(client), "decor": style_decor_client(client),
+        "wordpress": wordpress, "reprises": reprises, "ecarts": ecarts, "profil_video": bool(video1 or video2),
+    }
+
+
+@app.get("/clients/{client_id}/charte", response_class=HTMLResponse)
+def charte_client_page(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+    return templates.TemplateResponse(request, "client_charte.html", {"client": client, "charte": _charte_client(db, client), "site_url": client.wordpress_url or client.site_web or ""})
+
+
+@app.post("/clients/{client_id}/charte/aligner")
+async def charte_aligner(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Aligne les autres outils sur la charte enregistree : couleur d'accent WordPress (wordpress) et couleurs propres des videos motion design effacees (videos)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    principale = _hex_valide(client.couleur_marque)
+    if not principale:
+        return JSONResponse({"erreur": "Enregistre d'abord la charte (couleur principale)."}, status_code=400)
+    if donnees.get("wordpress"):
+        client.wordpress_couleur = principale
+    if donnees.get("videos"):
+        profil = db.query(models.ProfilVideoClient).filter_by(client_id=client_id).first()
+        if profil:
+            profil.couleur_principale, profil.couleur_secondaire = "", ""
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
 @app.post("/clients/{client_id}/identite-visuelle")
 async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -10372,6 +10454,9 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
     if "logo_couleur_fond" in donnees:
         couleur_fond = str(donnees.get("logo_couleur_fond") or "").strip().lower()
         client.logo_couleur_fond = couleur_fond if REGEX_COULEUR.fullmatch(couleur_fond) else ""
+    if "wordpress_couleur" in donnees:
+        couleur_wp = str(donnees.get("wordpress_couleur") or "").strip().lower()
+        client.wordpress_couleur = couleur_wp if REGEX_COULEUR.fullmatch(couleur_wp) else ""
     db.commit()
     return JSONResponse({"ok": True})
 

@@ -21,6 +21,7 @@
   </select>
 
   <p id="vm-profil-statut" class="texte-discret" hidden></p>
+  <a id="vm-charte-lien" class="texte-discret" href="#" target="_blank" rel="noopener" hidden>🎨 Voir la charte graphique de ce client</a>
 
   <label for="vm-modele">Modèle de vidéo</label>
   <select id="vm-modele">
@@ -400,21 +401,24 @@
   // ---------- réglages enregistrés par client : couleurs, nom, ville, ton, format, logo
   function poserCouleur(n, valeur) { const v = normaliserHex(valeur); if (v) { $("vm-couleur" + n).value = v; $("vm-hex" + n).value = v; } }
   async function chargerProfil() {
-    const zone = $("vm-profil-statut"), id = $("vm-client").value;
+    const zone = $("vm-profil-statut"), id = $("vm-client").value, lien = $("vm-charte-lien");
+    lien.hidden = !id; if (id) lien.href = "/clients/" + id + "/charte";
     if (!id) { zone.hidden = true; return; }
     let d;
     try { const r = await fetch("/video-motion/profil/" + id); d = await r.json(); if (!r.ok) return; } catch (e) { return; }
     zone.hidden = false;
     if (!d.profil) {
-      poserCouleur(1, CHARTE_DEFAUT.principale); poserCouleur(2, CHARTE_DEFAUT.secondaire);
+      const charte = d.charte || {};                                    // couleurs et nom de la charte graphique du client
+      poserCouleur(1, charte.couleur_principale || CHARTE_DEFAUT.principale); poserCouleur(2, charte.couleur_secondaire || CHARTE_DEFAUT.secondaire);
       const o = $("vm-client").selectedOptions[0];                      // un autre client : on repart de zero (rien du client precedent ne doit rester)
-      $("vm-nom").value = (o && o.dataset.nom) || ""; $("vm-ville").value = ""; $("vm-ton").value = "dynamique"; $("vm-format").value = "vertical"; $("vm-logo").checked = true;
-      zone.textContent = "Aucun réglage enregistré pour ce client : réglez les couleurs, le ton et le format, puis cliquez sur « Enregistrer ces réglages pour ce client ».";
+      $("vm-nom").value = charte.nom || (o && o.dataset.nom) || ""; $("vm-ville").value = ""; $("vm-ton").value = "dynamique"; $("vm-format").value = "vertical"; $("vm-logo").checked = true;
+      zone.textContent = "Couleurs et nom repris de la charte graphique du client. Réglez le ton et le format, puis cliquez sur « Enregistrer ces réglages pour ce client » si vous voulez les retrouver.";
       return;
     }
     const p = d.profil;
-    poserCouleur(1, p.couleur_principale || CHARTE_DEFAUT.principale); poserCouleur(2, p.couleur_secondaire || CHARTE_DEFAUT.secondaire);
-    if (p.nom_affiche) $("vm-nom").value = p.nom_affiche;
+    const charte = d.charte || {};
+    poserCouleur(1, p.couleur_principale || charte.couleur_principale || CHARTE_DEFAUT.principale); poserCouleur(2, p.couleur_secondaire || charte.couleur_secondaire || CHARTE_DEFAUT.secondaire);
+    if (p.nom_affiche) $("vm-nom").value = p.nom_affiche; else if (charte.nom) $("vm-nom").value = charte.nom;
     if (p.ville) $("vm-ville").value = p.ville;
     if (p.ton) $("vm-ton").value = p.ton;
     if (p.format_video) $("vm-format").value = p.format_video;

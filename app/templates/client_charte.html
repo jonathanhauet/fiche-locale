@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Charte graphique — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+<div class="barre-titre"><h1>🎨 Charte graphique — {{ client.nom }}</h1></div>
+<p class="texte-vide">
+  Les couleurs, le logo et le nom de {{ client.nom }}, réglés ici une seule fois. Les visuels, les carrousels, les avis mis en avant, les titres sur photo, les articles WordPress
+  et les vidéos motion design s'en servent automatiquement : plus besoin de les ressaisir dans chaque outil.
+</p>
+
+{% if charte.reprises %}
+<div class="charte-reprises">
+  <b>Repris de ce que tu avais déjà réglé</b>
+  <ul>{% for r in charte.reprises %}<li>{{ r }}</li>{% endfor %}</ul>
+  <span class="texte-discret">Ces valeurs sont déjà dans le formulaire : vérifie-les, puis clique sur « Enregistrer la charte » pour les garder.</span>
+</div>
+{% endif %}
+
+<div class="charte-grille">
+  <div class="formulaire charte-formulaire">
+    <h2>Nom</h2>
+    <label for="charte-nom">Nom affiché sur les visuels et les vidéos</label>
+    <input type="text" id="charte-nom" maxlength="60" autocomplete="off" value="{{ charte.nom }}">
+
+    <h2>Couleurs</h2>
+    <div class="charte-couleur">
+      <label for="charte-principale-hex">Couleur principale</label>
+      <span class="charte-ligne">
+        <input type="color" id="charte-principale" value="{{ charte.principale or '#1f4e8c' }}" class="charte-pastille">
+        <input type="text" id="charte-principale-hex" maxlength="7" autocomplete="off" spellcheck="false" placeholder="#1f4e8c" value="{{ charte.principale }}">
+        <button type="button" class="bouton-secondaire bouton-mini charte-pipette" data-cible="principale" hidden>🎯 Pipette</button>
+        <button type="button" class="bouton-secondaire bouton-mini" id="charte-detecter" {% if not site_url %}disabled title="Aucune adresse de site connue pour ce client"{% endif %}>🔍 Détecter depuis le site</button>
+      </span>
+      <div id="charte-candidats" class="liste-etiquettes" hidden></div>
+    </div>
+    {% for n in (1, 2) %}
+    <div class="charte-couleur">
+      <label for="charte-sec{{ n }}-hex">Couleur secondaire {{ n }} (facultative)</label>
+      <span class="charte-ligne">
+        <input type="color" id="charte-sec{{ n }}" value="{{ charte.secondaires[n - 1] if charte.secondaires|length >= n else '#888888' }}" class="charte-pastille">
+        <input type="text" id="charte-sec{{ n }}-hex" maxlength="7" autocomplete="off" spellcheck="false" placeholder="aucune" value="{{ charte.secondaires[n - 1] if charte.secondaires|length >= n else '' }}">
+        <button type="button" class="bouton-secondaire bouton-mini charte-pipette" data-cible="sec{{ n }}" hidden>🎯 Pipette</button>
+        <button type="button" class="bouton-secondaire bouton-mini charte-effacer" data-cible="sec{{ n }}" title="Retirer cette couleur">✕</button>
+      </span>
+    </div>
+    {% endfor %}
+    <p id="charte-message-couleur" class="texte-discret" hidden></p>
+
+    <h2>Logo</h2>
+    <div class="charte-logo-ligne">
+      <div>
+        <div class="texte-discret">Logo envoyé</div>
+        <img id="charte-logo-envoye" class="charte-logo" alt="Logo envoyé" {% if charte.logo_envoye %}src="{{ charte.logo_envoye }}"{% else %}hidden{% endif %}>
+        <div id="charte-logo-vide" class="texte-discret" {% if charte.logo_envoye %}hidden{% endif %}>Aucun</div>
+      </div>
+      {% if charte.logo_google %}
+      <div>
+        <div class="texte-discret">Logo de la fiche Google</div>
+        <img class="charte-logo" alt="Logo de la fiche Google" src="{{ charte.logo_google }}">
+      </div>
+      {% endif %}
+    </div>
+    <div class="charte-ligne">
+      <input type="file" id="charte-logo-fichier" accept="image/*" style="width:auto">
+      <button type="button" class="bouton-secondaire bouton-mini" id="charte-logo-retirer" {% if not charte.logo_envoye %}hidden{% endif %}>Retirer le logo envoyé</button>
+    </div>
+    <p id="charte-logo-message" class="texte-discret" hidden></p>
+    <div class="charte-trois">
+      <label>Position du logo
+        <select id="charte-logo-position">{% for cle, libelle in libelles_position_logo.items() %}<option value="{{ cle }}" {% if charte.logo_position == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
+      </label>
+      <label>Style du logo
+        <select id="charte-logo-style">{% for cle, libelle in libelles_style_logo.items() %}<option value="{{ cle }}" {% if charte.logo_style == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
+      </label>
+      <label>Fond derrière le logo
+        <span class="charte-ligne">
+          <input type="color" id="charte-logo-fond" value="{{ charte.logo_fond or '#ffffff' }}" class="charte-pastille">
+          <input type="text" id="charte-logo-fond-hex" maxlength="7" autocomplete="off" spellcheck="false" placeholder="blanc" value="{{ charte.logo_fond }}">
+          <button type="button" class="bouton-secondaire bouton-mini charte-effacer" data-cible="logo-fond" title="Revenir au blanc">✕</button>
+        </span>
+      </label>
+    </div>
+
+    <h2>Décor des visuels</h2>
+    <select id="charte-decor">{% for cle, libelle in libelles_decor.items() %}<option value="{{ cle }}" {% if charte.decor == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
+    <p class="texte-discret">« Automatique » donne un décor différent à chaque client (toujours le même pour un même client).</p>
+
+    <h2>Articles WordPress</h2>
+    <div class="charte-couleur">
+      <label for="charte-wp-hex">Couleur d'accent du site (encadrés, boutons et sommaire des articles)</label>
+      <span class="charte-ligne">
+        <input type="color" id="charte-wp" value="{{ charte.wordpress or '#555555' }}" class="charte-pastille">
+        <input type="text" id="charte-wp-hex" maxlength="7" autocomplete="off" spellcheck="false" placeholder="gris neutre" value="{{ charte.wordpress }}">
+        <button type="button" class="bouton-secondaire bouton-mini" id="charte-wp-identique">= couleur principale</button>
+        <button type="button" class="bouton-secondaire bouton-mini charte-effacer" data-cible="wp" title="Revenir au gris neutre">✕</button>
+      </span>
+    </div>
+
+    <div class="actions-avis">
+      <button type="button" class="bouton" id="charte-enregistrer"><span class="spinner" id="charte-spinner" hidden></span> 💾 Enregistrer la charte</button>
+    </div>
+    <p id="charte-statut" class="texte-discret" hidden></p>
+  </div>
+
+  <aside class="charte-cote">
+    <h2>Aperçu</h2>
+    <div id="charte-apercu" class="charte-apercu">
+      <div class="charte-apercu-logo" id="charte-apercu-logo"></div>
+      <div class="charte-apercu-titre" id="charte-apercu-titre"></div>
+      <div class="charte-apercu-sous">Le texte d'un visuel</div>
+      <div class="charte-apercu-bouton" id="charte-apercu-bouton">Appeler</div>
+    </div>
+    <div class="charte-vignettes" id="charte-vignettes"></div>
+
+    <h2>Où c'est utilisé</h2>
+    <ul class="charte-usage">
+      <li>🖼️ <b>Visuels, carrousels, avis, titres sur photo</b> : couleurs, logo, nom et décor.</li>
+      <li>✨ <b>Vidéos motion design</b> : couleurs et nom{% if charte.profil_video %} (ce client a aussi des réglages propres : voir ci-dessous){% endif %}.</li>
+      <li>📝 <b>Articles WordPress</b> : couleur d'accent du site.</li>
+    </ul>
+
+    {% if charte.ecarts %}
+    <div class="charte-ecarts">
+      <b>Couleurs différentes selon les outils</b>
+      <ul>{% for e in charte.ecarts %}<li>{{ e }}</li>{% endfor %}</ul>
+      <div class="actions-avis">
+        <button type="button" class="bouton-secondaire bouton-mini" id="charte-aligner">Aligner tout sur la charte enregistrée</button>
+      </div>
+      <p id="charte-aligner-message" class="texte-discret" hidden></p>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+
+<style>
+  .charte-grille { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr); gap: 1.4rem; align-items: start; }
+  @media (max-width: 860px) { .charte-grille { grid-template-columns: 1fr; } }
+  .charte-formulaire h2 { margin: 1.2rem 0 .3rem; font-size: 1.05rem; }
+  .charte-formulaire h2:first-child { margin-top: 0; }
+  .charte-couleur { margin: .5rem 0; }
+  .charte-ligne { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  .charte-ligne input[type=color] { width: 3.2rem; height: 2.5rem; padding: 2px; flex: none; }
+  .charte-ligne input[type=text] { width: 9rem; flex: none; }
+  .charte-ligne input[type=file] { width: auto; }
+  .charte-ligne button { width: auto; flex: none; }
+  .charte-pastille { width: 3.2rem; padding: .1rem; }
+  .charte-trois { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .8rem; margin: .6rem 0; }
+  .charte-logo-ligne { display: flex; gap: 1.6rem; margin: .4rem 0; align-items: flex-start; }
+  .charte-logo { max-height: 70px; max-width: 160px; background: #fff; border: 1px solid var(--bordure, #d9dce3); border-radius: 8px; padding: 4px; }
+  .charte-reprises, .charte-ecarts { border: 1px solid #f1d27a; background: #fff8e1; color: #3d3000; border-radius: 10px; padding: .6rem .9rem; margin: .8rem 0; }
+  .charte-reprises .texte-discret, .charte-ecarts .texte-discret { color: #6b5b1f; }
+  .charte-ecarts a, .charte-reprises a { color: #7a4b00; }
+  .charte-reprises ul, .charte-ecarts ul { margin: .3rem 0 .3rem 1.1rem; padding: 0; }
+  .charte-cote h2 { margin: 0 0 .4rem; font-size: 1.05rem; }
+  .charte-cote h2:not(:first-child) { margin-top: 1.2rem; }
+  .charte-apercu { position: relative; border-radius: 14px; padding: 1.4rem 1.2rem 1.2rem; color: #fff; min-height: 190px; background: #1f4e8c; overflow: hidden; }
+  .charte-apercu-titre { font-weight: 700; font-size: 1.25rem; margin-top: 1.5rem; }
+  .charte-apercu-sous { opacity: .85; margin: .3rem 0 .8rem; font-size: .9rem; }
+  .charte-apercu-bouton { display: inline-block; padding: .35rem 1rem; border-radius: 99px; background: #fff; color: #222; font-weight: 600; }
+  .charte-apercu-logo { position: absolute; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 14px; overflow: hidden; }
+  .charte-apercu-logo img { max-width: 80%; max-height: 80%; }
+  .charte-vignettes { display: flex; gap: .4rem; margin-top: .5rem; flex-wrap: wrap; }
+  .charte-vignettes span { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; }
+  .charte-vignettes i { width: 18px; height: 18px; border-radius: 5px; border: 1px solid #0002; display: inline-block; }
+  .charte-usage { margin: 0 0 0 1rem; padding: 0; } .charte-usage li { margin: .3rem 0; }
+</style>
+
+<script>
+(function () {
+  const CLIENT = {{ client.id }};
+  const LOGO_ENVOYE = {{ (charte.logo_envoye or "") | tojson }};
+  const POSITIONS = { haut_droite: [true, false], haut_gauche: [false, false], bas_droite: [true, true], bas_gauche: [false, true], bas_centre: [null, true] };
+  const $ = (id) => document.getElementById(id);
+  const dire = (id, texte) => { const m = $(id); m.hidden = !texte; m.textContent = texte || ""; };
+  const normaliser = (texte) => { let h = String(texte || "").trim().toLowerCase().replace(/^#/, ""); if (/^[0-9a-f]{3}$/.test(h)) h = h.split("").map((c) => c + c).join(""); return /^[0-9a-f]{6}$/.test(h) ? "#" + h : ""; };
+  const post = async (chemin, corps, formulaire) => {
+    const r = await fetch(chemin, formulaire ? { method: "POST", body: formulaire } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps || {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.erreur || d.message || "Échec.");
+    return d;
+  };
+
+  // ---------- couleurs : sélecteur, code hexadécimal, pipette, bouton d'effacement
+  function lier(selecteur, hex) {
+    $(selecteur).addEventListener("input", () => { $(hex).value = $(selecteur).value; apercu(); });
+    $(hex).addEventListener("input", () => { const v = normaliser($(hex).value); if (v) { $(selecteur).value = v; } apercu(); });
+    $(hex).addEventListener("blur", () => { const v = normaliser($(hex).value); if ($(hex).value.trim() && !v) $(hex).value = ""; });
+  }
+  [["charte-principale", "charte-principale-hex"], ["charte-sec1", "charte-sec1-hex"], ["charte-sec2", "charte-sec2-hex"], ["charte-logo-fond", "charte-logo-fond-hex"], ["charte-wp", "charte-wp-hex"]].forEach(([s, h]) => lier(s, h));
+  const IDS = { principale: ["charte-principale", "charte-principale-hex"], sec1: ["charte-sec1", "charte-sec1-hex"], sec2: ["charte-sec2", "charte-sec2-hex"], "logo-fond": ["charte-logo-fond", "charte-logo-fond-hex"], wp: ["charte-wp", "charte-wp-hex"] };
+  document.querySelectorAll(".charte-effacer").forEach((b) => b.addEventListener("click", () => { const [s, h] = IDS[b.dataset.cible]; $(h).value = ""; $(s).value = b.dataset.cible === "wp" ? "#555555" : (b.dataset.cible === "logo-fond" ? "#ffffff" : "#888888"); apercu(); }));
+  if (window.EyeDropper) document.querySelectorAll(".charte-pipette").forEach((b) => {
+    b.hidden = false;
+    b.addEventListener("click", async () => {
+      try { const { sRGBHex } = await new EyeDropper().open(); const [s, h] = IDS[b.dataset.cible]; $(s).value = sRGBHex; $(h).value = sRGBHex; apercu(); } catch (e) { /* annule */ }
+    });
+  });
+  $("charte-wp-identique").addEventListener("click", () => { const v = normaliser($("charte-principale-hex").value); if (!v) { dire("charte-message-couleur", "Choisis d'abord la couleur principale."); return; } $("charte-wp").value = v; $("charte-wp-hex").value = v; dire("charte-message-couleur", ""); });
+  $("charte-detecter").addEventListener("click", async () => {
+    dire("charte-message-couleur", "Lecture du site...");
+    const f = new FormData(); f.append("url", {{ (site_url or "") | tojson }});
+    try {
+      const d = await post("/clients/" + CLIENT + "/wordpress/detecter-style", null, f);
+      const zone = $("charte-candidats"); zone.replaceChildren();
+      const liste = (d.candidats || []).map((c) => normaliser(typeof c === "string" ? c : (c.couleur || c.hex || ""))).filter(Boolean);
+      if (d.couleur && !liste.includes(normaliser(d.couleur))) liste.unshift(normaliser(d.couleur));
+      liste.slice(0, 8).forEach((couleur) => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "bouton-secondaire bouton-mini"; b.textContent = couleur; b.style.borderLeft = "14px solid " + couleur;
+        b.addEventListener("click", () => { $("charte-principale").value = couleur; $("charte-principale-hex").value = couleur; apercu(); });
+        zone.appendChild(b);
+      });
+      zone.hidden = !liste.length;
+      dire("charte-message-couleur", liste.length ? "Clique sur une couleur du site pour l'utiliser comme couleur principale." : "Aucune couleur trouvée sur le site.");
+    } catch (e) { dire("charte-message-couleur", e.message); }
+  });
+
+  // ---------- logo : envoi immédiat, comme dans le composeur
+  let urlLogo = LOGO_ENVOYE;
+  $("charte-logo-fichier").addEventListener("change", async () => {
+    const fichier = $("charte-logo-fichier").files[0]; if (!fichier) return;
+    dire("charte-logo-message", "Envoi du logo...");
+    const f = new FormData(); f.append("type_media", "logo"); f.append("fichier", fichier);
+    try {
+      const d = await post("/publication-multi/" + CLIENT + "/carrousel/media", null, f);
+      urlLogo = d.url || ""; majLogo(); dire("charte-logo-message", "Logo enregistré.");
+    } catch (e) { dire("charte-logo-message", e.message); }
+    $("charte-logo-fichier").value = "";
+  });
+  $("charte-logo-retirer").addEventListener("click", async () => {
+    const f = new FormData(); f.append("type_media", "retirer_logo");
+    try { await post("/publication-multi/" + CLIENT + "/carrousel/media", null, f); urlLogo = ""; majLogo(); dire("charte-logo-message", "Logo retiré."); } catch (e) { dire("charte-logo-message", e.message); }
+  });
+  function majLogo() {
+    const img = $("charte-logo-envoye");
+    if (urlLogo) img.src = urlLogo; else img.removeAttribute("src");
+    img.hidden = !urlLogo; $("charte-logo-vide").hidden = !!urlLogo; $("charte-logo-retirer").hidden = !urlLogo;
+    apercu();
+  }
+
+  // ---------- aperçu : un petit visuel aux couleurs de la charte
+  function apercu() {
+    const principale = normaliser($("charte-principale-hex").value) || "#1f4e8c", sec = normaliser($("charte-sec1-hex").value) || "#ffffff";
+    const carte = $("charte-apercu"); carte.style.background = principale;
+    $("charte-apercu-titre").textContent = $("charte-nom").value || {{ client.nom | tojson }};
+    $("charte-apercu-bouton").style.background = sec; $("charte-apercu-bouton").style.color = luminance(sec) > 0.55 ? "#222" : "#fff";
+    const logo = $("charte-apercu-logo"); logo.replaceChildren(); logo.style.display = urlLogo || {{ (charte.logo_google or "") | tojson }} ? "flex" : "none";
+    const source = urlLogo || {{ (charte.logo_google or "") | tojson }};
+    if (source) { const i = document.createElement("img"); i.src = source; i.alt = ""; logo.appendChild(i); }
+    const [droite, bas] = POSITIONS[$("charte-logo-position").value] || POSITIONS.haut_droite;
+    logo.style.left = logo.style.right = logo.style.top = logo.style.bottom = "auto";
+    if (droite === null) { logo.style.left = "calc(50% - 27px)"; } else if (droite) { logo.style.right = "14px"; } else { logo.style.left = "14px"; }
+    if (bas) logo.style.bottom = "14px"; else logo.style.top = "14px";
+    logo.style.background = normaliser($("charte-logo-fond-hex").value) || "#ffffff";
+    logo.style.borderRadius = $("charte-logo-style").value === "cercle" ? "50%" : "14px";
+    const vignettes = $("charte-vignettes"); vignettes.replaceChildren();
+    [["Principale", principale], ["Secondaire 1", normaliser($("charte-sec1-hex").value)], ["Secondaire 2", normaliser($("charte-sec2-hex").value)]].forEach(([nom, couleur]) => {
+      if (!couleur) return; const s = document.createElement("span"); const i = document.createElement("i"); i.style.background = couleur; s.appendChild(i); s.appendChild(document.createTextNode(nom + " " + couleur)); vignettes.appendChild(s);
+    });
+  }
+  function luminance(hex) { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; }
+  ["charte-nom", "charte-logo-position", "charte-logo-style"].forEach((id) => $(id).addEventListener("input", apercu));
+  apercu();
+
+  // ---------- enregistrement : tout passe par la route d'identité visuelle existante
+  $("charte-enregistrer").addEventListener("click", async () => {
+    $("charte-enregistrer").disabled = true; $("charte-spinner").hidden = false; dire("charte-statut", "");
+    const secondaires = [$("charte-sec1-hex").value, $("charte-sec2-hex").value].map(normaliser).filter(Boolean);
+    const corps = {
+      principale: normaliser($("charte-principale-hex").value), secondaires: secondaires, nom_affiche: $("charte-nom").value, style_decor: $("charte-decor").value,
+      logo_position: $("charte-logo-position").value, logo_style: $("charte-logo-style").value, logo_couleur_fond: normaliser($("charte-logo-fond-hex").value), wordpress_couleur: normaliser($("charte-wp-hex").value),
+    };
+    try { await post("/clients/" + CLIENT + "/identite-visuelle", corps); dire("charte-statut", "Charte enregistrée : elle est utilisée par tous les outils."); setTimeout(() => window.location.reload(), 900); }
+    catch (e) { dire("charte-statut", e.message); }
+    finally { $("charte-enregistrer").disabled = false; $("charte-spinner").hidden = true; }
+  });
+  const aligner = $("charte-aligner");
+  if (aligner) aligner.addEventListener("click", async () => {
+    try { await post("/clients/" + CLIENT + "/charte/aligner", { wordpress: true, videos: true }); dire("charte-aligner-message", "Alignés sur la charte."); setTimeout(() => window.location.reload(), 800); }
+    catch (e) { dire("charte-aligner-message", e.message); }
+  });
+})();
+</script>
+{% endblock %}
