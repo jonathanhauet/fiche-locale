@@ -95,6 +95,7 @@ from . import (
     regles_montage,
     montage_publication,
     sons,
+    synthese_vocale,
     styles_montage,
     montage_video,
     notifications,
@@ -7938,7 +7939,7 @@ def page_video_motion(request: Request, db: Session = Depends(obtenir_session)):
         return redirection
     clients = db.query(models.Client).order_by(models.Client.nom).all()
     pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
-    return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db), "pistes": pistes})
+    return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db), "pistes": pistes, "voix_off_choix": synthese_vocale.VOIX})
 
 
 @app.post("/video-motion/scenario")
@@ -7972,7 +7973,7 @@ async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_
         resultat = await run_in_threadpool(
             claude_generation.generer_scenario_motion, nom, str(donnees.get("ville") or ""), str(donnees.get("brief") or ""), str(donnees.get("faits") or ""),
             contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, nb_photos, bool(donnees.get("avec_logo")), modele,
-            **({"style": "google"} if donnees.get("style") == "google" else {}))
+            **({"style": "google"} if donnees.get("style") == "google" else {}), **({"voix_off": True} if donnees.get("voix_off") else {}))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible d'écrire le scénario : {erreur}"}, status_code=500)
     return JSONResponse(resultat)
@@ -8335,9 +8336,15 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
         id_client = int(donnees.get("client_id") or 0)
     except (TypeError, ValueError):
         id_client = 0
+    voix_off = None
+    demande_voix = donnees.get("voix_off")
+    if isinstance(demande_voix, dict):                                   # voix off demandee : {"voix": "nova", "ton": "dynamique"}
+        if not synthese_vocale.disponible():
+            return JSONResponse({"erreur": "La voix off demande la clé OpenAI (OPENAI_API_KEY manquant dans plateforme_web/.env)."}, status_code=400)
+        voix_off = {"voix": synthese_vocale.voix_valide(demande_voix.get("voix")), "ton": demande_voix.get("ton") if demande_voix.get("ton") in claude_generation.TONS_MOTION else "dynamique"}
     titre_archive = " ".join(str(donnees.get("titre") or donnees.get("nom") or "Vidéo motion design").split())[:150]
     meta_archive = {"legende": str(donnees.get("legende") or "")[:3000], "scenes": scenario["scenes"][:12], "couleurs": [charte["principale"], charte["secondaire"]],
-                    "nom": str(donnees.get("nom") or "")[:80], "ville": str(donnees.get("ville") or "")[:60], "source": "motion_design", "style": "google" if donnees.get("style") == "google" else ""}
+                    "nom": str(donnees.get("nom") or "")[:80], "ville": str(donnees.get("ville") or "")[:60], "source": "motion_design", "style": "google" if donnees.get("style") == "google" else "", "voix": voix_off["voix"] if voix_off else ""}
 
     def archiver(chemin_video: str, duree_video: float) -> dict:
         with open(chemin_video, "rb") as fichier:
@@ -8353,10 +8360,31 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
 
     try:
         identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60],
-                                            sources_images, source_logo, url_musique, bpm, archiver, "google" if donnees.get("style") == "google" else "")
+                                            sources_images, source_logo, url_musique, bpm, archiver, "google" if donnees.get("style") == "google" else "",
+                                            **({"voix_off": voix_off} if voix_off else {}))
     except motion_video.ErreurMotion as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=409)
     return JSONResponse({"id": identifiant})
+
+
+@app.post("/video-motion/voix/extrait")
+async def video_motion_voix_extrait(request: Request):
+    """Court extrait de la voix choisie (pour l'ecouter avant de lancer la video). Corps : voix, ton. Renvoie un MP3."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    if not synthese_vocale.disponible():
+        return JSONResponse({"erreur": "La voix off demande la clé OpenAI (OPENAI_API_KEY manquant dans plateforme_web/.env)."}, status_code=400)
+    ton = donnees.get("ton") if donnees.get("ton") in claude_generation.TONS_MOTION else "dynamique"
+    try:
+        audio = await run_in_threadpool(synthese_vocale.synthese, synthese_vocale.PHRASE_EXTRAIT, synthese_vocale.voix_valide(donnees.get("voix")), ton)
+    except synthese_vocale.ErreurVoix as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=502)
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 @app.get("/video-motion/{identifiant}/etat")

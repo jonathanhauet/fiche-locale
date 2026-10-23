@@ -38,6 +38,16 @@
     <option value="geo">Géométrique (formes simples, façon Google)</option>
   </select>
 
+  <label class="vm-case"><input type="checkbox" id="vm-voix-active"> Voix off (voix de synthèse OpenAI, environ 1 centime par vidéo)</label>
+  <div id="vm-voix-bloc" class="ligne-champs" hidden>
+    <select id="vm-voix">
+      {% for cle, libelle in voix_off_choix.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}
+    </select>
+    <button type="button" id="vm-voix-ecouter" class="bouton-secondaire bouton-mini">▶ Écouter un extrait</button>
+    <audio id="vm-voix-audio" hidden></audio>
+  </div>
+  <p id="vm-voix-statut" class="texte-discret" hidden></p>
+
   <label for="vm-style">Style visuel</label>
   <select id="vm-style">
     <option value="">Aux couleurs du client (fond sombre)</option>
@@ -206,11 +216,12 @@
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
+  const voixOff = () => $("vm-voix-active").checked ? { voix: $("vm-voix").value, ton: $("vm-ton").value } : null;
   const LIBELLES = {
     hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", personnage: "Personnage animé", recherche: "Recherche Google", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
   };
   const CHAMPS = {
-    hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"]],
+    hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"], ["accessoire", "Objet illustré (facultatif)"]],
     marque: [["nom", "Nom"], ["accroche", "Slogan"]],
     photo: [["texte", "Texte sur la photo"], ["sous_texte", "Sous-texte"], ["photo", "Photo n°"]],
     avant_apres: [["titre", "Titre"], ["photos", "Photos : n° avant, n° après (2 numéros séparés par une virgule)"], ["legende", "Légende"]],
@@ -222,7 +233,7 @@
     liste: [["titre", "Titre"], ["items", "Éléments (un par ligne)"]],
     etape: [["numero", "Numéro"], ["kicker", "Mot-clé court"], ["titre", "Titre"], ["texte", "Texte"]],
     citation: [["texte", "Avis"], ["auteur", "Auteur"]],
-    cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"]],
+    cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"], ["accessoire", "Objet illustré en bas (facultatif, format vertical)"]],
   };
   const CHOIX = {
     action: [["explique", "Explique (les mains parlent)"], ["salut", "Salue"], ["pointe", "Montre le texte du doigt"], ["idee", "A une idée"], ["celebre", "Fête le résultat"], ["reflechit", "Réfléchit"]],
@@ -446,7 +457,7 @@
       const bouton = document.createElement("button"); bouton.type = "button"; bouton.className = "bouton-secondaire bouton-mini"; bouton.textContent = "Retirer";
       bouton.addEventListener("click", () => { item().scenes.splice(i, 1); dessiner(); });
       entete.appendChild(nom); entete.appendChild(bouton); carte.appendChild(entete);
-      (CHAMPS[sc.type] || []).forEach(([cle, libelle]) => {
+      (CHAMPS[sc.type] || []).concat([["voix", "Voix off : ce que dit la voix pendant cette scène (facultatif)"]]).forEach(([cle, libelle]) => {
         const label = document.createElement("label"); label.textContent = libelle; carte.appendChild(label);
         if (CHOIX[cle]) {
           const liste = document.createElement("select");
@@ -480,6 +491,17 @@
     recherche_google: "Choisissez le style Google. La vidéo montre une recherche locale tapée, le plan avec ses repères, puis les résultats dont le premier est l'entreprise. Indiquez le métier, la ville et, si vous les connaissez, la note et le nombre d'avis dans « Faits vérifiés ».",
     personnage: "Un petit personnage en illustration salue, explique et fête le résultat dans des bulles de dialogue, aux couleurs du client. Les photos sont facultatives. Décrivez le métier et ce qu'il faut dire dans « Ce que la vidéo doit faire passer ».",
   };
+  $("vm-voix-active").addEventListener("change", () => { $("vm-voix-bloc").hidden = !$("vm-voix-active").checked; });
+  $("vm-voix-ecouter").addEventListener("click", async () => {
+    const message = (t) => { $("vm-voix-statut").hidden = !t; $("vm-voix-statut").textContent = t || ""; };
+    $("vm-voix-ecouter").disabled = true; message("Génération de l'extrait...");
+    try {
+      const r = await fetch("/video-motion/voix/extrait", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ voix: $("vm-voix").value, ton: $("vm-ton").value }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); message(d.erreur || "Extrait impossible."); return; }
+      const blob = await r.blob(); $("vm-voix-audio").src = URL.createObjectURL(blob); await $("vm-voix-audio").play(); message("");
+    } catch (e) { message("Extrait impossible pour le moment."); }
+    finally { $("vm-voix-ecouter").disabled = false; }
+  });
   $("vm-modele").addEventListener("change", () => { const aide = AIDES_MODELES[$("vm-modele").value]; $("vm-modele-aide").hidden = !aide; $("vm-modele-aide").textContent = aide || ""; });
 
   $("vm-scenario").addEventListener("click", async () => {
@@ -490,7 +512,7 @@
     try {
       const r = await fetch("/video-motion/scenario", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient), modele: modele, style: $("vm-style").value }),
+        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient), modele: modele, style: $("vm-style").value, voix_off: $("vm-voix-active").checked }),
       });
       const d = await r.json();
       if (!r.ok) { statut(d.erreur || "Échec de l'écriture du scénario."); return; }
@@ -562,7 +584,7 @@
   async function rendreVideo(i) {
     const v = serie[i];
     v.etat = "en_cours"; v.progression = 0; v.erreur = ""; dessinerOnglets(); if (i === courant) montrerRendu();
-    const corps = JSON.stringify({ scenes: v.scenes.map((s) => s.type === "personnage" ? Object.assign({}, s, { forme: $("vm-forme").value }) : s), style: $("vm-style").value, client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
+    const corps = JSON.stringify({ scenes: v.scenes.map((s) => s.type === "personnage" ? Object.assign({}, s, { forme: $("vm-forme").value }) : s), style: $("vm-style").value, voix_off: voixOff(), client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
       images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
       logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
       musique_id: $("vm-musique").value, bpm: $("vm-bpm").value });

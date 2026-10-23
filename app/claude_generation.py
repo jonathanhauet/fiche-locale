@@ -3594,7 +3594,7 @@ def contenu_modele_visuel(modele: str, texte_base: str, contexte: str, nb: int) 
 
 # --------------------------------------------------------------------------- video motion design (voir motion_video.py)
 
-_CHAMPS_SCENE_MOTION = ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire")
+_CHAMPS_SCENE_MOTION = ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "voix")
 SCHEMA_SCENARIO_MOTION = {
     "type": "object",
     "properties": {
@@ -3637,7 +3637,7 @@ MODELES_MOTION = {
     "avant_apres": {"scenes": ("hook", "avant_apres", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 2},
     "realisation": {"scenes": ("hook", "realisation", "cta"), "durees": (2.8, 5.2, 3.2), "photos_min": 1},
     "personnage": {"scenes": ("hook", "personnage", "personnage", "personnage", "cta"), "durees": (2.6, 4.2, 4.2, 4.4, 3.2), "photos_min": 0},
-    "recherche_google": {"scenes": ("hook", "recherche", "personnage", "personnage", "cta"), "durees": (2.6, 7.6, 4.2, 4.4, 3.2), "photos_min": 0},
+    "recherche_google": {"scenes": ("hook", "recherche", "personnage", "personnage", "cta"), "durees": (2.6, 8.4, 4.2, 4.4, 3.2), "photos_min": 0},
 }
 CONSIGNES_MODELES = {
     "avant_apres": (
@@ -3671,16 +3671,21 @@ CONSIGNES_MODELES = {
 }
 
 
+CONSIGNE_VOIX = (
+    "VOIX OFF : pour chaque scène, écris dans le champ voix la phrase que la voix off dira pendant la scène (8 à 25 mots, français parlé naturel, une idée, qui complète le texte affiché "
+    "sans le répéter mot pour mot ; aucune adresse web ni numéro de téléphone lu chiffre par chiffre, pas de tiret cadratin). Compte environ 2,5 mots par seconde de scène : la phrase doit "
+    "tenir dans la durée de la scène, sinon la scène sera allongée. Laisse voix vide pour une scène qui doit rester silencieuse.\n"
+)
 CONSIGNE_STYLE_GOOGLE = (
     "Style visuel GOOGLE (fond blanc, couleurs de Google, illustrations) : la vidéo explique à des chefs d'entreprise comment fonctionne la présence locale sur Google "
     "(fiche d'établissement, avis, recherche locale, Google Maps). Ton pédagogique et factuel, aucune promesse de résultat, aucun chiffre qui ne figure pas dans les faits. "
     "Pour les scènes personnage, privilégie ces objets : epingle (localisation), etoiles (note d'avis), recherche (barre de recherche), fiche (fiche d'établissement), "
-    "avis (avis client), carte (plan Maps).\n"
+    "avis (avis client), carte (plan Maps). Pour l'accroche (scène hook), tu peux aussi remplir accessoire avec l'un de ces objets pour illustrer le sujet.\n"
 )
 
 
 def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 20,
-                            nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre", style: str = "") -> dict:
+                            nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre", style: str = "", voix_off: bool = False) -> dict:
     """
     Scenario d'une video de motion design (sans tournage) pour un client, rendue par motion_video.py : accroche, revelation, 2 a 3 temps forts, chute.
     Renvoie {"titre", "legende", "scenes": [...]} ; les scenes sont nettoyees par motion_video.nettoyer_scenario. Les chiffres viennent
@@ -3710,15 +3715,16 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         + ("Le logo du client sera affiché dans la scène marque.\n" if avec_logo else "")
         + f"Ton : {consigne_ton}.\n"
         + (CONSIGNE_STYLE_GOOGLE if style == "google" else "")
+        + (CONSIGNE_VOIX if voix_off else "")
         + (CONSIGNES_MODELES[modele] + "\n\n" if structure else f"Durée visée : environ {duree_cible} secondes, soit {nombre_scenes} scènes de 2,5 à 4 secondes.\n\n")
         + "Types de scènes disponibles (remplis uniquement les champs utiles à la scène, laisse les autres vides) :\n"
-        "- hook : accroche d'ouverture. texte (4 à 9 mots), sous_texte (une phrase courte, facultative).\n"
+        "- hook : accroche d'ouverture. texte (4 à 9 mots), sous_texte (une phrase courte, facultative), accessoire (facultatif : un objet illustré parmi epingle, etoiles, recherche, fiche, avis, carte, ampoule, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier ; vide sinon).\n"
         "- marque : révélation du nom. nom, accroche (slogan de 3 à 6 mots).\n"
         "- chiffre : un chiffre fourni dans les faits. valeur (nombre seul, ex. 4,8 ou 127), suffixe (ex. /5, ans, %), libelle (3 à 6 mots), legende (source ou précision courte).\n"
         "- liste : titre (3 à 6 mots), items (3 ou 4 éléments de 2 à 6 mots).\n"
         "- etape : numero (01, 02...), kicker (1 à 2 mots), titre (3 à 7 mots), texte (une phrase). Utilise TOUJOURS au moins 2 étapes à la suite (01, 02, éventuellement 03), jamais une seule.\n"
         "- citation : texte (un avis ou une phrase client, 8 à 20 mots, UNIQUEMENT s'il est fourni dans les faits), auteur.\n"
-        "- cta : texte (3 à 6 mots), bouton (2 à 4 mots), contact (lignes : site, téléphone ou adresse, UNIQUEMENT ceux fournis).\n"
+        "- cta : texte (3 à 6 mots), bouton (2 à 4 mots), contact (lignes : site, téléphone ou adresse, UNIQUEMENT ceux fournis), accessoire (facultatif : telephone, calendrier, etoiles, fiche... ; vide sinon).\n"
         "- photo : une photo du client en plein cadre. photo (son numéro), texte (4 à 9 mots posés sur l'image), sous_texte (facultatif).\n"
         "- mosaique : trois photos en cartes. titre (3 à 7 mots), photos (3 numéros).\n"
         "- avant_apres : curseur qui révèle la photo « après ». titre, photos (2 numéros : avant puis après), legende (une phrase).\n"

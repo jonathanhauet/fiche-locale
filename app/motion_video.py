@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from . import personnage, sons
+from . import personnage, sons, synthese_vocale
 from .montage_video import FFMPEG
 
 DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "polices")
@@ -321,6 +321,13 @@ class Contexte:
         """Deux grands anneaux fins et quelques croix qui derivent lentement : de la vie derriere le texte, sans le gener."""
         trait = melanger(couleur, CREME if luminance(couleur) < 0.5 else (0, 0, 0), 0.10)
         d = ImageDraw.Draw(image)
+        if self.google and luminance(couleur) > 0.85:                  # formes pastel qui dérivent, et quatre points aux couleurs de Google sur le bord droit
+            for k, (cx, cy, r, pastel) in enumerate(((0.96, 0.10, 0.26, (244, 248, 254)), (0.0, 0.55, 0.30, (253, 244, 243)), (0.92, 0.88, 0.24, (255, 250, 232)))):
+                x, y, rr = self.l * cx + math.sin(t * 0.5 + k) * self.l * 0.02, self.h * cy + math.cos(t * 0.4 + k) * self.h * 0.015, min(self.l, self.h) * r
+                d.ellipse((x - rr, y - rr, x + rr, y + rr), fill=pastel)
+            for k, couleur_point in enumerate(self.t["points"]):
+                x, y = self.l * 0.965 + math.sin(t * 0.9 + k * 1.3) * self.px(8), self.h * (0.22 + 0.13 * k) + math.cos(t * 0.7 + k) * self.px(10)
+                d.ellipse((x - self.px(8), y - self.px(8), x + self.px(8), y + self.px(8)), fill=couleur_point)
         for k, (cx, cy, r, vitesse) in enumerate(((0.88, 0.16, 0.34, 0.35), (0.04, 0.80, 0.42, -0.25))):
             x = self.l * cx + math.sin(t * vitesse + k) * self.l * 0.03
             y = self.h * cy + math.cos(t * vitesse * 0.8 + k) * self.h * 0.02
@@ -476,23 +483,50 @@ def etiquette(ctx: Contexte, image: Image.Image, texte: str, x: int, y: int, cou
 
 # --------------------------------------------------------------------------- scenes
 
+def _objet_decor(ctx: Contexte, image: Image.Image, objet: str, t: float, bas: bool = False) -> None:
+    """Objet illustre (repere, etoiles, fiche...) pose sur un grand disque pale : il rebondit a l'arrivee puis flotte. Sous le texte (vertical, carre) ou a droite (horizontal)."""
+    horizontal = ctx.format == "horizontal"
+    taille = int(min(ctx.l, ctx.h) * (0.34 if bas else (0.5 if horizontal else 0.46)))
+    cx, cy = (ctx.l * 0.5, ctx.h * 0.79) if bas else ((ctx.l * 0.76, ctx.h * 0.5) if horizontal else (ctx.l * 0.5, ctx.h * (0.70 if ctx.format == "vertical" else 0.72)))
+    pousse = sortie_expo((t - 0.2) / 0.7)
+    rayon = taille * (0.64 if bas else 0.78) * pousse
+    d = ImageDraw.Draw(image)
+    d.ellipse((cx - rayon, cy - rayon, cx + rayon, cy + rayon), fill=(232, 240, 254) if ctx.google else melanger(ctx.t["fond"], ctx.t["accent"], 0.30))
+    if ctx.google:
+        for i, couleur in enumerate(ctx.t["points"]):
+            angle = t * 0.6 + i * math.pi / 2
+            x, y = cx + rayon * 1.12 * math.cos(angle), cy + rayon * 0.96 * math.sin(angle)
+            d.ellipse((x - ctx.px(14), y - ctx.px(14), x + ctx.px(14), y + ctx.px(14)), fill=couleur)
+    p = sortie_rebond((t - 0.5) / 0.6)
+    if p > 0:
+        sprite = personnage.accessoire(objet, taille, ctx.t["accent"], ctx.t["accent2"], (255, 255, 255) if ctx.google else CREME, t)
+        s = max(0.05, p)
+        sprite = sprite.resize((max(1, int(taille * s)), max(1, int(taille * s))), Image.BILINEAR)
+        coller(image, sprite, cx - sprite.size[0] / 2, cy - sprite.size[1] / 2 + math.sin(t * 2.0) * ctx.px(12), borne(p * 2.5))
+
+
 def scene_hook(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
     marge = ctx.px(76)
     base = 122 if ctx.format != "horizontal" else 96
+    objet = sc.get("accessoire") if sc.get("accessoire") in personnage.ACCESSOIRES and sc.get("accessoire") != "aucun" else ""
+    haut_horizontal = ctx.format == "horizontal"
+    largeur_zone = ctx.l * 0.52 if (objet and haut_horizontal) else ctx.l - 2 * marge
+    if objet:
+        _objet_decor(ctx, image, objet, t)
 
     def blocs(e):
-        titre = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
-        petit = composer(ctx, sc["sous_texte"], ctx.px(44 * e), ctx.l - 2 * marge, NORMAL, 1.15) if sc.get("sous_texte") else None
+        titre = composer(ctx, sc.get("texte", ""), ctx.px(base * e), largeur_zone)
+        petit = composer(ctx, sc["sous_texte"], ctx.px(44 * e), largeur_zone, NORMAL, 1.15) if sc.get("sous_texte") else None
         return titre, petit
 
     def mesure(e):
         titre, petit = blocs(e)
         return titre["hauteur"] + (ctx.px(36 * e) + petit["hauteur"] if petit else 0)
 
-    e = echelle_pour(ctx, mesure)
+    e = echelle_pour(ctx, mesure, ctx.h * 0.40 if (objet and not haut_horizontal) else None)
     bloc, petit = blocs(e)
-    y0 = ctx.haut_centre(mesure(e), -0.01)
+    y0 = int(ctx.h * 0.13) if (objet and not haut_horizontal) else ctx.haut_centre(mesure(e), -0.01)
     dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.10)
     if petit:
         suite = 0.1 + 0.09 * sum(len(l) for l in bloc["lignes"]) + 0.5
@@ -711,7 +745,10 @@ def scene_cta(ctx: Contexte, sc: dict, t: float) -> Image.Image:
 
     e = echelle_pour(ctx, mesure)
     bloc = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
-    y0 = ctx.haut_centre(mesure(e))
+    objet = sc.get("accessoire") if sc.get("accessoire") in personnage.ACCESSOIRES and sc.get("accessoire") != "aucun" and ctx.format == "vertical" else ""
+    y0 = ctx.haut_centre(mesure(e), -0.07 if objet else 0.0)
+    if objet:                                                          # objet illustre sous le texte (format vertical seulement : ailleurs il generait le texte)
+        _objet_decor(ctx, image, objet, t, True)
     dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.05)
     y_bouton = y0 + bloc["hauteur"] + ctx.px(70 * e)
     p = sortie_rebond((t - 0.9) / 0.5)
@@ -1089,9 +1126,9 @@ def _type_icone(texte: str) -> str:
     return "point"
 
 
-def _icone_ui(d: ImageDraw.ImageDraw, f: int, type_icone: str, cx: float, cy: float, r: float) -> None:
+def _icone_ui(d: ImageDraw.ImageDraw, f: int, type_icone: str, cx: float, cy: float, r: float, couleur: tuple = None) -> None:
     """Icone ronde de couleur Google avec un pictogramme blanc (points, appel, itineraire)."""
-    couleur = {"ouvert": GOOGLE_VERT, "appel": GOOGLE_BLEU, "route": GOOGLE_BLEU, "point": GOOGLE_BLEU}[type_icone]
+    couleur = couleur or {"ouvert": GOOGLE_VERT, "appel": GOOGLE_BLEU, "route": GOOGLE_BLEU, "point": GOOGLE_BLEU}[type_icone]
     d.ellipse((f * (cx - r), f * (cy - r), f * (cx + r), f * (cy + r)), fill=couleur + (255,))
     blanc = BLANC + (255,)
     if type_icone == "ouvert":
@@ -1148,7 +1185,7 @@ def _puce_ui(ctx: Contexte, texte: str, hauteur: int) -> Image.Image:
 
 def _placer_puces(ctx: Contexte, image: Image.Image, puces: list, t: float, pieds: tuple, unite: float, cote: int, horizontal: bool) -> None:
     """Les puces flottent a l'ecart du personnage et de son objet, apparaissent l'une apres l'autre en rebondissant."""
-    hauteur = ctx.px(78 if not horizontal else 64)
+    hauteur = ctx.px(96 if not horizontal else 76)
     for i, texte in enumerate(puces[:2 if horizontal else 3]):
         p = sortie_rebond((t - 1.3 - 0.28 * i) / 0.5)
         if p <= 0:
@@ -1159,7 +1196,7 @@ def _placer_puces(ctx: Contexte, image: Image.Image, puces: list, t: float, pied
             cy = ctx.h * (0.80 + 0.09 * i)
         else:
             cx = ctx.l * (0.5 - cote * 0.27) + (-1) ** i * ctx.px(34)
-            cy = pieds[1] - unite * (330 - 118 * i)
+            cy = pieds[1] - unite * (340 - 134 * i)
         cx = max(carte.size[0] / 2 + ctx.px(24), min(cx, ctx.l - carte.size[0] / 2 - ctx.px(24)))
         cy += math.sin(t * 1.8 + i * 1.7) * ctx.px(7)
         s = max(0.05, p)
@@ -1170,9 +1207,10 @@ def _placer_puces(ctx: Contexte, image: Image.Image, puces: list, t: float, pied
 def _temps_recherche(sc: dict) -> dict:
     """Chronologie de la scene de recherche (secondes) : frappe, carte, resultats, badge, legende."""
     n = len(sans_balises(sc.get("texte", ""))[:40])
-    frappe = min(2.4, max(0.8, n / 13))
+    frappe = min(2.0, max(0.8, n / 13))
     carte = 0.5 + frappe + 0.35
-    return {"frappe": frappe, "carte": carte, "cartes": [carte + 0.55 + 0.28 * i for i in range(3)], "badge": carte + 2.0, "legende": carte + 2.7}
+    badge = carte + 2.0
+    return {"frappe": frappe, "carte": carte, "cartes": [carte + 0.55 + 0.28 * i for i in range(3)], "badge": badge, "curseur": badge + 0.2, "clic": badge + 1.1, "legende": badge + 1.8}
 
 
 def _mise_en_page_recherche(ctx: Contexte) -> dict:
@@ -1187,9 +1225,9 @@ def _mise_en_page_recherche(ctx: Contexte) -> dict:
         h_carte = int(ctx.h * 0.12)
         return {"barre": (m, int(ctx.h * 0.13), ctx.l - 2 * m, int(ctx.h * 0.095)), "plan": (m, int(ctx.h * 0.245), ctx.l - 2 * m, int(ctx.h * 0.20)),
                 "cartes": [(m, int(ctx.h * 0.47) + i * (h_carte + int(ctx.h * 0.012)), ctx.l - 2 * m, h_carte) for i in range(3)], "legende": None}
-    h_carte = int(ctx.h * 0.105)
-    return {"barre": (m, int(ctx.h * 0.13), ctx.l - 2 * m, int(ctx.h * 0.075)), "plan": (m, int(ctx.h * 0.23), ctx.l - 2 * m, int(ctx.h * 0.21)),
-            "cartes": [(m, int(ctx.h * 0.465) + i * (h_carte + int(ctx.h * 0.015)), ctx.l - 2 * m, h_carte) for i in range(3)], "legende": (m, int(ctx.h * 0.835), ctx.l - 2 * m)}
+    h_carte = int(ctx.h * 0.108)
+    return {"barre": (m, int(ctx.h * 0.155), ctx.l - 2 * m, int(ctx.h * 0.08)), "plan": (m, int(ctx.h * 0.255), ctx.l - 2 * m, int(ctx.h * 0.225)),
+            "cartes": [(m, int(ctx.h * 0.50) + i * (h_carte + int(ctx.h * 0.014)), ctx.l - 2 * m, h_carte) for i in range(3)], "legende": (m, int(ctx.h * 0.872), ctx.l - 2 * m)}
 
 
 def _barre_recherche(ctx: Contexte, l: int, h: int, texte: str, curseur: bool) -> Image.Image:
@@ -1314,6 +1352,20 @@ def _carte_resultat(ctx: Contexte, l: int, h: int, vedette: bool, nom: str, note
     return carte
 
 
+def _curseur_souris(taille: int) -> Image.Image:
+    """Pointeur de souris (fleche sombre a liseré blanc) ; la pointe est en haut a gauche du calque."""
+    points = ((0.02, 0.02), (0.02, 0.86), (0.24, 0.66), (0.38, 0.98), (0.52, 0.92), (0.38, 0.6), (0.66, 0.6))
+    return _aa(taille + 4, taille + 4, lambda d, f: (d.polygon([(f * (2 + x * taille), f * (2 + y * taille)) for x, y in points], fill=(32, 33, 36, 255)),
+                                                    d.line([(f * (2 + x * taille), f * (2 + y * taille)) for x, y in points + (points[0],)], fill=(255, 255, 255, 255), width=max(f, int(f * taille * 0.07)), joint="curve")))
+
+
+def _position_clic(ctx: Contexte, mp: dict) -> tuple:
+    """Centre du bouton « appeler » du premier resultat (voir _carte_resultat) : la ou le pointeur va cliquer."""
+    xc, yc, lc, hc = mp["cartes"][0]
+    pad, diametre = int(hc * 0.14), int(hc * 0.4)
+    return xc + lc - pad - 2 * diametre - int(hc * 0.1) + diametre / 2, yc + hc / 2
+
+
 def scene_recherche(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     """Recherche Google locale : la requete se tape, le plan apparait avec ses reperes, puis les resultats ; le premier (le client) est mis en avant."""
     image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
@@ -1370,6 +1422,23 @@ def scene_recherche(ctx: Contexte, sc: dict, t: float) -> Image.Image:
         s = max(0.05, pb)
         pastille = pastille.resize((max(1, int(lb * s)), max(1, int(hb * s))), Image.BILINEAR)
         coller(image, pastille, xc + lc - lb - ctx.px(22) + (lb - pastille.size[0]) / 2, yc - hb * 0.45 + (hb - pastille.size[1]) / 2, borne(pb * 2.5))
+    pointeur_t = t - tt["curseur"]
+    if pointeur_t > -0.15:                                              # le pointeur va sur « appeler » et clique : le bouton passe au vert
+        cx_, cy_ = _position_clic(ctx, mp)
+        depart = (min(ctx.l - ctx.px(80), cx_ + ctx.l * 0.22), min(ctx.h * 0.9, cy_ + ctx.h * 0.2))
+        avance = entree_sortie(pointeur_t / 0.9)
+        px_, py_ = depart[0] + (cx_ - depart[0]) * avance, depart[1] + (cy_ - depart[1]) * avance - math.sin(avance * math.pi) * ctx.px(40)
+        diametre = int(mp["cartes"][0][3] * 0.4)
+        if t >= tt["clic"]:
+            vert = _aa(diametre + 2, diametre + 2, lambda d, f: _icone_ui(d, f, "appel", diametre / 2 + 1, diametre / 2 + 1, diametre * 0.5, GOOGLE_VERT))
+            coller(image, vert, cx_ - diametre / 2 - 1, cy_ - diametre / 2 - 1)
+            onde = borne((t - tt["clic"]) / 0.6)
+            if onde < 1:
+                rayon = diametre * (0.5 + 0.9 * onde)
+                halo = Image.new("RGBA", (int(rayon * 2) + 6, int(rayon * 2) + 6), (0, 0, 0, 0))
+                ImageDraw.Draw(halo).ellipse((3, 3, rayon * 2 + 3, rayon * 2 + 3), outline=GOOGLE_VERT + (int(220 * (1 - onde)),), width=max(2, ctx.px(5)))
+                coller(image, halo, cx_ - rayon - 3, cy_ - rayon - 3)
+        coller(image, _curseur_souris(ctx.px(54)), px_ - 2, py_ - 2, borne((pointeur_t + 0.15) / 0.15))
     if mp["legende"] and sc.get("legende"):
         xl, yl, ll = mp["legende"]
         img = bloc_texte(sc["legende"], NORMAL, ctx.px(40), ll, ctx.px(120), ctx.t["texte2"], False, True)
@@ -1450,7 +1519,7 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
             elif horizontal:
                 ox, oy = int(ctx.l * (0.5 - cote * 0.12)) - taille // 2, int(ctx.h * 0.14)
             else:
-                ox, oy = int(ctx.l * (0.5 - cote * 0.24)) - taille // 2, int(pieds[1] - unite * 640)
+                ox, oy = int(ctx.l * (0.5 - cote * 0.24)) - taille // 2, int(pieds[1] - unite * 700)
             oy += int(math.sin(t * 2.2) * ctx.px(10))
             s_ = max(0.05, po)
             sprite = sprite.resize((max(1, int(taille * s_)), max(1, int(taille * s_))), Image.BILINEAR)
@@ -1526,6 +1595,12 @@ def transition_balayage(ctx: Contexte, a: Image.Image, b: Image.Image, p: float)
     ImageDraw.Draw(masque).polygon([(0, 0), (avant + biais, 0), (avant, ctx.h), (0, ctx.h)], fill=255)
     sortie = a.copy()
     sortie.paste(b, (0, 0), masque)
+    if ctx.google:                                                      # quatre bandes : bleu, rouge, jaune, vert
+        largeur = bande // 2
+        for i, couleur in enumerate(ctx.t["points"]):
+            decal = i * largeur
+            ImageDraw.Draw(sortie).polygon([(avant + biais + decal, 0), (avant + biais + decal + largeur, 0), (avant + decal + largeur, ctx.h), (avant + decal, ctx.h)], fill=couleur)
+        return sortie
     ImageDraw.Draw(sortie).polygon([(avant + biais, 0), (avant + biais + bande, 0), (avant + bande, ctx.h), (avant, ctx.h)], fill=ctx.t["accent2"])
     ImageDraw.Draw(sortie).polygon([(avant + biais + bande, 0), (avant + biais + 2 * bande, 0), (avant + 2 * bande, ctx.h), (avant + bande, ctx.h)], fill=ctx.t["accent"])
     return sortie
@@ -1537,8 +1612,8 @@ def nettoyer_scenario(scenario: dict) -> list:
     for brut in (scenario or {}).get("scenes") or []:
         if not isinstance(brut, dict) or brut.get("type") not in TYPES_SCENES:
             continue
-        scene = {"type": brut["type"], "duree": max(1.8, min(float(brut.get("duree") or 3.0), 6.0))}
-        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "forme"):
+        scene = {"type": brut["type"], "duree": max(1.8, min(float(brut.get("duree") or 3.0), 10.0 if brut.get("type") == "recherche" else 6.0))}
+        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "forme", "voix"):
             if brut.get(cle) is not None:
                 valeur = str(brut[cle]).replace("—", "-").strip()[:180]
                 scene[cle] = valeur if cle in ("texte", "titre", "sous_texte") else sans_balises(valeur)          # *surlignage* et _serif_ : seulement ou ils sont geres
@@ -1567,6 +1642,9 @@ def nettoyer_scenario(scenario: dict) -> list:
             rang_perso += 1
         else:
             for cle in ("action", "accessoire", "forme", "puces"):
+                if cle == "accessoire" and scene["type"] in ("hook", "cta") and scene.get("accessoire", "").lower() in personnage.ACCESSOIRES:        # l'accroche peut avoir un objet decoratif
+                    scene["accessoire"] = scene["accessoire"].lower()
+                    continue
                 scene.pop(cle, None)
         if scene["type"] == "recherche":
             scene["texte"] = sans_balises(scene.get("texte", ""))[:40]
@@ -1625,6 +1703,7 @@ def evenements_sons(scenes: list) -> list:
         if scene["type"] == "recherche":
             tt = _temps_recherche(scene)
             evenements += [(debut + 0.35, "pop"), (debut + tt["carte"], "pop")] + [(debut + c, "pop") for c in tt["cartes"]] + [(debut + tt["badge"], "ding")]
+            evenements += [(debut + 0.5 + 0.25 * k, "clic") for k in range(int(tt["frappe"] / 0.25))] + [(debut + tt["clic"], "clic")]
         if scene["type"] == "personnage":
             evenements += [(debut + 0.5, "pop"), (debut + 1.05, "pop")]
             evenements += [(debut + 1.3 + 0.28 * k, "pop") for k in range(len(scene.get("puces", [])))]
@@ -1645,7 +1724,9 @@ def evenements_sons(scenes: list) -> list:
     return gardes
 
 
-VOLUMES = {"whoosh": 0.5, "pop": 0.7, "impact": 0.65, "ding": 0.45}
+VOLUMES = {"whoosh": 0.5, "pop": 0.7, "impact": 0.65, "ding": 0.45, "clic": 0.5}
+DELAI_VOIX = 0.55                       # la voix off commence un peu apres le debut de sa scene (le temps de la transition)
+DUREE_MAX_SCENE_VOIX = 16.0             # une scene s'allonge pour laisser finir la phrase, jusqu'a cette duree
 
 
 def scene_a(ctx: Contexte, scenes: list, positions: list, i: int, t: float) -> Image.Image:
@@ -1675,8 +1756,11 @@ def image_a(ctx: Contexte, scenes: list, positions: list, t: float) -> Image.Ima
 
 
 def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque: str = "", ville: str = "", progression=None, musique: str = None,
-           images: list = None, logo: Image.Image = None, bpm: float = None, style: str = "") -> float:
-    """Rend la video MP4 (image par image vers ffmpeg, bruitages inclus). Renvoie sa duree en secondes."""
+           images: list = None, logo: Image.Image = None, bpm: float = None, style: str = "", voix: list = None) -> float:
+    """
+    Rend la video MP4 (image par image vers ffmpeg, bruitages inclus). Renvoie sa duree en secondes. voix : une entree par scene (apres nettoyage),
+    (fichier MP3, duree) ou None, voir synthese_vocale.preparer ; une scene s'allonge au besoin pour que la phrase soit dite en entier, et la musique baisse pendant qu'elle parle.
+    """
     if format_video not in FORMATS:
         raise ErreurMotion("Format inconnu.")
     scenes = nettoyer_scenario(scenario)
@@ -1684,6 +1768,10 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
         raise ErreurMotion("Le scenario ne contient aucune scene valide.")
     if bpm:
         scenes = caler_sur_tempo(scenes, bpm)
+    voix = list(voix or [])
+    for i, scene in enumerate(scenes):
+        if i < len(voix) and voix[i]:
+            scene["duree"] = round(min(max(scene["duree"], DELAI_VOIX + voix[i][1] + 0.55), DUREE_MAX_SCENE_VOIX), 3)
     ctx = Contexte(format_video, charte, marque, ville, images, logo, style if style in STYLES else "")
     positions = minutage(scenes)
     duree = positions[-1][1]
@@ -1696,16 +1784,37 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
     indice_musique = 1 + len(fichiers)
     if musique:
         commande += ["-stream_loop", "-1", "-i", musique]
+    entrees_voix = [(i, voix[i]) for i in range(min(len(voix), len(scenes))) if voix[i]]
+    indice_voix = indice_musique + (1 if musique else 0)
+    for _, (chemin_voix, _duree_voix) in entrees_voix:
+        commande += ["-i", chemin_voix]
     parties, etiquettes = [], []
+    attenuation = 0.6 if entrees_voix else 1.0                          # bruitages plus discrets sous la voix
     for k, (t, nom) in enumerate(evenements):
         indice = 1 + fichiers.index(sons.chemin_son(nom))
         ms = int(max(0.0, t) * 1000)
-        parties.append(f"[{indice}:a]aformat=channel_layouts=stereo,volume={VOLUMES[nom]:.2f},adelay={ms}|{ms}[s{k}]")
+        parties.append(f"[{indice}:a]aformat=channel_layouts=stereo,volume={VOLUMES[nom] * attenuation:.2f},adelay={ms}|{ms}[s{k}]")
         etiquettes.append(f"[s{k}]")
+    if entrees_voix:
+        etiquettes_voix = []
+        for k, (i, _voix_scene) in enumerate(entrees_voix):
+            ms = int((positions[i][0] + DELAI_VOIX) * 1000)
+            parties.append(f"[{indice_voix + k}:a]aformat=channel_layouts=stereo,volume=1.0,adelay={ms}|{ms}[v{k}]")
+            etiquettes_voix.append(f"[v{k}]")
+        parties.append("".join(etiquettes_voix) + f"amix=inputs={len(etiquettes_voix)}:duration=longest:dropout_transition=0:normalize=0[voix]")
     if musique:
-        parties.append(f"[{indice_musique}:a]aformat=channel_layouts=stereo,volume=0.50,afade=t=in:st=0:d=0.8,afade=t=out:st={max(0.0, duree - 1.8):.2f}:d=1.8[mus]")
+        chaine_musique = f"[{indice_musique}:a]aformat=channel_layouts=stereo,volume=0.50,afade=t=in:st=0:d=0.8,afade=t=out:st={max(0.0, duree - 1.8):.2f}:d=1.8"
+        if entrees_voix:                                                # la musique baisse pendant que la voix parle
+            parties.append("[voix]asplit=2[voix_a][voix_b]")
+            parties.append(chaine_musique + "[mus0]")
+            parties.append("[mus0][voix_a]sidechaincompress=threshold=0.015:ratio=12:attack=40:release=500[mus]")
+        else:
+            parties.append(chaine_musique + "[mus]")
         etiquettes.append("[mus]")
-    parties.append("".join(etiquettes) + f"amix=inputs={len(etiquettes)}:duration=longest:dropout_transition=0:normalize=0,atrim=0:{duree:.2f},apad=whole_dur={duree:.2f}[a]")
+    if entrees_voix:
+        etiquettes.append("[voix_b]" if musique else "[voix]")
+    limiteur = ",alimiter=limit=0.95" if entrees_voix else ""
+    parties.append("".join(etiquettes) + f"amix=inputs={len(etiquettes)}:duration=longest:dropout_transition=0:normalize=0,atrim=0:{duree:.2f},apad=whole_dur={duree:.2f}{limiteur}[a]")
     commande += ["-filter_complex", ";".join(parties), "-map", "0:v", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                  "-c:a", "aac", "-b:a", "160k", "-t", f"{duree:.2f}", "-movflags", "+faststart", sortie]
     processus = subprocess.Popen(commande, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -1777,7 +1886,7 @@ def telecharger_musique(url: str, dossier: str) -> str:
 
 
 def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
-             url_musique: str = "", bpm: float = None, archiver=None, style: str = "") -> str:
+             url_musique: str = "", bpm: float = None, archiver=None, style: str = "", voix_off: dict = None) -> str:
     """
     Lance le rendu en tache de fond (un seul a la fois : il occupe le processeur) et renvoie son identifiant. sources_images : [("google", url) ou
     ("import", identifiant)] dans l'ordre des numeros de photos ; source_logo : ("url", adresse) ou ("import", identifiant).
@@ -1814,7 +1923,10 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
                     musique = telecharger_musique(url_musique, dossier)
                 except (requests.RequestException, OSError):
                     musique = None                  # idem pour la musique
-            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm, style)
+            voix = None
+            if voix_off:                       # voix off : une phrase par scene, synthetisee avant le rendu (voir synthese_vocale)
+                voix = synthese_vocale.preparer(nettoyer_scenario(scenario), voix_off.get("voix"), voix_off.get("ton", "dynamique"), dossier)
+            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm, style, voix)
             if archiver:                       # archive automatique (hebergement + trace par client) : jamais bloquante pour la video elle-meme
                 try:
                     etat["archive"] = archiver(chemin, round(duree, 1))
