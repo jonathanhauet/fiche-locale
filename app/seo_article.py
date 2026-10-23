@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from . import wordpress_style
+from . import tics_ia, wordpress_style
 
 DELAI_SECONDES = 12
 DUREE_CACHE_SECONDES = 6 * 3600
@@ -325,6 +325,9 @@ def controle_seo(article: str, mot_cle: str = "", ville: str = "", url_site: str
     local = any(("google.com/maps" in l["url"] or "maps.app.goo.gl" in l["url"] or "g.page" in l["url"]) for l in liens) or "## Où nous trouver" in article
     c.append(_controle("local", "Bloc local (adresse et lien vers la fiche Google)", "ok" if local else "avertissement", "" if local else "Ajouté automatiquement s'il manque, quand la fiche Google est reliée."))
     c.append(_controle("bouton", "Bouton d'appel à l'action", "ok" if any(MOTIF_BOUTON.match(l.strip()) for l in lignes) else "avertissement"))
+    tics = tics_ia.detecter(corps)
+    c.append(_controle("style", "Style naturel (pas de tournures typiques d'IA)", "ok" if not tics else "avertissement",
+                       "" if not tics else "À reformuler : " + " ; ".join(f"{t['exemple']} ({t['conseil']})" for t in tics[:3])))
     c.append(_controle("image", "Image mise en avant (texte alternatif ajouté automatiquement)", "ok" if avec_image else "avertissement", "" if avec_image else "Aucune image choisie."))
     notes = [x for x in c if x["statut"] in ("ok", "avertissement", "erreur")]
     score = round(100 * sum(1 for x in notes if x["statut"] == "ok") / len(notes)) if notes else 0

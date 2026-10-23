@@ -1299,3 +1299,38 @@ class ParametreArchive(Base):
     derniere_purge = Column(DateTime, nullable=True)
     derniere_purge_nombre = Column(Integer, default=0)
     maj_le = Column(DateTime, default=datetime.utcnow)
+
+
+class AnalyseSite(Base):
+    """Derniere analyse des pages du site d'un client (voir opportunites_seo.py) ; la plus recente est affichee."""
+
+    __tablename__ = "analyses_site"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    url = Column(String, default="")
+    score = Column(Integer, nullable=True)       # 0 a 100
+    resultats = Column(Text, default="")         # JSON complet de opportunites_seo.explorer()
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class PersonnageBD(Base):
+    """Personnage BD de l'utilisateur pour les videos motion design (voir personnage_bd.py) ; le plus recent est utilise. Ses images sont dans PersonnageBDImage."""
+
+    __tablename__ = "personnages_bd"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)      # fiche dont les photos de reference ont servi
+    style = Column(String, default="plat")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class PersonnageBDImage(Base):
+    """Une image (PNG transparent) du personnage BD : expression de base (ferme, ouverte, yeux) ou emotion (joie, joie_ouverte, surpris...)."""
+
+    __tablename__ = "personnages_bd_images"
+
+    id = Column(Integer, primary_key=True)
+    personnage_id = Column(Integer, ForeignKey("personnages_bd.id"), nullable=False, index=True)
+    nom = Column(String, nullable=False)
+    png = Column(LargeBinary, nullable=False)

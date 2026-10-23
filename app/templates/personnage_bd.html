@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set page_actuelle = "personnage_bd" %}
+{% block titre %}Mon personnage BD — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/video-motion">&larr; Retour aux vidéos motion design</a></p>
+<div class="barre-titre"><h1>Mon personnage BD</h1></div>
+<p class="texte-vide">
+  Ta tête en version bande dessinée, pour que tu sois le personnage principal de tes vidéos motion design. Gemini la dessine d'après tes photos de référence, en trois
+  expressions de base identiques : bouche fermée, bouche ouverte (il parle) et yeux fermés (il cligne). Tu peux y ajouter des <b>émotions</b> (content, surpris, il réfléchit,
+  inquiet...) : dans une vidéo, le personnage arrive neutre puis réagit selon la scène, et sa bouche bouge quand il parle. Chaque image coûte quelques centimes ; tout se
+  fait une seule fois.
+</p>
+
+{% if actuel %}
+<h2>Ton personnage actuel</h2>
+<p class="texte-discret">Créé le {{ actuel.date }} · style « {{ actuel.style_libelle }} » · {{ actuel.images|length }} image(s)</p>
+<div class="pbd-planche">
+  {% for img in actuel.images %}
+  <figure><img src="/personnage-bd/image/{{ img.nom }}?v={{ actuel.version }}" alt="{{ img.libelle }}" loading="lazy"><figcaption>{{ img.libelle }}</figcaption></figure>
+  {% endfor %}
+</div>
+<div class="actions-avis">
+  <a class="bouton" href="/video-motion">✨ Utiliser dans une vidéo (Personnage : « Moi en BD »)</a>
+  <button type="button" class="bouton-secondaire" id="pbd-supprimer">🗑 Supprimer</button>
+</div>
+
+{% if emotions_manquantes %}
+<h2>Ajouter des émotions</h2>
+<div class="formulaire">
+  <p class="texte-discret">Deux images par émotion (bouche fermée et bouche ouverte). Le visage reste le même : elles sont dessinées d'après ton personnage actuel.</p>
+  <div class="pbd-cases">
+    {% for cle, libelle in emotions_manquantes %}<label class="pbd-case"><input type="checkbox" class="pbd-emotion-ajout" value="{{ cle }}" {% if cle in emotions_defaut %}checked{% endif %}> {{ libelle }}</label>{% endfor %}
+  </div>
+  <div class="actions-avis"><button type="button" class="bouton-secondaire" id="pbd-ajouter"><span class="spinner" id="pbd-spinner-ajout" hidden></span> ➕ Ajouter ces émotions</button></div>
+</div>
+{% endif %}
+<h2>Refaire mon personnage</h2>
+{% else %}
+<h2>Créer mon personnage</h2>
+{% endif %}
+
+<div class="formulaire">
+  <label for="pbd-client">Photos de référence de</label>
+  <select id="pbd-client">
+    {% for c in clients_photos %}<option value="{{ c.id }}" {% if c.id == client_defaut_id %}selected{% endif %}>{{ c.nom }} ({{ c.photos_reference|length }} photo{{ "s" if c.photos_reference|length > 1 else "" }})</option>{% endfor %}
+    <option value="">Aucune photo : je décris le personnage</option>
+  </select>
+  {% if not clients_photos %}
+  <p class="texte-discret">Aucune fiche n'a encore de photo de référence : ajoute 3 à 5 photos de visage (de face, bien éclairées, sans lunettes de soleil ni casquette) dans la fiche client, section « Photos de référence », ou décris le personnage ci-dessous.</p>
+  {% endif %}
+  <label for="pbd-style">Style</label>
+  <select id="pbd-style">{% for cle, libelle in styles.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}</select>
+  <label for="pbd-description">Description (utilisée seulement sans photo)</label>
+  <input type="text" id="pbd-description" maxlength="300" placeholder="Ex : un homme d'une trentaine d'années, cheveux bruns courts, barbe courte, lunettes rondes">
+  <p class="texte-discret" style="margin-bottom:.2rem">Émotions à créer en même temps (2 images chacune ; tu pourras en ajouter plus tard) :</p>
+  <div class="pbd-cases">
+    {% for cle, libelle in emotions_toutes.items() %}<label class="pbd-case"><input type="checkbox" class="pbd-emotion-creation" value="{{ cle }}" {% if cle in emotions_defaut %}checked{% endif %}> {{ libelle }}</label>{% endfor %}
+  </div>
+  <div class="actions-avis">
+    <button type="button" class="bouton" id="pbd-generer"><span class="spinner" id="pbd-spinner" hidden></span> 🎨 {{ "Refaire" if actuel else "Créer" }} mon personnage</button>
+  </div>
+  <p id="pbd-statut" class="texte-discret" hidden></p>
+</div>
+
+<style>
+  .pbd-planche { display: flex; flex-wrap: wrap; gap: .8rem; margin: .8rem 0; }
+  .pbd-planche figure { margin: 0; text-align: center; background: #e8f0fe; border-radius: 14px; padding: .5rem; }
+  .pbd-planche img { height: 170px; width: auto; display: block; }
+  .pbd-planche figcaption { font-size: .8rem; margin-top: .3rem; color: #5f6368; }
+  .pbd-cases { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; margin: .3rem 0 .6rem; }
+  .pbd-case { display: inline-flex; align-items: center; gap: .35rem; margin: 0; }
+</style>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const dire = (t) => { $("pbd-statut").hidden = !t; $("pbd-statut").textContent = t || ""; };
+  const cochees = (classe) => Array.from(document.querySelectorAll("." + classe)).filter((c) => c.checked).map((c) => c.value);
+  const post = async (chemin, corps) => {
+    const r = await fetch(chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps || {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.erreur || "Échec.");
+    return d;
+  };
+  async function lancer(chemin, corps, bouton, spinner) {
+    bouton.disabled = true; spinner.hidden = false; dire("Dessin en cours (image 1)...");
+    try {
+      const { id } = await post(chemin, corps);
+      for (let essai = 0; essai < 240; essai++) {
+        await new Promise((ok) => setTimeout(ok, 3000));
+        const etat = await (await fetch("/personnage-bd/etat/" + id)).json();
+        if (etat.etat === "termine") { dire("Terminé."); window.location.reload(); return; }
+        if (etat.etat === "erreur") throw new Error(etat.erreur || "La génération a échoué.");
+        dire(`Dessin en cours (image ${Math.min(etat.total || 99, (etat.etape || 0) + 1)} sur ${etat.total || "?"})...`);
+      }
+      throw new Error("La génération prend trop de temps : réessaie dans un instant.");
+    } catch (e) { dire(e.message); }
+    finally { bouton.disabled = false; spinner.hidden = true; }
+  }
+  const supprimer = $("pbd-supprimer");
+  if (supprimer) supprimer.addEventListener("click", async () => {
+    if (!confirm("Supprimer ton personnage BD ?")) return;
+    try { await post("/personnage-bd/supprimer"); window.location.reload(); } catch (e) { dire(e.message); }
+  });
+  const ajouter = $("pbd-ajouter");
+  if (ajouter) ajouter.addEventListener("click", () => {
+    const emotions = cochees("pbd-emotion-ajout");
+    if (!emotions.length) { dire("Coche au moins une émotion."); return; }
+    lancer("/personnage-bd/emotions", { emotions: emotions }, ajouter, $("pbd-spinner-ajout"));
+  });
+  $("pbd-generer").addEventListener("click", () => lancer("/personnage-bd/generer", { client_id: $("pbd-client").value, style: $("pbd-style").value, description: $("pbd-description").value, emotions: cochees("pbd-emotion-creation") }, $("pbd-generer"), $("pbd-spinner")));
+})();
+</script>
+{% endblock %}

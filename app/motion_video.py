@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from . import personnage, sons, synthese_vocale
+from . import personnage, personnage_bd, sons, synthese_vocale
 from .montage_video import FFMPEG
 
 DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "polices")
@@ -247,8 +247,9 @@ def bloc_texte(texte: str, nom: str, taille: int, largeur_max: float, hauteur_ma
 # --------------------------------------------------------------------------- contexte de rendu
 
 class Contexte:
-    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None, style: str = ""):
+    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None, style: str = "", tete_bd: dict = None):
         global _REMPLACE_SERIF
+        self.tete_bd = tete_bd                         # tete BD de l'utilisateur (voir personnage_bd.preparer_pour_rendu) ou None
         self.l, self.h = FORMATS[format_video]
         self.format = format_video
         self.u = min(self.l, self.h) / 1080            # echelle : les tailles ci-dessous sont donnees pour 1080 px
@@ -1471,16 +1472,23 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     # arrivee : le personnage saute depuis le bord de l'ecran, puis joue son action
     arrivee = sortie_rebond(t / 0.7)
     sortie_x = pieds[0] + cote * int(ctx.l * 0.55) * (1 - sortie_cubique(t / 0.6))
-    parle = 0.7 < t < duree - 0.35
+    parole = sc.get("parole")                                          # voix du personnage (voir rendre) : il parle pendant qu'elle est audible
+    parle = (parole["debut"] <= t < parole["fin"]) if parole else 0.7 < t < duree - 0.35
     t_action = max(0.0, t - 0.5)
     p = personnage.pose(action, t_action, parle, -cote)
+    if parole and parole.get("enveloppe"):                              # ouverture de la bouche = niveau du son (lisse sur trois images)
+        niveaux, rang = parole["enveloppe"], int((t - parole["debut"]) * FPS)
+        p["bouche"] = max(niveaux[max(0, rang - 1):rang + 2] or [0.0]) if parle else 0.0
+    if sc.get("forme") == "moi" and ctx.tete_bd and t > personnage_bd.DELAI_EMOTION:                      # il arrive neutre, puis reagit
+        p["emotion"] = sc.get("emotion") or personnage_bd.EMOTION_PAR_ACTION.get(action, "")
     p["saut"] += max(0.0, math.sin(min(1.0, t / 0.7) * math.pi)) * 60 * (1 - borne((t - 0.7) / 0.1)) if t < 0.8 else 0
     if ctx.google:                                                     # t-shirt de l'une des quatre couleurs Google selon le personnage, pantalon gris
         haut, bas = personnage.GOOGLE_COULEURS[(int(sc.get("perso", 1)) - 1) % 4], (60, 64, 67)
     else:
         haut, bas = ctx.t["accent"], melanger(ctx.t["accent"], (14, 18, 36), 0.80)
-    if sc.get("forme") == "geo":
-        perso = personnage.dessiner_geo(hauteur_canevas, p, look, haut, bas if ctx.google else melanger(ctx.t["accent"], (14, 18, 36), 0.80), haut, _badge_personnage(ctx))
+    if sc.get("forme") in ("geo", "moi"):                               # « moi » sans tete BD enregistree : repli sur le personnage geometrique
+        perso = personnage.dessiner_geo(hauteur_canevas, p, look, haut, bas if ctx.google else melanger(ctx.t["accent"], (14, 18, 36), 0.80), haut, _badge_personnage(ctx),
+                                        ctx.tete_bd if sc.get("forme") == "moi" else None)
     else:
         perso = personnage.dessiner(hauteur_canevas, p, look, haut, bas, (26, 26, 32), haut, _badge_personnage(ctx), ctx.google)
     reception = t - 0.66                                               # ecrasement a la reception du saut d'arrivee, puis retour souple
@@ -1613,7 +1621,7 @@ def nettoyer_scenario(scenario: dict) -> list:
         if not isinstance(brut, dict) or brut.get("type") not in TYPES_SCENES:
             continue
         scene = {"type": brut["type"], "duree": max(1.8, min(float(brut.get("duree") or 3.0), 10.0 if brut.get("type") == "recherche" else 6.0))}
-        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "forme", "voix"):
+        for cle in ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "forme", "voix", "emotion"):
             if brut.get(cle) is not None:
                 valeur = str(brut[cle]).replace("—", "-").strip()[:180]
                 scene[cle] = valeur if cle in ("texte", "titre", "sous_texte") else sans_balises(valeur)          # *surlignage* et _serif_ : seulement ou ils sont geres
@@ -1638,10 +1646,11 @@ def nettoyer_scenario(scenario: dict) -> list:
             scene["accessoire"] = scene.get("accessoire", "").lower() if scene.get("accessoire", "").lower() in personnage.ACCESSOIRES else "aucun"
             scene["perso"], scene["cote"] = perso_commun, 1 if rang_perso % 2 == 0 else -1          # meme personnage dans toute la video, qui change de cote a chaque scene
             scene["forme"] = scene.get("forme", "").lower() if scene.get("forme", "").lower() in personnage.FORMES else "detaille"
+            scene["emotion"] = scene.get("emotion", "").lower() if scene.get("emotion", "").lower() in personnage_bd.EMOTIONS else ""          # emotion du visage « Moi en BD » ("" : automatique)
             scene["puces"] = scene.get("puces", [])
             rang_perso += 1
         else:
-            for cle in ("action", "accessoire", "forme", "puces"):
+            for cle in ("action", "accessoire", "forme", "puces", "emotion"):
                 if cle == "accessoire" and scene["type"] in ("hook", "cta") and scene.get("accessoire", "").lower() in personnage.ACCESSOIRES:        # l'accroche peut avoir un objet decoratif
                     scene["accessoire"] = scene["accessoire"].lower()
                     continue
@@ -1756,7 +1765,7 @@ def image_a(ctx: Contexte, scenes: list, positions: list, t: float) -> Image.Ima
 
 
 def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque: str = "", ville: str = "", progression=None, musique: str = None,
-           images: list = None, logo: Image.Image = None, bpm: float = None, style: str = "", voix: list = None) -> float:
+           images: list = None, logo: Image.Image = None, bpm: float = None, style: str = "", voix: list = None, tete_bd: dict = None) -> float:
     """
     Rend la video MP4 (image par image vers ffmpeg, bruitages inclus). Renvoie sa duree en secondes. voix : une entree par scene (apres nettoyage),
     (fichier MP3, duree) ou None, voir synthese_vocale.preparer ; une scene s'allonge au besoin pour que la phrase soit dite en entier, et la musique baisse pendant qu'elle parle.
@@ -1772,7 +1781,14 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
     for i, scene in enumerate(scenes):
         if i < len(voix) and voix[i]:
             scene["duree"] = round(min(max(scene["duree"], DELAI_VOIX + voix[i][1] + 0.55), DUREE_MAX_SCENE_VOIX), 3)
-    ctx = Contexte(format_video, charte, marque, ville, images, logo, style if style in STYLES else "")
+            if scene["type"] == "personnage":                           # le personnage parle : sa bouche suit le son de la voix, de son debut a sa fin
+                try:
+                    niveaux = synthese_vocale.enveloppe(voix[i][0], FPS)
+                except Exception:
+                    niveaux = []
+                scene["parole"] = {"debut": DELAI_VOIX, "fin": DELAI_VOIX + voix[i][1], "enveloppe": niveaux}
+    tete = personnage_bd.preparer_pour_rendu(tete_bd) if tete_bd else None
+    ctx = Contexte(format_video, charte, marque, ville, images, logo, style if style in STYLES else "", tete)
     positions = minutage(scenes)
     duree = positions[-1][1]
     total_images = int(duree * FPS)
@@ -1886,7 +1902,7 @@ def telecharger_musique(url: str, dossier: str) -> str:
 
 
 def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
-             url_musique: str = "", bpm: float = None, archiver=None, style: str = "", voix_off: dict = None) -> str:
+             url_musique: str = "", bpm: float = None, archiver=None, style: str = "", voix_off: dict = None, tete_bd: dict = None) -> str:
     """
     Lance le rendu en tache de fond (un seul a la fois : il occupe le processeur) et renvoie son identifiant. sources_images : [("google", url) ou
     ("import", identifiant)] dans l'ordre des numeros de photos ; source_logo : ("url", adresse) ou ("import", identifiant).
@@ -1925,8 +1941,8 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
                     musique = None                  # idem pour la musique
             voix = None
             if voix_off:                       # voix off : une phrase par scene, synthetisee avant le rendu (voir synthese_vocale)
-                voix = synthese_vocale.preparer(nettoyer_scenario(scenario), voix_off.get("voix"), voix_off.get("ton", "dynamique"), dossier)
-            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm, style, voix)
+                voix = synthese_vocale.preparer(nettoyer_scenario(scenario), voix_off.get("voix"), voix_off.get("ton", "dynamique"), dossier, voix_off.get("voix_personnage", ""))
+            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm, style, voix, tete_bd)
             if archiver:                       # archive automatique (hebergement + trace par client) : jamais bloquante pour la video elle-meme
                 try:
                     etat["archive"] = archiver(chemin, round(duree, 1))

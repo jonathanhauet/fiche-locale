@@ -9,8 +9,8 @@ SEUIL_FOND = 55        # a partir de cette « dominance du vert », un pixel est
 LARGEUR_BANDE = 9      # bande autour du fond ou les reflets verts sont aussi attenues (cheveux, contours)
 
 
-def detourer_fond_vert(image: Image.Image) -> Image.Image:
-    """RGBA recadre sur la personne : fond vert relie aux bords retire, contours adoucis, reflets verts attenues."""
+def detourer_fond_vert(image: Image.Image, recadrer: bool = True) -> Image.Image:
+    """RGBA recadre sur la personne (sauf recadrer=False : meme taille que l'image) : fond vert relie aux bords retire, contours adoucis, reflets verts attenues."""
     rgb = image.convert("RGB")
     r, g, b = rgb.split()
     dominance = ImageChops.subtract(g, ImageChops.lighter(r, b))  # > 0 la ou le vert domine
@@ -39,4 +39,4 @@ def detourer_fond_vert(image: Image.Image) -> Image.Image:
 
     resultat = Image.merge("RGBA", (r, g, b, alpha))
     boite = alpha.point(lambda v: 255 if v > 20 else 0).getbbox()
-    return resultat.crop(boite) if boite else resultat
+    return resultat.crop(boite) if (boite and recadrer) else resultat

@@ -295,7 +295,8 @@ def dessiner(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, chaussu
 
 # --------------------------------------------------------------------------- personnage geometrique (formes simples, visage minimal)
 
-FORMES = ("detaille", "geo")
+FORMES = ("detaille", "geo", "moi")                # « moi » : tete BD de l'utilisateur (voir personnage_bd.py) sur le corps geometrique
+LARGEUR_TETE_BD = 250                              # largeur de la tete BD, en unites de dessin
 
 
 def _visage_geo(d, k, centre: tuple, rayon: float, p: dict, look: dict) -> None:
@@ -318,6 +319,58 @@ def _visage_geo(d, k, centre: tuple, rayon: float, p: dict, look: dict) -> None:
         d.arc(((cx - 28) * k, (my - 22) * k, (cx + 28) * k, (my + 12) * k), 20, 160, fill=sombre, width=int(7 * k))
 
 
+def _image_tete_bd(tete_bd: dict, p: dict) -> str:
+    """Image de la tete BD a montrer : yeux fermes (clignement), sinon l'emotion de la scene (bouche ouverte quand il parle), sinon l'expression de base."""
+    if p.get("clignement") and "yeux" in tete_bd:
+        return "yeux"
+    parle = p.get("bouche", 0) > 0.35
+    emotion = p.get("emotion") or ""
+    if emotion:
+        if parle and f"{emotion}_ouverte" in tete_bd:
+            return f"{emotion}_ouverte"
+        if emotion in tete_bd and not parle:
+            return emotion
+        if emotion in tete_bd and f"{emotion}_ouverte" not in tete_bd:
+            return emotion
+    return "ouverte" if parle else "ferme"
+
+
+def _preparer_tete_bd(tete_bd: dict, p: dict, k: float) -> tuple:
+    """(image de la tete BD a la bonne taille, (largeur du bas du cou en unites de dessin, couleur du cou)) ; mis en cache : appele a chaque image de la video."""
+    nom = _image_tete_bd(tete_bd, p)
+    largeur = max(8, int(LARGEUR_TETE_BD * k))
+    cache = tete_bd.setdefault("_cache", {})
+    if (nom, largeur) not in cache:
+        source = tete_bd[nom]
+        img = source.resize((largeur, max(8, round(source.size[1] * largeur / source.size[0]))), Image.LANCZOS)
+        w_img, h_img = img.size
+        bande = img.crop((0, int(h_img * 0.86), w_img, int(h_img * 0.93)))                       # au-dessus du trait du bas du cou
+        boite = bande.getchannel("A").point(lambda v: 255 if v > 128 else 0).getbbox()
+        centre = img.crop((int(w_img * 0.35), int(h_img * 0.86), int(w_img * 0.65), int(h_img * 0.93)))
+        pixels = [px for px in centre.getdata() if px[3] > 200 and (px[0] * 0.3 + px[1] * 0.59 + px[2] * 0.11) > 110]      # peau du cou, sans le trait sombre
+        if boite and pixels:
+            n = len(pixels)
+            cou = ((boite[2] - boite[0]) / k, tuple(int(sum(px[i] for px in pixels) / n) for i in range(3)))
+        else:
+            cou = (LARGEUR_TETE_BD * 0.45, tuple(tete_bd["peau"]))
+        cache[(nom, largeur)] = (img, cou)
+    return cache[(nom, largeur)]
+
+
+def _poser_tete_bd(calque: Image.Image, k: float, img: Image.Image, p: dict, bas_centre: tuple) -> None:
+    """Pose la tete BD, legerement inclinee autour du bas du cou, le bas du cou en bas_centre."""
+    w, h = img.size
+    angle = p["tete"] * 0.6
+    ancre = (w / 2, h)
+    if abs(angle) > 0.15:
+        marge = int(w * 0.3)
+        toile = Image.new("RGBA", (w + 2 * marge, h + marge), (0, 0, 0, 0))
+        toile.paste(img, (marge, 0))
+        img = toile.rotate(-angle, resample=Image.BICUBIC, center=(marge + w / 2, h))
+        ancre = (marge + w / 2, h)
+    calque.paste(img, (int(bas_centre[0] * k - ancre[0]), int(bas_centre[1] * k - ancre[1])), img)
+
+
 def _bras_geo(d, k, epaule: tuple, angles: tuple, cote: int, couleur: tuple, peau: tuple) -> tuple:
     """Bras epais d'une seule couleur, termine par une main ronde ; renvoie la position de la main."""
     a1, a2 = math.radians(angles[0]), math.radians(angles[1])
@@ -329,7 +382,7 @@ def _bras_geo(d, k, epaule: tuple, angles: tuple, cote: int, couleur: tuple, pea
     return poignet
 
 
-def dessiner_geo(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, accent: tuple, badge: Image.Image = None) -> Image.Image:
+def dessiner_geo(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, accent: tuple, badge: Image.Image = None, tete_bd: dict = None) -> Image.Image:
     """
     Personnage « geometrique » : tete ronde, corps en gelule d'une couleur, jambes en gelules, bras epais, mains rondes. Meme calque et memes informations que
     dessiner() (info « tete » et « main »), donc interchangeable dans la scene.
@@ -338,7 +391,7 @@ def dessiner_geo(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, acc
     calque = Image.new("RGBA", (int(LARGEUR_REF * k), int(HAUTEUR_REF * k)), (0, 0, 0, 0))
     d = ImageDraw.Draw(calque)
     P = lambda x, y: (x * k, y * k)
-    peau = look["peau"]
+    peau = tete_bd["peau"] if tete_bd else look["peau"]
     pieds_x, pieds_y = PIEDS[0], PIEDS[1] - p["saut"]
     hanche_y = pieds_y - 330
     epaules_y = pieds_y - 690 + p["respiration"] * 0.4
@@ -353,17 +406,33 @@ def dessiner_geo(hauteur: int, p: dict, look: dict, haut: tuple, bas: tuple, acc
     d.rounded_rectangle(P(axe - 142, epaules_y - 4) + P(pieds_x + 142, hanche_y + 50), radius=int(104 * k), fill=haut + (255,))               # corps en gelule
     d.rounded_rectangle(P(axe - 142, epaules_y - 4) + P(axe - 70, hanche_y + 50), radius=int(60 * k), fill=_sombre(haut, 0.14) + (255,))      # ombre du cote gauche
     d.rounded_rectangle(P(axe - 112, epaules_y - 4) + P(pieds_x + 142, hanche_y + 50), radius=int(104 * k), fill=haut + (255,))
-    d.rounded_rectangle(P(axe - 34, epaules_y - 92) + P(axe + 34, epaules_y + 8), radius=int(17 * k), fill=_sombre(peau, 0.1) + (255,))
+    if tete_bd:                                                         # epaules plus plates : le cou repose sur un haut de buste large
+        d.rounded_rectangle(P(axe - 142, epaules_y - 4) + P(pieds_x + 142, epaules_y + 140), radius=int(54 * k), fill=haut + (255,))
+        d.rounded_rectangle(P(axe - 142, epaules_y - 4) + P(axe - 70, epaules_y + 140), radius=int(40 * k), fill=_sombre(haut, 0.14) + (255,))
+        d.rounded_rectangle(P(axe - 112, epaules_y - 4) + P(pieds_x + 142, epaules_y + 140), radius=int(54 * k), fill=haut + (255,))
+    if not tete_bd:
+        d.rounded_rectangle(P(axe - 34, epaules_y - 92) + P(axe + 34, epaules_y + 8), radius=int(17 * k), fill=_sombre(peau, 0.1) + (255,))
     if badge is not None:
         taille_badge = int(70 * k)
         petit = badge.resize((taille_badge, taille_badge), Image.LANCZOS)
         calque.paste(petit, (int((axe + 62) * k - taille_badge / 2), int((epaules_y + 120) * k - taille_badge / 2)), petit)
     rayon = 132
-    tete = (axe + p["penche"] * 0.3 + p["tete"] * 1.4, epaules_y - 168 + p["respiration"] * 0.2)
-    _cheveux(d, k, tete, rayon, look, accent, False)
-    _cercle(d, k, tete, rayon, peau)
-    _cheveux(d, k, tete, rayon, look, accent, True)
-    _visage_geo(d, k, tete, rayon, p, look)
+    tete = (axe + p["penche"] * 0.3 + p["tete"] * 1.4, epaules_y - (250 if tete_bd else 168) + p["respiration"] * 0.2)
+    if not tete_bd:
+        _cheveux(d, k, tete, rayon, look, accent, False)
+        _cercle(d, k, tete, rayon, peau)
+        _cheveux(d, k, tete, rayon, look, accent, True)
+        _visage_geo(d, k, tete, rayon, p, look)
+    else:
+        img_tete, (largeur_cou, couleur_cou) = _preparer_tete_bd(tete_bd, p, k)
+        cx, cy = tete[0], epaules_y + 6
+        rx, ry = largeur_cou * 0.82, largeur_cou * 0.30
+        col = _sombre(haut, 0.2) + (255,)
+        d.ellipse(P(cx - rx, cy - ry) + P(cx + rx, cy + ry), fill=col)                                           # arriere du col, derriere le cou
+        _poser_tete_bd(calque, k, img_tete, p, (cx, cy))
+        d.pieslice(P(cx - rx, cy - ry) + P(cx + rx, cy + ry), 0, 180, fill=col)                                   # levre avant du col
+        irx, iry = largeur_cou * 0.58, largeur_cou * 0.2
+        d.pieslice(P(cx - irx, cy - iry - 14) + P(cx + irx, cy + iry - 14), 0, 180, fill=couleur_cou + (255,))      # ouverture du col : la couleur du cou
     main = _bras_geo(d, k, epaule_d, p["droit"], 1, haut, peau)
     final = calque.resize((int(LARGEUR_REF * k / SURECHANTILLON), int(HAUTEUR_REF * k / SURECHANTILLON)), Image.LANCZOS)
     final.info["tete"] = (tete[0] * k / SURECHANTILLON, tete[1] * k / SURECHANTILLON)

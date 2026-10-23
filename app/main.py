@@ -96,6 +96,9 @@ from . import (
     montage_publication,
     sons,
     synthese_vocale,
+    personnage_bd,
+    opportunites_seo,
+    tics_ia,
     styles_montage,
     montage_video,
     notifications,
@@ -5334,6 +5337,98 @@ def _controle_geo_recent(db: Session, client_id: int):
     return {"url": ligne.url, "score": ligne.score, "controles": json.loads(ligne.resultats or "[]"), "date": ligne.cree_le.strftime("%d/%m/%Y %H:%M")}
 
 
+def _site_web_client(db: Session, client) -> str:
+    """Adresse du site du client : celle enregistree, ou a defaut celle de sa fiche Google (qui est alors enregistree)."""
+    site = client.site_web or client.wordpress_url
+    if not site:
+        infos, _ = _infos_google_client(db, client)
+        site = infos.get("websiteUri", "")
+        if site:
+            client.site_web = site
+            db.commit()
+    return site or ""
+
+
+@app.get("/clients/{client_id}/opportunites-seo", response_class=HTMLResponse)
+def opportunites_seo_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+    derniere = db.query(models.AnalyseSite).filter_by(client_id=client_id).order_by(models.AnalyseSite.cree_le.desc(), models.AnalyseSite.id.desc()).first()
+    analyse = None
+    if derniere:
+        try:
+            analyse = {**json.loads(derniere.resultats or "{}"), "date": derniere.cree_le.strftime("%d/%m/%Y %H:%M")}
+        except ValueError:
+            analyse = None
+    return templates.TemplateResponse(request, "client_opportunites_seo.html", {
+        "client": client, "analyse": analyse, "site_propose": client.site_web or client.wordpress_url or "",
+    })
+
+
+@app.post("/clients/{client_id}/opportunites-seo/recherches")
+def opportunites_seo_recherches(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Recherches presque en page 1 (Search Console, 90 jours), classees par visites supplementaires possibles."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+    if not client.search_console_site:
+        return JSONResponse({"ok": False, "message": "Ce client n'est pas rattaché à la Search Console (fiche client > Search Console)."}, status_code=400)
+    identifiants, erreur = _identifiants_sc_ou_erreur(db)
+    if erreur:
+        return erreur
+    try:
+        resultat = opportunites_seo.opportunites_recherches(identifiants, client.search_console_site, client.nom)
+    except Exception as e:
+        return JSONResponse({"ok": False, "message": str(e)}, status_code=400)
+    return JSONResponse({"ok": True, **resultat})
+
+
+@app.post("/clients/{client_id}/opportunites-seo/titres")
+async def opportunites_seo_titres(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Titre, description Google et angle d'article pour des recherches (8 au plus). Corps : requetes."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    requetes = [str(r) for r in (donnees.get("requetes") if isinstance(donnees, dict) and isinstance(donnees.get("requetes"), list) else [])][:8]
+    if not requetes:
+        return JSONResponse({"ok": False, "message": "Aucune recherche à traiter."}, status_code=400)
+    try:
+        titres = await run_in_threadpool(claude_generation.titres_pour_requetes, client.nom, client.localisation_ville or "", requetes, _contexte_ia_client(client)[:3000])
+    except Exception as e:
+        return JSONResponse({"ok": False, "message": f"Impossible de rédiger les titres : {e}"}, status_code=502)
+    return JSONResponse({"ok": True, "titres": titres})
+
+
+@app.post("/clients/{client_id}/opportunites-seo/pages")
+def opportunites_seo_pages(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Analyse des pages du site du client (une trentaine de secondes) ; le resultat est enregistre."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"ok": False, "message": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"ok": False, "message": "Client introuvable."}, status_code=404)
+    try:
+        resultat = opportunites_seo.explorer(_site_web_client(db, client), client.localisation_ville or "")
+    except geo_technique.ErreurControle as erreur:
+        return JSONResponse({"ok": False, "message": str(erreur)}, status_code=400)
+    ligne = models.AnalyseSite(client_id=client_id, url=resultat["url"], score=resultat["score"], resultats=json.dumps(resultat, ensure_ascii=False))
+    db.add(ligne)
+    db.commit()
+    return JSONResponse({"ok": True, **resultat, "date": ligne.cree_le.strftime("%d/%m/%Y %H:%M")})
+
+
 @app.get("/clients/{client_id}/geo-technique", response_class=HTMLResponse)
 def geo_technique_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -7939,7 +8034,8 @@ def page_video_motion(request: Request, db: Session = Depends(obtenir_session)):
         return redirection
     clients = db.query(models.Client).order_by(models.Client.nom).all()
     pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
-    return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db), "pistes": pistes, "voix_off_choix": synthese_vocale.VOIX})
+    return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db), "pistes": pistes, "voix_off_choix": synthese_vocale.VOIX, "genres_voix": synthese_vocale.GENRES_VOIX,
+        "voix_defaut": synthese_vocale.VOIX_DEFAUT, "voix_personnage_defaut": synthese_vocale.VOIX_PERSONNAGE_DEFAUT, "personnage_bd": _personnage_bd_existe(db)})
 
 
 @app.post("/video-motion/scenario")
@@ -8336,12 +8432,19 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
         id_client = int(donnees.get("client_id") or 0)
     except (TypeError, ValueError):
         id_client = 0
+    tete_bd = None
+    if any(s.get("forme") == "moi" for s in motion_video.nettoyer_scenario(scenario) if s["type"] == "personnage"):           # personnage « Moi en BD » : sa tete doit exister
+        tete_bd = _tete_bd_pour_rendu(db)
+        if not tete_bd:
+            return JSONResponse({"erreur": "Crée d'abord ton personnage BD (menu « Mon personnage BD »)."}, status_code=400)
     voix_off = None
     demande_voix = donnees.get("voix_off")
     if isinstance(demande_voix, dict):                                   # voix off demandee : {"voix": "nova", "ton": "dynamique"}
         if not synthese_vocale.disponible():
             return JSONResponse({"erreur": "La voix off demande la clé OpenAI (OPENAI_API_KEY manquant dans plateforme_web/.env)."}, status_code=400)
         voix_off = {"voix": synthese_vocale.voix_valide(demande_voix.get("voix")), "ton": demande_voix.get("ton") if demande_voix.get("ton") in claude_generation.TONS_MOTION else "dynamique"}
+        if demande_voix.get("voix_personnage"):                          # voix du personnage quand il parle (scenes « personnage »)
+            voix_off["voix_personnage"] = synthese_vocale.voix_valide(demande_voix.get("voix_personnage"), synthese_vocale.VOIX_PERSONNAGE_DEFAUT)
     titre_archive = " ".join(str(donnees.get("titre") or donnees.get("nom") or "Vidéo motion design").split())[:150]
     meta_archive = {"legende": str(donnees.get("legende") or "")[:3000], "scenes": scenario["scenes"][:12], "couleurs": [charte["principale"], charte["secondaire"]],
                     "nom": str(donnees.get("nom") or "")[:80], "ville": str(donnees.get("ville") or "")[:60], "source": "motion_design", "style": "google" if donnees.get("style") == "google" else "", "voix": voix_off["voix"] if voix_off else ""}
@@ -8361,7 +8464,7 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
     try:
         identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60],
                                             sources_images, source_logo, url_musique, bpm, archiver, "google" if donnees.get("style") == "google" else "",
-                                            **({"voix_off": voix_off} if voix_off else {}))
+                                            **({"voix_off": voix_off} if voix_off else {}), **({"tete_bd": tete_bd} if tete_bd else {}))
     except motion_video.ErreurMotion as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=409)
     return JSONResponse({"id": identifiant})
@@ -8381,10 +8484,191 @@ async def video_motion_voix_extrait(request: Request):
         return JSONResponse({"erreur": "La voix off demande la clé OpenAI (OPENAI_API_KEY manquant dans plateforme_web/.env)."}, status_code=400)
     ton = donnees.get("ton") if donnees.get("ton") in claude_generation.TONS_MOTION else "dynamique"
     try:
-        audio = await run_in_threadpool(synthese_vocale.synthese, synthese_vocale.PHRASE_EXTRAIT, synthese_vocale.voix_valide(donnees.get("voix")), ton)
+        phrase = synthese_vocale.PHRASE_EXTRAIT_PERSONNAGE if donnees.get("role") == "personnage" else synthese_vocale.PHRASE_EXTRAIT
+        audio = await run_in_threadpool(synthese_vocale.synthese, phrase, synthese_vocale.voix_valide(donnees.get("voix")), ton)
     except synthese_vocale.ErreurVoix as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=502)
     return Response(content=audio, media_type="audio/mpeg")
+
+
+JOBS_PERSONNAGE_BD = {}                      # generations en cours ou terminees (en memoire) : identifiant -> {"etat", "etape", "total", "erreur"}
+
+
+def _personnage_bd_existe(db: Session) -> bool:
+    return db.query(models.PersonnageBD.id).first() is not None
+
+
+def _dernier_personnage_bd(db: Session):
+    return db.query(models.PersonnageBD).order_by(models.PersonnageBD.cree_le.desc(), models.PersonnageBD.id.desc()).first()
+
+
+def _images_personnage_bd(db: Session, ligne) -> dict:
+    return {i.nom: i.png for i in db.query(models.PersonnageBDImage).filter_by(personnage_id=ligne.id).all() if i.png} if ligne else {}
+
+
+def _tete_bd_pour_rendu(db: Session):
+    """{nom: octets PNG} des images du personnage BD le plus recent (expressions de base et emotions), ou None s'il est absent ou incomplet."""
+    images = _images_personnage_bd(db, _dernier_personnage_bd(db))
+    return images if all(nom in images for nom in personnage_bd.EXPRESSIONS) else None
+
+
+def _lancer_job_personnage_bd(travail_avec_job):
+    """Demarre une generation en tache de fond (une seule a la fois). Renvoie (identifiant, None) ou (None, reponse d'erreur)."""
+    if any(j["etat"] == "en_cours" for j in JOBS_PERSONNAGE_BD.values()):
+        return None, JSONResponse({"erreur": "Une génération est déjà en cours : attends qu'elle se termine."}, status_code=409)
+    identifiant = uuid.uuid4().hex[:10]
+    job = {"etat": "en_cours", "etape": 0, "total": 0, "erreur": ""}
+    JOBS_PERSONNAGE_BD[identifiant] = job
+
+    def travail():
+        try:
+            travail_avec_job(job)
+            job["etat"] = "termine"
+        except Exception as erreur:
+            job.update(etat="erreur", erreur=str(erreur)[:300] or erreur.__class__.__name__)
+
+    threading.Thread(target=travail, daemon=True).start()
+    return identifiant, None
+
+
+@app.get("/personnage-bd", response_class=HTMLResponse)
+def personnage_bd_page(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    avec_photos = [c for c in db.query(models.Client).order_by(models.Client.nom).all() if c.photos_reference]
+    defaut = _client_marque_personnelle(db)
+    defaut_id = defaut.id if defaut and defaut.photos_reference else (avec_photos[0].id if avec_photos else None)
+    ligne = _dernier_personnage_bd(db)
+    actuel, manquantes = None, []
+    if ligne:
+        presentes = _images_personnage_bd(db, ligne)
+        actuel = {"date": ligne.cree_le.strftime("%d/%m/%Y %H:%M"), "style_libelle": personnage_bd.LIBELLES_STYLES.get(ligne.style, ligne.style), "version": ligne.id,
+                  "images": [{"nom": n, "libelle": personnage_bd.libelle_image(n)} for n in personnage_bd.tous_les_noms() if n in presentes]}
+        manquantes = [(cle, libelle) for cle, libelle in personnage_bd.LIBELLES_EMOTIONS.items() if cle not in presentes]
+    return templates.TemplateResponse(request, "personnage_bd.html", {
+        "page_actuelle": "personnage_bd", "clients_photos": avec_photos, "client_defaut_id": defaut_id, "actuel": actuel,
+        "styles": personnage_bd.LIBELLES_STYLES, "emotions_toutes": personnage_bd.LIBELLES_EMOTIONS, "emotions_defaut": personnage_bd.EMOTIONS_PAR_DEFAUT, "emotions_manquantes": manquantes,
+    })
+
+
+@app.get("/personnage-bd/image/{nom}")
+def personnage_bd_image(nom: str, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return Response(status_code=401)
+    images = _images_personnage_bd(db, _dernier_personnage_bd(db))
+    if nom not in images:
+        return Response(status_code=404)
+    return Response(content=images[nom], media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@app.post("/personnage-bd/generer")
+async def personnage_bd_generer(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Dessine le personnage BD (3 expressions de base, plus les emotions demandees) en tache de fond. Corps : client_id (photos de reference), style, description (sans photo),
+    emotions. Suivi : /personnage-bd/etat/{id}.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    try:
+        client = db.get(models.Client, int(donnees.get("client_id") or 0))
+    except (TypeError, ValueError):
+        client = None
+    style = donnees.get("style") if donnees.get("style") in personnage_bd.STYLES else personnage_bd.STYLE_DEFAUT
+    description = " ".join(str(donnees.get("description") or "").split())[:300]
+    emotions = personnage_bd.emotions_valides(donnees.get("emotions") if isinstance(donnees.get("emotions"), list) else [])
+    urls = [p.image_url for p in client.photos_reference][:NB_MAX_PHOTOS_REFERENCE] if client else []
+    if not urls and not description:
+        return JSONResponse({"erreur": "Ajoute des photos de visage à la fiche (Photos de référence) ou décris le personnage."}, status_code=400)
+    client_id = client.id if client else None
+
+    def travail(job):
+        octets_photos = []
+        for url in urls:
+            try:
+                octets_photos.append(requests.get(url, timeout=20).content)
+            except Exception:
+                continue
+        if urls and not octets_photos:
+            raise RuntimeError("Les photos de référence sont introuvables.")
+        tetes = personnage_bd.generer_tetes(octets_photos, gemini_images.generer_image, style, description, lambda i, n: job.update(etape=i, total=n), emotions)
+        session = SessionLocal()
+        try:
+            ligne = models.PersonnageBD(client_id=client_id, style=style)
+            session.add(ligne)
+            session.flush()
+            for nom, png in tetes.items():
+                session.add(models.PersonnageBDImage(personnage_id=ligne.id, nom=nom, png=png))
+            session.commit()
+            for ancien in session.query(models.PersonnageBD).order_by(models.PersonnageBD.cree_le.desc(), models.PersonnageBD.id.desc()).offset(3).all():
+                session.query(models.PersonnageBDImage).filter_by(personnage_id=ancien.id).delete()
+                session.delete(ancien)
+            session.commit()
+        finally:
+            session.close()
+
+    identifiant, erreur = _lancer_job_personnage_bd(travail)
+    return erreur or JSONResponse({"id": identifiant})
+
+
+@app.post("/personnage-bd/emotions")
+async def personnage_bd_emotions(request: Request, db: Session = Depends(obtenir_session)):
+    """Ajoute (ou redessine) des emotions au personnage BD actuel, d'apres son image « bouche fermee » : 2 images par emotion. Corps : emotions."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    emotions = personnage_bd.emotions_valides(donnees.get("emotions") if isinstance(donnees.get("emotions"), list) else [])
+    if not emotions:
+        return JSONResponse({"erreur": "Choisis au moins une émotion."}, status_code=400)
+    ligne = _dernier_personnage_bd(db)
+    images = _images_personnage_bd(db, ligne)
+    if not ligne or "ferme" not in images:
+        return JSONResponse({"erreur": "Crée d'abord ton personnage."}, status_code=400)
+    personnage_id, ferme = ligne.id, images["ferme"]
+
+    def travail(job):
+        job["total"] = 2 * len(emotions)
+        nouvelles = personnage_bd.generer_emotions(ferme, emotions, gemini_images.generer_image, lambda i, n: job.update(etape=i, total=n))
+        session = SessionLocal()
+        try:
+            for nom, png in nouvelles.items():
+                session.query(models.PersonnageBDImage).filter_by(personnage_id=personnage_id, nom=nom).delete()
+                session.add(models.PersonnageBDImage(personnage_id=personnage_id, nom=nom, png=png))
+            session.commit()
+        finally:
+            session.close()
+
+    identifiant, erreur = _lancer_job_personnage_bd(travail)
+    return erreur or JSONResponse({"id": identifiant})
+
+
+@app.get("/personnage-bd/etat/{identifiant}")
+def personnage_bd_etat(identifiant: str, request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    job = JOBS_PERSONNAGE_BD.get(identifiant)
+    if not job:
+        return JSONResponse({"erreur": "Génération introuvable."}, status_code=404)
+    return JSONResponse(job)
+
+
+@app.post("/personnage-bd/supprimer")
+def personnage_bd_supprimer(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    db.query(models.PersonnageBDImage).delete()
+    db.query(models.PersonnageBD).delete()
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @app.get("/video-motion/{identifiant}/etat")

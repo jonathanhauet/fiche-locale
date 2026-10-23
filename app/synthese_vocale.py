@@ -5,6 +5,7 @@ motion_video.rendre() au debut de chaque scene, avec la musique baissee pendant 
 (petit cache en memoire), ce qui permet de refaire un rendu apres une retouche sans payer deux fois.
 """
 
+import array
 import hashlib
 import os
 import re
@@ -21,6 +22,7 @@ ADRESSE = "https://api.openai.com/v1/audio/speech"
 MAX_CARACTERES_SCENE = 320                 # une scene ne parle pas plus longtemps (environ 25 secondes)
 MAX_CARACTERES_VIDEO = 2400                # plafond par video : borne le cout en cas de scenario demesure
 PHRASE_EXTRAIT = "Bonjour, voici un extrait de la voix choisie pour votre vidéo. Elle vous convient-elle ?"
+PHRASE_EXTRAIT_PERSONNAGE = "Salut, c'est moi ! Aujourd'hui, on regarde ensemble comment faire travailler ta fiche Google pour toi."
 
 VOIX = {
     "nova": "Nova : claire et chaleureuse",
@@ -32,7 +34,9 @@ VOIX = {
     "ash": "Ash : naturelle",
     "ballad": "Ballad : expressive",
 }
-VOIX_DEFAUT = "nova"
+VOIX_DEFAUT = "nova"                       # voix off (narration) : feminine
+VOIX_PERSONNAGE_DEFAUT = "onyx"            # voix du personnage quand il parle (scenes « personnage ») : masculine
+GENRES_VOIX = {"nova": "féminine", "shimmer": "féminine", "coral": "féminine", "sage": "féminine", "onyx": "masculine", "echo": "masculine", "ash": "masculine", "ballad": "masculine"}
 
 BASE_INSTRUCTIONS = "Parle en français de France, sans accent étranger, avec une diction naturelle, comme un professionnel qui présente son métier à un client. "
 INSTRUCTIONS_TON = {
@@ -57,8 +61,8 @@ def disponible() -> bool:
     return bool(os.getenv("OPENAI_API_KEY"))
 
 
-def voix_valide(voix) -> str:
-    return voix if voix in VOIX else VOIX_DEFAUT
+def voix_valide(voix, defaut: str = VOIX_DEFAUT) -> str:
+    return voix if voix in VOIX else defaut
 
 
 def nettoyer_texte(texte) -> str:
@@ -146,20 +150,42 @@ def duree_audio(chemin: str) -> float:
     return int(h) * 3600 + int(m) * 60 + float(s)
 
 
-def preparer(scenes: list, voix: str, ton: str, dossier: str) -> list:
+def enveloppe(chemin: str, fps: int = 30) -> list:
+    """Niveau sonore image par image (0 a 1, normalise sur les passages forts) : sert a faire bouger la bouche du personnage au rythme de sa voix."""
+    reponse = subprocess.run([FFMPEG, "-loglevel", "error", "-i", chemin, "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"], capture_output=True, timeout=60)
+    echantillons = array.array("f")
+    echantillons.frombytes(reponse.stdout[: len(reponse.stdout) // 4 * 4])
+    if not len(echantillons):
+        return []
+    niveaux = []
+    for i in range(int(len(echantillons) * fps / 8000) + 1):
+        morceau = echantillons[int(i * 8000 / fps):int((i + 1) * 8000 / fps)]
+        if len(morceau):
+            niveaux.append((sum(x * x for x in morceau) / len(morceau)) ** 0.5)
+    ordonnes = sorted(niveaux)
+    reference = ordonnes[int(len(ordonnes) * 0.9)] if ordonnes else 0.0
+    if reference < 1e-4:
+        return [0.0] * len(niveaux)
+    return [min(1.0, n / reference) for n in niveaux]
+
+
+def preparer(scenes: list, voix: str, ton: str, dossier: str, voix_personnage: str = "") -> list:
     """
     Une entree par scene : (chemin du fichier MP3, duree en secondes), ou None si la scene n'a rien a dire. Les phrases sont synthetisees en parallele.
+    voix_personnage : voix des scenes « personnage » (le personnage lit sa bulle), differente de la voix off des autres scenes ; vide : meme voix partout.
     Leve ErreurVoix si le total depasse le plafond de caracteres ou si une synthese echoue.
     """
+    voix_perso = voix_valide(voix_personnage, VOIX_PERSONNAGE_DEFAUT) if voix_personnage else ""
+    voix_de = lambda sc: voix_perso if (voix_perso and sc.get("type") == "personnage") else voix
     textes = [texte_a_dire(sc) for sc in scenes]
     total = sum(len(t) for t in textes)
     if total > MAX_CARACTERES_VIDEO:
         raise ErreurVoix(f"Le texte de la voix off est trop long ({total} caractères, maximum {MAX_CARACTERES_VIDEO}) : raccourcissez les phrases.")
     if not any(textes):
         return [None] * len(scenes)
-    uniques = sorted({t for t in textes if t})
+    uniques = sorted({(t, voix_de(sc)) for t, sc in zip(textes, scenes) if t})
     with ThreadPoolExecutor(max_workers=3) as groupe:
-        audios = dict(zip(uniques, groupe.map(lambda t: synthese(t, voix, ton), uniques)))
+        audios = dict(zip(uniques, groupe.map(lambda tv: synthese(tv[0], tv[1], ton), uniques)))
     sorties = []
     for i, texte in enumerate(textes):
         if not texte:
@@ -167,6 +193,6 @@ def preparer(scenes: list, voix: str, ton: str, dossier: str) -> list:
             continue
         chemin = os.path.join(dossier, f"voix_{i}.mp3")
         with open(chemin, "wb") as fichier:
-            fichier.write(audios[texte])
+            fichier.write(audios[(texte, voix_de(scenes[i]))])
         sorties.append((chemin, duree_audio(chemin)))
     return sorties

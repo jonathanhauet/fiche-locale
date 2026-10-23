@@ -13,6 +13,7 @@ from datetime import date
 
 from anthropic import Anthropic as _AnthropicSDK
 
+from . import tics_ia
 from .texte_google import REGLES_GOOGLE_POST, nettoyer_texte_google
 from dotenv import load_dotenv
 
@@ -246,7 +247,7 @@ def _nettoyer_texte_genere(texte: str) -> str:
     # laisser plusieurs lignes vides d'affilee a la place.
     texte = re.sub(r"\n{3,}", "\n\n", texte)
     texte = texte.replace("—", "-")
-    return _retablir_accents(texte.strip())
+    return _retablir_accents(tics_ia.nettoyer(texte.strip()))
 
 
 def _nettoyer_champs_post(post: dict, google: bool = False) -> dict:
@@ -1981,6 +1982,9 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
         "- Si le contexte contient un bloc « VOIX DU CLIENT », ecris comme lui : son registre, ses tournures, "
         "sa personne grammaticale. A defaut, « nous » pour une entreprise, « je » pour un independant seul.\n"
         "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique (ex. « le cabinet reçoit au cabinet »). Relis-toi avant de conclure : la derniere phrase doit etre claire, naturelle et utile.\n"
+        "- Style naturel : ecris comme un artisan ou un commercant qui explique son metier a un voisin, avec des phrases concretes et des verbes simples. Evite les formules "
+        "d'IA : « dans un monde ou », « a l'ere du numerique », « plongez dans », « n'hesitez pas a », « il est important de noter que », « que vous soyez ... ou ... », "
+        "« veritable », « incontournable », « booster », « se demarquer », « en conclusion ».\n"
         "- Pas de tiret cadratin (—), pas d'emoji, aucun commentaire autour : uniquement l'article."
         + consignes_seo
         + (
@@ -3594,7 +3598,7 @@ def contenu_modele_visuel(modele: str, texte_base: str, contexte: str, nb: int) 
 
 # --------------------------------------------------------------------------- video motion design (voir motion_video.py)
 
-_CHAMPS_SCENE_MOTION = ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "voix")
+_CHAMPS_SCENE_MOTION = ("texte", "sous_texte", "valeur", "suffixe", "libelle", "legende", "titre", "numero", "kicker", "auteur", "nom", "accroche", "bouton", "contact", "action", "accessoire", "voix", "emotion")
 SCHEMA_SCENARIO_MOTION = {
     "type": "object",
     "properties": {
@@ -3672,9 +3676,10 @@ CONSIGNES_MODELES = {
 
 
 CONSIGNE_VOIX = (
-    "VOIX OFF : pour chaque scène, écris dans le champ voix la phrase que la voix off dira pendant la scène (8 à 25 mots, français parlé naturel, une idée, qui complète le texte affiché "
-    "sans le répéter mot pour mot ; aucune adresse web ni numéro de téléphone lu chiffre par chiffre, pas de tiret cadratin). Compte environ 2,5 mots par seconde de scène : la phrase doit "
-    "tenir dans la durée de la scène, sinon la scène sera allongée. Laisse voix vide pour une scène qui doit rester silencieuse.\n"
+    "VOIX OFF : il y a deux voix. Pour chaque scène qui n'est PAS une scène personnage, écris dans le champ voix la phrase que la voix off (la narratrice) dira pendant la scène (8 à 25 mots, "
+    "français parlé naturel, une idée, qui complète le texte affiché sans le répéter mot pour mot ; aucune adresse web ni numéro de téléphone lu chiffre par chiffre, pas de tiret cadratin). "
+    "Pour une scène personnage, laisse voix VIDE : c'est le personnage qui parle avec sa propre voix et il lit sa bulle, donc écris le champ texte comme une phrase parlée à la première personne "
+    "(8 à 16 mots). Compte environ 2,5 mots par seconde de scène : la phrase doit tenir dans la durée de la scène, sinon la scène sera allongée. Laisse voix vide pour une scène qui doit rester silencieuse.\n"
 )
 CONSIGNE_STYLE_GOOGLE = (
     "Style visuel GOOGLE (fond blanc, couleurs de Google, illustrations) : la vidéo explique à des chefs d'entreprise comment fonctionne la présence locale sur Google "
@@ -3731,7 +3736,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "- realisation : une réalisation. kicker, titre, sous_texte (la commune), texte (description), photos (1 à 3 numéros).\n"
         "- personnage : un personnage animé qui parle dans une bulle (maximum 3 scènes de ce type, de préférence à la suite). texte (8 à 16 mots, ce qu'il dit), "
         "action (salut, explique, pointe, idee, celebre ou reflechit), accessoire (aucun, ampoule, cle, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier, epingle, etoiles, recherche, fiche, avis ou carte), "
-        "perso (1 à 4, le même numéro dans toutes les scènes personnage), puces (facultatif : 0 à 3 mini-étiquettes d'interface flottantes de 2 à 4 mots, comme « Ouvert maintenant », "
+        "perso (1 à 4, le même numéro dans toutes les scènes personnage), emotion (facultatif : joie, surpris, reflechit, inquiet, clin ou confiant selon ce que dit le personnage ; vide pour laisser l'automatique), puces (facultatif : 0 à 3 mini-étiquettes d'interface flottantes de 2 à 4 mots, comme « Ouvert maintenant », "
         "« Itinéraire », « Appeler » ; une note comme « 4,9 ★ » UNIQUEMENT si elle figure dans les faits).\n"
         "- recherche : une recherche Google locale animée (la requête se tape, le plan apparaît, puis les résultats dont le premier est l'entreprise). texte (la requête, 2 à 4 mots), "
         "nom, libelle (le métier), valeur (note, UNIQUEMENT si fournie dans les faits), suffixe (nombre d'avis, UNIQUEMENT s'il est fourni), legende (phrase pédagogique, facultative). "
@@ -3933,3 +3938,48 @@ def suggerer_articles_par_categorie(contexte_client: str, ville: str, categories
     if not idees:
         raise RuntimeError("L'IA n'a proposé aucune idée nouvelle exploitable : réessayez.")
     return idees[:10]
+
+
+# --------------------------------------------------------------------------- opportunites SEO : titres pour les recherches proches de la page 1
+
+SCHEMA_TITRES_REQUETES = {
+    "type": "object",
+    "properties": {"titres": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"requete": {"type": "string"}, "titre": {"type": "string"}, "meta": {"type": "string"}, "angle": {"type": "string"}},
+        "required": ["requete", "titre", "meta", "angle"], "additionalProperties": False}}},
+    "required": ["titres"], "additionalProperties": False,
+}
+
+
+def titres_pour_requetes(nom: str, ville: str, requetes: list, contexte_site: str = "") -> list:
+    """
+    Pour chaque recherche (8 au plus) : un titre d'article (60 caracteres au plus, la recherche en tete), une description Google (155 au plus) et l'angle de l'article.
+    Renvoie [{"requete", "titre", "meta", "angle"}] ; rien n'est invente (aucun prix, chiffre, annee ni certification).
+    """
+    requetes = [" ".join(str(r).split())[:120] for r in (requetes or []) if str(r).strip()][:8]
+    if not requetes:
+        return []
+    liste = "\n".join(f"- {r}" for r in requetes)
+    prompt = (
+        f"Entreprise : {(nom or '').strip()[:120]}{' - ' + ville.strip() if (ville or '').strip() else ''}\n"
+        + (f"Extrait de son site (activité, vocabulaire) :\n{(contexte_site or '')[:2500]}\n\n" if (contexte_site or '').strip() else "\n")
+        + "Voici des recherches Google pour lesquelles le site de cette entreprise apparaît déjà, mais trop bas. Pour chacune, propose le titre et la description d'un article de blog "
+        "qui répond précisément à la recherche.\n" + liste + "\n\n"
+        "Règles : titre de 60 caractères au plus avec la recherche (ou sa formulation naturelle) au début ; description Google de 120 à 155 caractères qui donne envie de cliquer ; "
+        "angle : une phrase sur ce que l'article apporte au lecteur. Aucun prix, chiffre, année, certification ni délai inventé. Cite la ville seulement si elle est naturelle. "
+        "Français soigné, ton direct et concret, jamais de formule d'IA (« dans un monde où », « plongez dans », « n'hésitez pas à »), pas de tiret cadratin, pas d'emoji. "
+        "Renvoie exactement la recherche telle qu'elle est écrite dans le champ requete."
+    )
+    donnees = _json_claude(prompt, SCHEMA_TITRES_REQUETES, 2500)
+    attendues = {r.lower(): r for r in requetes}
+    sortie = []
+    for entree in donnees.get("titres", []):
+        requete = attendues.get(str(entree.get("requete", "")).strip().lower())
+        if not requete or any(s["requete"] == requete for s in sortie):
+            continue
+        sortie.append({
+            "requete": requete, "titre": _nettoyer_texte_genere(str(entree.get("titre", "")))[:70], "meta": _nettoyer_texte_genere(str(entree.get("meta", "")))[:165],
+            "angle": _nettoyer_texte_genere(str(entree.get("angle", "")))[:220],
+        })
+    return sortie

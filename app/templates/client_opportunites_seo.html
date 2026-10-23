@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}Opportunités SEO — {{ client.nom }} — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à {{ client.nom }}</a></p>
+<h1>Opportunités SEO — {{ client.nom }}</h1>
+<p class="texte-discret">
+  Outil de travail de l'agence (rien de tout ça n'est montré au client). Deux analyses, sans abonnement en plus : les recherches pour lesquelles le site est
+  <b>presque en page 1</b>, et l'<b>état des pages du site</b>.
+</p>
+
+<h2>1. Recherches presque en page 1</h2>
+<p class="texte-discret">
+  Les recherches pour lesquelles Google affiche déjà le site, mais trop bas (bas de la page 1 ou page 2). Elles sont classées par visites supplémentaires possibles
+  (estimation à partir des taux de clic habituels, pas une promesse). Données de la Search Console sur 90 jours ; le nom de l'entreprise est exclu.
+</p>
+{% if not client.search_console_site %}
+<p class="texte-vide">Ce client n'est pas rattaché à la Search Console : fais-le dans « Search Console (site web) » de <a href="/clients/{{ client.id }}">sa fiche</a>.</p>
+{% else %}
+<div class="actions-avis">
+  <button type="button" id="bouton-recherches" class="bouton"><span class="spinner" id="spinner-recherches" hidden></span> 🎯 Analyser les recherches</button>
+  <button type="button" id="bouton-titres" class="bouton-secondaire" hidden><span class="spinner" id="spinner-titres" hidden></span> 💡 Proposer titre et description (8 premières)</button>
+</div>
+<p id="message-recherches" class="texte-vide" hidden></p>
+<div id="resultat-recherches" hidden></div>
+{% endif %}
+
+<h2>2. État des pages du site</h2>
+<p class="texte-discret">
+  Parcourt le site (30 pages au plus) et repère ce qui freine son référencement : titres, descriptions, titre principal, texte trop court, images sans description,
+  liens cassés, plan du site. Compte environ 30 secondes.
+</p>
+<p class="texte-discret">Site analysé : <b>{{ site_propose or "adresse inconnue : renseigne-la dans le contrôle technique IA du client" }}</b></p>
+<div class="actions-avis">
+  <button type="button" id="bouton-pages" class="bouton"><span class="spinner" id="spinner-pages" hidden></span> 🔎 Analyser les pages du site</button>
+</div>
+<p id="message-pages" class="texte-vide" hidden></p>
+<div id="resultat-pages" hidden></div>
+
+<style>
+  .opp-badge { display: inline-block; border-radius: 99px; padding: 0 .55rem; font-size: .78rem; font-weight: 600; margin-right: .3rem; }
+  .opp-grave { background: #fde8e8; color: #9b1c1c; }
+  .opp-moyen { background: #fff3d6; color: #8a5a00; }
+  .opp-leger { background: #e7eefc; color: #1a4fa0; }
+  .opp-gain { font-weight: 700; color: #137333; white-space: nowrap; }
+  .opp-titre-propose { background: var(--fond-carte, #f6f8ff); border-radius: 8px; padding: .4rem .6rem; margin-top: .35rem; font-size: .9rem; }
+  .opp-liste { margin: .2rem 0 .2rem 1.1rem; padding: 0; }
+  .opp-liste li { margin: .15rem 0; }
+  .opp-pages-details { border: 1px solid var(--bordure, #d9dce3); border-radius: 10px; padding: .4rem .8rem; margin: .5rem 0; }
+  .opp-pages-details summary { cursor: pointer; font-weight: 600; }
+  .opp-url { color: var(--texte-discret, #5f6368); font-weight: 400; font-size: .85rem; word-break: break-all; }
+</style>
+
+<script>
+(function () {
+  const CLIENT = {{ client.id }};
+  const LIBELLES_NIVEAU = { grave: "Grave", moyen: "À corriger", leger: "Détail" };
+  const $ = (id) => document.getElementById(id);
+  const el = (balise, texte, classe) => { const e = document.createElement(balise); if (texte !== undefined && texte !== null) e.textContent = texte; if (classe) e.className = classe; return e; };
+  const dire = (id, texte) => { const m = $(id); m.hidden = !texte; m.textContent = texte || ""; };
+  const post = async (chemin, corps) => {
+    const r = await fetch(chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps || {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.message || d.erreur || "Échec.");
+    return d;
+  };
+  const adresseCourte = (u) => { try { const a = new URL(u); return a.pathname === "/" ? a.hostname : a.pathname; } catch (e) { return u; } };
+
+  // ---------- 1. recherches presque en page 1
+  let opportunites = [];
+  function lienArticle(o) {
+    return "/publication-multi?client_id=" + CLIENT + "&sujet=" + encodeURIComponent(o.requete) + "&mot_cle=" + encodeURIComponent(o.requete);
+  }
+  function dessinerRecherches(d) {
+    const zone = $("resultat-recherches"); zone.replaceChildren();
+    opportunites = d.opportunites || [];
+    const r = d.resume || {};
+    zone.appendChild(el("p", `Du ${d.periode.debut} au ${d.periode.fin} : ${r.nb} opportunité(s), soit environ ${r.gain_total} visite(s) en plus possibles sur la période. ${r.nb_articles} appellent un article, les autres une retouche de page.` + (r.ecartees_marque ? ` (${r.ecartees_marque} recherche(s) sur le nom de l'entreprise ignorée(s).)` : "")));
+    if (!opportunites.length) { zone.appendChild(el("p", "Aucune opportunité nette pour le moment : le site manque encore d'affichages, ou ses recherches sont déjà bien placées.", "texte-vide")); zone.hidden = false; $("bouton-titres").hidden = true; return; }
+    const tableau = el("table", null, "tableau-historique");
+    const tete = el("tr"); ["Recherche", "Position", "Affichages", "Clics", "Visites en plus", "Que faire"].forEach((t) => tete.appendChild(el("th", t)));
+    tableau.appendChild(el("thead")).appendChild(tete);
+    const corps = el("tbody");
+    opportunites.forEach((o, i) => {
+      const ligne = el("tr"); ligne.dataset.i = i;
+      const c1 = el("td"); c1.appendChild(el("b", o.requete)); if (o.page) c1.appendChild(el("div", adresseCourte(o.page), "opp-url"));
+      c1.appendChild(el("div", d.libelles[o.categorie] || "", "texte-discret"));
+      ligne.appendChild(c1);
+      ligne.appendChild(el("td", String(o.position).replace(".", ",")));
+      ligne.appendChild(el("td", String(o.impressions)));
+      ligne.appendChild(el("td", String(o.clics)));
+      ligne.appendChild(el("td", "+" + o.gain, "opp-gain"));
+      const c6 = el("td"); c6.appendChild(el("div", o.conseil));
+      const actions = el("div", null, "actions-avis"); actions.style.marginTop = ".3rem";
+      if (o.action === "article") { const a = el("a", "✍️ Écrire l'article", "bouton-secondaire bouton-mini"); a.href = lienArticle(o); a.target = "_blank"; a.rel = "noopener"; actions.appendChild(a); }
+      c6.appendChild(actions);
+      const prop = el("div", null, "opp-titre-propose"); prop.hidden = true; prop.id = "prop-" + i; c6.appendChild(prop);
+      ligne.appendChild(c6);
+      corps.appendChild(ligne);
+    });
+    tableau.appendChild(corps);
+    const conteneur = el("div", null, "conteneur-tableau"); conteneur.appendChild(tableau); zone.appendChild(conteneur);
+    if ((d.pages || []).length) {
+      zone.appendChild(el("h3", "Pages à retravailler en priorité"));
+      const liste = el("ul", null, "opp-liste");
+      d.pages.forEach((p) => liste.appendChild(el("li", `${adresseCourte(p.page)} : +${p.gain} visite(s) possibles (${p.requetes.slice(0, 4).join(", ")})`)));
+      zone.appendChild(liste);
+    }
+    zone.hidden = false;
+    $("bouton-titres").hidden = !opportunites.some((o) => o.action === "article");
+  }
+  const boutonRecherches = $("bouton-recherches");
+  if (boutonRecherches) boutonRecherches.addEventListener("click", async () => {
+    boutonRecherches.disabled = true; $("spinner-recherches").hidden = false; dire("message-recherches", "Lecture de la Search Console...");
+    try { const d = await post("/clients/" + CLIENT + "/opportunites-seo/recherches"); dire("message-recherches", ""); dessinerRecherches(d); }
+    catch (e) { dire("message-recherches", e.message); }
+    finally { boutonRecherches.disabled = false; $("spinner-recherches").hidden = true; }
+  });
+  const boutonTitres = $("bouton-titres");
+  if (boutonTitres) boutonTitres.addEventListener("click", async () => {
+    const cibles = opportunites.map((o, i) => [o, i]).filter(([o]) => o.action === "article").slice(0, 8);
+    boutonTitres.disabled = true; $("spinner-titres").hidden = false; dire("message-recherches", "Rédaction des titres...");
+    try {
+      const d = await post("/clients/" + CLIENT + "/opportunites-seo/titres", { requetes: cibles.map(([o]) => o.requete) });
+      dire("message-recherches", "");
+      (d.titres || []).forEach((t) => {
+        const cible = cibles.find(([o]) => o.requete.toLowerCase() === t.requete.toLowerCase()); if (!cible) return;
+        const zone = $("prop-" + cible[1]); zone.replaceChildren();
+        zone.appendChild(el("div")).appendChild(el("b", "Titre : ")).after(document.createTextNode(t.titre));
+        zone.appendChild(el("div", "Description Google : " + t.meta));
+        if (t.angle) zone.appendChild(el("div", "Angle : " + t.angle, "texte-discret"));
+        zone.hidden = false;
+      });
+    } catch (e) { dire("message-recherches", e.message); }
+    finally { boutonTitres.disabled = false; $("spinner-titres").hidden = true; }
+  });
+
+  // ---------- 2. etat des pages du site
+  function badge(niveau) { return el("span", LIBELLES_NIVEAU[niveau] || niveau, "opp-badge opp-" + niveau); }
+  function dessinerPages(d) {
+    const zone = $("resultat-pages"); zone.replaceChildren();
+    const r = d.resume || {};
+    const carte = el("div", null, "grille-insights");
+    const bloc = el("div", null, "carte-insight " + (d.score >= 70 ? "carte-insight-positive" : "carte-insight-attention"));
+    bloc.appendChild(el("span", "🛠", "insight-icone"));
+    const texte = el("div"); texte.appendChild(el("span", "État du site", "insight-titre")); texte.appendChild(el("span", `${d.score} / 100`, "insight-detail")); bloc.appendChild(texte);
+    carte.appendChild(bloc); zone.appendChild(carte);
+    zone.appendChild(el("p", `${d.url} : ${r.nb_pages} page(s) analysée(s)` + (d.date ? ` le ${d.date}` : "") + `. ${r.grave || 0} problème(s) grave(s), ${r.moyen || 0} à corriger, ${r.leger || 0} détail(s).`, "texte-discret"));
+    if ((d.points_forts || []).length) {
+      zone.appendChild(el("h3", "Ce qui va bien"));
+      const liste = el("ul", null, "opp-liste"); d.points_forts.forEach((t) => liste.appendChild(el("li", "✅ " + t))); zone.appendChild(liste);
+    }
+    if ((d.problemes_globaux || []).length) {
+      zone.appendChild(el("h3", "Sur l'ensemble du site"));
+      const liste = el("ul", null, "opp-liste");
+      d.problemes_globaux.forEach((p) => { const li = el("li"); li.appendChild(badge(p.niveau)); li.appendChild(el("b", p.message + " ")); li.appendChild(document.createTextNode(p.conseil)); liste.appendChild(li); });
+      zone.appendChild(liste);
+    }
+    zone.appendChild(el("h3", "Page par page (les plus à corriger d'abord)"));
+    let ouvertes = 0;
+    (d.pages || []).forEach((p) => {
+      const details = el("details", null, "opp-pages-details"); if (p.problemes.length && ouvertes < 3) { details.open = true; ouvertes += 1; }
+      const resume = el("summary"); resume.appendChild(el("span", `${adresseCourte(p.url)} `)); resume.appendChild(el("span", p.problemes.length ? `(${p.problemes.length} point(s))` : "(rien à signaler)", "opp-url"));
+      details.appendChild(resume);
+      details.appendChild(el("div", `Titre : ${p.titre || "(aucun)"} · ${p.mots || 0} mots · ${(p.h1 || []).length} H1`, "texte-discret"));
+      if (p.problemes.length) {
+        const liste = el("ul", null, "opp-liste");
+        p.problemes.forEach((pb) => { const li = el("li"); li.appendChild(badge(pb.niveau)); li.appendChild(el("b", pb.message + " ")); li.appendChild(document.createTextNode(pb.conseil)); liste.appendChild(li); });
+        details.appendChild(liste);
+      }
+      zone.appendChild(details);
+    });
+    zone.hidden = false;
+  }
+  const analyseEnregistree = {{ analyse | tojson if analyse else "null" }};
+  if (analyseEnregistree) dessinerPages(analyseEnregistree);
+  $("bouton-pages").addEventListener("click", async () => {
+    $("bouton-pages").disabled = true; $("spinner-pages").hidden = false; dire("message-pages", "Analyse du site en cours (environ 30 secondes)...");
+    try { const d = await post("/clients/" + CLIENT + "/opportunites-seo/pages"); dire("message-pages", ""); dessinerPages(d); }
+    catch (e) { dire("message-pages", e.message); }
+    finally { $("bouton-pages").disabled = false; $("spinner-pages").hidden = true; }
+  });
+})();
+</script>
+{% endblock %}

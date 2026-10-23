@@ -2822,4 +2822,16 @@
     });
   })();
 </script>
+<script>
+  // Sujet et mot-cle pre-remplis depuis une autre page (ex. Opportunites SEO) : /publication-multi?client_id=..&sujet=..&mot_cle=..
+  (function () {
+    const p = new URLSearchParams(window.location.search);
+    const sujet = (p.get("sujet") || "").slice(0, 300), motCle = (p.get("mot_cle") || "").slice(0, 120);   // prefill-sujet
+    if (!sujet && !motCle) return;
+    const theme = document.getElementById("theme-ia"), cle = document.getElementById("seo-mot-cle");
+    if (theme && sujet) theme.value = sujet;
+    if (cle && motCle) cle.value = motCle;
+    if (theme) theme.scrollIntoView({ block: "center" });
+  })();
+</script>
 {% endblock %}
