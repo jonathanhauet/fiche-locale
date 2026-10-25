@@ -83,6 +83,38 @@ def _periode_publication_cible() -> str:
     annee_suivante = aujourdhui.year if aujourdhui.month < 12 else aujourdhui.year + 1
     return f"{LIBELLES_MOIS[mois_suivant - 1]} {annee_suivante}"
 
+# Saison et reperes du moment (France et Belgique, hemisphere nord), pour que le sujet, les exemples et les conseils des textes generes correspondent a la periode reelle.
+REPERES_MOIS = {
+    1: ("hiver", "debut d'annee, froid et gel, soldes d'hiver, bonnes resolutions"),
+    2: ("hiver", "fin d'hiver, vacances de fevrier, Saint-Valentin, premiers signes du printemps"),
+    3: ("fin d'hiver et debut de printemps", "changement d'heure fin mars, grand nettoyage de printemps, jours qui rallongent"),
+    4: ("printemps", "Paques, jardin, premiers beaux jours, giboulees"),
+    5: ("printemps", "ponts de mai, fete des meres, beaux jours"),
+    6: ("debut d'ete", "premieres chaleurs, fete des peres, fin d'annee scolaire, debut des vacances"),
+    7: ("ete", "chaleur, vacances d'ete, soldes d'ete"),
+    8: ("ete", "vacances, rentree qui approche"),
+    9: ("debut d'automne", "rentree, retour a la routine, jours qui raccourcissent"),
+    10: ("automne", "jours qui raccourcissent, fraicheur et pluie, changement d'heure fin octobre, vacances de la Toussaint, debut de la saison de chauffe"),
+    11: ("automne", "Toussaint, premiers froids, preparation de Noel, Black Friday fin novembre"),
+    12: ("hiver", "Noel et fetes de fin d'annee, froid, bilan de l'annee"),
+}
+
+
+def contexte_temporel(aujourdhui: date = None) -> str:
+    """Date du jour, saison et consigne de coherence saisonniere, a placer en tete des prompts qui redigent un contenu publie."""
+    aujourdhui = aujourdhui or date.today()
+    saison, reperes = REPERES_MOIS[aujourdhui.month]
+    return (
+        f"Nous sommes le {aujourdhui.strftime('%d/%m/%Y')} - utilise cette date comme repere temporel reel (n'ecris jamais une annee anterieure par reflexe). "
+        f"Periode : {saison} ({LIBELLES_MOIS[aujourdhui.month - 1]}), en France et en Belgique. Reperes du moment : {reperes}.\n"
+        "COHERENCE SAISONNIERE : ce contenu sera lu dans les jours qui viennent. Le sujet, les exemples et les conseils doivent convenir a CETTE periode : "
+        "n'evoque jamais une saison, une meteo ou un evenement qui n'est pas celui du moment (pas de canicule, de forte chaleur ni de vacances d'ete en automne ou en hiver ; "
+        "pas de neige ni de verglas en ete...). Pour une activite saisonniere (climatisation, chauffage, jardin, piscine, etc.), choisis l'angle qui correspond a la periode : "
+        "preparer la saison qui arrive ou entretenir apres celle qui s'acheve, jamais promouvoir la saison opposee comme si elle etait la. "
+        "Si aucun lien avec la periode n'est naturel pour le sujet, n'en evoque aucune."
+    )
+
+
 # Chaque module qui a besoin de .env le charge lui-meme : on ne peut pas
 # compter sur l'ordre des imports pour garantir que main.py l'a deja fait.
 load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
@@ -135,7 +167,8 @@ def _construire_prompt(
         f"septembre 2026 », « en septembre 2026 »...) - ca sonne artificiel. Prefere des "
         f"formulations naturelles et indirectes (« cette rentree », « a l'approche de "
         f"l'hiver », « ces prochaines semaines »...), ou n'evoque tout simplement aucune "
-        f"periode si ce n'est pas naturel pour ce post."
+        f"periode si ce n'est pas naturel pour ce post. COHERENCE SAISONNIERE : aucun sujet, exemple ni conseil ne doit evoquer une saison, une meteo ou un "
+        f"evenement qui ne correspond pas a cette periode (pas de canicule en automne, pas de neige en ete)."
     )
 
     instruction_deja_traites = ""
@@ -390,6 +423,7 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
     bloc_theme, bloc_reference = _blocs_theme_et_reference(theme, contenu_site_reference)
 
     prompt = (
+        f"{contexte_temporel()}\n"
         "Tu rediges un post Google Business Profile (Google Posts) destine a etre publie "
         "tel quel sur plusieurs fiches d'etablissements differents, potentiellement situes "
         "dans des villes ou regions differentes (pas un seul client precis).\n"
@@ -528,8 +562,7 @@ def generer_post_expert(
     )
 
     prompt = (
-        f"Nous sommes le {date.today().strftime('%d/%m/%Y')} - utilise cette date comme repere "
-        "temporel reel (n'ecris jamais une annee anterieure par reflexe).\n"
+        f"{contexte_temporel()}\n"
         "Tu rediges un post pour les reseaux sociaux et "
         "Google Business Profile d'un expert reconnu dans son domaine, a savoir le "
         f"{_specialite_auteur(nom_client)}. L'objectif n'est PAS d'informer platement, mais de construire une "
@@ -773,8 +806,7 @@ def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expe
     )
 
     prompt = (
-        f"Nous sommes le {date.today().strftime('%d/%m/%Y')} - utilise cette date comme repere "
-        "temporel reel (n'ecris jamais une annee anterieure par reflexe).\n"
+        f"{contexte_temporel()}\n"
         "Tu transformes une reponse orale dictee (transcription automatique, donc parfois "
         "hesitante ou mal structuree) de l'auteur de la fiche en un post structure pour les "
         "reseaux sociaux.\n"
@@ -1057,6 +1089,7 @@ def suggerer_sujets_evergreen(
         bloc_deja_traites = f"\nSujets deja traites recemment (evite de reformuler un angle trop proche) :\n{liste}\n"
 
     prompt = (
+        f"{contexte_temporel()}\n"
         f"Propose {nombre} sujets de post pour un expert, dans le domaine suivant : le "
         f"{_specialite_auteur(nom_client)}, qui veut publier regulierement pour construire sa visibilite - "
         "meme les jours ou il n'y a pas d'actualite fraiche sur ces sujets precis.\n"
@@ -1106,6 +1139,7 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
     bloc_theme, bloc_reference = _blocs_theme_et_reference(theme, contenu_site_reference)
 
     prompt = (
+        f"{contexte_temporel()}\n"
         f"Redige {nombre_posts} propositions DIFFERENTES de post Google Business Profile "
         "(Google Posts), chacune destinee a etre publiee telle quelle sur plusieurs fiches "
         "d'etablissements differents, potentiellement situes dans des villes ou regions "
@@ -1956,8 +1990,7 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
                           "et les repetitions. N'inclus aucun nom de client final, numero de telephone ni plaque d'immatriculation cites dans ces paroles.")
     phrase_autres_liens = "Hors des liens internes autorises, n'utilise aucun autre lien." if pages else "N'utilise aucun autre lien."
     prompt = (
-        f"Nous sommes le {date.today().strftime('%d/%m/%Y')} (repere temporel reel, n'ecris jamais une annee "
-        "anterieure par reflexe).\n"
+        f"{contexte_temporel()}\n"
         "Redige un article de blog complet, en francais, pour le site de l'entreprise decrite ci-dessous, a "
         "partir de ce sujet ou de ce texte de base :\n\n"
         f"\"{sujet.strip()}\"\n"
@@ -2365,7 +2398,7 @@ def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4) -> dic
 
     bloc_contexte = f"\nContexte sur l'entreprise (site web, voix de l'auteur) :\n{contexte.strip()[:5000]}\n" if contexte.strip() else ""
     prompt = (
-        f"Nous sommes le {date.today().strftime('%d/%m/%Y')}.\n"
+        f"{contexte_temporel()}\n"
         "Redige le texte d'un carrousel pour les reseaux sociaux (Instagram, LinkedIn), en francais, pour "
         "l'entreprise decrite ci-dessous, a partir de ce sujet ou de ce texte de base :\n\n"
         f"\"{sujet.strip()}\"\n"
@@ -3708,6 +3741,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
     if structure and nb_photos < structure["photos_min"]:
         raise ValueError("Ce modèle demande au moins " + ("2 photos : la 1re avant, la 2e après." if modele == "avant_apres" else "1 photo du chantier."))
     prompt = (
+        f"{contexte_temporel()}\n\n"
         "Tu écris le scénario d'une courte vidéo de motion design (aucun tournage : texte animé, formes, chiffres, couleurs), pour les réseaux "
         "sociaux, au format Reel. Elle est montrée au client lui-même : elle doit le valoriser.\n\n"
         f"Entreprise : {nom or '(à déduire du brief)'}{' - ' + ville if ville else ''}\n"
@@ -3912,6 +3946,7 @@ def suggerer_articles_par_categorie(contexte_client: str, ville: str, categories
         lignes.append(f"- {c['id']} : {c['nom']} ({c.get('nombre', 0)} article(s))" + (" - titres existants : " + " | ".join(titres) if titres else " - aucun article pour l'instant"))
     autres = [a["titre"] for a in articles][:40]
     prompt = (
+        f"{contexte_temporel()}\nLes idees doivent convenir a la periode actuelle.\n\n"
         f"Contexte de l'entreprise :\n{(contexte_client or '').strip()[:2500]}\n" + (f"Zone principale : {ville.strip()[:80]}\n" if (ville or "").strip() else "") +
         "\nCatégories du blog de son site, de la moins fournie à la plus fournie :\n" + "\n".join(lignes[:40]) + "\n\n"
         f"Tous les titres déjà publiés (ne pas les répéter, même reformulés) :\n" + "\n".join(f"- {t}" for t in autres) + "\n\n"
