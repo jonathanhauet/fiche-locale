@@ -28,170 +28,69 @@
           <ul id="resultats-recherche-globale-clients" class="resultats-recherche-ville" hidden></ul>
         </div>
         <script id="donnees-recherche-globale-clients" type="application/json">{{ clients_json_recherche_globale()|safe }}</script>
+        {# Menu : un groupe = (identifiant, icone, titre, [(adresse, page_actuelle, icone, libelle, nouvel_onglet)]). Un seul groupe ouvert a la fois. #}
+        {% set groupes_menu = [
+          ("fiches-clients", "👥", "Fiches clients", [
+            ("/", "clients", "◧", "Clients", false), ("/alertes", "alertes", "🔔", "Alertes", false), ("/acces", "acces", "🔑", "Accès fiches", false),
+            ("/espaces", "espaces", "🏢", "Espaces", false), ("/etiquettes", "etiquettes", "🏷", "Étiquettes", false), ("/historique", "historique", "⟲", "Historique", false)]),
+          ("publier", "📣", "Publier", [
+            ("/publication-multi", "publication_multi", "🌐", "Publication multi-réseaux", false), ("/posts", "posts", "▤", "Posts en masse", false),
+            ("/horaires-exceptionnelles", "horaires_exceptionnelles", "🕒", "Horaires exceptionnels", false), ("/idees-vocales", "idees_vocales", "🎙️", "Idées vocales", false)]),
+          ("video-creation", "🎬", "Vidéo & création", [
+            ("/scripts-video", "scripts_video", "🎬", "Scripts vidéo (IA)", false), ("/montage-video", "montage_video", "🎞️", "Montage vidéo (IA)", false),
+            ("/video-motion", "video_motion", "✨", "Vidéo motion design (IA)", false), ("/personnage-bd", "personnage_bd", "🧑‍🎨", "Mon personnage BD", false),
+            ("/musiques", "musiques", "🎵", "Musiques", false), ("/creations", "creations", "🗂️", "Créations par client", false),
+            ("/videos", "videos", "📚", "Vidéos montées", false), ("/qr-code", "", "▦", "Créateur de QR codes", true)]),
+          ("suivi-rapports", "📊", "Suivi & rapports", [
+            ("/positions", "positions", "📍", "Positions", false), ("/mots-cles", "mots_cles", "🔎", "Mots-clés", false),
+            ("/performance-articles", "performance_articles", "📝", "Performance des articles", false), ("/bilan", "bilan", "📊", "Bilan", false),
+            ("/reporting", "reporting", "📊", "Reporting mensuel", false), ("/recaps", "recaps", "📧", "Récap mensuel", false), ("/photos-fiches", "photos_fiches", "🖼️", "Audit des photos", false)]),
+          ("avis", "⭐", "Avis", [
+            ("/avis", "avis", "★", "Avis", false), ("/avis/comparatif", "avis_comparatif", "📊", "Comparatif avis", false)]),
+          ("prospection", "🎯", "Prospection", [
+            ("/prospection", "prospection", "🎯", "Prospection", false), ("/prospection/test-geo", "prospection_geo", "🤖", "Test GEO (IA)", false), ("/leads", "leads", "📇", "Leads", false)]),
+          ("reglages", "⚙", "Comptes & sécurité", [
+            ("/google/comptes", "comptes_google", "⚙", "Comptes Google", false), ("/meta/comptes", "comptes_meta", "📘", "Comptes Meta", false),
+            ("/instagram/comptes", "comptes_instagram", "📷", "Comptes Instagram", false), ("/linkedin/comptes", "comptes_linkedin", "💼", "Comptes LinkedIn", false),
+            ("/youtube/comptes", "comptes_youtube", "▶", "Comptes YouTube", false), ("/parametres/securite", "securite", "🔒", "Sécurité", false)]),
+        ] %}
+        {% set nb_suspects = nb_changements_suspects() %}
         <nav class="nav-laterale">
-          <div class="groupe-nav" data-groupe="fiches-clients" data-defaut="ouvert">
-            <button type="button" class="titre-groupe-nav">Fiches clients <span class="fleche-groupe-nav">▾</span></button>
+          {% for id_groupe, icone_groupe, titre_groupe, liens_groupe in groupes_menu %}
+          <div class="groupe-nav" data-groupe="{{ id_groupe }}" data-defaut="{{ 'ouvert' if loop.first else 'ferme' }}">
+            <button type="button" class="titre-groupe-nav" aria-expanded="false"><span class="icone-groupe-nav">{{ icone_groupe }}</span><span class="texte-groupe-nav">{{ titre_groupe }}</span>
+              {% if id_groupe == "fiches-clients" and nb_suspects %}<span class="badge-notification badge-groupe-nav" title="{{ nb_suspects }} changement{{ 's' if nb_suspects != 1 else '' }} suspect{{ 's' if nb_suspects != 1 else '' }} à valider">{{ nb_suspects }}</span>{% endif %}
+              <span class="fleche-groupe-nav">▾</span></button>
             <div class="liens-groupe-nav">
-              <a href="/" class="{{ 'lien-actif' if page_actuelle == 'clients' else '' }}">
-                <span class="nav-icone">◧</span> Clients
+              {% for adresse, page, icone, libelle, nouvel_onglet in liens_groupe %}
+              <a href="{{ adresse }}"{% if nouvel_onglet %} target="_blank" rel="noopener"{% endif %} class="{{ 'lien-actif' if page and page_actuelle == page else '' }}">
+                <span class="nav-icone">{{ icone }}</span> {{ libelle }}
+                {% if page == "alertes" and nb_suspects %}<span class="badge-notification" title="{{ nb_suspects }} changement{{ 's' if nb_suspects != 1 else '' }} suspect{{ 's' if nb_suspects != 1 else '' }} à valider">{{ nb_suspects }}</span>{% endif %}
               </a>
-              <a href="/alertes" class="{{ 'lien-actif' if page_actuelle == 'alertes' else '' }}">
-                <span class="nav-icone">🔔</span> Alertes
-                {% set nb_suspects = nb_changements_suspects() %}
-                {% if nb_suspects %}
-                <span class="badge-notification" title="{{ nb_suspects }} changement{{ 's' if nb_suspects != 1 else '' }} suspect{{ 's' if nb_suspects != 1 else '' }} a valider">{{ nb_suspects }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+          {% set solde = solde_dataforseo() %}
+          <div class="groupe-nav bloc-liens-plateformes" data-groupe="credits" data-defaut="ferme">
+            <button type="button" class="titre-groupe-nav" aria-expanded="false"><span class="icone-groupe-nav">💳</span><span class="texte-groupe-nav">Comptes &amp; crédits</span>
+              {% if solde.bas %}<span class="badge-notification badge-groupe-nav" title="Solde DataForSEO bas">!</span>{% endif %}
+              <span class="fleche-groupe-nav">▾</span></button>
+            <div class="liens-groupe-nav">
+              {% for plateforme in liens_plateformes_paiement %}
+              <a href="{{ plateforme.url }}" target="_blank" rel="noopener" class="lien-plateforme">
+                <span>{{ plateforme.nom }}</span>
+                {% if plateforme.nom == "DataForSEO" and solde.valeur is not none %}
+                <span class="solde-plateforme{{ ' solde-bas' if solde.bas else '' }}">{{ "%.2f"|format(solde.valeur) }} $</span>
                 {% endif %}
               </a>
-              <a href="/acces" class="{{ 'lien-actif' if page_actuelle == 'acces' else '' }}">
-                <span class="nav-icone">🔑</span> Accès fiches
-              </a>
-              <a href="/historique" class="{{ 'lien-actif' if page_actuelle == 'historique' else '' }}">
-                <span class="nav-icone">⟲</span> Historique
-              </a>
-              <a href="/etiquettes" class="{{ 'lien-actif' if page_actuelle == 'etiquettes' else '' }}">
-                <span class="nav-icone">🏷</span> Étiquettes
-              </a>
-              <a href="/espaces" class="{{ 'lien-actif' if page_actuelle == 'espaces' else '' }}">
-                <span class="nav-icone">🏢</span> Espaces
-              </a>
-            </div>
-          </div>
-
-          <div class="groupe-nav" data-groupe="contenu-visibilite" data-defaut="ferme">
-            <button type="button" class="titre-groupe-nav">Contenu &amp; visibilité <span class="fleche-groupe-nav">▾</span></button>
-            <div class="liens-groupe-nav">
-              <a href="/posts" class="{{ 'lien-actif' if page_actuelle == 'posts' else '' }}">
-                <span class="nav-icone">▤</span> Posts en masse
-              </a>
-              <a href="/publication-multi" class="{{ 'lien-actif' if page_actuelle == 'publication_multi' else '' }}">
-                <span class="nav-icone">🌐</span> Publication multi-réseaux
-              </a>
-              <a href="/horaires-exceptionnelles" class="{{ 'lien-actif' if page_actuelle == 'horaires_exceptionnelles' else '' }}">
-                <span class="nav-icone">🕒</span> Horaires exceptionnels
-              </a>
-              <a href="/positions" class="{{ 'lien-actif' if page_actuelle == 'positions' else '' }}">
-                <span class="nav-icone">📍</span> Positions
-              </a>
-              <a href="/mots-cles" class="{{ 'lien-actif' if page_actuelle == 'mots_cles' else '' }}">
-                <span class="nav-icone">🔎</span> Mots-clés
-              </a>
-              <a href="/performance-articles" class="{{ 'lien-actif' if page_actuelle == 'performance_articles' else '' }}">
-                <span class="nav-icone">📝</span> Performance des articles
-              </a>
-              <a href="/bilan" class="{{ 'lien-actif' if page_actuelle == 'bilan' else '' }}">
-                <span class="nav-icone">📊</span> Bilan
-              </a>
-              <a href="/reporting" class="{{ 'lien-actif' if page_actuelle == 'reporting' else '' }}">
-                <span class="nav-icone">📊</span> Reporting mensuel
-              </a>
-              <a href="/photos-fiches" class="{{ 'lien-actif' if page_actuelle == 'photos_fiches' else '' }}">
-                <span class="nav-icone">🖼️</span> Audit des photos
-              </a>
-              <a href="/recaps" class="{{ 'lien-actif' if page_actuelle == 'recaps' else '' }}">
-                <span class="nav-icone">📧</span> Récap mensuel
-              </a>
-              <a href="/idees-vocales" class="{{ 'lien-actif' if page_actuelle == 'idees_vocales' else '' }}">
-                <span class="nav-icone">🎙️</span> Idées vocales
-              </a>
-              <a href="/scripts-video" class="{{ 'lien-actif' if page_actuelle == 'scripts_video' else '' }}">
-                <span class="nav-icone">🎬</span> Scripts vidéo (IA)
-              </a>
-              <a href="/montage-video" class="{{ 'lien-actif' if page_actuelle == 'montage_video' else '' }}">
-                <span class="nav-icone">🎞️</span> Montage vidéo (IA)
-              </a>
-              <a href="/video-motion" class="{{ 'lien-actif' if page_actuelle == 'video_motion' else '' }}">
-                <span class="nav-icone">✨</span> Vidéo motion design (IA)
-              </a>
-              <a href="/personnage-bd" class="{{ 'lien-actif' if page_actuelle == 'personnage_bd' else '' }}">
-                <span class="nav-icone">🧑‍🎨</span> Mon personnage BD
-              </a>
-              <a href="/creations" class="{{ 'lien-actif' if page_actuelle == 'creations' else '' }}">
-                <span class="nav-icone">🗂️</span> Créations par client
-              </a>
-              <a href="/videos" class="{{ 'lien-actif' if page_actuelle == 'videos' else '' }}">
-                <span class="nav-icone">📚</span> Vidéos montées
-              </a>
-              <a href="/qr-code" target="_blank" rel="noopener">
-                <span class="nav-icone">▦</span> Créateur de QR codes
-              </a>
-            </div>
-          </div>
-
-          <div class="groupe-nav" data-groupe="avis" data-defaut="ouvert">
-            <button type="button" class="titre-groupe-nav">Avis <span class="fleche-groupe-nav">▾</span></button>
-            <div class="liens-groupe-nav">
-              <a href="/avis" class="{{ 'lien-actif' if page_actuelle == 'avis' else '' }}">
-                <span class="nav-icone">★</span> Avis
-              </a>
-              <a href="/avis/comparatif" class="{{ 'lien-actif' if page_actuelle == 'avis_comparatif' else '' }}">
-                <span class="nav-icone">📊</span> Comparatif avis
-              </a>
-            </div>
-          </div>
-
-          <div class="groupe-nav" data-groupe="prospection" data-defaut="ferme">
-            <button type="button" class="titre-groupe-nav">Prospection <span class="fleche-groupe-nav">▾</span></button>
-            <div class="liens-groupe-nav">
-              <a href="/prospection" class="{{ 'lien-actif' if page_actuelle == 'prospection' else '' }}">
-                <span class="nav-icone">🎯</span> Prospection
-              </a>
-              <a href="/prospection/test-geo" class="{{ 'lien-actif' if page_actuelle == 'prospection_geo' else '' }}">
-                <span class="nav-icone">🤖</span> Test GEO (IA)
-              </a>
-              <a href="/leads" class="{{ 'lien-actif' if page_actuelle == 'leads' else '' }}">
-                <span class="nav-icone">📇</span> Leads
-              </a>
-            </div>
-          </div>
-
-          <div class="groupe-nav" data-groupe="comptes-connectes" data-defaut="ferme">
-            <button type="button" class="titre-groupe-nav">Comptes connectés <span class="fleche-groupe-nav">▾</span></button>
-            <div class="liens-groupe-nav">
-              <a href="/google/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_google' else '' }}">
-                <span class="nav-icone">⚙</span> Comptes Google
-              </a>
-              <a href="/meta/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_meta' else '' }}">
-                <span class="nav-icone">📘</span> Comptes Meta
-              </a>
-              <a href="/instagram/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_instagram' else '' }}">
-                <span class="nav-icone">📷</span> Comptes Instagram
-              </a>
-              <a href="/linkedin/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_linkedin' else '' }}">
-                <span class="nav-icone">💼</span> Comptes LinkedIn
-              </a>
-              <a href="/youtube/comptes" class="{{ 'lien-actif' if page_actuelle == 'comptes_youtube' else '' }}">
-                <span class="nav-icone">▶</span> Comptes YouTube
-              </a>
-              <a href="/musiques" class="{{ 'lien-actif' if page_actuelle == 'musiques' else '' }}">
-                <span class="nav-icone">🎵</span> Musiques
-              </a>
-            </div>
-          </div>
-
-          <div class="groupe-nav" data-groupe="compte" data-defaut="ferme">
-            <button type="button" class="titre-groupe-nav">Compte <span class="fleche-groupe-nav">▾</span></button>
-            <div class="liens-groupe-nav">
-              <a href="/parametres/securite" class="{{ 'lien-actif' if page_actuelle == 'securite' else '' }}">
-                <span class="nav-icone">🔒</span> Sécurité
-              </a>
+              {% endfor %}
+              {% if solde.bas %}
+              <p class="texte-alerte-solde">⚠ Solde DataForSEO bas — pense à recharger.</p>
+              {% endif %}
             </div>
           </div>
         </nav>
-        <div class="bloc-liens-plateformes">
-          <p class="titre-liens-plateformes">Comptes &amp; crédits</p>
-          {% set solde = solde_dataforseo() %}
-          {% for plateforme in liens_plateformes_paiement %}
-          <a href="{{ plateforme.url }}" target="_blank" rel="noopener" class="lien-plateforme">
-            <span>{{ plateforme.nom }}</span>
-            {% if plateforme.nom == "DataForSEO" and solde.valeur is not none %}
-            <span class="solde-plateforme{{ ' solde-bas' if solde.bas else '' }}">{{ "%.2f"|format(solde.valeur) }} $</span>
-            {% endif %}
-          </a>
-          {% endfor %}
-          {% if solde.bas %}
-          <p class="texte-alerte-solde">⚠ Solde DataForSEO bas — pense à recharger.</p>
-          {% endif %}
-        </div>
         <a class="lien-deconnexion-barre" href="/deconnexion">Se déconnecter</a>
       </div>
     </aside>
@@ -211,34 +110,36 @@
     })();
   </script>
   <script>
-    // Groupes repliables du menu lateral : etat par defaut fixe par groupe
-    // (voir data-defaut), mais un clic manuel de l'utilisateur est retenu
-    // (localStorage) et prime sur ce defaut aux prochaines pages - sans ca,
-    // chaque navigation (page complete, pas une SPA) reinitialiserait le
-    // choix. Le groupe contenant la page actuelle s'ouvre toujours, meme si
-    // ferme par defaut/preference, pour ne jamais cacher où on se trouve.
+    // Menu lateral en accordeon : un seul groupe ouvert a la fois, pour que tout reste visible sans defiler. Au chargement s'ouvre le groupe qui
+    // contient la page actuelle ; sinon le dernier groupe ouvert a la main (localStorage), sinon le premier (voir data-defaut).
     (function () {
-      const CLE_STOCKAGE = "fiche-locale-groupes-nav";
-      let preferences = {};
+      const CLE_STOCKAGE = "fiche-locale-groupe-nav-ouvert";
+      const groupes = Array.from(document.querySelectorAll(".groupe-nav"));
+      if (!groupes.length) return;
+      let retenu = "";
       try {
-        preferences = JSON.parse(localStorage.getItem(CLE_STOCKAGE) || "{}");
+        retenu = localStorage.getItem(CLE_STOCKAGE) || "";
       } catch (erreur) {
-        preferences = {};
+        retenu = "";
       }
+      const actif = groupes.find((g) => g.querySelector(".lien-actif"));
+      const choisi = actif || groupes.find((g) => g.dataset.groupe === retenu) || groupes.find((g) => g.dataset.defaut === "ouvert") || groupes[0];
 
-      document.querySelectorAll(".groupe-nav").forEach((groupe) => {
-        const id = groupe.dataset.groupe;
-        const contientPageActive = !!groupe.querySelector(".lien-actif");
-        const ouvert = contientPageActive
-          || (id in preferences ? preferences[id] : groupe.dataset.defaut === "ouvert");
-        groupe.classList.toggle("ferme", !ouvert);
+      function afficher(ouvert) {
+        groupes.forEach((g) => {
+          const ferme = g !== ouvert;
+          g.classList.toggle("ferme", ferme);
+          g.querySelector(".titre-groupe-nav").setAttribute("aria-expanded", ferme ? "false" : "true");
+        });
+      }
+      afficher(choisi);
 
-        const bouton = groupe.querySelector(".titre-groupe-nav");
-        bouton.addEventListener("click", () => {
-          const maintenantFerme = groupe.classList.toggle("ferme");
+      groupes.forEach((groupe) => {
+        groupe.querySelector(".titre-groupe-nav").addEventListener("click", () => {
+          const aOuvrir = groupe.classList.contains("ferme");
+          afficher(aOuvrir ? groupe : null);
           try {
-            preferences[id] = !maintenantFerme;
-            localStorage.setItem(CLE_STOCKAGE, JSON.stringify(preferences));
+            localStorage.setItem(CLE_STOCKAGE, aOuvrir ? groupe.dataset.groupe : "");
           } catch (erreur) {
             // stockage indisponible (navigation privee...) : le repli fonctionne quand meme pour cette page
           }
