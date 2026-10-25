@@ -468,6 +468,7 @@ templates = Jinja2Templates(directory=os.path.join(DOSSIER_APP, "templates"))
 templates.env.globals["version_css"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "style.css"))
 )
+templates.env.globals["version_pipette_js"] = int(os.path.getmtime(os.path.join(DOSSIER_APP, "static", "pipette.js")))
 templates.env.globals["version_calendrier_js"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "calendrier_champ.js"))
 )
