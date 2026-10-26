@@ -93,6 +93,9 @@ def texte_a_dire(scene: dict) -> str:
         "realisation": [scene.get("titre"), scene.get("sous_texte"), scene.get("texte")],
         "personnage": [scene.get("texte")],
         "recherche": [scene.get("legende")],
+        "avis": [scene.get("texte"), scene.get("auteur")],
+        "carte": [scene.get("texte"), scene.get("sous_texte")],
+        "fiche": [scene.get("titre"), items],
     }.get(genre, [])
     return nettoyer_texte(". ".join(str(m).strip().rstrip(".") for m in morceaux if m and str(m).strip()))
 

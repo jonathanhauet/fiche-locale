@@ -8591,6 +8591,62 @@ async def video_motion_televerser(request: Request, fichier: UploadFile = File(.
     return JSONResponse({"id": identifiant})
 
 
+@app.post("/video-motion/apercu-scene")
+async def video_motion_apercu_scene(request: Request, db: Session = Depends(obtenir_session)):
+    """Apercu d'une scene (3 images) pour la relire avant de generer la video. Corps : comme /video-motion/rendre, plus index (numero de la scene, a partir de 0)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    format_video = donnees.get("format") if donnees.get("format") in motion_video.FORMATS else "vertical"
+    scenario = {"scenes": donnees.get("scenes") or []}
+    scenes_valides = motion_video.nettoyer_scenario(scenario)
+    try:
+        index = int(donnees.get("index"))
+    except (TypeError, ValueError):
+        return JSONResponse({"erreur": "Scène introuvable."}, status_code=400)
+    if not 0 <= index < len(scenes_valides):
+        return JSONResponse({"erreur": "Scène introuvable."}, status_code=400)
+    charte = charte_montage.nettoyer({**charte_montage.lire(db), **{k: v for k, v in (("principale", donnees.get("couleur1")), ("secondaire", donnees.get("couleur2"))) if isinstance(v, str)}})
+    sources_images = []
+    for brut in (donnees.get("images") or [])[:12]:
+        if isinstance(brut, dict) and brut.get("type") == "google" and isinstance(brut.get("url"), str):
+            sources_images.append(("google", brut["url"]))
+        elif isinstance(brut, dict) and brut.get("type") == "import" and isinstance(brut.get("id"), str):
+            sources_images.append(("import", brut["id"]))
+    source_logo, logo = None, donnees.get("logo")
+    if isinstance(logo, dict) and logo.get("type") == "client":
+        try:
+            client_logo = db.get(models.Client, int(logo.get("client_id") or 0))
+        except (TypeError, ValueError):
+            client_logo = None
+        adresse = _logo_page_client(db, client_logo) if client_logo else ""
+        source_logo = ("url", adresse) if adresse.startswith("https://") else None
+    elif isinstance(logo, dict) and logo.get("type") == "import" and isinstance(logo.get("id"), str):
+        source_logo = ("import", logo["id"])
+    tete_bd = None
+    if scenes_valides[index]["type"] == "personnage" and scenes_valides[index].get("forme") == "moi":
+        tete_bd = _tete_bd_pour_rendu(db)
+        if not tete_bd:
+            return JSONResponse({"erreur": "Crée d'abord ton personnage BD (menu « Mon personnage BD »)."}, status_code=400)
+    try:
+        id_client = int(donnees.get("client_id") or 0)
+    except (TypeError, ValueError):
+        id_client = 0
+    client_polices = db.get(models.Client, id_client) if id_client else None
+    polices = (client_polices.police_titres or "", client_polices.police_texte or "") if client_polices and donnees.get("polices_charte", True) and (client_polices.police_titres or client_polices.police_texte) else None
+    try:
+        resultat = await run_in_threadpool(
+            motion_video.apercu_scene, scenario, charte, format_video, index, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60], sources_images, source_logo,
+            "google" if donnees.get("style") == "google" else "", tete_bd, polices,
+        )
+    except motion_video.ErreurMotion as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=409)
+    return JSONResponse(resultat)
+
+
 @app.post("/video-motion/rendre")
 async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_session)):
     """Lance la generation de la video depuis le scenario relu. Corps : scenes, format, nom, ville, couleur1, couleur2."""

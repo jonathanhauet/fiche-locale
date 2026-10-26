@@ -172,6 +172,10 @@
   </p>
   <div id="vm-scenes"></div>
   <div class="ligne-champs">
+    <select id="vm-ajout-type" aria-label="Type de scène à ajouter"></select>
+    <button type="button" id="vm-ajout" class="bouton-secondaire">＋ Ajouter une scène</button>
+  </div>
+  <div class="ligne-champs">
     <button type="button" id="vm-rendre" class="bouton">🎞️ Générer la vidéo</button>
     <button type="button" id="vm-rendre-tout" class="bouton-secondaire" hidden>🎞️ Générer toutes les vidéos de la série</button>
   </div>
@@ -206,7 +210,11 @@
 
 <style>
   .vm-carte { border: 1px solid var(--bordure, #d9dce3); border-radius: 12px; padding: .8rem 1rem; margin: .6rem 0; }
-  .vm-carte h3 { margin: 0 0 .5rem; font-size: .95rem; display: flex; justify-content: space-between; gap: 1rem; }
+  .vm-carte h3 { margin: 0 0 .5rem; font-size: .95rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: center; }
+  .vm-outils { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .vm-couverture { border-color: #2f5eff; box-shadow: 0 0 0 1px #2f5eff inset; }
+  .vm-apercu { display: flex; gap: .5rem; flex-wrap: wrap; align-items: flex-start; margin: .2rem 0 .6rem; }
+  .vm-apercu img { height: 210px; border-radius: 8px; border: 1px solid var(--bordure, #d9dce3); }
   .vm-carte label { font-size: .8rem; margin-top: .4rem; display: block; }
   .vm-carte input, .vm-carte textarea { width: 100%; }
   .vm-grille { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
@@ -242,7 +250,7 @@
   const $ = (id) => document.getElementById(id);
   const voixOff = () => $("vm-voix-active").checked ? { voix: $("vm-voix").value, voix_personnage: $("vm-voix-perso").value, ton: $("vm-ton").value } : null;
   const LIBELLES = {
-    hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", personnage: "Personnage animé", recherche: "Recherche Google", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action",
+    hook: "Accroche", avant_apres: "Avant / Après", realisation: "Réalisation de la semaine", personnage: "Personnage animé", recherche: "Recherche Google", photo: "Photo", mosaique: "Mosaïque de photos", marque: "Nom de la marque", chiffre: "Chiffre", liste: "Liste", etape: "Étape", citation: "Avis client", cta: "Appel à l'action", avis: "Carte d'avis Google", carte: "Zone d'intervention (plan)", fiche: "Fiche Google qui se complète",
   };
   const CHAMPS = {
     hook: [["texte", "Texte"], ["sous_texte", "Sous-texte"], ["accessoire", "Objet illustré (facultatif)"]],
@@ -257,6 +265,9 @@
     liste: [["titre", "Titre"], ["items", "Éléments (un par ligne)"]],
     etape: [["numero", "Numéro"], ["kicker", "Mot-clé court"], ["titre", "Titre"], ["texte", "Texte"]],
     citation: [["texte", "Avis"], ["auteur", "Auteur"]],
+    avis: [["valeur", "Note (ex. 4,9)"], ["suffixe", "Nombre d'avis (ex. 127)"], ["texte", "Texte de l'avis"], ["auteur", "Auteur (prénom et initiale)"]],
+    carte: [["texte", "Secteur (ex. Talence et alentours)"], ["sous_texte", "Précision (délai, déplacement...)"], ["valeur", "Rayon (ex. 15 km), facultatif"]],
+    fiche: [["titre", "Titre"], ["nom", "Nom de l'entreprise"], ["libelle", "Métier (facultatif)"], ["valeur", "Note (facultatif)"], ["suffixe", "Nombre d'avis (facultatif)"], ["items", "Points à cocher (un par ligne, 5 maximum)"]],
     cta: [["texte", "Texte"], ["bouton", "Bouton"], ["contact", "Coordonnées (une par ligne)"], ["accessoire", "Objet illustré en bas (facultatif, format vertical)"]],
   };
   const CHOIX = {
@@ -265,6 +276,7 @@
     accessoire: [["aucun", "Aucun"], ["ampoule", "Ampoule"], ["cle", "Clé"], ["maison", "Maison"], ["voiture", "Voiture"], ["coeur", "Cœur"], ["etoile", "Étoile"], ["telephone", "Téléphone"], ["goutte", "Goutte d'eau"], ["calendrier", "Calendrier"], ["bouclier", "Bouclier"], ["epingle", "Repère de localisation (Google)"], ["etoiles", "Cinq étoiles d'avis (Google)"], ["recherche", "Barre de recherche (Google)"], ["fiche", "Fiche d'établissement (Google)"], ["avis", "Avis client (Google)"], ["carte", "Plan Maps (Google)"]],
     perso: [["1", "Personnage 1 (cheveux courts)"], ["2", "Personnage 2 (chignon)"], ["3", "Personnage 3 (casquette)"], ["4", "Personnage 4 (cheveux longs)"]],
   };
+  Object.entries(LIBELLES).forEach(([cle, libelle]) => { const o = document.createElement("option"); o.value = cle; o.textContent = libelle; $("vm-ajout-type").appendChild(o); });
   const CHARTE_DEFAUT = { principale: "{{ charte.principale }}", secondaire: "{{ charte.secondaire }}" };
   // Une « série » est une liste de vidéos (une seule quand on écrit un scénario seul) ; l'onglet courant est celui qu'on relit et qu'on publie.
   let serie = [], courant = 0;
@@ -480,16 +492,60 @@
     $("vm-fichiers").value = ""; dessinerChoix();
   });
 
+  const modelesScenes = () => ({
+    hook: { texte: "Votre *fiche* est _invisible_", sous_texte: "", duree: 3 }, chiffre: { valeur: "4,9", suffixe: "/5", libelle: "note moyenne", duree: 3 },
+    liste: { titre: "Trois réflexes", items: ["Premier point", "Deuxième point", "Troisième point"], duree: 4 }, etape: { numero: "01", kicker: "Étape", titre: "Titre de l'étape", texte: "Une phrase.", duree: 3 },
+    citation: { texte: "Un avis client fourni dans les faits", auteur: "Prénom N.", duree: 4 }, marque: { nom: $("vm-nom").value || "Votre marque", accroche: "", duree: 3 },
+    cta: { texte: "Parlons de votre projet", bouton: "Nous contacter", contact: "", duree: 3.5 }, photo: { texte: "Texte sur la photo", sous_texte: "", photo: 1, duree: 3 },
+    mosaique: { titre: "Nos réalisations", photos: [1, 2, 3], duree: 3.5 }, avant_apres: { titre: "Avant / Après", photos: [1, 2], legende: "", duree: 5 },
+    realisation: { kicker: "Réalisation", titre: "Titre", sous_texte: "", texte: "", photos: [1], duree: 5 }, personnage: { texte: "Bonjour !", action: "explique", accessoire: "aucun", perso: "1", puces: [], duree: 4 },
+    recherche: { texte: "plombier " + ($("vm-ville").value || "ville"), nom: $("vm-nom").value || "Votre entreprise", libelle: "Plombier", duree: 8 },
+    avis: { valeur: "4,9", suffixe: "127", texte: "Un avis client réel, fourni dans les faits", auteur: "Prénom N.", duree: 5 },
+    carte: { texte: ($("vm-ville").value || "Votre ville") + " et alentours", sous_texte: "Nous intervenons près de chez vous", valeur: "", duree: 4.5 },
+    fiche: { titre: "Une fiche *complète*", nom: $("vm-nom").value || "Votre entreprise", libelle: "", valeur: "", suffixe: "", items: ["Horaires à jour", "Photos récentes", "Services détaillés", "Réponses aux avis"], duree: 6 },
+  });
+  const propre = (s) => Object.fromEntries(Object.entries(s).filter(([k]) => !k.startsWith("_")));       // les marques de l'interface (couverture...) ne partent pas au serveur
+  const indiceCouverture = () => Math.max(0, item().scenes.findIndex((s) => s._couverture));
+  const corpsApercu = (i) => JSON.stringify({
+    scenes: item().scenes.map((s) => propre(s.type === "personnage" ? Object.assign({}, s, { forme: $("vm-forme").value }) : s)), index: i, style: $("vm-style").value, client_id: $("vm-client").value,
+    format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
+    images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
+    logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null, polices_charte: $("vm-polices").checked,
+  });
+  function bouton(texte, titre, action, desactive) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "bouton-secondaire bouton-mini"; b.textContent = texte; b.title = titre || "";
+    if (desactive) b.disabled = true; else b.addEventListener("click", action);
+    return b;
+  }
   function dessiner() {
     const zone = $("vm-scenes"); zone.textContent = "";
-    item().scenes.forEach((sc, i) => {
-      const carte = document.createElement("div"); carte.className = "vm-carte";
+    const scenes = item().scenes;
+    scenes.forEach((sc, i) => {
+      const carte = document.createElement("div"); carte.className = "vm-carte" + (sc._couverture ? " vm-couverture" : "");
       const entete = document.createElement("h3");
-      const nom = document.createElement("span"); nom.textContent = (i + 1) + ". " + (LIBELLES[sc.type] || sc.type);
-      const bouton = document.createElement("button"); bouton.type = "button"; bouton.className = "bouton-secondaire bouton-mini"; bouton.textContent = "Retirer";
-      bouton.addEventListener("click", () => { item().scenes.splice(i, 1); dessiner(); });
-      entete.appendChild(nom); entete.appendChild(bouton); carte.appendChild(entete);
-      (CHAMPS[sc.type] || []).concat([["voix", "Voix off : ce que dit la voix pendant cette scène (facultatif)"]]).forEach(([cle, libelle]) => {
+      const nom = document.createElement("span"); nom.textContent = (i + 1) + ". " + (LIBELLES[sc.type] || sc.type) + (sc._couverture ? "  🖼 couverture" : "");
+      const outils = document.createElement("span"); outils.className = "vm-outils";
+      const apercu = document.createElement("div"); apercu.className = "vm-apercu"; apercu.hidden = true;
+      outils.appendChild(bouton("▶ Aperçu", "Voir 3 images de cette scène sans générer toute la vidéo", async (e) => {
+        const b = e.currentTarget; b.disabled = true; apercu.hidden = false; apercu.textContent = "Dessin de la scène...";
+        try {
+          const r = await fetch("/video-motion/apercu-scene", { method: "POST", headers: { "Content-Type": "application/json" }, body: corpsApercu(i) });
+          const d = await r.json();
+          if (!r.ok) { apercu.textContent = d.erreur || "Aperçu impossible."; return; }
+          apercu.textContent = "";
+          d.images.forEach((src) => { const img = document.createElement("img"); img.src = src; img.alt = "Aperçu de la scène"; apercu.appendChild(img); });
+          const legende = document.createElement("div"); legende.className = "texte-discret"; legende.textContent = "Début, milieu et fin de la scène (" + d.duree + " s). Les animations et les sons ne sont visibles que dans la vidéo.";
+          apercu.appendChild(legende);
+        } catch (x) { apercu.textContent = "Aperçu impossible pour le moment."; }
+        finally { b.disabled = false; }
+      }));
+      outils.appendChild(bouton("↑", "Monter cette scène", () => { [scenes[i - 1], scenes[i]] = [scenes[i], scenes[i - 1]]; dessiner(); }, i === 0));
+      outils.appendChild(bouton("↓", "Descendre cette scène", () => { [scenes[i + 1], scenes[i]] = [scenes[i], scenes[i + 1]]; dessiner(); }, i === scenes.length - 1));
+      outils.appendChild(bouton("⧉", "Dupliquer cette scène", () => { if (scenes.length < 12) { const copie = JSON.parse(JSON.stringify(sc)); delete copie._couverture; scenes.splice(i + 1, 0, copie); dessiner(); } }, scenes.length >= 12));
+      outils.appendChild(bouton("🖼", "Utiliser cette scène comme image de couverture de la vidéo", () => { scenes.forEach((s) => { delete s._couverture; }); sc._couverture = true; dessiner(); }));
+      outils.appendChild(bouton("Retirer", "", () => { scenes.splice(i, 1); dessiner(); }));
+      entete.appendChild(nom); entete.appendChild(outils); carte.appendChild(entete); carte.appendChild(apercu);
+      (CHAMPS[sc.type] || []).concat([["duree", "Durée de la scène (secondes)"], ["voix", "Voix off : ce que dit la voix pendant cette scène (facultatif)"]]).forEach(([cle, libelle]) => {
         const label = document.createElement("label"); label.textContent = libelle; carte.appendChild(label);
         if (CHOIX[cle]) {
           const liste = document.createElement("select");
@@ -501,13 +557,15 @@
           return;
         }
         const multi = cle === "items" || cle === "contact" || cle === "puces";
-        const champ = document.createElement(multi ? "textarea" : "input"); if (multi) champ.rows = 3; else champ.type = "text";
-        champ.value = cle === "items" ? (sc.items || []).join("\n") : cle === "puces" ? (sc.puces || []).join("\n") : cle === "photos" ? (sc.photos || []).join(", ") : (sc[cle] || "");
+        const champ = document.createElement(multi ? "textarea" : "input"); if (multi) champ.rows = 3; else champ.type = cle === "duree" ? "number" : "text";
+        if (cle === "duree") { champ.min = "1.8"; champ.max = sc.type === "recherche" ? "10" : "6"; champ.step = "0.1"; }
+        champ.value = cle === "items" ? (sc.items || []).join("\n") : cle === "puces" ? (sc.puces || []).join("\n") : cle === "photos" ? (sc.photos || []).join(", ") : (sc[cle] === undefined ? "" : sc[cle]);
         champ.addEventListener("input", () => {
           if (cle === "items") sc.items = champ.value.split("\n").map((x) => x.trim()).filter(Boolean);
           else if (cle === "puces") sc.puces = champ.value.split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 3);
           else if (cle === "photos") sc.photos = champ.value.split(/[ ,;]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 1 && x <= 12);
           else if (cle === "photo") sc.photo = parseInt(champ.value, 10) || 0;
+          else if (cle === "duree") { const n = parseFloat(String(champ.value).replace(",", ".")); if (n >= 1.8) sc.duree = Math.min(n, sc.type === "recherche" ? 10 : 6); }
           else sc[cle] = champ.value;
         });
         carte.appendChild(champ);
@@ -516,6 +574,13 @@
     });
     $("vm-rendre").disabled = !item().scenes.length || item().etat === "en_cours";
   }
+  $("vm-ajout").addEventListener("click", () => {
+    const type = $("vm-ajout-type").value, scenes = item().scenes;
+    if (scenes.length >= 12) { statut("Une vidéo compte 12 scènes au plus."); return; }
+    const modele = JSON.parse(JSON.stringify(modelesScenes()[type] || { duree: 3 })); modele.type = type;
+    scenes.push(modele); dessiner();
+    $("vm-scenes").lastElementChild.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
 
   const AIDES_MODELES = {
     avant_apres: "Choisissez 2 photos dans l'ordre : la 1re sera l'avant, la 2e l'après. Décrivez le chantier et la commune dans « Ce que la vidéo doit faire passer ».",
@@ -630,10 +695,10 @@
   async function rendreVideo(i) {
     const v = serie[i];
     v.etat = "en_cours"; v.progression = 0; v.erreur = ""; dessinerOnglets(); if (i === courant) montrerRendu();
-    const corps = JSON.stringify({ scenes: v.scenes.map((s) => s.type === "personnage" ? Object.assign({}, s, { forme: $("vm-forme").value }) : s), style: $("vm-style").value, voix_off: voixOff(), client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
+    const corps = JSON.stringify({ scenes: v.scenes.map((s) => propre(s.type === "personnage" ? Object.assign({}, s, { forme: $("vm-forme").value }) : s)), style: $("vm-style").value, voix_off: voixOff(), client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
       images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
       logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
-      musique_id: $("vm-musique").value, bpm: $("vm-bpm").value, polices_charte: $("vm-polices").checked, sous_titres: $("vm-voix-active").checked && $("vm-soustitres").checked, couverture: v.couverture || 0 });
+      musique_id: $("vm-musique").value, bpm: $("vm-bpm").value, polices_charte: $("vm-polices").checked, sous_titres: $("vm-voix-active").checked && $("vm-soustitres").checked, couverture: Math.max(0, v.scenes.findIndex((s) => s._couverture)) });
     let d = null;
     try {
       for (let essai = 0; essai < 90; essai++) {

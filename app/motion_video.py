@@ -9,6 +9,7 @@ Scenario : {"scenes": [{"type": "hook", "texte": "Votre *fiche* est _invisible_"
 *mot* est surligne sur une pastille de couleur et _mot_ passe en serif italique.
 """
 
+import base64
 import functools
 import io
 import math
@@ -30,7 +31,7 @@ DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stat
 FPS = 30
 FORMATS = {"vertical": (1080, 1920), "carre": (1080, 1080), "horizontal": (1920, 1080)}
 DUREE_TRANSITION = 0.45
-TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage", "recherche")
+TYPES_SCENES = ("hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage", "recherche", "avis", "carte", "fiche")
 HOTES_IMAGES = (".googleusercontent.com", ".ggpht.com", ".google.com")
 TAILLE_MAX_IMAGE = 8 * 1024 * 1024
 GRAS, NORMAL, SERIF = "Poppins-Bold.ttf", "Poppins-Regular.ttf", "DMSerifDisplay-Regular.ttf"
@@ -1626,7 +1627,202 @@ def scene_personnage(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     return image
 
 
-SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique, "avant_apres": scene_avant_apres, "realisation": scene_realisation, "personnage": scene_personnage, "recherche": scene_recherche}
+def _note_en_nombre(valeur) -> float:
+    try:
+        return max(0.0, min(5.0, float(str(valeur or "").replace(",", ".").strip())))
+    except ValueError:
+        return 0.0
+
+
+def _couleurs_carte(ctx: Contexte) -> tuple:
+    """(fond de carte, texte, texte discret) : carte blanche en style Google, carte sombre teintee sinon."""
+    if ctx.google:
+        return BLANC, (32, 33, 36), (95, 99, 104)
+    return ctx.t["carte"], ctx.t["texte"], ctx.t["texte2"]
+
+
+def scene_avis(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Avis Google : la note defile, les etoiles s'allument une a une, puis la carte de l'avis monte (auteur, etoiles, texte)."""
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    horizontal = ctx.format == "horizontal"
+    marge = ctx.px(70)
+    note = _note_en_nombre(sc.get("valeur"))
+    couleur_etoile = GOOGLE_JAUNE if ctx.google else ctx.t["accent2"]
+    eteinte = melanger(ctx.t["fond"], ctx.t["texte"], 0.22)
+    if note > 0:
+        zone_l = int(ctx.l * 0.44) if horizontal else ctx.l
+        x_centre = zone_l // 2 if horizontal else ctx.l // 2
+        y0 = int(ctx.h * (0.20 if horizontal else 0.13))
+        nombre = image_texte(_formater_nombre(note * entree_sortie(borne((t - 0.2) / 1.0)), 1), GRAS, ctx.px(170 if horizontal else 260), ctx.t["texte"])
+        coller(image, nombre, x_centre - nombre.size[0] // 2, y0, borne(t / 0.3))
+        rayon = ctx.px(40 if horizontal else 52)
+        y_etoiles = y0 + nombre.size[1] + ctx.px(6)
+        largeur_rangee = 5 * 2 * rayon + 4 * ctx.px(14)
+        for k in range(5):
+            p = sortie_rebond((t - 0.55 - 0.17 * k) / 0.4)
+            calque = Image.new("RGBA", (rayon * 3, rayon * 3), (0, 0, 0, 0))
+            allumee = k + 0.5 <= note and p > 0
+            ImageDraw.Draw(calque).polygon(_etoile((rayon * 1.5, rayon * 1.5), rayon * (max(0.01, p) if allumee else 1.0)), fill=(couleur_etoile if allumee else eteinte) + (255,))
+            coller(image, calque, x_centre - largeur_rangee // 2 + k * (2 * rayon + ctx.px(14)) - rayon // 2, y_etoiles - rayon // 2, 1.0)
+        if sc.get("suffixe"):
+            libelle = image_texte(sanitiser_suffixe_avis(sc["suffixe"]), NORMAL, ctx.px(40 if horizontal else 46), ctx.t["texte2"])
+            coller(image, libelle, x_centre - libelle.size[0] // 2, y_etoiles + 2 * rayon + ctx.px(18), borne((t - 1.5) / 0.5))
+    texte = sc.get("texte") or ""
+    if texte:
+        fond_carte, encre, encre2 = _couleurs_carte(ctx)
+        l_carte = int(ctx.l * 0.50) - marge if horizontal else ctx.l - 2 * marge
+        interieur = l_carte - 2 * ctx.px(46)
+        bloc = bloc_texte(texte, NORMAL, ctx.px(42 if horizontal else 48), interieur, ctx.px(460 if horizontal else 520), encre)
+        h_carte = ctx.px(170) + bloc.size[1] + ctx.px(36)
+        carte, m = _carte_ui(ctx, l_carte, h_carte, ctx.px(34), GOOGLE_BORD_CLAIR if ctx.google else melanger(fond_carte, ctx.t["texte"], 0.18), fond_carte)
+        f = 3
+        auteur = (sc.get("auteur") or "Client").strip()
+        avatar = _aa(ctx.px(96), ctx.px(96), lambda d, ff: d.ellipse((0, 0, ctx.px(96) * ff - 1, ctx.px(96) * ff - 1), fill=(GOOGLE_BLEU if ctx.google else ctx.t["accent"]) + (255,)))
+        carte.alpha_composite(avatar, (m + ctx.px(46), m + ctx.px(30)))
+        initiale = image_texte(auteur[:1].upper(), GRAS, ctx.px(52), (255, 255, 255))
+        carte.alpha_composite(initiale, (m + ctx.px(46) + (ctx.px(96) - initiale.size[0]) // 2, m + ctx.px(30) + (ctx.px(96) - initiale.size[1]) // 2))
+        carte.alpha_composite(image_texte(auteur, GRAS, ctx.px(42), encre), (m + ctx.px(46) + ctx.px(96) + ctx.px(14) - 10, m + ctx.px(26)))
+        etoiles = _aa(ctx.px(330), ctx.px(46), lambda d, ff: _etoiles_note(d, ff, 0, ctx.px(23), ctx.px(19), note if note > 0 else 5.0))
+        carte.alpha_composite(etoiles, (m + ctx.px(46) + ctx.px(96) + ctx.px(14), m + ctx.px(86)))
+        carte.alpha_composite(bloc, (m + ctx.px(46) - 10, m + ctx.px(170)))
+        p = sortie_rebond((t - 1.55) / 0.65)
+        if p > 0:
+            x_carte = (ctx.l - l_carte) // 2 if not horizontal else int(ctx.l * 0.50)
+            y_carte = (int(ctx.h * 0.50) if not horizontal else (ctx.h - h_carte) // 2) + int((1 - p) * ctx.px(140))
+            coller(image, carte, x_carte - m, y_carte - m, borne(p * 2))
+    return image
+
+
+def sanitiser_suffixe_avis(texte: str) -> str:
+    """« 127 » devient « 127 avis Google » ; un texte deja complet est garde tel quel."""
+    texte = (texte or "").strip()
+    return texte if re.search(r"[A-Za-zÀ-ÿ]", texte) else f"{texte} avis Google"
+
+
+def scene_carte(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Zone d'intervention : le plan apparait, l'epingle tombe, la zone s'etend en cercles, le nom du secteur s'inscrit."""
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    horizontal = ctx.format == "horizontal"
+    marge = ctx.px(60)
+    l_plan = int(ctx.l * 0.56) - marge if horizontal else ctx.l - 2 * marge
+    h_plan = int(ctx.h * (0.62 if horizontal else 0.52 if ctx.format == "vertical" else 0.50))
+    x_plan, y_plan = marge, int(ctx.h * (0.19 if horizontal else 0.15 if ctx.format == "vertical" else 0.14))
+    plan = _plan_google(ctx, l_plan, h_plan).copy()
+    cx, cy = l_plan * 0.5, h_plan * 0.54
+    rayon_max = min(l_plan, h_plan) * 0.36
+    couleur_zone = GOOGLE_BLEU if ctx.google else ctx.t["accent"]
+    couleur_pin = GOOGLE_ROUGE if ctx.google else ctx.t["accent2"]
+    ouverture = sortie_expo((t - 0.7) / 0.9)
+    f = 2
+    recouvrement = Image.new("RGBA", (l_plan * f, h_plan * f), (0, 0, 0, 0))
+    dessin = ImageDraw.Draw(recouvrement)
+    r_zone = rayon_max * ouverture
+    if r_zone > 2:
+        dessin.ellipse((f * (cx - r_zone), f * (cy - r_zone), f * (cx + r_zone), f * (cy + r_zone)), fill=couleur_zone + (46,), outline=couleur_zone + (200,), width=max(2, ctx.px(4) * f))
+        for k in range(3):                                                          # cercles qui partent de l'epingle
+            phase = ((t - 1.2) * 0.45 + k / 3) % 1.0
+            if t > 1.2:
+                r = r_zone * phase
+                dessin.ellipse((f * (cx - r), f * (cy - r), f * (cx + r), f * (cy + r)), outline=couleur_zone + (int(150 * (1 - phase)),), width=max(2, ctx.px(3) * f))
+    plan.alpha_composite(recouvrement.resize((l_plan, h_plan), Image.LANCZOS))
+    chute = sortie_rebond((t - 0.35) / 0.7)
+    pin = _aa(ctx.px(150), ctx.px(190), lambda d, ff: _epingle(d, ctx.px(75) * ff, ctx.px(70) * ff, ctx.px(52) * ff, couleur_pin + (255,), (255, 255, 255, 255)))
+    if chute > 0:
+        pin_y = cy - ctx.px(174) - (1 - chute) * ctx.px(260)
+        plan.alpha_composite(pin, (int(cx - pin.size[0] / 2), int(pin_y)))
+    if sc.get("valeur") and t > 1.7:
+        pastille = bloc_texte(sc["valeur"], GRAS, ctx.px(44), l_plan * 0.4, ctx.px(80), (255, 255, 255), False, True, 1.0)
+        l_p, h_p = pastille.size[0] + ctx.px(36), pastille.size[1] + ctx.px(8)
+        fond_p = _aa(l_p, h_p, lambda d, ff: d.rounded_rectangle((0, 0, l_p * ff - 1, h_p * ff - 1), radius=h_p * ff // 2, fill=couleur_zone + (255,)))
+        fond_p.alpha_composite(pastille, ((l_p - pastille.size[0]) // 2, (h_p - pastille.size[1]) // 2 - ctx.px(6)))
+        px_, py_ = int(cx + r_zone * 0.72), int(cy - r_zone * 0.72 - h_p // 2)
+        plan.alpha_composite(fond_p, (min(px_, l_plan - l_p - ctx.px(10)), max(ctx.px(10), py_)))
+    coller(image, plan, x_plan, y_plan, borne(t / 0.4))
+    colonne_x = x_plan + l_plan + marge if horizontal else marge
+    colonne_l = ctx.l - colonne_x - marge
+    y_texte = y_plan if horizontal else y_plan + h_plan + ctx.px(40)
+    if sc.get("texte"):
+        bloc = bloc_texte(sc["texte"], GRAS, ctx.px(76 if not horizontal else 62), colonne_l, ctx.px(240), ctx.t["texte"], False, not horizontal, 1.05)
+        calque_revele(image, bloc, colonne_x - (0 if horizontal else 10), y_texte, bloc.size[1], sortie_expo((t - 1.0) / 0.7), 0)
+        y_texte += bloc.size[1] + ctx.px(14)
+    if sc.get("sous_texte"):
+        sous = bloc_texte(sc["sous_texte"], NORMAL, ctx.px(46 if not horizontal else 38), colonne_l, ctx.px(200), ctx.t["texte2"], False, not horizontal)
+        calque_revele(image, sous, colonne_x - (0 if horizontal else 10), y_texte, sous.size[1], sortie_expo((t - 1.4) / 0.7), 0)
+    return image
+
+
+def scene_fiche(ctx: Contexte, sc: dict, t: float) -> Image.Image:
+    """Fiche d'etablissement qui se complete : la carte arrive, chaque point de la liste se coche, la jauge se remplit."""
+    image = ctx.fond(ctx.t["fond"], t, ctx.t["accent"])
+    horizontal = ctx.format == "horizontal"
+    marge = ctx.px(60)
+    items = [i for i in (sc.get("items") or []) if i][:5] or ["Horaires à jour", "Photos récentes", "Services détaillés"]
+    note = _note_en_nombre(sc.get("valeur"))
+    l_carte = (ctx.l - 2 * marge) if not horizontal else int(ctx.l * 0.62)
+    hauteur_ligne = ctx.px(104 if not horizontal else 78)
+    h_entete = ctx.px(230 if not horizontal else 190)
+    h_carte = h_entete + len(items) * hauteur_ligne + ctx.px(130 if not horizontal else 100)
+    titre = bloc_texte(sc["titre"], GRAS, ctx.px(74 if not horizontal else 56), ctx.l - 2 * marge, ctx.px(190), ctx.t["texte"], False, True, 1.05) if sc.get("titre") else None
+    haut_total = h_carte + (titre.size[1] + ctx.px(30) if titre is not None else 0)
+    y0 = ctx.haut_centre(haut_total)
+    if titre is not None:
+        calque_revele(image, titre, int((ctx.l - titre.size[0]) / 2), y0, titre.size[1], sortie_expo(t / 0.6), 0)
+        y0 += titre.size[1] + ctx.px(30)
+    carte, m = _carte_ui(ctx, l_carte, h_carte, ctx.px(34))
+    encre, encre2 = (32, 33, 36), (95, 99, 104)
+    nom = (sc.get("nom") or ctx.marque or "Votre entreprise").strip()
+    r_logo = ctx.px(52 if not horizontal else 42)
+    avatar = _aa(2 * r_logo, 2 * r_logo, lambda d, ff: d.ellipse((0, 0, 2 * r_logo * ff - 1, 2 * r_logo * ff - 1), fill=(GOOGLE_BLEU if ctx.google else ctx.t["accent"]) + (255,)))
+    carte.alpha_composite(avatar, (m + ctx.px(40), m + ctx.px(34)))
+    if ctx.logo is not None:
+        petit = ctx.logo.copy().convert("RGBA")
+        petit.thumbnail((int(2 * r_logo * 0.78), int(2 * r_logo * 0.78)))
+        carte.alpha_composite(petit, (m + ctx.px(40) + r_logo - petit.size[0] // 2, m + ctx.px(34) + r_logo - petit.size[1] // 2))
+    else:
+        initiale = image_texte(nom[:1].upper(), GRAS, ctx.px(48 if not horizontal else 38), (255, 255, 255))
+        carte.alpha_composite(initiale, (m + ctx.px(40) + r_logo - initiale.size[0] // 2, m + ctx.px(34) + r_logo - initiale.size[1] // 2))
+    x_texte = m + ctx.px(40) + 2 * r_logo + ctx.px(22)
+    carte.alpha_composite(bloc_texte(nom, GRAS, ctx.px(46 if not horizontal else 36), l_carte - (x_texte - m) - ctx.px(30), ctx.px(110), encre), (x_texte - 10, m + ctx.px(28)))
+    if note > 0 or sc.get("libelle"):
+        ligne = ""
+        if note > 0:
+            carte.alpha_composite(_aa(ctx.px(300), ctx.px(40), lambda d, ff: _etoiles_note(d, ff, 0, ctx.px(20), ctx.px(15), note)), (x_texte, m + ctx.px(112 if not horizontal else 96)))
+            ligne = f"{_formater_nombre(note, 1)}" + (f" ({sc['suffixe']})" if sc.get("suffixe") else "")
+        elif sc.get("libelle"):
+            ligne = sc["libelle"]
+        if ligne:
+            carte.alpha_composite(image_texte(ligne, NORMAL, ctx.px(34 if not horizontal else 28), encre2), (x_texte + (ctx.px(310) if note > 0 else 0) - 10, m + ctx.px(104 if not horizontal else 88)))
+    coches = 0
+    for k, texte in enumerate(items):
+        y = m + h_entete + k * hauteur_ligne
+        fait = borne((t - 1.0 - 0.6 * k) / 0.35)
+        coches += 1 if fait >= 1 else 0
+        r = ctx.px(30 if not horizontal else 24)
+        pastille = _aa(2 * r + 6, 2 * r + 6, lambda d, ff: (
+            d.ellipse((3 * ff, 3 * ff, (2 * r + 3) * ff, (2 * r + 3) * ff), fill=(GOOGLE_VERT if fait > 0.02 else (255, 255, 255)) + (255,), outline=(GOOGLE_VERT if fait > 0.02 else (189, 193, 198)) + (255,), width=ctx.px(3) * ff),
+            d.line([((r * 0.55 + 3) * ff, (r + 3) * ff), ((r * 0.95 + 3) * ff, (r * 1.38 + 3) * ff), ((r * 1.5 + 3) * ff, (r * 0.7 + 3) * ff)], fill=(255, 255, 255, int(255 * fait)), width=int(r * 0.26 * ff), joint="curve"),
+        ))
+        pop = 1.0 + 0.18 * math.sin(borne(fait) * math.pi) if 0 < fait < 1 else 1.0
+        if pop != 1.0:
+            pastille = pastille.resize((int(pastille.size[0] * pop), int(pastille.size[1] * pop)), Image.BILINEAR)
+        carte.alpha_composite(pastille, (m + ctx.px(40) + (2 * r + 6 - pastille.size[0]) // 2, y + (hauteur_ligne - pastille.size[1]) // 2))
+        ligne_texte = bloc_texte(texte, NORMAL, ctx.px(42 if not horizontal else 33), l_carte - ctx.px(40) - 2 * r - ctx.px(80), hauteur_ligne - ctx.px(10), encre)
+        carte.alpha_composite(ligne_texte, (m + ctx.px(40) + 2 * r + ctx.px(26) - 10, y + (hauteur_ligne - ligne_texte.size[1]) // 2))
+    y_barre = m + h_entete + len(items) * hauteur_ligne + ctx.px(34)
+    l_barre = l_carte - ctx.px(80)
+    avancement = sum(borne((t - 1.0 - 0.6 * k) / 0.35) for k in range(len(items))) / len(items)
+    carte.alpha_composite(_aa(l_barre, ctx.px(16), lambda d, ff: d.rounded_rectangle((0, 0, l_barre * ff - 1, ctx.px(16) * ff - 1), radius=ctx.px(8) * ff, fill=(232, 234, 237, 255))), (m + ctx.px(40), y_barre))
+    if avancement > 0.01:
+        l_remplie = max(ctx.px(16), int(l_barre * avancement))
+        carte.alpha_composite(_aa(l_remplie, ctx.px(16), lambda d, ff: d.rounded_rectangle((0, 0, l_remplie * ff - 1, ctx.px(16) * ff - 1), radius=ctx.px(8) * ff, fill=GOOGLE_VERT + (255,))), (m + ctx.px(40), y_barre))
+    carte.alpha_composite(image_texte(f"{coches} / {len(items)}", GRAS, ctx.px(34 if not horizontal else 28), encre2), (m + ctx.px(40) - 10, y_barre + ctx.px(26)))
+    p = sortie_rebond(t / 0.7)
+    x_carte = (ctx.l - l_carte) // 2 if not horizontal else (ctx.l - l_carte) // 2
+    coller(image, carte, x_carte - m, y0 - m + int((1 - p) * ctx.px(120)), borne(p * 2))
+    return image
+
+
+SCENES = {"hook": scene_hook, "chiffre": scene_chiffre, "liste": scene_liste, "etape": scene_etape, "citation": scene_citation, "marque": scene_marque, "cta": scene_cta, "photo": scene_photo, "mosaique": scene_mosaique, "avant_apres": scene_avant_apres, "realisation": scene_realisation, "personnage": scene_personnage, "recherche": scene_recherche, "avis": scene_avis, "carte": scene_carte, "fiche": scene_fiche}
 
 
 # --------------------------------------------------------------------------- habillage, transitions, assemblage
@@ -1843,6 +2039,12 @@ def evenements_sons(scenes: list) -> list:
                 evenements.append((debut + 0.8, "ding"))
         if scene["type"] == "mosaique":
             evenements += [(debut + 0.35 + 0.28 * k + 0.1, "pop") for k in range(len(scene.get("photos", [])))]
+        if scene["type"] == "avis":
+            evenements += [(debut + 0.55 + 0.17 * k + 0.1, "pop") for k in range(max(0, round(_note_en_nombre(scene.get("valeur")))))] + [(debut + 1.6, "pop"), (debut + 2.0, "ding")]
+        if scene["type"] == "carte":
+            evenements += [(debut + 0.95, "impact"), (debut + 1.75, "ding")]
+        if scene["type"] == "fiche":
+            evenements += [(debut + 1.1 + 0.6 * k, "pop") for k in range(len([i for i in (scene.get("items") or []) if i][:5]) or 3)] + [(debut + 1.2 + 0.6 * (len([i for i in (scene.get("items") or []) if i][:5]) or 3), "ding")]
         if scene["type"] == "avant_apres":
             evenements += [(debut + 0.35, "pop"), (debut + 1.05, "whoosh"), (debut + 2.4, "ding")]
         if scene["type"] == "realisation":
@@ -2001,6 +2203,7 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
 
 ETATS = {}
 _VERROU = threading.Lock()
+_VERROU_RENDU = threading.Lock()         # un seul dessin a la fois (video ou apercu) : le style et les polices sont des reglages globaux du module
 DUREE_CONSERVATION = 3 * 3600
 
 
@@ -2045,6 +2248,68 @@ def telecharger_musique(url: str, dossier: str) -> str:
     return chemin
 
 
+_CACHE_PHOTOS = {}                      # photos de la fiche deja telechargees pour les apercus : adresse -> (image, instant)
+
+
+def charger_medias(sources_images: list = None, source_logo: tuple = None, avec_cache: bool = False) -> tuple:
+    """(images, logo) d'une video : photos de la fiche Google ou importees, logo du client. Photo illisible : ErreurMotion ; logo introuvable : None (jamais bloquant)."""
+    maintenant = time.time()
+    for ancienne in [u for u, (_, t) in _CACHE_PHOTOS.items() if maintenant - t > 600]:
+        _CACHE_PHOTOS.pop(ancienne, None)
+    images = []
+    for numero, (genre, reference) in enumerate(sources_images or [], 1):
+        try:
+            if genre == "google":
+                if avec_cache and reference in _CACHE_PHOTOS:
+                    images.append(_CACHE_PHOTOS[reference][0])
+                    continue
+                image = telecharger_image(reference)
+                if avec_cache and len(_CACHE_PHOTOS) < 24:
+                    _CACHE_PHOTOS[reference] = (image, maintenant)
+                images.append(image)
+            else:
+                images.append(ouvrir_image(TELEVERSEES[reference][0]))
+        except (ErreurMotion, KeyError) as erreur:
+            raise ErreurMotion(f"Photo {numero} indisponible : {erreur}") from erreur
+    logo = None
+    if source_logo:
+        try:
+            genre, reference = source_logo
+            logo = telecharger_image(reference, True, True) if genre == "url" else ouvrir_image(TELEVERSEES[reference][0], True)
+        except (ErreurMotion, KeyError):
+            logo = None
+    return images, logo
+
+
+def apercu_scene(scenario: dict, charte: dict, format_video: str, index: int, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
+                 style: str = "", tete_bd: dict = None, polices: tuple = None) -> dict:
+    """
+    Trois images d'une scene (debut, milieu, fin de son animation) pour la relire avant de generer toute la video : {"images": [data URL JPEG], "duree": secondes}.
+    Impossible pendant qu'une video se genere (elle occupe le moteur de dessin).
+    """
+    if any(e["etat"] == "en_cours" for e in ETATS.values()):
+        raise ErreurMotion("Une vidéo se génère en ce moment : l'aperçu sera de nouveau possible à la fin.")
+    if not _VERROU_RENDU.acquire(timeout=25):
+        raise ErreurMotion("Le moteur de dessin est occupé : réessayez dans un instant.")
+    try:
+        images, logo = charger_medias(sources_images, source_logo, True)
+        scenes, ctx, positions, _ = preparer_rendu(scenario, charte, format_video, marque, ville, images, logo, None, style, None, tete_bd, polices)
+        if not 0 <= int(index) < len(scenes):
+            raise ErreurMotion("Scène introuvable.")
+        debut, fin = positions[int(index)]
+        duree = fin - debut
+        sorties = []
+        for t in (0.3 * duree, 0.62 * duree, max(0.5, duree - 0.15)):
+            image = scene_a(ctx, scenes, positions, int(index), debut + t).convert("RGB")
+            image.thumbnail((420, 420) if format_video == "horizontal" else (300, 540))
+            tampon = io.BytesIO()
+            image.save(tampon, format="JPEG", quality=78)
+            sorties.append("data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode())
+        return {"images": sorties, "duree": round(duree, 1)}
+    finally:
+        _VERROU_RENDU.release()
+
+
 def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
              url_musique: str = "", bpm: float = None, archiver=None, style: str = "", voix_off: dict = None, tete_bd: dict = None, polices: tuple = None,
              sous_titres: bool = False, scene_couverture: int = 0) -> str:
@@ -2063,21 +2328,13 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
     dossier = tempfile.mkdtemp(prefix="fiche_locale_motion_")
 
     def travail():
+        with _VERROU_RENDU:
+            _travail()
+
+    def _travail():
         try:
             chemin = os.path.join(dossier, "video.mp4")
-            images = []
-            for numero, (genre, reference) in enumerate(sources_images or [], 1):
-                try:
-                    images.append(telecharger_image(reference) if genre == "google" else ouvrir_image(TELEVERSEES[reference][0]))
-                except (ErreurMotion, KeyError) as erreur:
-                    raise ErreurMotion(f"Photo {numero} indisponible : {erreur}") from erreur
-            logo = None
-            if source_logo:
-                try:
-                    genre, reference = source_logo
-                    logo = telecharger_image(reference, True, True) if genre == "url" else ouvrir_image(TELEVERSEES[reference][0], True)
-                except (ErreurMotion, KeyError):
-                    logo = None                     # un logo introuvable ne bloque pas la video
+            images, logo = charger_medias(sources_images, source_logo)
             musique = None
             if url_musique:
                 try:

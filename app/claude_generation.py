@@ -3679,7 +3679,7 @@ SCHEMA_SCENARIO_MOTION = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage", "recherche"]},
+                    "type": {"type": "string", "enum": ["hook", "chiffre", "liste", "etape", "citation", "marque", "cta", "photo", "mosaique", "avant_apres", "realisation", "personnage", "recherche", "avis", "carte", "fiche"]},
                     "duree": {"type": "number"},
                     "puces": {"type": "array", "items": {"type": "string"}},
                     "perso": {"type": "integer"},
@@ -3811,7 +3811,13 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "« Itinéraire », « Appeler » ; une note comme « 4,9 ★ » UNIQUEMENT si elle figure dans les faits).\n"
         "- recherche : une recherche Google locale animée (la requête se tape, le plan apparaît, puis les résultats dont le premier est l'entreprise). texte (la requête, 2 à 4 mots), "
         "nom, libelle (le métier), valeur (note, UNIQUEMENT si fournie dans les faits), suffixe (nombre d'avis, UNIQUEMENT s'il est fourni), legende (phrase pédagogique, facultative). "
-        "Une seule scène de ce type par vidéo.\n\n"
+        "Une seule scène de ce type par vidéo.\n"
+        "- avis : la carte d'un avis Google (la note défile, les étoiles s'allument, puis l'avis apparaît). valeur (note, ex. 4,9), suffixe (nombre d'avis, ex. 127), texte (l'avis, 8 à 24 mots), auteur (prénom et initiale). "
+        "UNIQUEMENT avec une note, un nombre d'avis ou un avis fournis dans les faits : ne les invente jamais.\n"
+        "- carte : la zone d'intervention sur un plan, avec une épingle et des cercles qui s'étendent. texte (le secteur, 2 à 5 mots, ex. « Talence et alentours »), sous_texte (une phrase : délai, déplacement...), "
+        "valeur (rayon, ex. 15 km, UNIQUEMENT s'il est fourni).\n"
+        "- fiche : une fiche Google d'entreprise qui se complète point par point. titre (3 à 7 mots), nom, libelle (le métier), valeur (note) et suffixe (nombre d'avis) UNIQUEMENT si fournis, items (3 à 5 points à cocher de 2 à 5 mots, "
+        "ex. « Horaires à jour », « Photos récentes »). Idéale pour un tutoriel sur la fiche Google.\n\n"
         "Dans les champs texte, texte et titre uniquement : entoure UN mot clé de *astérisques* pour le surligner sur une pastille de couleur, et "
         "UN autre mot de _tirets bas_ pour le mettre en serif italique.\n\n"
         "Trame obligatoire : une accroche (hook) qui arrête le pouce, la révélation (marque), 2 ou 3 temps forts (chiffre, liste, etape, citation), "
