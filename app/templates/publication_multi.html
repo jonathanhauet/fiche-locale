@@ -191,6 +191,27 @@
   <p id="texte-statut-photos-principal" class="texte-vide" hidden></p>
   <div id="apercu-images-choisies" class="images-choisies" hidden></div>
   <div id="zoom-image-choisie" class="zoom-image-flottant" hidden><img alt="Image du post en grand"></div>
+  <div id="bloc-avant-apres" class="bloc-section" hidden>
+    <strong>🏷️ Pastilles « Avant » / « Après »</strong>
+    <p class="texte-discret">Avec 2 photos : la 1re reçoit la pastille « Avant », la 2e la pastille « Après », aux couleurs du client (principale pour « Après », secondaire pour « Avant »). Les photos sont remplacées par les versions avec pastille ; vous pouvez revenir aux originales.</p>
+    <div class="ligne-champs">
+      <label>Position
+        <select id="pa-position">
+          <option value="haut_gauche">En haut à gauche</option><option value="haut_droite">En haut à droite</option>
+          <option value="bas_gauche">En bas à gauche</option><option value="bas_droite">En bas à droite</option>
+        </select>
+      </label>
+      <label>Photo 1 <input type="text" id="pa-texte-1" value="Avant" maxlength="14" style="width:8rem;"></label>
+      <label>Photo 2 <input type="text" id="pa-texte-2" value="Après" maxlength="14" style="width:8rem;"></label>
+    </div>
+    <div class="ligne-champs">
+      <button type="button" id="pa-apercu" class="bouton-secondaire"><span class="spinner" id="pa-spinner" hidden></span> 👁 Aperçu</button>
+      <button type="button" id="pa-appliquer" class="bouton">Ajouter les pastilles aux photos</button>
+      <button type="button" id="pa-annuler" class="bouton-secondaire" hidden>↩ Remettre les photos d'origine</button>
+    </div>
+    <div id="pa-apercus" class="images-choisies" hidden></div>
+    <p id="pa-message" class="texte-discret" hidden></p>
+  </div>
   <details class="options-visuel" id="options-visuel">
     <summary>Options du visuel IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
     {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
@@ -1196,7 +1217,68 @@
         }
         conteneur.appendChild(bloc);
       });
+      majBlocAvantApres();
     }
+
+    // Pastilles « Avant » / « Apres » : proposees quand le post compte exactement 2 images (fichiers de l'ordinateur ou images hebergees).
+    let originauxAvantApres = null;
+    function majBlocAvantApres() {
+      const bloc = document.getElementById("bloc-avant-apres");
+      if (!bloc) return;
+      bloc.hidden = imagesDuPost().elements.length !== 2;
+      if (bloc.hidden) { originauxAvantApres = null; document.getElementById("pa-apercus").hidden = true; document.getElementById("pa-annuler").hidden = true; document.getElementById("pa-appliquer").hidden = false; }
+    }
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      function message(texte) { const p = $("pa-message"); p.hidden = !texte; p.textContent = texte || ""; p.className = "texte-discret"; }
+      function corps(mode) {
+        const { fichiers, elements } = imagesDuPost();
+        const donnees = new FormData();
+        elements.forEach((e, i) => donnees.append(fichiers ? "image_" + (i + 1) : "url_" + (i + 1), e));
+        donnees.append("mode", mode); donnees.append("position", $("pa-position").value);
+        donnees.append("texte_1", $("pa-texte-1").value); donnees.append("texte_2", $("pa-texte-2").value);
+        donnees.append("couleur", $("carrousel-couleur").value); donnees.append("couleurs_secondaires", JSON.stringify(window.secondairesIdentite ? window.secondairesIdentite() : []));
+        return donnees;
+      }
+      async function appeler(mode) {
+        const reponse = await fetch("/publication-multi/{{ client.id }}/pastilles-avant-apres", { method: "POST", body: corps(mode) });
+        let d = {};
+        try { d = await reponse.json(); } catch (e) { /* pas de JSON */ }
+        if (!reponse.ok) throw new Error(d.erreur || "Erreur " + reponse.status);
+        return d.images;
+      }
+      function occupe(oui) { ["pa-apercu", "pa-appliquer"].forEach((id) => { $(id).disabled = oui; }); $("pa-spinner").hidden = !oui; }
+      $("pa-apercu").addEventListener("click", async () => {
+        occupe(true); message("Aperçu en cours…");
+        try {
+          const images = await appeler("apercu");
+          const zone = $("pa-apercus"); zone.innerHTML = ""; zone.hidden = false;
+          images.forEach((src) => { const img = document.createElement("img"); img.src = src; img.alt = "Aperçu avec pastille"; img.style.cssText = "height:150px;width:auto;border-radius:8px;"; zone.appendChild(img); });
+          message("");
+        } catch (e) { message(e.message); $("pa-message").className = "message-erreur"; } finally { occupe(false); }
+      });
+      $("pa-appliquer").addEventListener("click", async () => {
+        const avant = imagesDuPost();
+        occupe(true); message("Ajout des pastilles (quelques secondes)…");
+        try {
+          const urls = await appeler("final");
+          originauxAvantApres = { fichiers: avant.fichiers, elements: avant.elements.slice() };
+          definirFichiersPartages([]);
+          champImageUrlIA.value = urls.join("|");
+          document.getElementById("champ-est-carrousel").value = "0";
+          actualiserToutesLesApercusImage();
+          $("pa-annuler").hidden = false; $("pa-apercus").hidden = true; $("pa-appliquer").hidden = true;                  // pas de seconde pastille sur une photo qui en porte deja une
+          message("Pastilles ajoutées : les 2 photos du post les portent maintenant.");
+        } catch (e) { message(e.message); $("pa-message").className = "message-erreur"; } finally { occupe(false); }
+      });
+      $("pa-annuler").addEventListener("click", () => {
+        if (!originauxAvantApres) return;
+        const o = originauxAvantApres; originauxAvantApres = null;
+        if (o.fichiers) { champImageUrlIA.value = ""; definirFichiersPartages(o.elements); } else { definirFichiersPartages([]); champImageUrlIA.value = o.elements.join("|"); }
+        actualiserToutesLesApercusImage();
+        $("pa-annuler").hidden = true; $("pa-appliquer").hidden = false; message("Photos d'origine rétablies.");
+      });
+    })();
 
     // Agrandissement au survol d'une miniature du post (suit la souris, reste dans l'ecran).
     (function () {

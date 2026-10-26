@@ -126,6 +126,7 @@ from . import (
     whatsapp_business,
     wordpress_publish,
     wordpress_style,
+    pastilles_photo,
     titre_photo,
     youtube_oauth,
     youtube_publish,
@@ -11368,6 +11369,80 @@ async def publication_multi_titre_photo(client_id: int, request: Request, db: Se
     if final:
         _archiver_creation(db, client_id, "carrousel" if len(resultat) > 1 else "visuel", "Titre sur photo", list(resultat), meta={"titre": str(donnees.get("titre") or "")[:200], "source": "titre_photo"})
     return JSONResponse({"images": resultat} if final else {"image": resultat})
+
+
+@app.post("/publication-multi/{client_id}/pastilles-avant-apres")
+async def publication_multi_pastilles_avant_apres(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Pastilles « Avant » / « Apres » sur deux photos, aux couleurs du client (voir pastilles_photo). Les photos arrivent en fichiers (image_1, image_2)
+    ou en adresses deja hebergees (url_1, url_2). mode « apercu » : deux images en base64 (720 px) ; mode « final » : deux JPEG heberges, URL renvoyees.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    formulaire = await request.form()
+    sources = []
+    for i in (1, 2):
+        fichier = formulaire.get(f"image_{i}")
+        if fichier is not None and getattr(fichier, "filename", ""):
+            octets = await fichier.read()
+            if not octets or len(octets) > 25 * 1024 * 1024:
+                return JSONResponse({"erreur": f"La photo {i} est vide ou trop lourde (25 Mo maximum)."}, status_code=400)
+            sources.append(("fichier", octets))
+        elif str(formulaire.get(f"url_{i}") or "").strip():
+            sources.append(("url", str(formulaire.get(f"url_{i}")).strip()))
+    if len(sources) != 2:
+        return JSONResponse({"erreur": "Il faut exactement 2 photos : la 1re est l'avant, la 2e l'après."}, status_code=400)
+    try:
+        secondaires_brutes = json.loads(formulaire.get("couleurs_secondaires") or "null")
+    except ValueError:
+        secondaires_brutes = None
+    couleur, secondaires = _couleurs_demandees({"couleur": formulaire.get("couleur"), "couleurs_secondaires": secondaires_brutes}, client)
+    textes = (formulaire.get("texte_1") or "", formulaire.get("texte_2") or "")
+    position = str(formulaire.get("position") or "")
+    final = formulaire.get("mode") == "final"
+
+    def fabriquer():
+        images = []
+        for numero, (genre, valeur) in enumerate(sources, 1):
+            if genre == "fichier":
+                try:
+                    image = Image.open(io.BytesIO(valeur))
+                    image.load()
+                except Exception:
+                    raise ValueError(f"La photo {numero} est illisible ou dans un format non pris en charge (JPG ou PNG).")
+            else:
+                image = _image_depuis_url_autorisee(valeur)
+                if image is None:
+                    raise ValueError(f"La photo {numero} n'a pas pu être lue.")
+            image = ImageOps.exif_transpose(image)
+            image.thumbnail((COTE_MAX_IMAGE_PUBLICATION, COTE_MAX_IMAGE_PUBLICATION) if final else (900, 900))
+            images.append(image)
+        rendues = pastilles_photo.avant_apres(images, textes, couleur, secondaires, position)
+        sorties = []
+        for image in rendues:
+            if not final:
+                image = image.resize((720, max(1, round(720 * image.height / image.width))), Image.LANCZOS)
+            tampon = io.BytesIO()
+            image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
+            sorties.append(tampon.getvalue())
+        if not final:
+            return ["data:image/jpeg;base64," + base64.b64encode(o).decode() for o in sorties]
+        lot = uuid.uuid4().hex[:8]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            return list(pool.map(lambda ot: ovh_upload.envoyer_octets(ot[1], f"avant-apres-{lot}-{ot[0] + 1}.jpg"), enumerate(sorties)))
+
+    try:
+        resultat = await run_in_threadpool(_avec_polices_client(client, fabriquer))
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec de l'ajout des pastilles : {erreur}"}, status_code=500)
+    if final:
+        _archiver_creation(db, client_id, "carrousel", "Avant / Après", list(resultat), meta={"source": "pastilles_avant_apres"})
+    return JSONResponse({"images": resultat})
 
 
 @app.post("/publication-multi/{client_id}/titre-photo/styles")
