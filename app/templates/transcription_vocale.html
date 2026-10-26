@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set page_actuelle = "transcription_vocale" %}
+{% block titre %}Transcription vocale — Fiche Locale{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Transcription vocale</h1>
+</div>
+<p class="texte-discret">
+  Déposez les vocaux reçus de vos clients (WhatsApp : fichiers .ogg ou .opus, mais aussi m4a, mp3, wav). Le texte s'affiche, vous pouvez le corriger puis le copier.
+  Rien n'est enregistré sur la plateforme : si vous quittez la page, les transcriptions disparaissent.
+</p>
+
+{% if not transcription_configuree %}
+<p class="message-erreur">La transcription n'est pas configurée (OPENAI_API_KEY manquant).</p>
+{% endif %}
+
+<div class="bloc-section">
+  <div id="zone-depot" style="border:2px dashed var(--bordure, #bbb);border-radius:12px;padding:1.6rem;text-align:center;cursor:pointer">
+    <strong>Glissez vos vocaux ici</strong> ou cliquez pour les choisir
+    <div class="texte-discret">Plusieurs fichiers à la fois possible · {{ taille_max_mo }} Mo maximum par fichier</div>
+    <input type="file" id="fichiers-vocaux" multiple accept="audio/*,.ogg,.opus,.oga,.m4a,.mp3,.wav,.aac,.webm" hidden>
+  </div>
+  <p class="texte-discret" style="margin-bottom:0">
+    Sur WhatsApp : appui long sur le vocal, puis « Partager » ou « Enregistrer » pour obtenir le fichier. Sur WhatsApp Web ou Bureau : clic droit sur le vocal, « Télécharger ».
+  </p>
+</div>
+
+<div id="barre-resultats" class="actions-avis" hidden>
+  <button type="button" class="bouton" id="tout-copier">Tout copier</button>
+  <button type="button" class="bouton-secondaire" id="tout-vider">Tout effacer</button>
+  <span id="retour-copie" class="texte-discret" hidden>Copié.</span>
+</div>
+<div id="liste-transcriptions"></div>
+
+<script>
+(function () {
+  const zone = document.getElementById("zone-depot"), entree = document.getElementById("fichiers-vocaux"), liste = document.getElementById("liste-transcriptions");
+  const barre = document.getElementById("barre-resultats"), retour = document.getElementById("retour-copie");
+  const file = [];
+  let enCours = 0;
+  const MAX_PARALLELE = 2;
+
+  function copier(texte, bouton) {
+    const fini = () => { const avant = bouton.textContent; bouton.textContent = "Copié ✓"; setTimeout(() => { bouton.textContent = avant; }, 1500); };
+    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(texte).then(fini, () => repli(texte, fini)); } else { repli(texte, fini); }
+  }
+  function repli(texte, fini) {
+    const t = document.createElement("textarea"); t.value = texte; t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); fini(); } catch (e) { /* pas de presse-papiers : le texte reste selectionnable a la main */ }
+    document.body.removeChild(t);
+  }
+  function majBarre() { barre.hidden = liste.children.length === 0; }
+  function ajuster(zoneTexte) { zoneTexte.style.height = "auto"; zoneTexte.style.height = Math.min(zoneTexte.scrollHeight + 4, 420) + "px"; }
+
+  function creerCarte(fichier) {
+    const carte = document.createElement("div");
+    carte.className = "bloc-section carte-transcription";
+    carte.innerHTML = '<div class="actions-avis" style="justify-content:space-between;align-items:center"><strong class="nom-fichier"></strong><span class="texte-discret statut-transcription"></span></div>' +
+      '<textarea class="texte-transcrit" rows="3" style="width:100%" hidden></textarea><p class="message-erreur erreur-transcription" hidden></p>' +
+      '<div class="actions-avis"><button type="button" class="bouton bouton-copier" hidden>Copier</button><button type="button" class="bouton-secondaire bouton-retirer">Retirer</button></div>';
+    carte.querySelector(".nom-fichier").textContent = fichier.name;
+    carte.querySelector(".bouton-retirer").addEventListener("click", () => { carte.remove(); majBarre(); });
+    const zoneTexte = carte.querySelector(".texte-transcrit");
+    zoneTexte.addEventListener("input", () => ajuster(zoneTexte));
+    carte.querySelector(".bouton-copier").addEventListener("click", (e) => copier(zoneTexte.value, e.target));
+    liste.appendChild(carte); majBarre();
+    return carte;
+  }
+
+  async function transcrire(fichier, carte) {
+    const statut = carte.querySelector(".statut-transcription"), zoneTexte = carte.querySelector(".texte-transcrit"), erreur = carte.querySelector(".erreur-transcription");
+    statut.textContent = "Transcription en cours…";
+    try {
+      const donnees = new FormData(); donnees.append("fichier", fichier);
+      const reponse = await fetch("/transcription-vocale/transcrire", { method: "POST", body: donnees });
+      let corps = {};
+      try { corps = await reponse.json(); } catch (e) { /* reponse non JSON */ }
+      if (!reponse.ok) throw new Error(corps.erreur || "Erreur " + reponse.status);
+      zoneTexte.value = corps.texte; zoneTexte.hidden = false; ajuster(zoneTexte);
+      carte.querySelector(".bouton-copier").hidden = false;
+      statut.textContent = "";
+    } catch (e) {
+      erreur.textContent = e.message; erreur.hidden = false; statut.textContent = "";
+    }
+  }
+
+  function suivant() {
+    while (enCours < MAX_PARALLELE && file.length) {
+      const [fichier, carte] = file.shift();
+      enCours++;
+      transcrire(fichier, carte).finally(() => { enCours--; suivant(); });
+    }
+  }
+  function ajouter(fichiers) {
+    Array.from(fichiers).sort((a, b) => a.name.localeCompare(b.name, "fr", { numeric: true })).forEach((fichier) => {
+      const carte = creerCarte(fichier);
+      carte.querySelector(".statut-transcription").textContent = "En attente…";
+      file.push([fichier, carte]);
+    });
+    suivant();
+  }
+
+  zone.addEventListener("click", () => entree.click());
+  entree.addEventListener("change", () => { ajouter(entree.files); entree.value = ""; });
+  ["dragenter", "dragover"].forEach((nom) => zone.addEventListener(nom, (e) => { e.preventDefault(); zone.style.background = "rgba(0,0,0,0.04)"; }));
+  ["dragleave", "drop"].forEach((nom) => zone.addEventListener(nom, (e) => { e.preventDefault(); zone.style.background = ""; }));
+  zone.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files.length) ajouter(e.dataTransfer.files); });
+
+  document.getElementById("tout-copier").addEventListener("click", (e) => {
+    const cartes = Array.from(liste.querySelectorAll(".carte-transcription")).filter((c) => !c.querySelector(".texte-transcrit").hidden);
+    const texte = cartes.length === 1 ? cartes[0].querySelector(".texte-transcrit").value
+      : cartes.map((c) => c.querySelector(".nom-fichier").textContent + "\n" + c.querySelector(".texte-transcrit").value).join("\n\n");
+    copier(texte, e.target);
+  });
+  document.getElementById("tout-vider").addEventListener("click", () => { file.length = 0; liste.innerHTML = ""; majBarre(); });
+})();
+</script>
+{% endblock %}

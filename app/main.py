@@ -11917,6 +11917,43 @@ async def importer_idee_vocale(request: Request, fichier: UploadFile = File(...)
     return JSONResponse({"id": idee.id, "texte": transcription})
 
 
+@app.get("/transcription-vocale", response_class=HTMLResponse)
+def page_transcription_vocale(request: Request):
+    """Vocaux recus (WhatsApp...) : on les depose, la transcription s'affiche pour etre copiee. Rien n'est conserve."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    return templates.TemplateResponse(request, "transcription_vocale.html", {
+        "transcription_configuree": bool(whatsapp_business.CLE_OPENAI), "taille_max_mo": TAILLE_MAX_VOCAL // (1024 * 1024),
+    })
+
+
+@app.post("/transcription-vocale/transcrire")
+async def transcrire_vocal_depose(request: Request, fichier: UploadFile = File(...)):
+    """Transcrit un fichier audio depose (vocal WhatsApp .ogg/.opus, m4a, mp3...) et renvoie le texte. Le fichier et le texte ne sont pas enregistres."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, rechargez la page."}, status_code=401)
+    octets = await fichier.read()
+    if not octets:
+        return JSONResponse({"erreur": "Le fichier est vide."}, status_code=400)
+    if len(octets) > TAILLE_MAX_VOCAL:
+        return JSONResponse({"erreur": f"Fichier trop volumineux ({len(octets) // (1024 * 1024)} Mo, {TAILLE_MAX_VOCAL // (1024 * 1024)} Mo maximum)."}, status_code=400)
+    extension = os.path.splitext(fichier.filename or "")[1].lstrip(".").lower()
+    mime = (fichier.content_type or "").lower()
+    if extension and extension not in EXTENSIONS_VOCAL_IMPORT and not mime.startswith(("audio/", "video/")):
+        return JSONResponse({"erreur": "Format non pris en charge (ogg, opus, m4a, mp3, wav, webm, aac)."}, status_code=400)
+    mime_extension = {"m4a": "audio/m4a", "mp4": "audio/mp4", "wav": "audio/wav", "ogg": "audio/ogg", "oga": "audio/ogg", "opus": "audio/ogg", "webm": "audio/webm", "aac": "audio/aac", "caf": "audio/x-caf"}
+    if extension in ("ogg", "oga", "opus") or not mime or mime == "application/octet-stream":     # un vocal WhatsApp .opus est un ogg : Whisper ne connait que « ogg »
+        mime = mime_extension.get(extension, "audio/mpeg")
+    try:
+        texte = (await asyncio.to_thread(whatsapp_business.transcrire_audio, octets, mime)).strip()
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Transcription impossible : {erreur}"}, status_code=502)
+    if not texte:
+        return JSONResponse({"erreur": "Aucune parole détectée dans ce vocal."}, status_code=422)
+    return JSONResponse({"texte": texte})
+
+
 @app.post("/idees-vocales/{idee_id}/creer-post")
 def creer_post_depuis_idee_vocale(
     idee_id: int, request: Request, client_id: int = Form(...), texte: str = Form(...), db: Session = Depends(obtenir_session),
