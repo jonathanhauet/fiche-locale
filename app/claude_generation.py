@@ -9,7 +9,7 @@ import json
 import unicodedata
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from anthropic import Anthropic as _AnthropicSDK
 
@@ -115,6 +115,62 @@ def contexte_temporel(aujourdhui: date = None) -> str:
     )
 
 
+EVENEMENTS_FIXES = (
+    (1, 1, "le Nouvel An"), (14, 2, "la Saint-Valentin"), (1, 5, "la Fête du travail"), (8, 5, "le 8 mai"), (14, 7, "la fête nationale en France"), (21, 7, "la fête nationale en Belgique"),
+    (15, 8, "l'Assomption"), (31, 10, "Halloween"), (1, 11, "la Toussaint"), (11, 11, "l'Armistice du 11 novembre"), (6, 12, "la Saint-Nicolas"), (25, 12, "Noël"), (31, 12, "le réveillon du Nouvel An"),
+)
+
+
+def _dernier_dimanche(annee: int, mois: int) -> date:
+    jour = date(annee + (mois == 12), mois % 12 + 1, 1) - timedelta(days=1)
+    return jour - timedelta(days=(jour.weekday() + 1) % 7)
+
+
+def evenements_autour(jour: date, fenetre: int = 6) -> list:
+    """Fetes et evenements fixes de l'annee (France et Belgique) a moins de `fenetre` jours de cette date, avec leur position (« le 31 octobre », « dans 3 jours », « il y a 2 jours »)."""
+    candidats = [(date(jour.year + decalage, mois, j), nom) for decalage in (-1, 0, 1) for j, mois, nom in EVENEMENTS_FIXES]
+    candidats += [(_dernier_dimanche(jour.year + d, 3), "le passage à l'heure d'été") for d in (-1, 0, 1)] + [(_dernier_dimanche(jour.year + d, 10), "le passage à l'heure d'hiver") for d in (-1, 0, 1)]
+    vendredis = [date(jour.year + d, 11, 1) + timedelta(days=(4 - date(jour.year + d, 11, 1).weekday()) % 7 + 21) for d in (-1, 0, 1)]
+    candidats += [(v, "le Black Friday") for v in vendredis]
+    def position(ecart):
+        if ecart == 0:
+            return "ce jour-là"
+        n = abs(ecart)
+        return f"dans {n} jour{'s' if n > 1 else ''}" if ecart > 0 else f"il y a {n} jour{'s' if n > 1 else ''}"
+
+    return [f"{nom} ({position((quand - jour).days)})" for quand, nom in sorted(candidats) if abs((quand - jour).days) <= fenetre]
+
+
+def bloc_dates_publication(dates: list, nombre: int) -> str:
+    """Consigne de dates pour un lot de posts : chaque post est ecrit pour SA date de publication (saison, evenements proches), sans reference a un moment passe ou lointain."""
+    dates = sorted(d for d in (dates or []) if isinstance(d, date))[:nombre]
+    if not dates:
+        return ""
+    lignes = []
+    for i, jour in enumerate(dates, 1):
+        saison, reperes = REPERES_MOIS[jour.month]
+        proches = evenements_autour(jour)
+        lignes.append(f"- Post n°{i} : {JOURS_PUBLICATION[jour.weekday()]} {jour.day} {LIBELLES_MOIS[jour.month - 1]} {jour.year} ({saison} ; repères du mois : {reperes}"
+                      + (f" ; à cette date : {', '.join(proches)}" if proches else "") + ")")
+    reste = ""
+    if len(dates) < nombre:
+        reste = f"\nLes posts n°{len(dates) + 1} à {nombre} n'ont pas de date : écris-les de façon intemporelle (aucune saison, aucune fête, aucun événement)."
+    return (
+        "\n\n---\n\n"
+        "DATES RÉELLES DE PUBLICATION. Écris les posts dans l'ordre chronologique : le 1er post du JSON sera publié à la 1re date, le 2e à la 2e, etc.\n"
+        + "\n".join(lignes) + reste + "\n"
+        "RÈGLE ABSOLUE : chaque post est écrit pour SA date et pour elle seule. La saison, la météo, les fêtes, les événements et le moment de l'année doivent correspondre à cette date. "
+        "N'évoque JAMAIS une période, une fête ou un événement qui sera passé à la date du post (par exemple pas de Halloween, de fin octobre ni de changement d'heure dans un post publié fin novembre), "
+        "ni un événement encore très lointain à cette date. Pas de référence relative au moment de la rédaction (« aujourd'hui », « cette semaine », « ce week-end », « demain », « en ce moment ») "
+        "sauf si elle reste vraie à la date du post. N'écris jamais la date ni le mois en toutes lettres (« le 2 novembre », « en novembre 2026 ») : préfère des formulations naturelles "
+        "(« à l'approche de Noël », « avec les premiers froids »). Si aucune période n'est naturelle pour un post, n'en évoque aucune. "
+        "COHERENCE SAISONNIERE : aucun sujet, exemple ni conseil ne doit évoquer une saison ou une météo qui ne correspond pas à la date du post."
+    )
+
+
+JOURS_PUBLICATION = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+
 # Chaque module qui a besoin de .env le charge lui-meme : on ne peut pas
 # compter sur l'ordre des imports pour garantir que main.py l'a deja fait.
 load_dotenv(os.path.join(DOSSIER_PLATEFORME, ".env"))
@@ -143,7 +199,7 @@ SCHEMA_REPONSE = {
 
 
 def _construire_prompt(
-    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None
+    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None, dates: list = None
 ) -> str:
     with open(FICHIER_PROMPT, "r", encoding="utf-8") as f:
         gabarit_prompt = f.read()
@@ -170,6 +226,9 @@ def _construire_prompt(
         f"periode si ce n'est pas naturel pour ce post. COHERENCE SAISONNIERE : aucun sujet, exemple ni conseil ne doit evoquer une saison, une meteo ou un "
         f"evenement qui ne correspond pas a cette periode (pas de canicule en automne, pas de neige en ete)."
     )
+
+    if dates:                                                            # dates choisies dans le calendrier : chaque post est ecrit pour sa propre date
+        instruction_periode = bloc_dates_publication(dates, nombre_posts) or instruction_periode
 
     instruction_deja_traites = ""
     if sujets_deja_traites:
@@ -293,7 +352,7 @@ def _nettoyer_champs_post(post: dict, google: bool = False) -> dict:
 
 
 def generer_posts_pour_client(
-    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None
+    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None, dates: list = None
 ) -> list[dict]:
     """
     Appelle l'API Claude et renvoie une liste de dictionnaires :
@@ -314,32 +373,34 @@ def generer_posts_pour_client(
             "ANTHROPIC_API_KEY manquant dans plateforme_web/.env."
         )
 
+    dates = sorted(d for d in (dates or []) if isinstance(d, date))          # dates de publication choisies (une par post, l'ordre chronologique est celui des posts)
     try:
-        return _generer_lot_posts(contenu_site, nombre_posts, sujets_deja_traites, localisation)
+        return _generer_lot_posts(contenu_site, nombre_posts, sujets_deja_traites, localisation, dates)
     except Exception as premiere_erreur:
         if nombre_posts <= 1:
             raise
         try:
-            return _generer_lot_posts(contenu_site, nombre_posts, sujets_deja_traites, localisation)
+            return _generer_lot_posts(contenu_site, nombre_posts, sujets_deja_traites, localisation, dates)
         except Exception:
             pass
 
     posts, deja = [], list(sujets_deja_traites or [])
     while len(posts) < nombre_posts:
         lot = min(4, nombre_posts - len(posts))
+        dates_du_lot = dates[len(posts):len(posts) + lot]                     # chaque petit lot recoit les dates de ses posts
         try:
-            nouveaux = _generer_lot_posts(contenu_site, lot, deja, localisation)
+            nouveaux = _generer_lot_posts(contenu_site, lot, deja, localisation, dates_du_lot)
         except Exception:
-            nouveaux = _generer_lot_posts(contenu_site, lot, deja, localisation)
+            nouveaux = _generer_lot_posts(contenu_site, lot, deja, localisation, dates_du_lot)
         posts.extend(nouveaux)
         deja.extend(f"{p['titre']} - {p['texte'][:150]}" for p in nouveaux)
     return posts[:nombre_posts]
 
 
 def _generer_lot_posts(
-    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None
+    contenu_site: str, nombre_posts: int, sujets_deja_traites: list[str] = None, localisation: dict = None, dates: list = None
 ) -> list[dict]:
-    prompt_complet = _construire_prompt(contenu_site, nombre_posts, sujets_deja_traites, localisation)
+    prompt_complet = _construire_prompt(contenu_site, nombre_posts, sujets_deja_traites, localisation, dates)
 
     client = Anthropic(api_key=CLE_API)
     # Un budget fixe (8192 auparavant) se faisait tronquer en plein milieu
@@ -1161,7 +1222,7 @@ def suggerer_sujets_evergreen(
     ]
 
 
-def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", nombre_posts: int = 5) -> list[dict]:
+def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", nombre_posts: int = 5, dates: list = None) -> list[dict]:
     """
     Variante de generer_post_generique() qui produit plusieurs propositions
     differentes en un seul appel (page "Posts en masse" : Jonathan choisit
@@ -1201,6 +1262,7 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
         "- Pour chaque proposition, redige aussi un titre court et un prompt en anglais pour un "
         "generateur d'images (illustration adaptee au theme, sans texte incruste ni logo, sans "
         "reference geographique)."
+        + bloc_dates_publication(dates, nombre_posts)
     )
 
     client = Anthropic(api_key=CLE_API)

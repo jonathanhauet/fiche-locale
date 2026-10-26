@@ -2386,10 +2386,11 @@ async def generer_masse_et_creer_lots(request: Request, db: Session = Depends(ob
     dates_brutes = [d for d in formulaire.getlist("dates_prevues")[:nombre_posts]]
 
     try:
-        posts_generes = claude_generation.generer_posts_generiques(theme, contenu_reference, nombre_posts)
+        posts_generes = claude_generation.generer_posts_generiques(theme, contenu_reference, nombre_posts, _dates_publication_choisies(dates_brutes))
     except Exception as erreur:
         return _reponse_posts_multi(request, db, erreur=str(erreur))
 
+    dates_brutes = [d.isoformat() for d in _dates_publication_choisies(dates_brutes)]                  # les dates vont aux posts dans l'ordre chronologique, comme dans la consigne de l'IA
     clients_valides = [db.get(models.Client, cid) for cid in client_ids]
     clients_valides = [c for c in clients_valides if c]
 
@@ -4148,6 +4149,17 @@ def desactiver_protection_fiche(client_id: int, request: Request, db: Session = 
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
+def _dates_publication_choisies(dates_brutes: list) -> list:
+    """Dates valides choisies dans le calendrier, triees : le 1er post genere prend la plus proche (voir claude_generation.bloc_dates_publication)."""
+    dates = []
+    for brute in dates_brutes or []:
+        try:
+            dates.append(date.fromisoformat(str(brute).strip()))
+        except ValueError:
+            continue
+    return sorted(dates)
+
+
 @app.post("/clients/{client_id}/generer")
 async def generer_posts_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -4180,12 +4192,14 @@ async def generer_posts_client(client_id: int, request: Request, db: Session = D
             "rayon_km": client.localisation_rayon_km,
         }
 
+    dates_choisies = _dates_publication_choisies(dates_brutes)                                    # chaque post est ecrit pour sa date : saison et evenements proches de cette date
     try:
         posts_generes = claude_generation.generer_posts_pour_client(
-            _contexte_ia_client(client), nombre_posts, _sujets_deja_traites_client(db, client.id), localisation
+            _contexte_ia_client(client), nombre_posts, _sujets_deja_traites_client(db, client.id), localisation, dates_choisies
         )
     except Exception as erreur:
         return _reponse_detail_client(request, db, client, erreur_generation=str(erreur), code=500)
+    dates_brutes = [d.isoformat() for d in dates_choisies]
 
     for index, post_genere in enumerate(posts_generes):
         date_prevue = None
