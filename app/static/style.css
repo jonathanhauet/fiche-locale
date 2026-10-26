@@ -3209,6 +3209,20 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .zoom-image-flottant { position: fixed; z-index: 1000; padding: 8px; border-radius: 12px; background: var(--carte); border: 1px solid var(--carte-bordure); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); pointer-events: none; }
 .zoom-image-flottant[hidden] { display: none; }
 .zoom-image-flottant img { display: block; max-width: min(460px, calc(100vw - 40px)); max-height: 70vh; width: auto; height: auto; border-radius: 8px; }
+.aide-ordre-images { flex-basis: 100%; margin: 0; font-size: 0.82rem; }
+.image-choisie[draggable="true"] { cursor: grab; }
+.image-choisie-glissee { opacity: 0.4; }
+.image-choisie-cible img { outline: 3px solid var(--primaire, #2563eb); outline-offset: 2px; }
+.image-choisie-numero {
+  position: absolute; top: 4px; left: 4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; pointer-events: none;
+}
+.image-choisie-fleches { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; padding: 3px; }
+.image-choisie-fleches button {
+  width: 24px; height: 22px; border: 0; border-radius: 5px; padding: 0; cursor: pointer; font-size: 11px; line-height: 22px;
+  background: rgba(0, 0, 0, 0.7); color: #fff;
+}
+.image-choisie-fleches button:disabled { opacity: 0.25; cursor: default; }
 .image-choisie-retirer {
   position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
   background: #d92d20; color: #fff; border: 2px solid var(--fond, #fff); cursor: pointer;

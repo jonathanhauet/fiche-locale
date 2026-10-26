@@ -169,7 +169,7 @@
   <div class="onglet-panneau" data-onglet="visuel" hidden>
   <label for="image-partagee">Image(s) (optionnelles — partagées par défaut sur tous les réseaux, Instagram en a besoin)</label>
   <input type="file" id="image-partagee" name="image" accept="image/*" multiple>
-  <p class="texte-discret">Jusqu'à 10 images : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique ; un carrousel IA (ci-dessous) compte comme plusieurs images.</p>
+  <p class="texte-discret">Jusqu'à 10 images, ajoutables en plusieurs fois et réordonnables : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique ; un carrousel IA (ci-dessous) compte comme plusieurs images.</p>
   <div class="ligne-champs">
     <input type="text" id="prompt-image-ia" value="{{ prompt_image_initial }}" placeholder="Description de l'image (laissez vide : l'IA la déduit de votre texte de base)" style="flex:1;">
     <button type="button" id="bouton-generer-image" class="bouton-secondaire">
@@ -1121,29 +1121,79 @@
       actualiserImagesChoisies();
     }
 
-    // Liste des images du post (champ-image-url-ia, "|" separe) avec un bouton pour en retirer une - alimentee
-    // par toutes les sources (IA, fiche, WhatsApp, avis, titre sur photo...), toutes passent par ce meme champ.
+    // Liste des images du post : fichiers choisis sur l'ordinateur (champ-image-partagee) ou images deja hebergees (IA, fiche, WhatsApp, avis, titre sur photo...
+    // dans champ-image-url-ia, "|" separe). Dans les deux cas : numero d'ordre, retirer, deplacer (fleches ou glisser-deposer). La premiere image est celle de la couverture.
+    const apercusFichiers = new WeakMap();
+    let dernierEtatFichiers = [];
+    function definirFichiersPartages(liste) {
+      const transfert = new DataTransfer();
+      liste.forEach((f) => transfert.items.add(f));
+      champImagePartagee.files = transfert.files;
+    }
+    function urlApercuFichier(fichier) {
+      if (!apercusFichiers.has(fichier)) apercusFichiers.set(fichier, URL.createObjectURL(fichier));
+      return apercusFichiers.get(fichier);
+    }
+    function imagesDuPost() {
+      const fichiers = Array.from(champImagePartagee.files);
+      if (fichiers.length) return { fichiers: true, elements: fichiers };
+      return { fichiers: false, elements: champImageUrlIA.value ? champImageUrlIA.value.split("|").filter(Boolean) : [] };
+    }
+    function enregistrerImagesDuPost(fichiers, elements) {
+      if (fichiers) definirFichiersPartages(elements); else champImageUrlIA.value = elements.join("|");
+      if (!elements.length) document.getElementById("champ-est-carrousel").value = "0";
+      actualiserToutesLesApercusImage();
+    }
+    function deplacerImageDuPost(de, vers) {
+      const { fichiers, elements } = imagesDuPost();
+      if (vers < 0 || vers >= elements.length || de === vers) return;
+      const [deplacee] = elements.splice(de, 1);
+      elements.splice(vers, 0, deplacee);
+      enregistrerImagesDuPost(fichiers, elements);
+    }
+    let indexImageGlissee = -1;
     function actualiserImagesChoisies() {
       const conteneur = document.getElementById("apercu-images-choisies");
       if (!conteneur) return;
-      const urls = champImageUrlIA.value ? champImageUrlIA.value.split("|").filter(Boolean) : [];
+      const { fichiers, elements } = imagesDuPost();
+      dernierEtatFichiers = fichiers ? elements.slice() : [];
       conteneur.innerHTML = "";
-      conteneur.hidden = !urls.length;
-      urls.forEach((url, i) => {
+      conteneur.hidden = !elements.length;
+      if (elements.length > 1) {
+        const aide = document.createElement("p");
+        aide.className = "texte-discret aide-ordre-images";
+        aide.textContent = "Ordre de publication : glissez une image ou utilisez les flèches. La première est la couverture.";
+        conteneur.appendChild(aide);
+      }
+      elements.forEach((element, i) => {
         const bloc = document.createElement("div");
         bloc.className = "image-choisie";
+        bloc.draggable = elements.length > 1;
         const img = document.createElement("img");
-        img.src = url; img.alt = "Image du post";
+        img.src = fichiers ? urlApercuFichier(element) : element; img.alt = "Image " + (i + 1) + " du post"; img.draggable = false;
         const retirer = document.createElement("button");
         retirer.type = "button"; retirer.className = "image-choisie-retirer"; retirer.title = "Retirer cette image";
         retirer.textContent = "×";
-        retirer.addEventListener("click", () => {
-          const nouvelles = urls.filter((_, j) => j !== i);
-          champImageUrlIA.value = nouvelles.join("|");
-          if (!nouvelles.length) document.getElementById("champ-est-carrousel").value = "0";
-          actualiserToutesLesApercusImage();
-        });
+        retirer.addEventListener("click", () => enregistrerImagesDuPost(fichiers, elements.filter((_, j) => j !== i)));
         bloc.appendChild(img); bloc.appendChild(retirer);
+        if (elements.length > 1) {
+          const numero = document.createElement("span");
+          numero.className = "image-choisie-numero"; numero.textContent = String(i + 1);
+          const fleches = document.createElement("div");
+          fleches.className = "image-choisie-fleches";
+          [["◀", -1, "Déplacer vers le début"], ["▶", 1, "Déplacer vers la fin"]].forEach(([symbole, sens, titre]) => {
+            const b = document.createElement("button");
+            b.type = "button"; b.textContent = symbole; b.title = titre; b.disabled = i + sens < 0 || i + sens >= elements.length;
+            b.addEventListener("click", () => deplacerImageDuPost(i, i + sens));
+            fleches.appendChild(b);
+          });
+          bloc.appendChild(numero); bloc.appendChild(fleches);
+          bloc.addEventListener("dragstart", (e) => { indexImageGlissee = i; bloc.classList.add("image-choisie-glissee"); if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); } });
+          bloc.addEventListener("dragend", () => { indexImageGlissee = -1; bloc.classList.remove("image-choisie-glissee"); });
+          bloc.addEventListener("dragover", (e) => { if (indexImageGlissee >= 0) { e.preventDefault(); bloc.classList.add("image-choisie-cible"); } });
+          bloc.addEventListener("dragleave", () => bloc.classList.remove("image-choisie-cible"));
+          bloc.addEventListener("drop", (e) => { e.preventDefault(); bloc.classList.remove("image-choisie-cible"); const de = indexImageGlissee; indexImageGlissee = -1; if (de >= 0) deplacerImageDuPost(de, i); });
+        }
         conteneur.appendChild(bloc);
       });
     }
@@ -1250,11 +1300,16 @@
     }
 
     champImagePartagee.addEventListener("change", () => {
-      if (champImagePartagee.files.length > 10) {
-        alert("10 images maximum par publication.");
-        champImagePartagee.value = "";
+      // Une nouvelle selection s'ajoute aux photos deja choisies (meme fichier deux fois : ignore), jusqu'a 10.
+      const cle = (f) => f.name + "|" + f.size + "|" + f.lastModified;
+      const connues = new Set(dernierEtatFichiers.map(cle));
+      let cumul = dernierEtatFichiers.concat(Array.from(champImagePartagee.files).filter((f) => !connues.has(cle(f))));
+      if (cumul.length > 10) {
+        alert("10 images maximum par publication : les suivantes n'ont pas été ajoutées.");
+        cumul = cumul.slice(0, 10);
       }
-      if (champImagePartagee.files[0]) { champImageUrlIA.value = ""; document.getElementById("champ-est-carrousel").value = "0"; }
+      if (cumul.length) { champImageUrlIA.value = ""; document.getElementById("champ-est-carrousel").value = "0"; }
+      definirFichiersPartages(cumul);
       actualiserToutesLesApercusImage();
     });
 
