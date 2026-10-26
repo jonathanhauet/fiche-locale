@@ -115,6 +115,74 @@
   .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
   .bloc-ensemble p { line-height: 1.6; }
   .pied-page-publique { color: var(--texte-discret); font-size: 0.85rem; text-align: center; margin-top: 2rem; }
+  .accueil { border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); box-shadow: var(--ombre); margin-bottom: 1rem; overflow: hidden; }
+  .accueil > summary { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.85rem 1.1rem; cursor: pointer; list-style: none; font-weight: 700; font-size: 1.08rem; }
+  .accueil > summary::-webkit-details-marker { display: none; }
+  .accueil-bascule { font-size: 0.8rem; font-weight: 600; color: var(--texte-discret); }
+  .accueil[open] .accueil-bascule::after { content: "Masquer ▴"; }
+  .accueil:not([open]) .accueil-bascule::after { content: "Afficher ▾"; }
+  .accueil-corps { display: flex; gap: 1.3rem; flex-wrap: wrap; align-items: center; padding: 0 1.1rem 1.2rem; }
+  .accueil-texte { flex: 1 1 290px; min-width: 0; }
+  .accueil-intro { margin: 0 0 0.8rem; line-height: 1.55; }
+  .accueil-etapes { list-style: none; margin: 0; padding: 0; counter-reset: etape-accueil; display: flex; flex-direction: column; gap: 0.45rem; }
+  .accueil-etapes li { counter-increment: etape-accueil; position: relative; padding: 0.5rem 0.7rem 0.5rem 2.7rem; border-radius: 10px; line-height: 1.45; font-size: 0.93rem; }
+  .accueil-etapes li::before { content: counter(etape-accueil); position: absolute; left: 0.65rem; top: 0.5rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--accent, #4f46e5); color: #fff; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; }
+  .accueil-etapes li:nth-child(1) { animation: accueil-etape-1 12s infinite; }
+  .accueil-etapes li:nth-child(2) { animation: accueil-etape-2 12s infinite; }
+  .accueil-etapes li:nth-child(3) { animation: accueil-etape-3 12s infinite; }
+  @keyframes accueil-etape-1 { 0%, 10% { background: rgba(79, 70, 229, 0.14); } 14%, 100% { background: transparent; } }
+  @keyframes accueil-etape-2 { 0%, 11% { background: transparent; } 14%, 46% { background: rgba(79, 70, 229, 0.14); } 50%, 100% { background: transparent; } }
+  @keyframes accueil-etape-3 { 0%, 46% { background: transparent; } 50%, 92% { background: rgba(79, 70, 229, 0.14); } 97%, 100% { background: transparent; } }
+  .accueil-demo { flex: 0 0 290px; max-width: 100%; margin: 0 auto; position: relative; height: 232px; }
+  .demo-carte { position: absolute; top: 0; left: 0; right: 0; background: var(--fond, #fff); border: 1px solid var(--carte-bordure); border-radius: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16); padding: 0.7rem 0.75rem; overflow: hidden; animation: demo-carte 12s infinite; }
+  @keyframes demo-carte { 0% { opacity: 0; transform: translateY(16px); } 4%, 92% { opacity: 1; transform: none; } 98%, 100% { opacity: 0; transform: translateY(-6px); } }
+  .demo-entete { display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; white-space: nowrap; }
+  .demo-badge { width: 1.4rem; height: 1.4rem; border-radius: 50%; background: linear-gradient(45deg, #f09433, #dc2743, #bc1888); color: #fff; font-size: 0.6rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .demo-statut { margin-left: auto; padding: 0.1rem 0.45rem; border-radius: 999px; background: rgba(34, 160, 90, 0.16); color: #1f9d55; font-weight: 700; font-size: 0.66rem; animation: demo-pop 12s infinite; }
+  @keyframes demo-pop { 0%, 4% { transform: scale(0); opacity: 0; } 8%, 92% { transform: scale(1); opacity: 1; } 98%, 100% { opacity: 0; } }
+  .demo-corps { display: flex; gap: 0.6rem; margin-top: 0.55rem; align-items: center; }
+  .demo-vignette { width: 2.6rem; height: 2.6rem; border-radius: 8px; background: linear-gradient(135deg, #fde68a, #f9a8d4); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+  .demo-lignes { flex: 1; display: flex; flex-direction: column; gap: 0.35rem; }
+  .demo-lignes i { display: block; height: 0.45rem; border-radius: 4px; background: rgba(127, 127, 127, 0.3); }
+  .demo-lignes i:last-child { width: 70%; }
+  .demo-detail { overflow: hidden; max-height: 0; animation: demo-detail 12s infinite; }
+  @keyframes demo-detail { 0%, 15% { max-height: 0; } 22%, 92% { max-height: 150px; } 98%, 100% { max-height: 0; } }
+  .demo-bouton { display: inline-block; margin-top: 0.65rem; padding: 0.35rem 0.7rem; border-radius: 8px; border: 1px solid var(--carte-bordure); font-size: 0.76rem; font-weight: 600; animation: demo-bouton 12s infinite; }
+  @keyframes demo-bouton { 0%, 50% { background: transparent; color: inherit; border-color: var(--carte-bordure); } 54%, 100% { background: var(--accent, #4f46e5); color: #fff; border-color: var(--accent, #4f46e5); } }
+  .demo-message { display: block; margin-top: 0.5rem; padding: 0.4rem 0.6rem; border-radius: 10px 10px 10px 2px; background: rgba(79, 70, 229, 0.13); font-size: 0.76rem; clip-path: inset(0 100% 0 0); animation: demo-message 12s infinite; }
+  @keyframes demo-message { 0%, 58% { clip-path: inset(0 100% 0 0); } 70%, 100% { clip-path: inset(0 0 0 0); } }
+  .demo-merci { overflow: hidden; max-height: 0; opacity: 0; font-size: 0.76rem; font-weight: 700; color: #1f9d55; animation: demo-merci 12s infinite; }
+  @keyframes demo-merci { 0%, 76% { max-height: 0; opacity: 0; margin-top: 0; } 82%, 92% { max-height: 40px; opacity: 1; margin-top: 0.5rem; } 98%, 100% { max-height: 0; opacity: 0; } }
+  .demo-curseur { position: absolute; left: 0; top: 0; font-size: 1.6rem; line-height: 1; z-index: 2; pointer-events: none; opacity: 0; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); animation: demo-curseur 12s infinite; }
+  @keyframes demo-curseur {
+    0% { opacity: 0; transform: translate(235px, 200px); }
+    9% { opacity: 1; transform: translate(190px, 18px); }
+    13% { transform: translate(190px, 18px) scale(1); }
+    15% { transform: translate(190px, 20px) scale(0.8); }
+    18% { transform: translate(190px, 18px) scale(1); }
+    38% { transform: translate(190px, 18px); }
+    47% { transform: translate(80px, 106px); }
+    51% { transform: translate(80px, 106px) scale(1); }
+    53% { transform: translate(80px, 108px) scale(0.8); }
+    56% { transform: translate(80px, 106px) scale(1); }
+    68% { opacity: 1; transform: translate(80px, 106px); }
+    76% { opacity: 0; transform: translate(160px, 190px); }
+    100% { opacity: 0; transform: translate(160px, 190px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .accueil-etapes li, .demo-carte, .demo-statut, .demo-detail, .demo-bouton, .demo-message, .demo-merci { animation: none; }
+    .demo-detail { max-height: 150px; } .demo-message { clip-path: none; } .demo-merci { max-height: 40px; opacity: 1; margin-top: 0.5rem; } .demo-curseur { display: none; }
+  }
+  .canaux-puces { display: flex; flex-wrap: wrap; gap: 0.5rem 0.9rem; margin: 0.6rem 0 0.2rem; }
+  .canaux-puces .canal-puce { font-size: 0.85rem; }
+  .accroche .legende-canaux { margin: 0.2rem 0 0.7rem; }
+  .titre-agenda { font-size: 1.15rem; margin: 1.3rem 0 0.7rem; }
+  .equation { display: flex; align-items: stretch; gap: 0.6rem; flex-wrap: wrap; margin: 1rem 0 0.9rem; }
+  .eq-case { flex: 1 1 170px; display: flex; flex-direction: column; gap: 0.25rem; padding: 0.85rem; border-radius: 12px; background: rgba(79, 70, 229, 0.07); border: 1px solid var(--carte-bordure); line-height: 1.4; font-size: 0.9rem; }
+  .eq-icone { font-size: 1.6rem; line-height: 1; }
+  .eq-signe { align-self: center; font-size: 1.4rem; color: var(--accent, #4f46e5); font-weight: 700; }
+  @media (max-width: 560px) { .eq-signe { transform: rotate(90deg); flex-basis: 100%; text-align: center; } }
+  .ensemble-conclusion { font-weight: 600; margin: 0.2rem 0 0; }
   .resume-programme { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin: 0 0 1rem; padding: 0.8rem 1rem; border-radius: var(--rayon); background: var(--carte); border: 1px solid var(--carte-bordure); box-shadow: var(--ombre); }
   .resume-programme strong { font-size: 1.05rem; }
   .onglets { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.1rem 0 0.5rem; margin-bottom: 0.9rem; position: sticky; top: 0; z-index: 5; background: var(--fond, #fff); scrollbar-width: thin; }
@@ -229,26 +297,46 @@
   </nav>
 
   <section class="panneau panneau-actif" id="panneau-tout" data-panneau="tout">
-    {% if publications %}
-    {% set ns = namespace(groupe="") %}
-    {% for p in publications %}
-    {% if loop.index == 11 %}<button type="button" class="bouton-secondaire" id="agenda-suite-bouton">Voir les {{ publications|length - 10 }} publications suivantes</button><div id="agenda-suite" hidden>{% endif %}
-    {% if p.groupe != ns.groupe %}{% set ns.groupe = p.groupe %}<h3 class="groupe-jour">{{ p.groupe }}</h3>{% endif %}
-    {{ ligne_agenda(p) }}
-    {% endfor %}
-    {% if publications|length > 10 %}</div>{% endif %}
-    <p class="texte-discret">Touchez une publication pour la lire en entier ou demander une modification.</p>
-    {% else %}
-    <p class="vide-programme">Aucune publication n'est programmée pour le moment.</p>
-    {% endif %}
-    <p class="legende-canaux">En couleur : géré avec Jonathan. Grisé : pas encore connecté.</p>
-  <div class="accroche">
+    <details class="accueil" id="accueil" open>
+      <summary><span>👋 Bienvenue sur votre page de suivi</span><span class="accueil-bascule"></span></summary>
+      <div class="accueil-corps">
+        <div class="accueil-texte">
+          <p class="accueil-intro">Ici, vous voyez tout ce que je programme pour <strong>{{ nom }}</strong>, <strong>avant</strong> que ce soit publié. Rien n'est figé : vous gardez la main.</p>
+          <ol class="accueil-etapes">
+            <li><strong>Je programme</strong> vos publications sur chacun de vos canaux.</li>
+            <li><strong>Vous les retrouvez ici</strong>, classées par date. Touchez-en une pour la lire en entier.</li>
+            <li><strong>Un détail à changer ?</strong> Sous chaque publication, le bouton « Demander une modification » me prévient : texte, image ou date, je m'en occupe.</li>
+          </ol>
+        </div>
+        <div class="accueil-demo" aria-hidden="true">
+          <div class="demo-carte">
+            <div class="demo-entete"><span class="demo-badge">IG</span><b>Mar. 27 oct.</b><span>à 08:30</span><span class="demo-statut">Programmée ✓</span></div>
+            <div class="demo-corps"><span class="demo-vignette">📷</span><span class="demo-lignes"><i></i><i></i></span></div>
+            <div class="demo-detail">
+              <span class="demo-bouton">✏️ Demander une modification</span>
+              <span class="demo-message">Peut-on changer la photo ?</span>
+              <div class="demo-merci">✓ Demande envoyée, je reviens vers vous.</div>
+            </div>
+          </div>
+          <span class="demo-curseur">👆</span>
+        </div>
+      </div>
+    </details>
+
+    <div class="accroche">
       <p class="accroche-titre">
         {% if nb_actifs == nb_canaux %}Bravo : tous vos canaux sont gérés avec moi.{% elif nb_actifs == 0 %}Aucun canal n'est encore géré avec moi, et c'est le bon moment pour s'y mettre.{% else %}{{ nb_actifs }} {{ 'canaux' if nb_actifs > 1 else 'canal' }} sur {{ nb_canaux }} {{ 'sont gérés' if nb_actifs > 1 else 'est géré' }} avec moi.{% endif %}
       </p>
-      <p>
-        Google et les assistants IA recoupent plusieurs signaux pour décider quelles entreprises recommander : plus vos canaux sont nombreux, réguliers et cohérents, plus vous êtes identifié comme une entreprise fiable.
-      </p>
+      <div class="canaux-puces">
+        {% for c in canaux %}
+        <a class="canal-puce {{ '' if c.actif else 'canal-puce-inactif' }}" href="#canal-{{ c.code }}" title="{{ c.nom }} : {{ ('option activée' if c.code == 'geo' else 'géré avec Jonathan') if c.actif else ('option non activée' if c.code == 'geo' else 'pas encore connecté') }}">
+          <span class="badge-reseau badge-reseau-{{ c.code }} {{ '' if c.actif else 'badge-reseau-inactif' }}">{{ c.lettre }}</span>
+          <span>{{ c.nom }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      <p class="legende-canaux">En couleur : géré avec Jonathan. Grisé : pas encore connecté.</p>
+      <p>Plus vos canaux sont nombreux, réguliers et cohérents, plus Google et les assistants IA vous jugent fiable et vous recommandent.</p>
       <div class="boutons-accroche">
         <a class="bouton-whatsapp-grand" href="#methode">
           <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -262,7 +350,19 @@
         {% if premier_manquant %}<a class="bouton-contour" href="#canal-{{ premier_manquant }}">Voir ce que je peux ajouter pour vous&nbsp;↓</a>{% endif %}
       </div>
     </div>
-  
+
+    <h2 class="titre-agenda">Vos prochaines publications</h2>
+    {% if publications %}
+    {% set ns = namespace(groupe="") %}
+    {% for p in publications %}
+    {% if loop.index == 11 %}<button type="button" class="bouton-secondaire" id="agenda-suite-bouton">Voir les {{ publications|length - 10 }} publications suivantes</button><div id="agenda-suite" hidden>{% endif %}
+    {% if p.groupe != ns.groupe %}{% set ns.groupe = p.groupe %}<h3 class="groupe-jour">{{ p.groupe }}</h3>{% endif %}
+    {{ ligne_agenda(p) }}
+    {% endfor %}
+    {% if publications|length > 10 %}</div>{% endif %}
+    {% else %}
+    <p class="vide-programme">Aucune publication n'est programmée pour le moment.</p>
+    {% endif %}
   </section>
 
   {% for canal in sections %}
@@ -397,10 +497,15 @@
 
   <div class="bloc-ensemble">
     <h2>Pourquoi combiner plusieurs canaux ?</h2>
-    <p>Pour être trouvée en local, une entreprise est jugée par Google, et de plus en plus par les assistants IA, sur un ensemble de signaux qui se recoupent :
-      sa fiche Google, ses avis, son site, ses articles, ses réseaux sociaux, et la cohérence de toutes ses informations.</p>
-    <p>Un seul canal fait une partie du travail. Plusieurs canaux actifs, réguliers et cohérents se renforcent les uns les autres : l'entreprise est mieux identifiée,
-      jugée plus fiable, et plus souvent recommandée à celles et ceux qui la cherchent.</p>
+    <p>Google et les assistants IA ne regardent pas un seul endroit : ils recoupent plusieurs signaux avant de recommander une entreprise.</p>
+    <div class="equation">
+      <div class="eq-case"><span class="eq-icone">🧩</span><strong>Plusieurs canaux actifs</strong><span>Fiche Google, avis, site, articles, réseaux sociaux.</span></div>
+      <span class="eq-signe">→</span>
+      <div class="eq-case"><span class="eq-icone">🛡️</span><strong>Des signaux qui se recoupent</strong><span>Vos informations sont cohérentes partout : vous paraissez fiable.</span></div>
+      <span class="eq-signe">→</span>
+      <div class="eq-case"><span class="eq-icone">⭐</span><strong>Plus de recommandations</strong><span>Mieux identifiée, votre entreprise est proposée plus souvent à celles et ceux qui la cherchent.</span></div>
+    </div>
+    <p class="ensemble-conclusion">Un seul canal fait une partie du travail. Ensemble, ils se renforcent.</p>
   </div>
 
   <div class="appel-final">
@@ -411,10 +516,10 @@
     </svg>
     <div class="appel-final-texte">
       <strong>Envie d'essayer la méthode WhatsApp ?</strong>
-      <span>Quelques minutes par semaine, à la voix. Je m'occupe du reste, et je relis tout avant publication.</span>
+      <span>Cliquez : je vous envoie les premières questions cette semaine. Quelques minutes à la voix, je m'occupe du reste et je relis tout avant publication.</span>
     </div>
     <div class="zone-interet" data-sujet="methode">
-      <button type="button" class="bouton-blanc envoyer-interet">Je veux essayer</button>
+      <button type="button" class="bouton-blanc envoyer-interet">Oui, je veux essayer</button>
       <p class="message-demande" hidden></p>
     </div>
   </div>
@@ -455,6 +560,10 @@
   if (boutonSuite) boutonSuite.addEventListener("click", () => { document.getElementById("agenda-suite").hidden = false; boutonSuite.hidden = true; });
   window.addEventListener("hashchange", suivreAdresse);
   suivreAdresse();
+
+  const accueil = document.getElementById("accueil"), cleAccueil = "fl-accueil-{{ token[:12] }}";
+  try { if (localStorage.getItem(cleAccueil) === "ferme") accueil.open = false; } catch (e) { /* stockage indisponible : l'accueil reste ouvert */ }
+  accueil.addEventListener("toggle", () => { try { localStorage.setItem(cleAccueil, accueil.open ? "ouvert" : "ferme"); } catch (e) { /* rien */ } });
 
   const base = "/p/{{ token }}";
   async function envoyer(chemin, corps) {
