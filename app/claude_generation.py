@@ -716,6 +716,79 @@ def generer_post_expert(
     return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
+NB_MAX_PHOTOS_TEXTE = 6
+
+
+def generer_post_depuis_photos(
+    photos: list, indication: str = "", contexte: str = "", nom_client: str = "", deja_traites: list = None, texte_actuel: str = "", date_publication: date = None,
+) -> dict:
+    """
+    Texte d'un post redige a partir de photos (octets JPEG, dans l'ordre du post) et de la courte indication de l'auteur (« Avant et apres »...).
+    Typiquement des photos de chantier recues par WhatsApp avec une ligne de texte : l'IA regarde les photos pour comprendre de quoi il s'agit,
+    l'indication dit ce que l'auteur veut raconter. Meme schema que generer_post_expert (titre, texte, prompt_image).
+    """
+    import base64
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    photos = [p for p in (photos or []) if p][:NB_MAX_PHOTOS_TEXTE]
+    if not photos:
+        raise RuntimeError("Aucune photo exploitable.")
+
+    bloc_indication = (
+        f"\nIndication de l'auteur (tres courte, c'est ce qu'il veut raconter) :\n« {indication.strip()[:1500]} »\n"
+        if (indication or "").strip() else "\nL'auteur n'a donne aucune indication : deduis le sujet des photos.\n"
+    )
+    bloc_contexte = (
+        f"\nContenu du site de l'entreprise, pour retrouver son activite, son ton et sa voix :\n{contexte.strip()[:6000]}\n" if (contexte or "").strip() else ""
+    )
+    bloc_deja = ""
+    if deja_traites:
+        liste = "\n".join(f"- {t}" for t in deja_traites[:14])
+        bloc_deja = f"\nPosts DEJA publies ou programmes pour cette entreprise (le nouveau post doit s'en distinguer : autre premiere ligne, autres mots) :\n{liste}\n"
+    if (texte_actuel or "").strip():
+        bloc_deja += f"\nTexte actuellement affiche dans le composeur, que l'utilisateur ne veut PAS revoir (propose un texte clairement different) :\n« {texte_actuel.strip()[:1200]} »\n"
+
+    prompt = (
+        f"{contexte_temporel(publication=date_publication)}\n"
+        f"Tu rediges le texte d'un post pour les reseaux sociaux et Google Business Profile de l'entreprise « {nom_client} », a partir des {len(photos)} photo(s) jointes "
+        "(dans l'ordre du post : photo 1, photo 2...) et de l'indication de l'auteur.\n"
+        f"{bloc_indication}{bloc_contexte}{bloc_deja}\n"
+        "Consignes :\n"
+        "- Regarde attentivement les photos : repere ce qu'elles montrent (type de travaux, de produit ou de lieu, etat, materiaux et equipements visibles). "
+        "Les photos disent de quoi il s'agit, l'indication de l'auteur dit ce qu'il veut raconter : combine les deux. Si l'indication est tres courte, elle donne l'angle, tu etoffes avec ce que tu vois.\n"
+        "- Si l'auteur parle d'un « avant / apres » (ou si deux photos montrent clairement le meme endroit avant puis apres), la photo 1 est l'avant et la photo 2 l'apres, sauf indication contraire : "
+        "raconte la transformation concrete que l'on voit. Une photo qui regroupe deja les deux (collage) se lit de gauche a droite.\n"
+        "- N'affirme que ce qui se voit sur les photos, ce que dit l'auteur ou ce que contient le contexte du site. N'invente aucun prix, chiffre, duree, marque, lieu, nom de client, "
+        "reference de produit ni resultat. Ne recopie pas un papier, une etiquette ou un prix visible sur une photo, sauf si l'auteur en parle. Si un detail est incertain, reste general.\n"
+        "- Ne decris pas les personnes visibles (pas d'identification, pas de description physique).\n"
+        "- Ton positif : valorise le travail realise, sans critiquer ni se moquer de l'etat d'avant, d'un ancien installateur ou du client.\n"
+        "- Personne grammaticale : si le contexte contient un bloc « STYLE D'ECRITURE IMPOSE », applique-le a la lettre (personne ET genre) : il l'emporte sur tout. Sinon, si le contexte contient un bloc "
+        "« VOIX DU CLIENT », suis la sienne. Sinon deduis-la du contenu du site (« nous » pour une entreprise ou une equipe, « je » pour un independant seul).\n"
+        "- La toute premiere ligne doit se suffire a elle-meme et donner envie de lire la suite : un constat concret tire des photos, jamais une formule plate du type « Aujourd'hui, decouvrez... ».\n"
+        "- Phrases courtes, un paragraphe = une seule idee (1 a 3 phrases max), lignes vides entre les paragraphes (\\n\\n).\n"
+        "- Longueur : entre 400 et 900 caracteres (espaces compris), un texte de base assez court pour rester adaptable a chaque reseau.\n"
+        "- Termine par une courte invitation naturelle a contacter l'entreprise, sans numero, lien ni adresse inventes.\n"
+        "- Aucun nom de ville ni de quartier, sauf si le contexte du site l'indique clairement comme zone d'intervention de l'entreprise ; si le contexte interdit de citer une ville, n'en cite aucune.\n"
+        "- Pas de tiret cadratin (—) : remplace par une virgule, un deux-points ou un tiret simple (-). Chaque phrase apporte une information nouvelle, sans redite.\n"
+        "- Redige aussi un titre court. Pour prompt_image, ecris simplement une phrase en anglais qui decrit la photo principale (les photos existent deja, aucune image n'en sera generee)."
+    )
+    contenu = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(octets).decode()}} for octets in photos]
+    contenu.append({"type": "text", "text": prompt})
+
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE,
+        max_tokens=2048,
+        thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_POST_UNIQUE}},
+        messages=[{"role": "user", "content": contenu}],
+    )
+    bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
+    if not bloc_texte:
+        raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+    return _nettoyer_champs_post(json.loads(bloc_texte))
+
+
 SCHEMA_QUESTIONS_INTERVIEW = {
     "type": "object",
     "properties": {

@@ -11727,6 +11727,43 @@ def retour_autorisation_wordpress(
     return RedirectResponse(f"/clients/{client_id}#blog-wordpress", status_code=303)
 
 
+def _photos_pour_ia(brutes) -> list:
+    """
+    Photos envoyees par le composeur pour que l'IA les regarde : adresses (images deja hebergees, photos de fiche) ou images en base64 (« data:image/... »).
+    Renvoie des JPEG de 1024 px au plus, dans l'ordre ; les photos illisibles sont ignorees. 6 photos au plus.
+    """
+    sorties = []
+    for brute in (brutes if isinstance(brutes, list) else [])[:claude_generation.NB_MAX_PHOTOS_TEXTE]:
+        brute = str(brute or "").strip()
+        try:
+            if brute.startswith("data:image/") and "," in brute:
+                donnees = base64.b64decode(brute.split(",", 1)[1], validate=False)
+                if len(donnees) > 8 * 1024 * 1024:
+                    continue
+                image = Image.open(io.BytesIO(donnees))
+            elif brute.startswith(("http://", "https://")):
+                image = _image_depuis_url_autorisee(brute)
+            else:
+                continue
+            if image is None:
+                continue
+            image = ImageOps.exif_transpose(image)
+            if image.mode in ("RGBA", "LA", "P"):
+                image = image.convert("RGBA")
+                fond = Image.new("RGB", image.size, "white")
+                fond.paste(image, mask=image.split()[-1])
+                image = fond
+            else:
+                image = image.convert("RGB")
+            image.thumbnail((1024, 1024))
+            tampon = io.BytesIO()
+            image.save(tampon, format="JPEG", quality=82)
+            sorties.append(tampon.getvalue())
+        except Exception:
+            continue
+    return sorties
+
+
 @app.post("/publication-multi/{client_id}/generer_texte")
 async def publication_multi_generer_texte(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -11754,8 +11791,22 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
     contenu_article = (donnees.get("contenu_article") or "").strip()
     texte_actuel = (donnees.get("texte_actuel") or "").strip()
     marque = bool(donnees.get("marque"))
+    photos_demandees = donnees.get("photos") if isinstance(donnees.get("photos"), list) else []
 
     try:
+        photos = await run_in_threadpool(_photos_pour_ia, photos_demandees) if photos_demandees else []
+        if photos_demandees and not photos:
+            return JSONResponse({"erreur": "Les photos n'ont pas pu être lues : essayez avec des images JPG ou PNG, ou décochez « L'IA regarde les photos »."}, status_code=400)
+        if photos:
+            # Texte a partir des photos : l'indication est le sujet ecrit, ou a defaut un texte de base court (« Avant et apres ») ; un texte de base long est l'ancien texte a ne pas reprendre.
+            indication, exclu = theme, texte_actuel
+            if not indication and 0 < len(texte_actuel) <= 300:
+                indication, exclu = texte_actuel, ""
+            post_genere = await run_in_threadpool(
+                claude_generation.generer_post_depuis_photos, photos, indication, _contexte_ia_client(client, marque=marque), client.nom,
+                _sujets_deja_traites_client(db, client.id, limite=14), exclu, _date_publication_demandee(donnees),
+            )
+            return JSONResponse(post_genere)
         post_genere = claude_generation.generer_post_expert(
             theme, _contexte_ia_client(client, marque=marque), contenu_article, client.nom,
             _sujets_deja_traites_client(db, client.id, limite=14), texte_actuel, date_publication=_date_publication_demandee(donnees),

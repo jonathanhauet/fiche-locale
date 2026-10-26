@@ -39,7 +39,7 @@
     <input type="date" id="date-prevue-ia" style="max-width:14rem;">
     <span id="date-prevue-info" class="texte-discret"></span>
   </div>
-  <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir)</label>
+  <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir ; avec des photos, écrivez ici ce que vous voulez dire)</label>
   <div class="ligne-champs">
     <input type="text" id="theme-ia" placeholder="Ex : la dernière mise à jour Google AI Overviews" style="flex:1;">
     <input type="hidden" id="champ-contexte-article-ia">
@@ -48,6 +48,16 @@
       <span class="spinner" id="spinner-generer-texte" hidden></span>
       💡 Générer le texte (IA)
     </button>
+  </div>
+  <div id="bloc-photos-texte" class="photos-texte">
+    <div class="ligne-champs">
+      <button type="button" id="bouton-photos-texte" class="bouton-secondaire">📷 Ajouter des photos</button>
+      <label class="filtre-case" id="case-ia-photos" hidden>
+        <input type="checkbox" id="ia-regarde-photos" checked> L'IA regarde ces photos pour écrire le texte
+      </label>
+    </div>
+    <div id="apercu-photos-texte" class="images-choisies" hidden></div>
+    <p class="texte-discret">Des photos reçues avec un petit texte (« Avant et après »...) ? Ajoutez-les ici et écrivez l'idée dans « Sujet / thème » : l'IA regarde les photos pour comprendre de quoi il s'agit et rédige le post. Ces photos sont aussi les images du post (étape 2).</p>
   </div>
   <label class="filtre-case" title="Pour un compte partagé par plusieurs agences : le texte ne cite aucune ville ni agence">
     <input type="checkbox" id="mode-marque"> Contenu de marque (aucune ville ni agence, pour les comptes partagés par toutes les agences)
@@ -1218,7 +1228,53 @@
         conteneur.appendChild(bloc);
       });
       majBlocAvantApres();
+      majPhotosTexte();
     }
+
+    // Photos de l'etape 1 : meme liste que les images du post (etape 2), montrees ici en petit pour que l'IA les regarde au moment d'ecrire le texte.
+    document.getElementById("bouton-photos-texte").addEventListener("click", () => champImagePartagee.click());
+    function majPhotosTexte() {
+      const zone = document.getElementById("apercu-photos-texte"), caseIA = document.getElementById("case-ia-photos");
+      if (!zone) return;
+      const { fichiers, elements } = imagesDuPost();
+      zone.innerHTML = ""; zone.hidden = !elements.length; caseIA.hidden = !elements.length;
+      elements.forEach((element, i) => {
+        const img = document.createElement("img");
+        img.src = fichiers ? urlApercuFichier(element) : element; img.alt = "Photo " + (i + 1); img.style.cssText = "height:56px;width:auto;border-radius:6px;";
+        zone.appendChild(img);
+      });
+    }
+    // Photos reduites (1024 px, JPEG) envoyees a l'IA avec la demande de texte : fichiers de l'ordinateur reduits ici, images deja hebergees envoyees par adresse.
+    function reduirePhoto(fichier) {
+      return new Promise((resolve) => {
+        const lecteur = new FileReader();
+        lecteur.onerror = () => resolve(null);
+        lecteur.onload = () => {
+          const image = new Image();
+          image.onerror = () => resolve(null);
+          image.onload = () => {
+            const echelle = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
+            const toile = document.createElement("canvas");
+            toile.width = Math.max(1, Math.round(image.naturalWidth * echelle)); toile.height = Math.max(1, Math.round(image.naturalHeight * echelle));
+            toile.getContext("2d").drawImage(image, 0, 0, toile.width, toile.height);
+            resolve(toile.toDataURL("image/jpeg", 0.82));
+          };
+          image.src = lecteur.result;
+        };
+        lecteur.readAsDataURL(fichier);
+      });
+    }
+    window.photosPourTexteIA = async function () {
+      const caseIA = document.getElementById("ia-regarde-photos");
+      if (!caseIA || !caseIA.checked) return [];
+      const { fichiers, elements } = imagesDuPost();
+      const photos = [];
+      for (const element of elements.slice(0, 6)) {
+        const valeur = fichiers ? await reduirePhoto(element) : element;
+        if (valeur) photos.push(valeur);
+      }
+      return photos;
+    };
 
     // Pastilles « Avant » / « Apres » : proposees quand le post compte exactement 2 images (fichiers de l'ordinateur ou images hebergees).
     let originauxAvantApres = null;
@@ -1606,10 +1662,12 @@
         : "Génération en cours...";
 
       try {
+        const photos = window.photosPourTexteIA ? await window.photosPourTexteIA() : [];
+        if (photos.length) texteStatutGeneration.textContent = "Génération en cours (l'IA regarde " + (photos.length > 1 ? "les " + photos.length + " photos" : "la photo") + ")...";
         const reponse = await fetch("/publication-multi/{{ client.id }}/generer_texte", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ theme: theme, contenu_article: contenuArticle, texte_actuel: document.getElementById("texte-base").value, marque: document.getElementById("mode-marque").checked }),
+          body: JSON.stringify({ theme: theme, contenu_article: contenuArticle, texte_actuel: document.getElementById("texte-base").value, marque: document.getElementById("mode-marque").checked, photos: photos }),
         });
         const donnees = await reponse.json();
         if (!reponse.ok) {
