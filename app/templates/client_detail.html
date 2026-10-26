@@ -974,6 +974,7 @@
       <button type="submit" class="bouton">Activer l'option pour ce client</button>
       {% endif %}
     </form>
+    {% if not client.option_ia_active %}<p class="texte-discret">Avant d'activer : vérifier le CMS du site et ce qu'il permet de modifier (fichiers, balisage). Le client a été prévenu que ce n'est pas garanti.</p>{% endif %}
   </div>
   {% if demandes_client %}
   <div style="margin-top:0.9rem">

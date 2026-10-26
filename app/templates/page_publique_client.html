@@ -177,6 +177,8 @@
   .canaux-puces .canal-puce { font-size: 0.85rem; }
   .accroche .legende-canaux { margin: 0.2rem 0 0.7rem; }
   .titre-agenda { font-size: 1.15rem; margin: 1.3rem 0 0.7rem; }
+  .note-faisabilite { border-left: 4px solid #d99a1b; background: rgba(217, 154, 27, 0.1); border-radius: 8px; padding: 0.7rem 1rem; margin: 0.4rem 0 0.9rem; }
+  .note-faisabilite p { margin: 0.3rem 0 0; line-height: 1.5; }
   .equation { display: flex; align-items: stretch; gap: 0.6rem; flex-wrap: wrap; margin: 1rem 0 0.9rem; }
   .eq-case { flex: 1 1 170px; display: flex; flex-direction: column; gap: 0.25rem; padding: 0.85rem; border-radius: 12px; background: rgba(79, 70, 229, 0.07); border: 1px solid var(--carte-bordure); line-height: 1.4; font-size: 0.9rem; }
   .eq-icone { font-size: 1.6rem; line-height: 1; }
@@ -414,9 +416,13 @@
       <li><strong>Vous suivez votre progression.</strong> Un score et son évolution, relevés chaque mois.</li>
     </ul>
     {% if not geo_actif %}
+    <div class="note-faisabilite">
+      <strong>🔎 Chaque site est différent</strong>
+      <p>Cette option dépend de la façon dont votre site est construit : le CMS utilisé (WordPress, Wix, Webador, site sur mesure...) et ce qu'il permet de modifier. Avant de vous la proposer, je regarde comment il est configuré, puis je vous dis précisément ce qui est possible pour vous, sans engagement.</p>
+    </div>
     <div class="carte-promo">
-      <div class="zone-interet" data-sujet="geo">
-        <button type="button" class="bouton-secondaire envoyer-interet">Je veux en savoir plus</button>
+      <div class="zone-interet" data-sujet="geo" data-merci="Merci ! Je regarde comment votre site est configuré et je reviens vers vous pour vous dire ce qui est possible.">
+        <button type="button" class="bouton-secondaire envoyer-interet">Voir si c'est possible pour mon site</button>
         <p class="message-demande" hidden></p>
       </div>
     </div>
@@ -603,7 +609,7 @@
       try {
         const r = await envoyer("/interet", { sujet: zone.dataset.sujet });
         message.hidden = false;
-        if (r.ok) { bouton.hidden = true; message.textContent = "Merci ! Je vous recontacte très vite pour en parler."; }
+        if (r.ok) { bouton.hidden = true; message.textContent = zone.dataset.merci || "Merci ! Je vous recontacte très vite pour en parler."; }
         else { message.textContent = r.donnees.erreur || "Impossible d'envoyer la demande."; bouton.disabled = false; }
       } catch (e) {
         message.hidden = false; message.textContent = "Erreur réseau, réessayez dans un instant."; bouton.disabled = false;

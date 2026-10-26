@@ -3938,10 +3938,13 @@ async def page_publique_interet(token: str, request: Request, db: Session = Depe
         models.DemandeClient.cree_le >= datetime.utcnow() - timedelta(days=7),
     ).first()
     if not deja:
-        db.add(models.DemandeClient(client_id=client.id, type="interet", reseau=sujet, message="Souhaite en savoir plus."))
+        geo = sujet == "geo"
+        db.add(models.DemandeClient(client_id=client.id, type="interet", reseau=sujet,
+                                    message="Souhaite savoir si l'option est possible pour son site : à vérifier d'abord (CMS, configuration)." if geo else "Souhaite en savoir plus."))
         db.commit()
         notifications.notifier(
-            "Un client est intéressé", f"{client.nom} souhaite en savoir plus sur : {sujet}.",
+            "Un client est intéressé",
+            f"{client.nom} voudrait savoir si l'option « réponses des IA » est possible pour son site (à vérifier : CMS, configuration)." if geo else f"{client.nom} souhaite en savoir plus sur : {sujet}.",
             url=f"https://web-production-bf59a.up.railway.app/clients/{client.id}#page-client",
         )
     return JSONResponse({"ok": True})
