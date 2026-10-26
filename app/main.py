@@ -8308,6 +8308,45 @@ async def video_motion_idees(request: Request, db: Session = Depends(obtenir_ses
     return JSONResponse({"idees": idees})
 
 
+@app.post("/video-motion/idees-actualite")
+async def video_motion_idees_actualite(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Idees de videos tirees de l'actualite recente (meme veille que les sujets tendance du composeur : SEO local et Google, ou l'actualite du metier du client choisi).
+    Corps : client_id (facultatif : sans client, actualite du SEO local), deja (idees deja affichees). Les faits sont a verifier : chaque idee garde son article source.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    try:
+        client = db.get(models.Client, int(donnees.get("client_id") or 0))
+    except (TypeError, ValueError):
+        client = None
+    deja = [str(x)[:120] for x in (donnees.get("deja") or []) if str(x).strip()][:20]
+    nom_metier, themes = "", []
+    try:
+        if client:
+            await run_in_threadpool(_determiner_veille_client, db, client)
+            if client.veille_type == "metier":
+                nom_metier, themes = client.nom, _themes_actualite_client(client)
+        if nom_metier:
+            articles = await run_in_threadpool(veille_actualite.rechercher_actualites_metier, themes)
+        else:
+            articles = await run_in_threadpool(veille_actualite.rechercher_actualites)
+        articles_lus = await run_in_threadpool(veille_actualite.lire_articles, articles, 12)          # l'IA lit les articles en entier : jamais de simple titre
+        if not articles_lus:
+            return JSONResponse({"erreur": "Aucun article n'a pu être lu en entier pour le moment (sites bloqués ou illisibles) : réessayez dans quelques minutes."}, status_code=502)
+        idees = await run_in_threadpool(claude_generation.idees_video_depuis_actualite, articles_lus, nom_metier, deja, 5)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Impossible de proposer des idées d'actualité : {str(erreur)[:200]}"}, status_code=500)
+    for idee in idees:                                           # faits a verifier, repris dans « Faits verifies » avec l'article source
+        idee["faits"] = f"Actualité : {idee['titre_article']} ({idee['source'] or 'source inconnue'})" + "".join(f"\n- {fait}" for fait in idee.get("faits") or [])
+    return JSONResponse({"idees": idees, "veille": "metier" if nom_metier else "seo", "articles_lus": len(articles_lus)})
+
+
 @app.post("/video-motion/faits")
 async def video_motion_faits(request: Request, db: Session = Depends(obtenir_session)):
     """Faits verifiables ecrits sur le site du client (a relire par l'utilisateur avant de generer le scenario). Corps : client_id."""

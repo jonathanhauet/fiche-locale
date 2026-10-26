@@ -263,3 +263,25 @@ def enrichir_suggestions(suggestions: list[dict], articles: list[dict]) -> None:
     for (suggestion, _), texte in zip(a_traiter, textes):
         if texte:
             suggestion["extrait"] = texte
+
+
+LONGUEUR_MIN_ARTICLE_LU = 300
+
+
+def lire_articles(articles: list, limite: int = 12) -> list:
+    """
+    Articles dont le texte a pu etre lu en entier (au plus `limite`, dans l'ordre de la veille) : chaque article garde ses champs et recoit « texte ». Le texte du flux est utilise
+    s'il est assez long, sinon la page de l'article est lue (en parallele). Un article bloque ou illisible est ecarte : l'IA ne doit jamais se fonder sur un simple titre.
+    """
+    candidats = list(articles)[:max(limite * 2, limite)]
+
+    def lire(article):
+        texte = (article.get("extrait") or "").strip()
+        if len(texte) < LONGUEUR_MIN_ARTICLE_LU:
+            texte = extraire_texte_article(article.get("url_reelle") or article.get("url") or "")
+        return texte if len(texte) >= LONGUEUR_MIN_ARTICLE_LU else ""
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        textes = list(pool.map(lire, candidats))
+    lus = [dict(a, texte=t) for a, t in zip(candidats, textes) if t]
+    return lus[:limite]

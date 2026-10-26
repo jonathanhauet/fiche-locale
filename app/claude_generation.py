@@ -3759,6 +3759,10 @@ CONSIGNE_STYLE_GOOGLE = (
 )
 
 
+LONGUEUR_MAX_BRIEF_MOTION = 8000        # assez pour coller un script de video entier
+LONGUEUR_MAX_FAITS_MOTION = 3000
+
+
 def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 20,
                             nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre", style: str = "", voix_off: bool = False) -> dict:
     """
@@ -3770,7 +3774,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
 
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
-    nom, ville, brief, faits = (nom or "").strip()[:120], (ville or "").strip()[:80], (brief or "").strip()[:1200], (faits or "").strip()[:800]
+    nom, ville, brief, faits = (nom or "").strip()[:120], (ville or "").strip()[:80], (brief or "").strip()[:LONGUEUR_MAX_BRIEF_MOTION], (faits or "").strip()[:LONGUEUR_MAX_FAITS_MOTION]
     duree_cible = max(12, min(int(duree_cible or 20), 30))
     nombre_scenes = max(4, min(round(duree_cible / 3), 9))
     consigne_ton = TONS_MOTION.get(ton, TONS_MOTION["dynamique"])
@@ -3783,6 +3787,8 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         "sociaux, au format Reel. Elle est montrée au client lui-même : elle doit le valoriser.\n\n"
         f"Entreprise : {nom or '(à déduire du brief)'}{' - ' + ville if ville else ''}\n"
         + (f"Ce que le client veut faire passer :\n{brief}\n\n" if brief else "")
+        + ("Ce texte est long : c'est un script ou un article complet. N'essaie pas de tout reprendre : garde l'idée forte, une accroche, deux ou trois temps forts et une chute, "
+           "dans l'ordre du texte, avec ses propres mots quand ils sont percutants.\n\n" if len(brief) > 1500 else "")
         + (f"Faits vérifiés que tu peux utiliser (seuls chiffres autorisés) :\n{faits}\n\n" if faits else "Aucun chiffre n'est fourni : n'utilise AUCUNE scène « chiffre » et n'invente aucun chiffre.\n\n")
         + (f"Extrait du site du client (pour comprendre son activité et son vocabulaire) :\n{(contenu_site or '')[:3500]}\n\n" if contenu_site else "")
         + (f"Photos réelles du client disponibles : {nb_photos} (numérotées de 1 à {nb_photos} ; tu ne les vois pas, ne décris donc jamais ce qu'elles montrent). "
@@ -3895,6 +3901,67 @@ def _json_claude(prompt: str, schema: dict, max_tokens: int = 2500) -> dict:
     if not bloc:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
     return json.loads(bloc)
+
+
+SCHEMA_IDEES_ACTUALITE = {
+    "type": "object",
+    "properties": {"idees": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"index_article": {"type": "integer"}, "titre": {"type": "string"}, "brief": {"type": "string"}, "faits": {"type": "array", "items": {"type": "string"}}},
+        "required": ["index_article", "titre", "brief", "faits"], "additionalProperties": False}}},
+    "required": ["idees"], "additionalProperties": False,
+}
+LONGUEUR_TEXTE_ARTICLE_PROMPT = 1600
+
+
+def idees_video_depuis_actualite(articles: list, nom_client_metier: str = "", deja: list = None, nombre: int = 5) -> list:
+    """
+    Idees de videos de motion design inspirees de l'actualite recente : [{"titre", "brief", "faits", "titre_article", "source", "url"}]. `articles` : articles dont le TEXTE a ete lu
+    (champ « texte », voir veille_actualite.lire_articles) : l'IA s'appuie sur ce texte, jamais sur le seul titre ; « faits » = ce que l'article dit, a verifier par l'utilisateur.
+    Sans nom de client : actualite du SEO local et de Google (la specialite de l'utilisateur) ; avec un metier : actualite de ce metier.
+    """
+    articles = [a for a in (articles or []) if (a.get("texte") or "").strip()]
+    if not articles:
+        raise RuntimeError("Aucun article d'actualite n'a pu etre lu en entier pour le moment.")
+    nombre = max(1, min(int(nombre or 5), 8))
+    liste = "\n\n".join(
+        f"[{i}] {a['titre']} ({a['source'] or 'source inconnue'}, {a['date_publication'].strftime('%d/%m/%Y') if a.get('date_publication') else 'date inconnue'})\n"
+        f"Texte de l'article : {' '.join(a['texte'].split())[:LONGUEUR_TEXTE_ARTICLE_PROMPT]}"
+        for i, a in enumerate(articles)
+    )
+    exclusions = ("\nIdées déjà affichées (n'en reproduis aucune, propose des angles différents) :\n" + "\n".join(f"- {x[:120]}" for x in (deja or [])[:20]) + "\n") if deja else ""
+    cible = (
+        f"pour l'entreprise « {nom_client_metier.strip()[:120]} » (déduis son métier de son nom) : des conseils concrets et rassurants pour ses clients, pas de fait divers ni d'angle alarmiste"
+        if nom_client_metier else "pour un expert du référencement local et de Google Business Profile qui veut montrer qu'il suit l'actualité de Google et en tire des conseils utiles"
+    )
+    prompt = (
+        f"{contexte_temporel()}\n\n"
+        f"Voici des articles d'actualité récents, avec leur texte :\n\n{liste}\n{exclusions}\n"
+        f"Propose {nombre} idées de courtes vidéos de motion design (texte animé, sans tournage, 15 à 25 secondes), {cible}. Chaque idée s'appuie sur un article différent (index_article). "
+        "titre : 3 à 7 mots. brief : 1 à 2 phrases qui disent ce que la vidéo doit faire passer (ce que dit l'article, puis le conseil concret qui en découle). "
+        "faits : 2 à 4 faits PRÉCIS repris du texte de l'article (chiffres, noms de fonctionnalités, dates, pays), chacun en une courte phrase de moins de 160 caractères, que l'utilisateur pourra vérifier. "
+        "RÈGLE ABSOLUE : tu as lu le texte de chaque article ; chaque fait et chaque affirmation du brief doivent figurer dans ce texte. N'ajoute aucun chiffre, aucune date, aucun détail venu d'ailleurs, "
+        "et ne déforme rien ; si le texte est incertain (« teste », « pourrait »), garde cette prudence dans le brief. "
+        "Les sources marquées « (États-Unis) » sont américaines : présente la nouveauté comme une tendance venue des États-Unis, sans affirmer qu'elle existe déjà en France ou en Belgique, sauf si l'article le dit. "
+        "Règles : français soigné avec accents ; jamais de tiret cadratin ; rien de négatif sur un concurrent ; pas de formule creuse."
+    )
+    brutes = _json_claude(prompt, SCHEMA_IDEES_ACTUALITE, 3500).get("idees", [])
+    idees, vus = [], set()
+    for brute in brutes:
+        index = brute.get("index_article")
+        if not isinstance(index, int) or not 0 <= index < len(articles) or index in vus:
+            continue
+        titre = _nettoyer_texte_genere(str(brute.get("titre", ""))).replace("\u2014", "-")[:90]
+        brief = _nettoyer_texte_genere(str(brute.get("brief", ""))).replace("\u2014", "-")[:500]
+        faits = [_nettoyer_texte_genere(str(f)).replace("\u2014", "-").strip()[:200] for f in (brute.get("faits") or []) if str(f).strip()][:4]
+        if not titre or not brief:
+            continue
+        vus.add(index)
+        article = articles[index]
+        idees.append({"titre": titre, "brief": brief, "faits": faits, "titre_article": article["titre"], "source": article.get("source") or "", "url": article.get("url") or ""})
+    if not idees:
+        raise RuntimeError("L'IA n'a propose aucune idee exploitable.")
+    return idees[:nombre]
 
 
 def suggerer_idees_video_motion(nom: str, contenu_site: str, deja: list = None, nombre: int = 6) -> list:

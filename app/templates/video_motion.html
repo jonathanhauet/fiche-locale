@@ -71,6 +71,7 @@
 
   <div class="ligne-champs">
     <button type="button" id="vm-idees" class="bouton-secondaire"><span class="spinner" id="vm-spinner-idees" hidden></span>💡 Idées de vidéo (d'après le site du client)</button>
+    <button type="button" id="vm-idees-actu" class="bouton-secondaire" title="Sans client : l'actualité du référencement local et de Google. Avec un client : l'actualité de son métier."><span class="spinner" id="vm-spinner-actu" hidden></span>📰 Idées d'après l'actualité</button>
     <button type="button" id="vm-faits-site" class="bouton-secondaire"><span class="spinner" id="vm-spinner-faits" hidden></span>📌 Reprendre les faits du site</button>
   </div>
   <p id="vm-suggestions-statut" class="texte-discret" hidden></p>
@@ -93,11 +94,11 @@
     <div><label for="vm-ville">Ville</label><input type="text" id="vm-ville" maxlength="60" placeholder="Ex : Agen"></div>
   </div>
 
-  <label for="vm-brief">Ce que la vidéo doit faire passer</label>
-  <textarea id="vm-brief" rows="3" maxlength="1200" placeholder="Ex : rachat d'or à Agen, estimation gratuite et paiement immédiat, on pèse devant le client"></textarea>
+  <label for="vm-brief">Ce que la vidéo doit faire passer (jusqu'à 8 000 caractères : vous pouvez coller un script ou un article entier, l'IA en tire l'essentiel)</label>
+  <textarea id="vm-brief" rows="6" maxlength="8000" placeholder="Ex : rachat d'or à Agen, estimation gratuite et paiement immédiat, on pèse devant le client"></textarea>
 
   <label for="vm-faits">Faits vérifiés à utiliser (seuls chiffres et avis autorisés dans la vidéo)</label>
-  <textarea id="vm-faits" rows="3" maxlength="800" placeholder="Ex : 4,8 sur 5 sur Google (127 avis) / ouvert depuis 2009 / avis : « Estimation honnête, paiement sur place » (Marie L.) / site : goldunion.fr/agen / tél : 05 53 00 00 00"></textarea>
+  <textarea id="vm-faits" rows="3" maxlength="3000" placeholder="Ex : 4,8 sur 5 sur Google (127 avis) / ouvert depuis 2009 / avis : « Estimation honnête, paiement sur place » (Marie L.) / site : goldunion.fr/agen / tél : 05 53 00 00 00"></textarea>
 
   <div class="ligne-champs">
     <div>
@@ -353,7 +354,12 @@
       const titre = document.createElement("b"); titre.textContent = idee.titre;
       const brief = document.createElement("span"); brief.textContent = idee.brief;
       bouton.appendChild(titre); bouton.appendChild(brief);
-      bouton.addEventListener("click", () => { $("vm-brief").value = idee.titre + " : " + idee.brief; $("vm-brief").focus(); statutSuggestions("Idée reprise dans « Ce que la vidéo doit faire passer » : modifiez-la si besoin."); });
+      if (idee.titre_article) { const source = document.createElement("span"); source.textContent = "📰 " + idee.titre_article + (idee.source ? " (" + idee.source + ")" : ""); source.style.fontSize = ".78rem"; bouton.appendChild(source); }
+      bouton.addEventListener("click", () => {
+        $("vm-brief").value = idee.titre + " : " + idee.brief; $("vm-brief").focus();
+        if (idee.faits && !$("vm-faits").value.includes(idee.titre_article)) { const existant = $("vm-faits").value.trim(); $("vm-faits").value = (existant ? existant + "\n" : "") + idee.faits; }
+        statutSuggestions(idee.faits ? "Idée reprise, avec les faits de l'article source dans « Faits vérifiés » : relisez-les avant de générer." : "Idée reprise dans « Ce que la vidéo doit faire passer » : modifiez-la si besoin.");
+      });
       zone.appendChild(bouton);
     });
   }
@@ -374,6 +380,18 @@
     if (!d) return;
     d.idees.forEach((i) => idees.push(i)); dessinerIdees();
     statutSuggestions("Cliquez sur une idée pour la reprendre (un nouveau clic sur le bouton en propose d'autres).");
+  });
+  $("vm-idees-actu").addEventListener("click", async () => {
+    $("vm-spinner-actu").hidden = false; $("vm-idees-actu").disabled = true;
+    statutSuggestions("Lecture complète des articles récents (une vingtaine de secondes)...");
+    try {
+      const r = await fetch("/video-motion/idees-actualite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: $("vm-client").value, deja: idees.map((i) => i.titre) }) });
+      const d = await r.json();
+      if (!r.ok) { statutSuggestions(d.erreur || "Échec."); return; }
+      d.idees.forEach((i) => idees.push(i)); dessinerIdees();
+      statutSuggestions((d.veille === "metier" ? "Actualité du métier du client" : "Actualité du référencement local et de Google") + " (" + d.articles_lus + " articles lus en entier) : cliquez sur une idée pour la reprendre ; les faits de l'article sont ajoutés dans « Faits vérifiés ».");
+    } catch (e) { statutSuggestions("Erreur réseau."); }
+    finally { $("vm-spinner-actu").hidden = true; $("vm-idees-actu").disabled = false; }
   });
   $("vm-faits-site").addEventListener("click", async () => {
     const d = await suggestion("/video-motion/faits", {}, "vm-spinner-faits");
