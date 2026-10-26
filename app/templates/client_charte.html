@@ -19,6 +19,16 @@
 
 <div class="charte-grille">
   <div class="formulaire charte-formulaire">
+    <h2>Site du client</h2>
+    <label for="charte-site">Adresse du site : je lis ses couleurs, ses polices, son logo, son nom et son CMS</label>
+    <span class="charte-ligne">
+      <input type="text" id="charte-site" autocomplete="off" spellcheck="false" placeholder="https://www.exemple.fr" value="{{ charte.site }}" style="width:min(22rem, 100%);">
+      <button type="button" class="bouton-secondaire bouton-mini" id="charte-analyser">🔍 Analyser le site</button>
+    </span>
+    <p id="charte-analyse-statut" class="texte-discret" hidden></p>
+    <div id="charte-analyse" class="charte-analyse" hidden></div>
+    {% if charte.cms %}<p class="texte-discret" id="charte-cms-connu">CMS détecté la dernière fois : <b>{{ charte.cms }}</b>.</p>{% endif %}
+
     <h2>Nom</h2>
     <label for="charte-nom">Nom affiché sur les visuels et les vidéos</label>
     <input type="text" id="charte-nom" maxlength="60" autocomplete="off" value="{{ charte.nom }}">
@@ -30,9 +40,7 @@
         <input type="color" id="charte-principale" value="{{ charte.principale or '#1f4e8c' }}" class="charte-pastille">
         <input type="text" id="charte-principale-hex" maxlength="7" autocomplete="off" spellcheck="false" placeholder="#1f4e8c" value="{{ charte.principale }}">
         <button type="button" class="bouton-secondaire bouton-mini charte-pipette" data-cible="principale" hidden>🎯 Pipette</button>
-        <button type="button" class="bouton-secondaire bouton-mini" id="charte-detecter" {% if not site_url %}disabled title="Aucune adresse de site connue pour ce client"{% endif %}>🔍 Détecter depuis le site</button>
       </span>
-      <div id="charte-candidats" class="liste-etiquettes" hidden></div>
     </div>
     {% for n in (1, 2) %}
     <div class="charte-couleur">
@@ -82,6 +90,17 @@
       </label>
     </div>
 
+    <h2>Polices du site</h2>
+    <div class="charte-trois">
+      <label>Police des titres
+        <input type="text" id="charte-police-titres" maxlength="60" autocomplete="off" placeholder="ex : Poppins" value="{{ charte.police_titres }}">
+      </label>
+      <label>Police du texte
+        <input type="text" id="charte-police-texte" maxlength="60" autocomplete="off" placeholder="ex : Open Sans" value="{{ charte.police_texte }}">
+      </label>
+    </div>
+    <p class="texte-discret">Mémorisées comme référence de la marque (le bouton « Analyser le site » les propose). Les visuels générés utilisent pour l'instant les polices de la plateforme.</p>
+
     <h2>Décor des visuels</h2>
     <select id="charte-decor">{% for cle, libelle in libelles_decor.items() %}<option value="{{ cle }}" {% if charte.decor == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
     <p class="texte-discret">« Automatique » donne un décor différent à chaque client (toujours le même pour un même client).</p>
@@ -130,6 +149,7 @@
       <li>✨ <b>Vidéos motion design</b> : couleurs et nom{% if charte.profil_video %} (ce client a aussi des réglages propres : voir ci-dessous){% endif %}.</li>
       <li>📝 <b>Articles WordPress</b> : couleur d'accent du site.</li>
       <li>✍️ <b>Tous les textes générés</b> : « je » ou « nous », féminin ou masculin.</li>
+      <li>🔤 <b>Polices</b> : mémorisées comme référence de la marque.</li>
     </ul>
 
     {% if charte.ecarts %}
@@ -176,6 +196,10 @@
   .charte-vignettes span { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; }
   .charte-vignettes i { width: 18px; height: 18px; border-radius: 5px; border: 1px solid #0002; display: inline-block; }
   .charte-usage { margin: 0 0 0 1rem; padding: 0; } .charte-usage li { margin: .3rem 0; }
+  .charte-analyse { border: 1px solid var(--bordure, #d9dce3); border-radius: 10px; padding: .6rem .9rem; margin: .5rem 0; display: flex; flex-direction: column; gap: .7rem; }
+  .charte-analyse-bloc { display: flex; flex-direction: column; gap: .35rem; }
+  .charte-puces { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .charte-logo-candidat { display: flex; flex-direction: column; gap: .2rem; align-items: flex-start; max-width: 170px; }
 </style>
 
 <script>
@@ -209,22 +233,86 @@
     });
   });
   $("charte-wp-identique").addEventListener("click", () => { const v = normaliser($("charte-principale-hex").value); if (!v) { dire("charte-message-couleur", "Choisis d'abord la couleur principale."); return; } $("charte-wp").value = v; $("charte-wp-hex").value = v; dire("charte-message-couleur", ""); });
-  $("charte-detecter").addEventListener("click", async () => {
-    dire("charte-message-couleur", "Lecture du site...");
-    const f = new FormData(); f.append("url", {{ (site_url or "") | tojson }});
-    try {
-      const d = await post("/clients/" + CLIENT + "/wordpress/detecter-style", null, f);
-      const zone = $("charte-candidats"); zone.replaceChildren();
-      const liste = (d.candidats || []).map((c) => normaliser(typeof c === "string" ? c : (c.couleur || c.hex || ""))).filter(Boolean);
-      if (d.couleur && !liste.includes(normaliser(d.couleur))) liste.unshift(normaliser(d.couleur));
-      liste.slice(0, 8).forEach((couleur) => {
-        const b = document.createElement("button"); b.type = "button"; b.className = "bouton-secondaire bouton-mini"; b.textContent = couleur; b.style.borderLeft = "14px solid " + couleur;
-        b.addEventListener("click", () => { $("charte-principale").value = couleur; $("charte-principale-hex").value = couleur; apercu(); });
-        zone.appendChild(b);
+
+  // ---------- analyse du site : propositions a valider (couleurs, polices, logo, nom), informations (CMS, slogan, reseaux)
+  function el(balise, proprietes, enfants) {
+    const e = document.createElement(balise);
+    Object.assign(e, proprietes || {});
+    (enfants || []).forEach((x) => e.appendChild(typeof x === "string" ? document.createTextNode(x) : x));
+    return e;
+  }
+  function bloc(titre, contenu) { return el("div", { className: "charte-analyse-bloc" }, [el("b", { textContent: titre })].concat(contenu)); }
+  function afficherAnalyse(d) {
+    const zone = $("charte-analyse"); zone.replaceChildren();
+    if (d.nom) {
+      const b = el("button", { type: "button", className: "bouton-secondaire bouton-mini", textContent: "Utiliser « " + d.nom + " »" });
+      b.addEventListener("click", () => { $("charte-nom").value = d.nom; apercu(); });
+      zone.appendChild(bloc("Nom du site", [b]));
+    }
+    if ((d.couleurs || []).length) {
+      const puces = el("div", { className: "charte-puces" }), actions = el("div", { className: "charte-puces", hidden: true });
+      let choisie = "";
+      [["principale", "→ Principale"], ["sec1", "→ Secondaire 1"], ["sec2", "→ Secondaire 2"]].forEach(([cible, libelle]) => {
+        const b = el("button", { type: "button", className: "bouton mini-action bouton-mini", textContent: libelle });
+        b.addEventListener("click", () => { const [s, h] = IDS[cible]; $(s).value = choisie; $(h).value = choisie; apercu(); actions.hidden = true; });
+        actions.appendChild(b);
       });
-      zone.hidden = !liste.length;
-      dire("charte-message-couleur", liste.length ? "Clique sur une couleur du site pour l'utiliser comme couleur principale." : "Aucune couleur trouvée sur le site.");
-    } catch (e) { dire("charte-message-couleur", e.message); }
+      d.couleurs.forEach((c) => {
+        const b = el("button", { type: "button", className: "bouton-secondaire bouton-mini", textContent: c.couleur, title: c.source });
+        b.style.borderLeft = "14px solid " + c.couleur;
+        b.addEventListener("click", () => { choisie = c.couleur; actions.hidden = false; });
+        puces.appendChild(b);
+      });
+      zone.appendChild(bloc("Couleurs du site (clique sur une couleur, puis sur sa place)", [puces, actions]));
+    }
+    const p = d.polices || {};
+    const lignesPolices = [];
+    [["Titres", p.titres || [], "charte-police-titres"], ["Texte", p.texte || [], "charte-police-texte"], ["Autres", p.autres || [], ""]].forEach(([libelle, liste, champ]) => {
+      if (!liste.length) return;
+      const puces = el("span", { className: "charte-puces" }, [el("span", { className: "texte-discret", textContent: libelle + " :" })]);
+      liste.forEach((nom) => {
+        const b = el("button", { type: "button", className: "bouton-secondaire bouton-mini", textContent: nom });
+        b.addEventListener("click", () => { const cible = champ || ($("charte-police-titres").value ? "charte-police-texte" : "charte-police-titres"); $(cible).value = nom; });
+        puces.appendChild(b);
+      });
+      lignesPolices.push(puces);
+    });
+    if (lignesPolices.length) zone.appendChild(bloc("Polices du site (clique pour les mémoriser)", lignesPolices));
+    if ((d.logos || []).length) {
+      const rangee = el("div", { className: "charte-puces" });
+      d.logos.forEach((l) => {
+        const img = el("img", { className: "charte-logo", alt: "Logo trouvé", src: l.url, referrerPolicy: "no-referrer" });
+        const b = el("button", { type: "button", className: "bouton-secondaire bouton-mini", textContent: l.svg ? "SVG : à téléverser en PNG" : "Utiliser ce logo", disabled: !!l.svg, title: l.source });
+        b.addEventListener("click", async () => {
+          b.disabled = true;
+          try { const r = await post("/clients/" + CLIENT + "/charte/logo-depuis-site", { url: l.url }); urlLogo = r.url || ""; majLogo(); dire("charte-logo-message", "Logo importé depuis le site."); }
+          catch (e) { dire("charte-logo-message", e.message); b.disabled = false; }
+        });
+        rangee.appendChild(el("div", { className: "charte-logo-candidat" }, [img, el("div", { className: "texte-discret", textContent: l.source }), b]));
+      });
+      zone.appendChild(bloc("Logos trouvés", [rangee]));
+    }
+    const infos = [];
+    infos.push(el("div", {}, ["CMS : ", el("b", { textContent: (d.cms && d.cms.nom) || "non identifié" }), " - " + ((d.cms && d.cms.indice) || "")]));
+    if (d.slogan) infos.push(el("div", { className: "texte-discret", textContent: "Description du site : " + d.slogan }));
+    if ((d.reseaux || []).length) {
+      const liens = el("div", {}, ["Réseaux sociaux trouvés : "]);
+      d.reseaux.forEach((r, i) => { liens.appendChild(el("a", { href: r.url, target: "_blank", rel: "noopener noreferrer", textContent: r.reseau })); if (i < d.reseaux.length - 1) liens.appendChild(document.createTextNode(", ")); });
+      infos.push(liens);
+    }
+    zone.appendChild(bloc("À savoir", infos));
+    zone.hidden = false;
+    const connu = $("charte-cms-connu"); if (connu) connu.hidden = true;
+  }
+  $("charte-analyser").addEventListener("click", async () => {
+    $("charte-analyser").disabled = true; $("charte-analyse").hidden = true;
+    dire("charte-analyse-statut", "Lecture du site (une dizaine de secondes)...");
+    try {
+      const d = await post("/clients/" + CLIENT + "/charte/analyser-site", { url: $("charte-site").value });
+      afficherAnalyse(d);
+      dire("charte-analyse-statut", "Site lu : choisis ce que tu veux garder, puis clique sur « Enregistrer la charte ». Ce sont des propositions : vérifie-les.");
+    } catch (e) { dire("charte-analyse-statut", e.message); }
+    finally { $("charte-analyser").disabled = false; }
   });
 
   // ---------- logo : envoi immédiat, comme dans le composeur
@@ -281,7 +369,7 @@
     const corps = {
       principale: normaliser($("charte-principale-hex").value), secondaires: secondaires, nom_affiche: $("charte-nom").value, style_decor: $("charte-decor").value,
       logo_position: $("charte-logo-position").value, logo_style: $("charte-logo-style").value, logo_couleur_fond: normaliser($("charte-logo-fond-hex").value), wordpress_couleur: normaliser($("charte-wp-hex").value),
-      personne_ecriture: $("charte-personne").value, genre_ecriture: $("charte-genre").value,
+      personne_ecriture: $("charte-personne").value, genre_ecriture: $("charte-genre").value, police_titres: $("charte-police-titres").value, police_texte: $("charte-police-texte").value,
     };
     try { await post("/clients/" + CLIENT + "/identite-visuelle", corps); dire("charte-statut", "Charte enregistrée : elle est utilisée par tous les outils."); setTimeout(() => window.location.reload(), 900); }
     catch (e) { dire("charte-statut", e.message); }

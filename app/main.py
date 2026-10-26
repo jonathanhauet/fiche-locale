@@ -102,6 +102,7 @@ from . import (
     styles_montage,
     montage_video,
     musique_ia,
+    analyse_site,
     notifications,
     ovh_upload,
     qr_generateur,
@@ -339,6 +340,9 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN personne_ecriture VARCHAR DEFAULT ''"))
         if "genre_ecriture" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN genre_ecriture VARCHAR DEFAULT ''"))
+        for colonne_charte in ("police_titres", "police_texte", "cms_site"):
+            if colonne_charte not in colonnes_clients:
+                connexion.execute(text(f"ALTER TABLE clients ADD COLUMN {colonne_charte} VARCHAR DEFAULT ''"))
         if inspecteur.has_table("creations") and "epingle" not in {c["name"] for c in inspecteur.get_columns("creations")}:
             connexion.execute(text("ALTER TABLE creations ADD COLUMN epingle BOOLEAN DEFAULT FALSE"))
         if inspecteur.has_table("pistes_musicales"):
@@ -10575,6 +10579,7 @@ def _charte_client(db: Session, client) -> dict:
         "logo_position": logo_position_client(client), "logo_style": logo_style_client(client), "logo_fond": logo_couleur_fond_client(client), "decor": style_decor_client(client),
         "wordpress": wordpress, "reprises": reprises, "ecarts": ecarts, "profil_video": bool(video1 or video2),
         "personne": client.personne_ecriture or "", "genre": client.genre_ecriture or "",
+        "police_titres": client.police_titres or "", "police_texte": client.police_texte or "", "cms": client.cms_site or "", "site": client.site_web or client.wordpress_url or "",
     }
 
 
@@ -10587,6 +10592,61 @@ def charte_client_page(client_id: int, request: Request, db: Session = Depends(o
     if not client:
         return HTMLResponse("Client introuvable.", status_code=404)
     return templates.TemplateResponse(request, "client_charte.html", {"client": client, "charte": _charte_client(db, client), "site_url": client.wordpress_url or client.site_web or ""})
+
+
+@app.post("/clients/{client_id}/charte/analyser-site")
+async def charte_analyser_site(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Lit le site du client (couleurs, polices, logo, nom, CMS, reseaux) pour pre-remplir sa charte : propositions a valider, rien n'est enregistre sauf l'adresse et le CMS detecte."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    donnees = donnees if isinstance(donnees, dict) else {}
+    saisie = str(donnees.get("url") or "").strip()
+    try:
+        resultat = await run_in_threadpool(analyse_site.analyser, saisie or client.site_web or client.wordpress_url or "")
+    except RuntimeError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    if saisie and analyse_site._url(saisie):
+        client.site_web = analyse_site._url(saisie)
+    client.cms_site = resultat["cms"]["nom"]
+    db.commit()
+    return JSONResponse({"ok": True, **resultat})
+
+
+@app.post("/clients/{client_id}/charte/logo-depuis-site")
+async def charte_logo_depuis_site(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Importe comme logo du client une image trouvee sur son site (meme traitement qu'un logo televerse : PNG, transparence conservee)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = {}
+    adresse = str((donnees if isinstance(donnees, dict) else {}).get("url") or "").strip()
+    try:
+        octets = await run_in_threadpool(analyse_site.telecharger_image, adresse)
+        logo = Image.open(io.BytesIO(octets))
+        logo.load()
+        logo.thumbnail((700, 400))
+        tampon = io.BytesIO()
+        logo.convert("RGBA").save(tampon, format="PNG")
+        url = await run_in_threadpool(ovh_upload.envoyer_octets, tampon.getvalue(), f"logo-{client_id}-{uuid.uuid4().hex[:8]}.png")
+    except RuntimeError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Image refusée : {str(erreur)[:120]}"}, status_code=400)
+    client.logo_url = url
+    db.commit()
+    return JSONResponse({"ok": True, "url": url})
 
 
 @app.post("/clients/{client_id}/charte/aligner")
@@ -10654,6 +10714,9 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
     if "wordpress_couleur" in donnees:
         couleur_wp = str(donnees.get("wordpress_couleur") or "").strip().lower()
         client.wordpress_couleur = couleur_wp if REGEX_COULEUR.fullmatch(couleur_wp) else ""
+    for champ_police in ("police_titres", "police_texte"):      # polices du site (reference de charte)
+        if champ_police in donnees:
+            setattr(client, champ_police, " ".join(str(donnees.get(champ_police) or "").split())[:60])
     if "personne_ecriture" in donnees:                          # voix des textes generes (voir claude_generation.formater_bloc_style)
         client.personne_ecriture = donnees["personne_ecriture"] if donnees["personne_ecriture"] in ("je", "nous") else ""
     if "genre_ecriture" in donnees:

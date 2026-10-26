@@ -178,6 +178,10 @@ class Client(Base):
     # ("feminin" ou "masculin"). Vide = deduit automatiquement du site, comme avant.
     personne_ecriture = Column(String, default="")
     genre_ecriture = Column(String, default="")
+    # Polices du site du client (reference de charte, voir analyse_site.py) et CMS detecte (utile pour savoir ce qui est modifiable sur son site)
+    police_titres = Column(String, default="")
+    police_texte = Column(String, default="")
+    cms_site = Column(String, default="")
     # Blog WordPress du client (voir wordpress_publish.py) : adresse du site,
     # identifiant et "mot de passe d'application" WordPress (Utilisateurs >
     # Profil, distinct du vrai mot de passe et revocable a tout moment).
