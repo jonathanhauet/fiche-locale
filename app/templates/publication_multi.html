@@ -191,8 +191,8 @@
   <p id="texte-statut-photos-principal" class="texte-vide" hidden></p>
   <div id="apercu-images-choisies" class="images-choisies" hidden></div>
   <div id="zoom-image-choisie" class="zoom-image-flottant" hidden><img alt="Image du post en grand"></div>
-  <div id="bloc-avant-apres" class="bloc-section" hidden>
-    <strong>🏷️ Pastilles « Avant » / « Après »</strong>
+  <details id="bloc-avant-apres" class="options-visuel" hidden>
+    <summary>🏷️ Pastilles « Avant » / « Après » (facultatif : seulement si ces 2 photos sont un avant / après)</summary>
     <p class="texte-discret">Avec 2 photos : la 1re reçoit la pastille « Avant », la 2e la pastille « Après », aux couleurs du client (principale pour « Après », secondaire pour « Avant »). Les photos sont remplacées par les versions avec pastille ; vous pouvez revenir aux originales.</p>
     <div class="ligne-champs">
       <label>Position
@@ -211,7 +211,7 @@
     </div>
     <div id="pa-apercus" class="images-choisies" hidden></div>
     <p id="pa-message" class="texte-discret" hidden></p>
-  </div>
+  </details>
   <details class="options-visuel" id="options-visuel">
     <summary>Options du visuel IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
     {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
