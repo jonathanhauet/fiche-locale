@@ -195,6 +195,9 @@ def _sujets_deja_traites(db, client_id: int, limite: int = 15) -> list[str]:
 def _contexte_ia_client(client: models.Client) -> str:
     """Meme logique que main._contexte_ia_client, dupliquee ici pour la meme raison que _sujets_deja_traites (pas d'import circulaire possible)."""
     morceaux = []
+    style = claude_generation.formater_bloc_style(client.personne_ecriture, client.genre_ecriture)
+    if style:
+        morceaux.append(style)
     if client.contenu_site and client.contenu_site.strip():
         morceaux.append(client.contenu_site.strip())
     for document in client.documents_connaissance:

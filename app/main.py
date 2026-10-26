@@ -335,6 +335,10 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE posts_linkedin_programmes ADD COLUMN document_titre TEXT DEFAULT ''"))
         if "favori_publication_multi" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
+        if "personne_ecriture" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN personne_ecriture VARCHAR DEFAULT ''"))
+        if "genre_ecriture" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN genre_ecriture VARCHAR DEFAULT ''"))
         if inspecteur.has_table("creations") and "epingle" not in {c["name"] for c in inspecteur.get_columns("creations")}:
             connexion.execute(text("ALTER TABLE creations ADD COLUMN epingle BOOLEAN DEFAULT FALSE"))
         if inspecteur.has_table("pistes_musicales"):
@@ -469,6 +473,8 @@ templates.env.globals["version_css"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "style.css"))
 )
 templates.env.globals["version_pipette_js"] = int(os.path.getmtime(os.path.join(DOSSIER_APP, "static", "pipette.js")))
+templates.env.globals["personnes_ecriture"] = claude_generation.PERSONNES_ECRITURE
+templates.env.globals["genres_ecriture"] = claude_generation.GENRES_ECRITURE
 templates.env.globals["version_calendrier_js"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "calendrier_champ.js"))
 )
@@ -3453,6 +3459,10 @@ def _contexte_ia_client(client: models.Client, marque: bool = False) -> str:
     morceaux = []
     if marque:
         morceaux.append(CONSIGNE_MARQUE_SANS_VILLE)
+    # Style d'ecriture choisi a la main (je / nous, feminin / masculin) : tout en haut, il l'emporte sur la deduction automatique
+    style = claude_generation.formater_bloc_style(client.personne_ecriture, client.genre_ecriture)
+    if style and not marque:                                    # contenu de marque (plusieurs agences) : voix de la marque, pas d'une personne
+        morceaux.append(style)
     # Voix en tete : certains prompts tronquent le contexte, et c'est ce qui
     # doit survivre a la troncature.
     bloc_voix = _bloc_voix_client(client)
@@ -6992,6 +7002,8 @@ def modifier_client(
     whatsapp_jours: list[str] = Form(default=[]),
     whatsapp_opt_in_confirme: bool = Form(False),
     hashtags_fixes: str = Form(""),
+    personne_ecriture: str = Form(None),
+    genre_ecriture: str = Form(None),
     etiquettes: list[str] = Form(default=[]),
     localisation_active: bool = Form(False),
     localisation_ville: str = Form(""),
@@ -7019,6 +7031,10 @@ def modifier_client(
     client.whatsapp_jours = ",".join(sorted(set(whatsapp_jours), key=int)[:3])
     client.whatsapp_opt_in_confirme = whatsapp_opt_in_confirme
     client.hashtags_fixes = hashtags_fixes.strip()
+    if personne_ecriture is not None:                           # champs absents d'un autre formulaire : on ne touche a rien
+        client.personne_ecriture = personne_ecriture if personne_ecriture in ("je", "nous") else ""
+    if genre_ecriture is not None:
+        client.genre_ecriture = genre_ecriture if genre_ecriture in ("feminin", "masculin") else ""
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     client.localisation_active = localisation_active
     client.localisation_ville = localisation_ville.strip()

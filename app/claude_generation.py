@@ -574,7 +574,8 @@ def generer_post_expert(
         f"{bloc_article}"
         f"{bloc_deja}\n"
         "Consignes :\n"
-        "- Personne grammaticale : si le contexte contient un bloc « VOIX DU CLIENT », suis la sienne. Sinon "
+        "- Personne grammaticale : si le contexte contient un bloc « STYLE D'ECRITURE IMPOSE », applique-le a la lettre (personne ET genre) : il l'emporte sur tout. "
+        "Sinon, si le contexte contient un bloc « VOIX DU CLIENT », suis la sienne. Sinon "
         "deduis-la du contenu du site (« nous » = entreprise ou equipe, « je » = independant seul ; un nom de "
         "personne dans le nom de l'entreprise suggere un independant). En cas de doute, ecris a « nous » pour une "
         "entreprise et a « je » pour un independant clairement identifie. Ecris toujours a la premiere personne "
@@ -783,6 +784,41 @@ def formater_bloc_voix(profil: str, extraits: list[str]) -> str:
     return "\n\n".join(morceaux)
 
 
+MARQUEUR_BLOC_STYLE = "=== STYLE D'ECRITURE IMPOSE"
+PERSONNES_ECRITURE = {"": "Automatique (déduit du site)", "je": "« Je » : une personne seule (indépendant, gérante...)", "nous": "« Nous » : une entreprise ou une équipe"}
+GENRES_ECRITURE = {"": "Automatique", "feminin": "Féminin (une femme)", "masculin": "Masculin (un homme)"}
+
+
+def formater_bloc_style(personne: str = "", genre: str = "") -> str:
+    """
+    Style d'ecriture choisi a la main pour un client (personne grammaticale et genre de l'auteur), a placer tout en haut du contexte IA : il l'emporte
+    sur la deduction automatique faite par les prompts. Vide si rien n'est impose.
+    """
+    personne = personne if personne in ("je", "nous") else ""
+    genre = genre if genre in ("feminin", "masculin") else ""
+    if not personne and not genre:
+        return ""
+    regles = []
+    if personne == "je":
+        regles.append(
+            "Personne : ecris TOUJOURS a la premiere personne du singulier (« je », « j'ai », « mon », « ma », « mes »). N'ecris jamais « nous », « notre » ni « nos » pour "
+            "parler de l'entreprise, et ne parle pas d'une equipe ni de collaborateurs : l'entreprise est portee par UNE seule personne (« mes clients », « mon activite »)."
+        )
+    elif personne == "nous":
+        regles.append("Personne : ecris a la premiere personne du pluriel (« nous », « notre », « nos ») : c'est une entreprise ou une equipe.")
+    if genre == "feminin":
+        regles.append(
+            "Genre : l'auteur est une FEMME. Accorde au feminin tout ce qui la concerne (« je suis ravie », « passionnee », « convaincue », « prete »...) et mets au feminin "
+            "ses titres et noms de metier quand ils existent (gerante, cheffe d'entreprise, electricienne...). Si tu parles d'elle a la troisieme personne : « elle »."
+        )
+    elif genre == "masculin":
+        regles.append("Genre : l'auteur est un HOMME. Accorde au masculin tout ce qui le concerne (« je suis ravi », « passionne »...). Si tu parles de lui a la troisieme personne : « il ».")
+    return (
+        f"{MARQUEUR_BLOC_STYLE} POUR CE CLIENT (prioritaire sur toute autre consigne de personne grammaticale ou de genre, et sur ce qui se deduit du site) ===\n"
+        + "\n".join(regles) + "\n=== FIN STYLE D'ECRITURE ==="
+    )
+
+
 def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expert: str = "") -> dict:
     """
     Transforme une reponse orale (dictee, donc transcription brute :
@@ -830,7 +866,8 @@ def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expe
         "meme familiers (le bloc « VOIX DU CLIENT » du contexte, s'il existe, precise sa facon "
         "de parler). Le post doit se lire comme quelqu'un qui parle et qu'on reconnait, pas comme "
         "un communique d'entreprise.\n"
-        "- Determine la personne grammaticale a partir du contenu du site ci-dessous : une "
+        "- Si le contexte contient un bloc « STYLE D'ECRITURE IMPOSE », applique-le a la lettre (personne ET genre) : il l'emporte sur tout le reste.\n"
+        "- Sinon, determine la personne grammaticale a partir du contenu du site ci-dessous : une "
         "personne seule qui parle en son nom (artisan, independant...) s'ecrit a la premiere "
         "personne du singulier (« je »), une equipe/entreprise avec plusieurs collaborateurs "
         "s'ecrit a la premiere personne du pluriel (« nous »). A defaut d'indice clair, utilise "
@@ -2461,7 +2498,7 @@ def generer_post_avis(avis: str, auteur: str, note: int, nom_client: str, contex
         "dis ce que cet avis represente pour l'entreprise, sans exageration.\n"
         "- N'inclus pas l'avis en entier : il figure deja sur le visuel. Tu peux en reprendre un court passage entre guillemets.\n"
         "- N'invente aucun fait, chiffre, prix, delai ou detail d'intervention qui ne figure pas dans l'avis ou le contexte.\n"
-        "- Personne grammaticale : si le contexte contient un bloc « VOIX DU CLIENT », suis la sienne. Sinon « nous » pour "
+        "- Personne grammaticale : si le contexte contient un bloc « STYLE D'ECRITURE IMPOSE », applique-le a la lettre (personne ET genre). Sinon, si le contexte contient un bloc « VOIX DU CLIENT », suis la sienne. Sinon « nous » pour "
         "une entreprise, « je » pour un independant clairement identifie. Une seule personne dans tout le texte.\n"
         "- Termine par une courte invitation a contacter l'entreprise, sans numero de telephone ni lien.\n"
         "- Pas de tiret cadratin (—), pas de hashtag, au plus un emoji. Reponds uniquement avec le texte du post."

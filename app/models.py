@@ -174,6 +174,10 @@ class Client(Base):
     # tous les prompts de redaction (voir main._contexte_ia_client) pour que
     # les textes generes sonnent comme lui a l'ecrit.
     profil_voix = Column(Text, default="")
+    # Style d'ecriture impose pour les textes generes (voir claude_generation.formater_bloc_style) : personne ("je" ou "nous") et genre de l'auteur
+    # ("feminin" ou "masculin"). Vide = deduit automatiquement du site, comme avant.
+    personne_ecriture = Column(String, default="")
+    genre_ecriture = Column(String, default="")
     # Blog WordPress du client (voir wordpress_publish.py) : adresse du site,
     # identifiant et "mot de passe d'application" WordPress (Utilisateurs >
     # Profil, distinct du vrai mot de passe et revocable a tout moment).
