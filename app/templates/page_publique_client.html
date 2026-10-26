@@ -115,9 +115,90 @@
   .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
   .bloc-ensemble p { line-height: 1.6; }
   .pied-page-publique { color: var(--texte-discret); font-size: 0.85rem; text-align: center; margin-top: 2rem; }
+  .resume-programme { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin: 0 0 1rem; padding: 0.8rem 1rem; border-radius: var(--rayon); background: var(--carte); border: 1px solid var(--carte-bordure); box-shadow: var(--ombre); }
+  .resume-programme strong { font-size: 1.05rem; }
+  .onglets { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.1rem 0 0.5rem; margin-bottom: 0.9rem; position: sticky; top: 0; z-index: 5; background: var(--fond, #fff); scrollbar-width: thin; }
+  .onglet { display: inline-flex; align-items: center; gap: 0.45rem; flex-shrink: 0; padding: 0.45rem 0.8rem; border-radius: 999px; border: 1px solid var(--carte-bordure); background: var(--carte); color: inherit; font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+  .onglet:hover { border-color: var(--accent, #4f46e5); }
+  .onglet[aria-selected="true"] { background: var(--accent, #4f46e5); border-color: var(--accent, #4f46e5); color: #fff; }
+  .onglet-inactif { color: var(--texte-discret); font-weight: 500; }
+  .onglet .badge-reseau { width: 1.5rem; height: 1.5rem; font-size: 0.62rem; }
+  .onglet-nb { min-width: 1.35rem; padding: 0.05rem 0.4rem; border-radius: 999px; background: rgba(127, 127, 127, 0.22); font-size: 0.75rem; text-align: center; }
+  .onglet[aria-selected="true"] .onglet-nb { background: rgba(255, 255, 255, 0.28); }
+  .avec-onglets .panneau:not(.panneau-actif) { display: none; }
+  .groupe-jour { margin: 1.1rem 0 0.4rem; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--texte-discret); }
+  .groupe-jour:first-child { margin-top: 0; }
+  .ligne-agenda, .ligne-pub > summary { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.7rem; border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); text-decoration: none; color: inherit; cursor: pointer; list-style: none; }
+  .ligne-pub > summary::-webkit-details-marker { display: none; }
+  .ligne-agenda:hover, .ligne-pub > summary:hover { border-color: var(--accent, #4f46e5); }
+  .ligne-agenda, .ligne-pub { margin-bottom: 0.45rem; }
+  .ligne-vignette { width: 3.1rem; height: 3.1rem; flex-shrink: 0; border-radius: 8px; overflow: hidden; background: rgba(127, 127, 127, 0.14); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
+  .ligne-vignette img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ligne-corps { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
+  .ligne-quand { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; font-size: 0.9rem; }
+  .ligne-quand .badge-reseau { width: 1.35rem; height: 1.35rem; font-size: 0.58rem; }
+  .ligne-reseau { color: var(--texte-discret); font-size: 0.82rem; }
+  .ligne-extrait { color: var(--texte-discret); font-size: 0.88rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+  .ligne-fleche { color: var(--texte-discret); font-size: 0.8rem; transition: transform 0.15s ease; flex-shrink: 0; }
+  .ligne-pub[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-color: var(--accent, #4f46e5); }
+  .ligne-pub[open] .ligne-fleche { transform: rotate(180deg); }
+  .ligne-pub[open] .ligne-extrait { display: none; }
+  .ligne-detail { border: 1px solid var(--accent, #4f46e5); border-top: 0; border-radius: 0 0 var(--rayon) var(--rayon); padding: 0.9rem 1rem 1rem; background: var(--carte); }
+  .ligne-pub.surligne > summary { animation: pub-surligne 1.6s ease-out; }
+  @keyframes pub-surligne { 0% { box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.45); } 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); } }
+  .vide-programme { color: var(--texte-discret); margin: 0.2rem 0 1.2rem; }
+  .carte-non-connectes { border: 1px dashed var(--carte-bordure); border-radius: var(--rayon); padding: 0.8rem 1rem; margin: 1.2rem 0; background: rgba(127, 127, 127, 0.06); }
+  .carte-non-connectes p { margin: 0 0 0.6rem; line-height: 1.5; }
 </style>
 {% endblock %}
 {% block corps %}
+{% macro ligne_pub(p) %}
+<details class="ligne-pub" id="pub-{{ p.code_reseau }}-{{ p.id }}">
+  <summary>
+    <span class="ligne-vignette">{% if p.images %}<img src="{{ p.images[0] }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% elif p.video %}🎬{% else %}📝{% endif %}</span>
+    <span class="ligne-corps">
+      <span class="ligne-quand"><strong>{{ p.jour_court|capitalize }}</strong>{% if p.heure %}<span class="carte-publication-heure">à {{ p.heure }}</span>{% endif %}</span>
+      <span class="ligne-extrait">{{ p.texte }}</span>
+    </span>
+    <span class="ligne-fleche">▾</span>
+  </summary>
+  <div class="ligne-detail">
+    <div class="carte-publication-entete">
+      <span class="carte-publication-date">{{ p.jour|capitalize }}</span>
+      {% if p.heure %}<span class="carte-publication-heure">à {{ p.heure }}</span>{% endif %}
+    </div>
+    {% if p.images %}
+    <div class="images-publication {{ 'plusieurs' if p.images|length > 1 }}">
+      {% for image in p.images %}<img src="{{ image }}" alt="Image de la publication" loading="lazy" referrerpolicy="no-referrer">{% endfor %}
+    </div>
+    {% elif p.video %}<p class="texte-discret">🎬 Vidéo</p>{% endif %}
+    <p class="texte-publication">{{ p.texte }}</p>
+    {% if p.code_reseau != "youtube" %}
+    <div class="zone-demande" data-reseau="{{ p.code_reseau }}" data-post="{{ p.id }}">
+      <button type="button" class="bouton-secondaire bouton-mini ouvrir-demande">✏️ Demander une modification</button>
+      <div class="formulaire-demande" hidden>
+        <textarea maxlength="1000" placeholder="Que souhaitez-vous modifier ? (texte, image, date...)"></textarea>
+        <div class="actions">
+          <button type="button" class="bouton bouton-mini envoyer-demande">Envoyer la demande</button>
+          <button type="button" class="bouton-secondaire bouton-mini annuler-demande">Annuler</button>
+        </div>
+      </div>
+      <p class="message-demande" hidden></p>
+    </div>
+    {% endif %}
+  </div>
+</details>
+{% endmacro %}
+{% macro ligne_agenda(p) %}
+<a class="ligne-agenda" href="#pub-{{ p.code_reseau }}-{{ p.id }}">
+  <span class="ligne-vignette">{% if p.images %}<img src="{{ p.images[0] }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% elif p.video %}🎬{% else %}📝{% endif %}</span>
+  <span class="ligne-corps">
+    <span class="ligne-quand"><span class="badge-reseau badge-reseau-{{ p.code_reseau }}">{{ p.lettre }}</span><strong>{{ p.jour_court|capitalize }}</strong>{% if p.heure %}<span class="carte-publication-heure">à {{ p.heure }}</span>{% endif %}<span class="ligne-reseau">{{ p.nom_reseau }}</span></span>
+    <span class="ligne-extrait">{{ p.texte }}</span>
+  </span>
+  <span class="ligne-fleche">›</span>
+</a>
+{% endmacro %}
 <main class="page-publique">
   <header class="entete-page">
     {% if logo %}<img class="logo-client" src="{{ logo }}" alt="Logo de {{ nom }}" referrerpolicy="no-referrer">{% endif %}
@@ -127,43 +208,65 @@
     </div>
   </header>
 
-  <nav class="bandeau-canaux" aria-label="Vos canaux">
-    {% for c in canaux %}
-    <a class="canal-puce {{ '' if c.actif else 'canal-puce-inactif' }}" href="#canal-{{ c.code }}" title="{{ c.nom }} : {{ ('option activée' if c.code == 'geo' else 'géré avec Jonathan') if c.actif else ('option non activée' if c.code == 'geo' else 'pas encore connecté') }}">
-      <span class="badge-reseau badge-reseau-{{ c.code }} {{ '' if c.actif else 'badge-reseau-inactif' }}">{{ c.lettre }}</span>
-      <span class="canal-puce-nom">{{ c.nom }}</span>
-    </a>
+  <p class="intro">Voici ce qui est programmé et sera publié prochainement. Cette page se met à jour automatiquement.</p>
+
+  <div class="resume-programme">
+    {% if publications %}
+    <strong>{{ publications|length }} publication{{ 's' if publications|length > 1 }} programmée{{ 's' if publications|length > 1 }}</strong>
+    <span class="texte-discret">Prochaine : {{ prochaine.jour_court }}{% if prochaine.heure %} à {{ prochaine.heure }}{% endif %} sur {{ prochaine.nom_reseau }}</span>
+    {% else %}
+    <strong>Rien n'est programmé pour le moment</strong>
+    {% endif %}
+  </div>
+
+  <nav class="onglets" role="tablist" aria-label="Vos canaux">
+    {% for o in onglets %}
+    <button type="button" class="onglet {{ '' if o.actif else 'onglet-inactif' }}" role="tab" data-onglet="{{ o.code }}" aria-selected="{{ 'true' if loop.first else 'false' }}" title="{{ o.nom }}{% if o.code not in ('tout', 'methode') %} : {{ ('option activée' if o.code == 'geo' else 'géré avec Jonathan') if o.actif else ('option non activée' if o.code == 'geo' else 'pas encore connecté') }}{% endif %}">
+      {% if o.code == "methode" %}<span aria-hidden="true">💬</span>{% elif o.lettre %}<span class="badge-reseau badge-reseau-{{ o.code }} {{ '' if o.actif else 'badge-reseau-inactif' }}">{{ o.lettre }}</span>{% endif %}
+      <span class="onglet-nom">{{ o.nom }}</span>{% if o.nb %}<span class="onglet-nb">{{ o.nb }}</span>{% endif %}
+    </button>
     {% endfor %}
   </nav>
 
-  <p class="legende-canaux">En couleur : géré avec Jonathan. Grisé : pas encore connecté.</p>
-
+  <section class="panneau panneau-actif" id="panneau-tout" data-panneau="tout">
+    {% if publications %}
+    {% set ns = namespace(groupe="") %}
+    {% for p in publications %}
+    {% if loop.index == 11 %}<button type="button" class="bouton-secondaire" id="agenda-suite-bouton">Voir les {{ publications|length - 10 }} publications suivantes</button><div id="agenda-suite" hidden>{% endif %}
+    {% if p.groupe != ns.groupe %}{% set ns.groupe = p.groupe %}<h3 class="groupe-jour">{{ p.groupe }}</h3>{% endif %}
+    {{ ligne_agenda(p) }}
+    {% endfor %}
+    {% if publications|length > 10 %}</div>{% endif %}
+    <p class="texte-discret">Touchez une publication pour la lire en entier ou demander une modification.</p>
+    {% else %}
+    <p class="vide-programme">Aucune publication n'est programmée pour le moment.</p>
+    {% endif %}
+    <p class="legende-canaux">En couleur : géré avec Jonathan. Grisé : pas encore connecté.</p>
   <div class="accroche">
-    <p class="accroche-titre">
-      {% if nb_actifs == nb_canaux %}Bravo : tous vos canaux sont gérés avec moi.{% elif nb_actifs == 0 %}Aucun canal n'est encore géré avec moi, et c'est le bon moment pour s'y mettre.{% else %}{{ nb_actifs }} {{ 'canaux' if nb_actifs > 1 else 'canal' }} sur {{ nb_canaux }} {{ 'sont gérés' if nb_actifs > 1 else 'est géré' }} avec moi.{% endif %}
-    </p>
-    <p>
-      Google et les assistants IA recoupent plusieurs signaux pour décider quelles entreprises recommander : plus vos canaux sont nombreux, réguliers et cohérents, plus vous êtes identifié comme une entreprise fiable.
-    </p>
-    <div class="boutons-accroche">
-      <a class="bouton-whatsapp-grand" href="#methode">
-        <svg viewBox="0 0 32 32" aria-hidden="true">
-          <circle cx="16" cy="16" r="16" fill="#fff"/>
-          <path d="M16 6.5a9.5 9.5 0 0 0-8.1 14.4L6.6 25.4l4.6-1.2A9.5 9.5 0 1 0 16 6.5z" fill="none" stroke="#128c7e" stroke-width="2"/>
-          <path d="M12.5 12.2c.3-.6.6-.6.9-.6h.6c.2 0 .4.1.5.4l.8 1.9c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3-.1.4.7 1.2 1.7 2.1 2.9 2.7.2.1.3 0 .4-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.3.3.3.5 0 .8-.6 1.7-1.6 1.9-1 .2-2.3-.1-4-1.1-1.9-1.1-3.1-2.7-3.6-4-.4-1-.4-1.9.1-2.8z" fill="#128c7e"/>
-        </svg>
-        <span class="bouton-whatsapp-texte"><strong>Découvrir ma méthode WhatsApp</strong><small>Vous répondez à la voix, je m'occupe du reste</small></span>
-        <span class="bouton-whatsapp-fleche">↓</span>
-      </a>
-      {% if premier_manquant %}<a class="bouton-contour" href="#canal-{{ premier_manquant }}">Voir ce que je peux ajouter pour vous&nbsp;↓</a>{% endif %}
+      <p class="accroche-titre">
+        {% if nb_actifs == nb_canaux %}Bravo : tous vos canaux sont gérés avec moi.{% elif nb_actifs == 0 %}Aucun canal n'est encore géré avec moi, et c'est le bon moment pour s'y mettre.{% else %}{{ nb_actifs }} {{ 'canaux' if nb_actifs > 1 else 'canal' }} sur {{ nb_canaux }} {{ 'sont gérés' if nb_actifs > 1 else 'est géré' }} avec moi.{% endif %}
+      </p>
+      <p>
+        Google et les assistants IA recoupent plusieurs signaux pour décider quelles entreprises recommander : plus vos canaux sont nombreux, réguliers et cohérents, plus vous êtes identifié comme une entreprise fiable.
+      </p>
+      <div class="boutons-accroche">
+        <a class="bouton-whatsapp-grand" href="#methode">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="16" fill="#fff"/>
+            <path d="M16 6.5a9.5 9.5 0 0 0-8.1 14.4L6.6 25.4l4.6-1.2A9.5 9.5 0 1 0 16 6.5z" fill="none" stroke="#128c7e" stroke-width="2"/>
+            <path d="M12.5 12.2c.3-.6.6-.6.9-.6h.6c.2 0 .4.1.5.4l.8 1.9c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3-.1.4.7 1.2 1.7 2.1 2.9 2.7.2.1.3 0 .4-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.3.3.3.5 0 .8-.6 1.7-1.6 1.9-1 .2-2.3-.1-4-1.1-1.9-1.1-3.1-2.7-3.6-4-.4-1-.4-1.9.1-2.8z" fill="#128c7e"/>
+          </svg>
+          <span class="bouton-whatsapp-texte"><strong>Découvrir ma méthode WhatsApp</strong><small>Vous répondez à la voix, je m'occupe du reste</small></span>
+          <span class="bouton-whatsapp-fleche">↓</span>
+        </a>
+        {% if premier_manquant %}<a class="bouton-contour" href="#canal-{{ premier_manquant }}">Voir ce que je peux ajouter pour vous&nbsp;↓</a>{% endif %}
+      </div>
     </div>
-  </div>
-
-  <p class="intro">Voici ce qui est programmé et sera publié prochainement. Cette page se met à jour automatiquement.
-    {% if nb_publications %}Une modification à demander sur un texte ou une image ? Utilisez le bouton sous la publication concernée.{% endif %}</p>
+  
+  </section>
 
   {% for canal in sections %}
-  <section class="canal" id="canal-{{ canal.code }}">
+  <section class="canal panneau" id="canal-{{ canal.code }}" data-panneau="{{ canal.code }}">
     <div class="canal-entete">
       <h2>{{ canal.nom }}</h2>
       {% if canal.code != "youtube" %}
@@ -173,32 +276,10 @@
     {% if canal.explication %}<p class="explication-canal">{{ canal.explication }}</p>{% endif %}
 
     {% if canal.connecte %}
+      {% set ns = namespace(groupe="") %}
       {% for p in canal.publications %}
-      <article class="carte-publication">
-        <div class="carte-publication-entete">
-          <span class="carte-publication-date">{{ p.jour|capitalize }}</span>
-          {% if p.heure %}<span class="carte-publication-heure">à {{ p.heure }}</span>{% endif %}
-        </div>
-        {% if p.images %}
-        <div class="images-publication {{ 'plusieurs' if p.images|length > 1 }}">
-          {% for image in p.images %}<img src="{{ image }}" alt="Image de la publication" loading="lazy" referrerpolicy="no-referrer">{% endfor %}
-        </div>
-        {% elif p.video %}<p class="texte-discret">🎬 Vidéo</p>{% endif %}
-        <p class="texte-publication">{{ p.texte }}</p>
-        {% if canal.code != "youtube" %}
-        <div class="zone-demande" data-reseau="{{ p.code_reseau }}" data-post="{{ p.id }}">
-          <button type="button" class="bouton-secondaire bouton-mini ouvrir-demande">✏️ Demander une modification</button>
-          <div class="formulaire-demande" hidden>
-            <textarea maxlength="1000" placeholder="Que souhaitez-vous modifier ? (texte, image, date...)"></textarea>
-            <div class="actions">
-              <button type="button" class="bouton bouton-mini envoyer-demande">Envoyer la demande</button>
-              <button type="button" class="bouton-secondaire bouton-mini annuler-demande">Annuler</button>
-            </div>
-          </div>
-          <p class="message-demande" hidden></p>
-        </div>
-        {% endif %}
-      </article>
+      {% if p.groupe != ns.groupe %}{% set ns.groupe = p.groupe %}<h3 class="groupe-jour">{{ p.groupe }}</h3>{% endif %}
+      {{ ligne_pub(p) }}
       {% else %}
       <p class="texte-discret">Aucune publication programmée pour le moment.</p>
       {% endfor %}
@@ -218,7 +299,7 @@
   </section>
   {% endfor %}
 
-  <section class="canal" id="canal-geo">
+  <section class="canal panneau" id="canal-geo" data-panneau="geo">
     <div class="canal-entete">
       <h2>Visibilité dans les réponses des IA</h2>
       {% if geo_actif %}<span class="statut-canal statut-actif">Option activée</span>{% else %}<span class="statut-canal statut-absent">Option non activée</span>{% endif %}
@@ -242,6 +323,7 @@
     {% endif %}
   </section>
 
+  <div class="panneau" id="panneau-methode" data-panneau="methode">
   <div class="bloc-methode" id="methode">
     <div class="methode-entete">
       <svg class="logo-whatsapp" viewBox="0 0 32 32" aria-hidden="true">
@@ -336,12 +418,44 @@
       <p class="message-demande" hidden></p>
     </div>
   </div>
+  </div>
 
   <p class="pied-page-publique">Cette page est réservée à {{ nom }}. Ne partagez pas son adresse.</p>
 </main>
 
 <script>
 (function () {
+  // ---------- onglets : une vue d'ensemble chronologique, puis un onglet par canal (sans script, tout reste affiche)
+  const racine = document.documentElement;
+  const panneaux = Array.from(document.querySelectorAll(".panneau"));
+  const onglets = Array.from(document.querySelectorAll(".onglet"));
+  racine.classList.add("avec-onglets");
+  function afficher(code, miseAJourAdresse) {
+    panneaux.forEach((p) => p.classList.toggle("panneau-actif", p.dataset.panneau === code));
+    onglets.forEach((o) => o.setAttribute("aria-selected", o.dataset.onglet === code ? "true" : "false"));
+    const actif = onglets.find((o) => o.dataset.onglet === code);
+    if (actif && actif.scrollIntoView) actif.scrollIntoView({ block: "nearest", inline: "center" });
+    if (miseAJourAdresse) history.replaceState(null, "", code === "tout" ? location.pathname : "#canal-" + code);
+  }
+  onglets.forEach((o) => o.addEventListener("click", () => { afficher(o.dataset.onglet, true); window.scrollTo({ top: 0, behavior: "smooth" }); }));
+  function suivreAdresse() {
+    const identifiant = decodeURIComponent(location.hash.slice(1));
+    if (!identifiant) { afficher("tout", false); return; }
+    const cible = document.getElementById(identifiant);
+    const panneau = cible && cible.closest(".panneau");
+    if (!panneau) { afficher("tout", false); return; }
+    afficher(panneau.dataset.panneau, false);
+    if (cible.tagName === "DETAILS") {
+      cible.open = true; cible.classList.add("surligne");
+      setTimeout(() => cible.classList.remove("surligne"), 1800);
+    }
+    cible.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  const boutonSuite = document.getElementById("agenda-suite-bouton");
+  if (boutonSuite) boutonSuite.addEventListener("click", () => { document.getElementById("agenda-suite").hidden = false; boutonSuite.hidden = true; });
+  window.addEventListener("hashchange", suivreAdresse);
+  suivreAdresse();
+
   const base = "/p/{{ token }}";
   async function envoyer(chemin, corps) {
     const reponse = await fetch(base + chemin, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });

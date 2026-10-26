@@ -3773,15 +3773,41 @@ def _logo_page_client(db: Session, client, forcer: bool = False) -> str:
     return client.logo_google_url or client.logo_url or ""
 
 
+MOIS_COURTS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+NOMS_COURTS_PAGE_CLIENT = {"google": "Google", "facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn", "wordpress": "Blog", "youtube": "YouTube"}
+LETTRES_PAGE_CLIENT = {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in", "wordpress": "W", "youtube": "YT"}
+
+
+def _groupe_temporel(jour: date, aujourdhui: date) -> str:
+    """Titre de regroupement d'une publication a venir dans la page client : Aujourd'hui, Demain, Cette semaine, La semaine prochaine, puis par mois."""
+    ecart = (jour - aujourdhui).days
+    if ecart <= 0:
+        return "Aujourd'hui"
+    if ecart == 1:
+        return "Demain"
+    debut_semaine = aujourdhui - timedelta(days=aujourdhui.weekday())
+    if jour < debut_semaine + timedelta(days=7):
+        return "Cette semaine"
+    if jour < debut_semaine + timedelta(days=14):
+        return "La semaine prochaine"
+    if (jour.year, jour.month) == (aujourdhui.year, aujourdhui.month):
+        return "Plus tard ce mois-ci"
+    return f"{MOIS_FR[jour.month - 1].capitalize()} {jour.year}"
+
+
 def _publications_a_venir_page_client(db: Session, client) -> list:
     lignes = [l for l in _publications_multi_reseaux(db, client, limite=500, avec_externes=False) if l["a_venir"]]
     lignes.sort(key=lambda l: (l["date"], l.get("heure") or "00:00"))
+    aujourdhui = datetime.now(ZoneInfo("Europe/Brussels")).date()
     publications = []
     for l in lignes:
         jour = f"{JOURS_FR[l['date'].weekday()]} {l['date'].day} {MOIS_FR[l['date'].month - 1]} {l['date'].year}"
         publications.append({
             "code_reseau": l["reseau"], "id": l["id"], "jour": jour, "heure": l.get("heure") or "",
             "images": (l.get("images") or [])[:4], "texte": l.get("texte") or l.get("titre") or "", "video": bool(l.get("video")),
+            "jour_court": f"{JOURS_FR[l['date'].weekday()][:3]}. {l['date'].day} {MOIS_COURTS_FR[l['date'].month - 1]}",
+            "groupe": _groupe_temporel(l["date"], aujourdhui),
+            "lettre": LETTRES_PAGE_CLIENT.get(l["reseau"], "?"), "nom_reseau": NOMS_COURTS_PAGE_CLIENT.get(l["reseau"], l["reseau"].capitalize()),
         })
     return publications
 
@@ -3825,6 +3851,13 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
         sections.append({"code": "youtube", "nom": "YouTube", "explication": "", "connecte": True, "publications": videos})
     geo_actif = bool(client.option_ia_active)       # activee a la main depuis la fiche du client, jamais deduite
     lettres = {"google": "G", "facebook": "f", "instagram": "IG", "linkedin": "in", "wordpress": "W"}
+    onglets = (
+        [{"code": "tout", "nom": "Vue d'ensemble", "lettre": "", "nb": len(publications), "actif": True}]
+        + [{"code": sec["code"], "nom": NOMS_COURTS_PAGE_CLIENT.get(sec["code"], sec["nom"]), "lettre": LETTRES_PAGE_CLIENT.get(sec["code"], "?"), "nb": len(sec["publications"]), "actif": sec["connecte"]}
+           for sec in sections]
+        + [{"code": "geo", "nom": "Réponses des IA", "lettre": "IA", "nb": 0, "actif": geo_actif}, {"code": "methode", "nom": "Ma méthode", "lettre": "💬", "nb": 0, "actif": True}]
+    )
+    prochaine = publications[0] if publications else None
     canaux = [
         {"code": sec["code"], "nom": sec["nom"], "lettre": lettres[sec["code"]], "actif": sec["connecte"]}
         for sec in sections if sec["code"] in lettres
@@ -3832,7 +3865,7 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
     manquants = [c for c in canaux if not c["actif"]]
     return templates.TemplateResponse(
         request, "page_publique_client.html",
-        {"nom": nom_affiche_carrousel(client), "sections": sections, "geo_actif": geo_actif, "token": token,
+        {"nom": nom_affiche_carrousel(client), "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
          "nb_publications": len(publications), "logo": _logo_page_client(db, client), "canaux": canaux,
          "exemple_questions": _questions_exemple_page_client(db, client),
          "nb_actifs": len(canaux) - len(manquants), "nb_canaux": len(canaux), "premier_manquant": manquants[0]["code"] if manquants else ""},
