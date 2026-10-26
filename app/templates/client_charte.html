@@ -90,16 +90,18 @@
       </label>
     </div>
 
-    <h2>Polices du site</h2>
+    <h2>Polices</h2>
     <div class="charte-trois">
       <label>Police des titres
         <input type="text" id="charte-police-titres" maxlength="60" autocomplete="off" placeholder="ex : Poppins" value="{{ charte.police_titres }}">
+        <span class="texte-discret" id="charte-police-titres-etat" hidden></span>
       </label>
       <label>Police du texte
         <input type="text" id="charte-police-texte" maxlength="60" autocomplete="off" placeholder="ex : Open Sans" value="{{ charte.police_texte }}">
+        <span class="texte-discret" id="charte-police-texte-etat" hidden></span>
       </label>
     </div>
-    <p class="texte-discret">Mémorisées comme référence de la marque (le bouton « Analyser le site » les propose). Les visuels générés utilisent pour l'instant les polices de la plateforme.</p>
+    <p class="texte-discret">Le bouton « Analyser le site » les propose. Elles sont appliquées aux visuels : carrousels, avis mis en avant, titres sur photo et modèles de visuels. Seules les polices de Google Fonts sont possibles ; pour une autre, les visuels gardent la police de la plateforme. Vide : police de la plateforme.</p>
 
     <h2>Décor des visuels</h2>
     <select id="charte-decor">{% for cle, libelle in libelles_decor.items() %}<option value="{{ cle }}" {% if charte.decor == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
@@ -149,7 +151,7 @@
       <li>✨ <b>Vidéos motion design</b> : couleurs et nom{% if charte.profil_video %} (ce client a aussi des réglages propres : voir ci-dessous){% endif %}.</li>
       <li>📝 <b>Articles WordPress</b> : couleur d'accent du site.</li>
       <li>✍️ <b>Tous les textes générés</b> : « je » ou « nous », féminin ou masculin.</li>
-      <li>🔤 <b>Polices</b> : mémorisées comme référence de la marque.</li>
+      <li>🔤 <b>Polices</b> : visuels, carrousels, avis et titres sur photo (pas encore les vidéos).</li>
     </ul>
 
     {% if charte.ecarts %}
@@ -234,6 +236,23 @@
   });
   $("charte-wp-identique").addEventListener("click", () => { const v = normaliser($("charte-principale-hex").value); if (!v) { dire("charte-message-couleur", "Choisis d'abord la couleur principale."); return; } $("charte-wp").value = v; $("charte-wp-hex").value = v; dire("charte-message-couleur", ""); });
 
+  // ---------- polices : la famille existe-t-elle sur Google Fonts ?
+  function verifierPolice(champ) {
+    const zone = $(champ + "-etat");
+    const verifier = async () => {
+      const nom = $(champ).value.trim();
+      if (!nom) { dire(champ + "-etat", ""); return; }
+      dire(champ + "-etat", "Vérification sur Google Fonts...");
+      try {
+        const r = await fetch("/polices/verifier?nom=" + encodeURIComponent(nom)); const d = await r.json();
+        dire(champ + "-etat", (d.ok ? "✅ " : "⚠️ ") + (d.message || d.erreur || ""));
+      } catch (e) { dire(champ + "-etat", "Vérification impossible pour le moment."); }
+    };
+    $(champ).addEventListener("change", verifier);
+    if ($(champ).value.trim()) verifier();
+  }
+  verifierPolice("charte-police-titres"); verifierPolice("charte-police-texte");
+
   // ---------- analyse du site : propositions a valider (couleurs, polices, logo, nom), informations (CMS, slogan, reseaux)
   function el(balise, proprietes, enfants) {
     const e = document.createElement(balise);
@@ -272,7 +291,7 @@
       const puces = el("span", { className: "charte-puces" }, [el("span", { className: "texte-discret", textContent: libelle + " :" })]);
       liste.forEach((nom) => {
         const b = el("button", { type: "button", className: "bouton-secondaire bouton-mini", textContent: nom });
-        b.addEventListener("click", () => { const cible = champ || ($("charte-police-titres").value ? "charte-police-texte" : "charte-police-titres"); $(cible).value = nom; });
+        b.addEventListener("click", () => { const cible = champ || ($("charte-police-titres").value ? "charte-police-texte" : "charte-police-titres"); $(cible).value = nom; $(cible).dispatchEvent(new Event("change")); });
         puces.appendChild(b);
       });
       lignesPolices.push(puces);

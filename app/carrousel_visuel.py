@@ -4,12 +4,16 @@ l'IA fournit les textes des slides, ce module les dessine aux couleurs du client
 Trois mises en page : "plein" (fond couleur de marque), "clair" (fond clair, accent de marque),
 "sombre" (fond sombre, accent de marque).
 """
+import contextlib
+import contextvars
 import io
 import math
 import os
 import random
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+
+from . import polices_client
 
 LARGEUR, HAUTEUR = 1080, 1350
 MARGE = 90
@@ -27,7 +31,37 @@ POSITIONS_LOGO = {
 STYLES_LOGO = {"pastille": "Pastille blanche", "cercle": "Cercle blanc"}
 
 
+_POLICES_CLIENT = contextvars.ContextVar("polices_client", default=None)
+
+
+@contextlib.contextmanager
+def polices_du_client(titres: str = "", texte: str = ""):
+    """Pendant ce bloc, les visuels dessines dans ce thread utilisent les polices Google Fonts du client (titres en gras, texte en normal) quand elles existent."""
+    jeton = _POLICES_CLIENT.set({"gras": (titres or "").strip(), "normal": (texte or "").strip()})
+    try:
+        yield
+    finally:
+        _POLICES_CLIENT.reset(jeton)
+
+
+def police_client(style: str, taille: int):
+    """Police du client pour ce style (« gras » : titres, « normal » : texte), ou None si elle n'est pas definie ou introuvable sur Google Fonts."""
+    famille = (_POLICES_CLIENT.get() or {}).get(style)
+    if not famille:
+        return None
+    fichier = polices_client.chemin(famille, 700 if style == "gras" else 400)
+    if not fichier:
+        return None
+    try:
+        return ImageFont.truetype(fichier, taille)
+    except OSError:
+        return None
+
+
 def _police(style: str, taille: int) -> ImageFont.FreeTypeFont:
+    choisie = police_client(style, taille)
+    if choisie is not None:
+        return choisie
     for nom in POLICES[style]:
         for chemin in (os.path.join(DOSSIER_POLICES, nom), nom):
             try:

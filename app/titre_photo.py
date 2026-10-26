@@ -32,13 +32,14 @@ FICHIERS_POLICES = {
     "elegante": ["DMSerifDisplay-Regular.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "DejaVuSans-Bold.ttf"],
     "manuscrite": ["Kalam-Bold.ttf", "segoepr.ttf", "DejaVuSans-Bold.ttf", "arialbd.ttf"],
 }
-FACTEUR_TAILLE = {"italique": 1.0, "sobre": 0.92, "condensee": 1.45, "elegante": 1.0, "manuscrite": 1.0}
-INTERLIGNE = {"italique": 1.06, "sobre": 1.12, "condensee": 0.98, "elegante": 1.08, "manuscrite": 1.12}
+FICHIERS_POLICES["client"] = ["Poppins-Bold.ttf", "segoeuib.ttf", "DejaVuSans-Bold.ttf", "arialbd.ttf"]          # police de titre du client (si elle existe), sinon cette liste
+FACTEUR_TAILLE = {"italique": 1.0, "sobre": 0.92, "condensee": 1.45, "elegante": 1.0, "manuscrite": 1.0, "client": 0.95}
+INTERLIGNE = {"italique": 1.06, "sobre": 1.12, "condensee": 0.98, "elegante": 1.08, "manuscrite": 1.12, "client": 1.1}
 POLICE_PAR_STYLE = {
     "italique": "italique", "bandeau": "sobre", "verre": "elegante", "sobre": "sobre", "encadre": "condensee",
     "citation": "condensee",
 }
-MAJUSCULES_PAR_POLICE = {"italique": True, "sobre": False, "condensee": True, "elegante": False, "manuscrite": False}
+MAJUSCULES_PAR_POLICE = {"italique": True, "sobre": False, "condensee": True, "elegante": False, "manuscrite": False, "client": False}
 PICTOS = {
     "aucun": "Aucun", "etoile": "Étoile", "coche": "Coche", "coeur": "Cœur", "eclair": "Éclair", "fleche": "Flèche",
 }
@@ -85,6 +86,10 @@ def normaliser_reglages(brut: dict) -> dict:
 
 def _police(cle: str, taille: int):
     import os
+    if cle == "client":
+        choisie = cv.police_client("gras", taille)
+        if choisie is not None:
+            return choisie
     for nom in FICHIERS_POLICES[cle]:
         for chemin in (os.path.join(cv.DOSSIER_POLICES, nom), nom):
             try:
@@ -312,6 +317,8 @@ def dessiner(
     opacite = r["voile"] / 100
 
     cle_police = POLICE_PAR_STYLE[style] if r["police"] == "auto" else r["police"]
+    if r["police"] == "auto" and cv.police_client("gras", 40) is not None:                       # police de titre de la charte du client : elle remplace le choix automatique
+        cle_police = "client"
     majuscules = MAJUSCULES_PAR_POLICE[cle_police] if r["majuscules"] == "auto" else r["majuscules"] == "oui"
     texte_titre = (titre or "").strip()
     mots = decouper_mots(texte_titre.upper() if majuscules else texte_titre)

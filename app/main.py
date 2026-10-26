@@ -103,6 +103,7 @@ from . import (
     montage_video,
     musique_ia,
     analyse_site,
+    polices_client,
     notifications,
     ovh_upload,
     qr_generateur,
@@ -10594,6 +10595,24 @@ def charte_client_page(client_id: int, request: Request, db: Session = Depends(o
     return templates.TemplateResponse(request, "client_charte.html", {"client": client, "charte": _charte_client(db, client), "site_url": client.wordpress_url or client.site_web or ""})
 
 
+def _avec_polices_client(client, fonction):
+    """Enveloppe une fonction de rendu de visuel pour qu'elle utilise les polices de la charte du client (voir carrousel_visuel.polices_du_client)."""
+    titres, texte = client.police_titres or "", client.police_texte or ""
+
+    def enveloppe(*args, **kwargs):
+        with carrousel_visuel.polices_du_client(titres, texte):
+            return fonction(*args, **kwargs)
+    return enveloppe
+
+
+@app.get("/polices/verifier")
+async def polices_verifier(request: Request, nom: str = ""):
+    """La police est-elle disponible sur Google Fonts (donc utilisable dans les visuels) ? Telecharge au passage les fichiers pour les rendus suivants."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    return JSONResponse(await run_in_threadpool(polices_client.verifier, nom))
+
+
 @app.post("/clients/{client_id}/charte/analyser-site")
 async def charte_analyser_site(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Lit le site du client (couleurs, polices, logo, nom, CMS, reseaux) pour pre-remplir sa charte : propositions a valider, rien n'est enregistre sauf l'adresse et le CMS detecte."""
@@ -10714,9 +10733,11 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
     if "wordpress_couleur" in donnees:
         couleur_wp = str(donnees.get("wordpress_couleur") or "").strip().lower()
         client.wordpress_couleur = couleur_wp if REGEX_COULEUR.fullmatch(couleur_wp) else ""
-    for champ_police in ("police_titres", "police_texte"):      # polices du site (reference de charte)
+    for champ_police in ("police_titres", "police_texte"):      # polices du site, utilisees dans les visuels (carrousels, avis, titres sur photo) quand elles sont sur Google Fonts
         if champ_police in donnees:
             setattr(client, champ_police, " ".join(str(donnees.get(champ_police) or "").split())[:60])
+    if "police_titres" in donnees or "police_texte" in donnees:
+        threading.Thread(target=polices_client.preparer, args=(client.police_titres, client.police_texte), daemon=True).start()          # telechargement d'avance, sans faire attendre
     if "personne_ecriture" in donnees:                          # voix des textes generes (voir claude_generation.formater_bloc_style)
         client.personne_ecriture = donnees["personne_ecriture"] if donnees["personne_ecriture"] in ("je", "nous") else ""
     if "genre_ecriture" in donnees:
@@ -10839,7 +10860,7 @@ async def publication_multi_modele_rendu(client_id: int, request: Request, db: S
             return {"images": list(pool.map(lambda ot: ovh_upload.envoyer_octets(ot[1], f"visuel-{lot}-{ot[0] + 1}.jpg"), enumerate(sorties)))}
 
     try:
-        resultat = await run_in_threadpool(fabriquer)
+        resultat = await run_in_threadpool(_avec_polices_client(client, fabriquer))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin du visuel : {str(erreur)[:250]}"}, status_code=500)
     if final:
@@ -11017,7 +11038,7 @@ async def publication_multi_carrousel_rendu(client_id: int, request: Request, db
             ))
 
     try:
-        resultat = await run_in_threadpool(fabriquer)
+        resultat = await run_in_threadpool(_avec_polices_client(client, fabriquer))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin du carrousel : {erreur}"}, status_code=500)
     if final:
@@ -11193,7 +11214,7 @@ async def publication_multi_titre_photo(client_id: int, request: Request, db: Se
             return list(pool.map(lambda ot: ovh_upload.envoyer_octets(ot[1], f"titre-{lot}-{ot[0] + 1}.jpg"), enumerate(sorties)))
 
     try:
-        resultat = await run_in_threadpool(fabriquer)
+        resultat = await run_in_threadpool(_avec_polices_client(client, fabriquer))
     except ValueError as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
     except Exception as erreur:
@@ -11234,7 +11255,7 @@ async def publication_multi_titre_photo_styles(client_id: int, request: Request,
         return resultats
 
     try:
-        resultat = await run_in_threadpool(fabriquer)
+        resultat = await run_in_threadpool(_avec_polices_client(client, fabriquer))
     except ValueError as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=400)
     except Exception as erreur:
@@ -11321,7 +11342,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
         return ovh_upload.envoyer_octets(tampon.getvalue(), f"avis-{uuid.uuid4().hex[:10]}.jpg")
 
     try:
-        resultat = await run_in_threadpool(fabriquer)
+        resultat = await run_in_threadpool(_avec_polices_client(client, fabriquer))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec du dessin du visuel : {erreur}"}, status_code=500)
     if final:
