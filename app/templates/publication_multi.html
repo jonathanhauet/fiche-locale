@@ -34,6 +34,11 @@
   </div>
 
   <div class="onglet-panneau" data-onglet="texte">
+  <label for="date-prevue-ia">Date de publication prévue (optionnel — l'IA adapte la saison et les événements à cette date, sans la citer)</label>
+  <div class="ligne-champs">
+    <input type="date" id="date-prevue-ia" style="max-width:14rem;">
+    <span id="date-prevue-info" class="texte-discret"></span>
+  </div>
   <label for="theme-ia">Sujet / thème (optionnel — laissez vide pour laisser l'IA choisir)</label>
   <div class="ligne-champs">
     <input type="text" id="theme-ia" placeholder="Ex : la dernière mise à jour Google AI Overviews" style="flex:1;">
@@ -2837,5 +2842,50 @@
     if (cle && motCle) cle.value = motCle;
     if (theme) theme.scrollIntoView({ block: "center" });
   })();
+</script>
+
+<script>
+// Date de publication prevue : choisie avant de generer (etape 1) ou deja saisie a l'etape « Publier ». Les textes generes (post, article, carrousel, avis, idees de sujets et d'articles)
+// sont alors ecrits pour CETTE date (saison, fetes et evenements proches), pas pour aujourd'hui. Elle prerempli aussi la date de programmation.
+(function () {
+  const champ = document.getElementById("date-prevue-ia"), commune = document.getElementById("date-publication"), info = document.getElementById("date-prevue-info");
+  const iso = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  function datePrevue() {
+    const reseau = Array.from(document.querySelectorAll(".champ-date-reseau")).map((c) => c.value).filter(Boolean).sort()[0];
+    const valeur = (champ && champ.value) || (commune && commune.value) || reseau || "";
+    return valeur >= iso(new Date(Date.now() + 2 * 86400000)) ? valeur : "";                  // une date passee ou imminente : le contenu reste ecrit pour aujourd'hui
+  }
+  window.datePublicationPrevue = datePrevue;
+  function majInfo() {
+    const d = datePrevue();
+    if (info) info.textContent = d ? "Textes écrits pour le " + new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }) + "." : "";
+  }
+  if (champ) champ.addEventListener("change", () => {
+    if (champ.value && commune && !commune.value) { commune.value = champ.value; commune.dispatchEvent(new Event("change")); }
+    majInfo();
+  });
+  if (commune) commune.addEventListener("change", majInfo);
+  document.addEventListener("change", (e) => { if (e.target && e.target.classList && e.target.classList.contains("champ-date-reseau")) majInfo(); });
+  // Les appels de generation recoivent la date automatiquement (corps JSON, ou corps cree pour les appels qui n'en avaient pas).
+  const CIBLES = ["/generer_texte", "/generer_article", "/carrousel/textes", "/avis/texte", "/sujets_evergreen", "/idees_articles"];
+  const racine = "/publication-multi/{{ client.id }}";
+  const fetchOrigine = window.fetch.bind(window);
+  window.fetch = (url, options) => {
+    try {
+      const adresse = String(typeof url === "string" ? url : (url && url.url) || "").split("?")[0];
+      const date = datePrevue();
+      if (date && options && String(options.method || "GET").toUpperCase() === "POST" && (options.body == null || typeof options.body === "string") && adresse.startsWith(racine) && CIBLES.some((c) => adresse.endsWith(c))) {
+        let corps = {};
+        if (typeof options.body === "string" && options.body.trim()) corps = JSON.parse(options.body);
+        if (corps && typeof corps === "object" && !Array.isArray(corps)) {
+          corps.date_publication = date;
+          options = Object.assign({}, options, { body: JSON.stringify(corps), headers: Object.keys(options.headers || {}).some((k) => k.toLowerCase() === "content-type") ? options.headers : Object.assign({ "Content-Type": "application/json" }, options.headers || {}) });
+        }
+      }
+    } catch (e) { /* corps illisible : l'appel part tel quel */ }
+    return fetchOrigine(url, options);
+  };
+  majInfo();
+})();
 </script>
 {% endblock %}

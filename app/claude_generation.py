@@ -100,7 +100,32 @@ REPERES_MOIS = {
 }
 
 
-def contexte_temporel(aujourdhui: date = None) -> str:
+def contexte_temporel(aujourdhui: date = None, publication: date = None) -> str:
+    """
+    Contexte de date a placer en tete des prompts de redaction. Sans `publication` : la date du jour. Avec une date de publication future (au moins 2 jours plus tard) : le contenu est
+    ecrit pour CETTE date (saison, fetes et evenements proches), pas pour aujourd'hui, sans jamais citer la date.
+    """
+    aujourdhui = aujourdhui or date.today()
+    if not isinstance(publication, date) or publication <= aujourdhui + timedelta(days=1):
+        return _contexte_du_jour(aujourdhui)
+    saison, reperes = REPERES_MOIS[publication.month]
+    ecart = (publication - aujourdhui).days
+    dans = f"dans {ecart} jours" if ecart < 60 else f"dans environ {round(ecart / 30)} mois"
+    proches = evenements_autour(publication)
+    return (
+        f"Nous sommes le {aujourdhui.strftime('%d/%m/%Y')} (jour de la redaction), mais ce contenu sera PUBLIE le {JOURS_PUBLICATION[publication.weekday()]} {publication.day} "
+        f"{LIBELLES_MOIS[publication.month - 1]} {publication.year}, {dans}. Ecris pour CETTE date de publication, pas pour aujourd'hui. "
+        f"Periode de publication : {saison} ({LIBELLES_MOIS[publication.month - 1]}), en France et en Belgique. Reperes a cette date : {reperes}."
+        + (f" Autour de cette date : {', '.join(proches)}." if proches else "") + "\n"
+        "COHERENCE SAISONNIERE ET TEMPORELLE : la saison, la meteo, les fetes et les evenements evoques doivent correspondre a la date de PUBLICATION. N'evoque jamais une periode, une fete "
+        "ou un evenement qui sera passe a cette date (ni ceux du moment de la redaction s'ils seront termines), ni un evenement encore tres lointain. Pas de reference relative au moment "
+        "de la redaction (« aujourd'hui », « cette semaine », « ce week-end », « demain », « en ce moment ») sauf si elle reste vraie a la date de publication. N'ecris jamais la date ni le mois "
+        "en toutes lettres : prefere des formulations naturelles (« a l'approche de Noel », « avec les premiers froids »). Pour une activite saisonniere, choisis l'angle de cette periode. "
+        "Si aucun lien avec la periode n'est naturel, n'en evoque aucune."
+    )
+
+
+def _contexte_du_jour(aujourdhui: date = None) -> str:
     """Date du jour, saison et consigne de coherence saisonniere, a placer en tete des prompts qui redigent un contenu publie."""
     aujourdhui = aujourdhui or date.today()
     saison, reperes = REPERES_MOIS[aujourdhui.month]
@@ -551,7 +576,7 @@ def _specialite_auteur(nom_client: str = "") -> str:
 
 def generer_post_expert(
     theme: str = "", contexte_expert: str = "", contenu_article: str = "", nom_client: str = "",
-    deja_traites: list = None, texte_actuel: str = "",
+    deja_traites: list = None, texte_actuel: str = "", date_publication: date = None,
 ) -> dict:
     """
     Variante de generer_post_generique() pensee pour une seule fiche bien
@@ -623,7 +648,7 @@ def generer_post_expert(
     )
 
     prompt = (
-        f"{contexte_temporel()}\n"
+        f"{contexte_temporel(publication=date_publication)}\n"
         "Tu rediges un post pour les reseaux sociaux et "
         "Google Business Profile d'un expert reconnu dans son domaine, a savoir le "
         f"{_specialite_auteur(nom_client)}. L'objectif n'est PAS d'informer platement, mais de construire une "
@@ -1162,7 +1187,7 @@ SCHEMA_SUGGESTIONS_EVERGREEN = {
 
 
 def suggerer_sujets_evergreen(
-    contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5, nom_client: str = "",
+    contexte_expert: str = "", sujets_deja_traites: list[str] = None, nombre: int = 5, nom_client: str = "", date_publication: date = None,
 ) -> list[dict]:
     """
     Sujets de post independants de l'actualite du jour (contrairement a
@@ -1187,7 +1212,7 @@ def suggerer_sujets_evergreen(
         bloc_deja_traites = f"\nSujets deja traites recemment (evite de reformuler un angle trop proche) :\n{liste}\n"
 
     prompt = (
-        f"{contexte_temporel()}\n"
+        f"{contexte_temporel(publication=date_publication)}\n"
         f"Propose {nombre} sujets de post pour un expert, dans le domaine suivant : le "
         f"{_specialite_auteur(nom_client)}, qui veut publier regulierement pour construire sa visibilite - "
         "meme les jours ou il n'y a pas d'actualite fraiche sur ces sujets precis.\n"
@@ -2051,7 +2076,7 @@ def adapter_post_multi_reseaux(
 
 
 def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", texte_cta_impose: bool = False,
-                         mot_cle: str = "", ville: str = "", pages: list = None, faits: str = "") -> str:
+                         mot_cle: str = "", ville: str = "", pages: list = None, faits: str = "", date_publication: date = None) -> str:
     """
     Article de blog complet (markdown : "# Titre", puis "## " pour les
     sous-titres) a partir d'un sujet ou d'un texte de base, pour publication
@@ -2089,7 +2114,7 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
                           "et les repetitions. N'inclus aucun nom de client final, numero de telephone ni plaque d'immatriculation cites dans ces paroles.")
     phrase_autres_liens = "Hors des liens internes autorises, n'utilise aucun autre lien." if pages else "N'utilise aucun autre lien."
     prompt = (
-        f"{contexte_temporel()}\n"
+        f"{contexte_temporel(publication=date_publication)}\n"
         "Redige un article de blog complet, en francais, pour le site de l'entreprise decrite ci-dessous, a "
         "partir de ce sujet ou de ce texte de base :\n\n"
         f"\"{sujet.strip()}\"\n"
@@ -2483,7 +2508,7 @@ SCHEMA_CARROUSEL = {
 }
 
 
-def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4) -> dict:
+def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4, date_publication: date = None) -> dict:
     """
     Textes d'un carrousel (couverture, N slides "point", slide finale avec bouton) a partir d'un sujet
     ou d'un texte de base ; le dessin est fait par carrousel_visuel.py. Textes courts : ils doivent
@@ -2497,7 +2522,7 @@ def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4) -> dic
 
     bloc_contexte = f"\nContexte sur l'entreprise (site web, voix de l'auteur) :\n{contexte.strip()[:5000]}\n" if contexte.strip() else ""
     prompt = (
-        f"{contexte_temporel()}\n"
+        f"{contexte_temporel(publication=date_publication)}\n"
         "Redige le texte d'un carrousel pour les reseaux sociaux (Instagram, LinkedIn), en francais, pour "
         "l'entreprise decrite ci-dessous, a partir de ce sujet ou de ce texte de base :\n\n"
         f"\"{sujet.strip()}\"\n"
@@ -2538,7 +2563,7 @@ def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4) -> dic
     }
 
 
-def generer_post_avis(avis: str, auteur: str, note: int, nom_client: str, contexte: str = "") -> str:
+def generer_post_avis(avis: str, auteur: str, note: int, nom_client: str, contexte: str = "", date_publication: date = None) -> str:
     """
     Court texte de post qui met en avant un avis client (remerciement + ce que l'avis illustre), sans
     inventer aucun fait et sans recopier l'avis en entier (il est deja sur le visuel).
@@ -2549,7 +2574,7 @@ def generer_post_avis(avis: str, auteur: str, note: int, nom_client: str, contex
         raise RuntimeError("Aucun avis fourni.")
     bloc_contexte = f"\nContexte sur l'entreprise (site web, voix de l'auteur) :\n{contexte.strip()[:4000]}\n" if (contexte or "").strip() else ""
     prompt = (
-        f"Nous sommes le {date.today().strftime('%d/%m/%Y')}.\n"
+        f"{contexte_temporel(publication=date_publication)}\n"
         f"Redige un court post pour les reseaux sociaux de l'entreprise « {nom_client} », en francais, qui met en "
         f"avant l'avis Google suivant ({note}/5, par {auteur or 'un client'}) :\n\n"
         f"\"{avis.strip()[:1500]}\"\n"
@@ -4103,7 +4128,7 @@ def _normaliser_titre(titre: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", " ", sans_accents.lower()).strip()
 
 
-def suggerer_articles_par_categorie(contexte_client: str, ville: str, categories: list, articles: list, nombre: int = 6) -> list:
+def suggerer_articles_par_categorie(contexte_client: str, ville: str, categories: list, articles: list, nombre: int = 6, date_publication: date = None) -> list:
     """
     Idees d'articles de blog qui comblent les categories peu fournies du site, sans repeter l'existant. categories : [{"id", "nom", "nombre"}] (sans la categorie par
     defaut) ; articles : [{"titre", "categories": [ids]}] deja publies. Renvoie [{"categorie_id", "categorie", "titre", "angle", "mot_cle"}] ; les idees trop proches
@@ -4118,7 +4143,7 @@ def suggerer_articles_par_categorie(contexte_client: str, ville: str, categories
         lignes.append(f"- {c['id']} : {c['nom']} ({c.get('nombre', 0)} article(s))" + (" - titres existants : " + " | ".join(titres) if titres else " - aucun article pour l'instant"))
     autres = [a["titre"] for a in articles][:40]
     prompt = (
-        f"{contexte_temporel()}\nLes idees doivent convenir a la periode actuelle.\n\n"
+        f"{contexte_temporel(publication=date_publication)}\nLes idees doivent convenir a la periode de publication indiquee ci-dessus.\n\n"
         f"Contexte de l'entreprise :\n{(contexte_client or '').strip()[:2500]}\n" + (f"Zone principale : {ville.strip()[:80]}\n" if (ville or "").strip() else "") +
         "\nCatégories du blog de son site, de la moins fournie à la plus fournie :\n" + "\n".join(lignes[:40]) + "\n\n"
         f"Tous les titres déjà publiés (ne pas les répéter, même reformulés) :\n" + "\n".join(f"- {t}" for t in autres) + "\n\n"

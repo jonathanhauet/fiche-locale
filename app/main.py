@@ -10392,7 +10392,7 @@ async def publication_multi_generer_article(client_id: int, request: Request, db
     try:
         article = claude_generation.generer_article_blog(
             sujet, _contexte_ia_client(client), client.wordpress_lien_cta, bool(client.wordpress_texte_cta),
-            mot_cle=mot_cle, ville=ville, pages=pages, **options_faits,
+            mot_cle=mot_cle, ville=ville, pages=pages, date_publication=_date_publication_demandee(donnees), **options_faits,
         )
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la génération de l'article : {erreur}"}, status_code=500)
@@ -10454,7 +10454,12 @@ async def publication_multi_idees_articles(client_id: int, request: Request, db:
     try:
         categories = [c for c in await run_in_threadpool(wordpress_publish.lister_categories, client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe) if not c["defaut"]]
         articles = await run_in_threadpool(wordpress_publish.lister_articles, client.wordpress_url, client.wordpress_utilisateur, client.wordpress_mot_de_passe)
-        idees = await run_in_threadpool(claude_generation.suggerer_articles_par_categorie, _contexte_ia_client(client), client.localisation_ville or "", categories, articles)
+        try:
+            corps_idees = await request.json()
+        except Exception:
+            corps_idees = {}
+        idees = await run_in_threadpool(claude_generation.suggerer_articles_par_categorie, _contexte_ia_client(client), client.localisation_ville or "", categories, articles,
+                                        date_publication=_date_publication_demandee(corps_idees))
     except Exception as e:
         return JSONResponse({"erreur": str(e)}, status_code=502)
     resume = sorted(({"id": c["id"], "nom": c["nom"], "nombre": c["nombre"], "faible": c["nombre"] <= 2} for c in categories), key=lambda c: (c["nombre"], c["nom"]))
@@ -10726,6 +10731,16 @@ def charte_client_page(client_id: int, request: Request, db: Session = Depends(o
     return templates.TemplateResponse(request, "client_charte.html", {"client": client, "charte": _charte_client(db, client), "site_url": client.wordpress_url or client.site_web or ""})
 
 
+def _date_publication_demandee(donnees) -> date:
+    """Date de publication prevue envoyee par le composeur (ISO), ou None : future d'au moins 2 jours et dans les 2 ans, sinon ignoree (le contenu est alors ecrit pour aujourd'hui)."""
+    try:
+        jour = date.fromisoformat(str((donnees if isinstance(donnees, dict) else {}).get("date_publication") or "").strip())
+    except ValueError:
+        return None
+    aujourdhui = datetime.now(ZoneInfo("Europe/Brussels")).date()
+    return jour if aujourdhui + timedelta(days=2) <= jour <= aujourdhui + timedelta(days=730) else None
+
+
 def _avec_polices_client(client, fonction):
     """Enveloppe une fonction de rendu de visuel pour qu'elle utilise les polices de la charte du client (voir carrousel_visuel.polices_du_client)."""
     titres, texte = client.police_titres or "", client.police_texte or ""
@@ -10891,7 +10906,7 @@ async def publication_multi_carrousel_textes(client_id: int, request: Request, d
         return JSONResponse({"erreur": "Écrivez d'abord le sujet ou le texte de base."}, status_code=400)
     try:
         slides = await run_in_threadpool(
-            claude_generation.generer_carrousel, sujet, _contexte_ia_client(client), donnees.get("nb_points") or 4,
+            claude_generation.generer_carrousel, sujet, _contexte_ia_client(client), donnees.get("nb_points") or 4, date_publication=_date_publication_demandee(donnees),
         )
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la rédaction du carrousel : {erreur}"}, status_code=500)
@@ -11497,7 +11512,7 @@ async def publication_multi_avis_texte(client_id: int, request: Request, db: Ses
     try:
         texte = await run_in_threadpool(
             claude_generation.generer_post_avis, str(donnees.get("texte") or ""), str(donnees.get("auteur") or ""),
-            note, nom_affiche_carrousel(client), _contexte_ia_client(client),
+            note, nom_affiche_carrousel(client), _contexte_ia_client(client), date_publication=_date_publication_demandee(donnees),
         )
     except Exception as erreur:
         return JSONResponse({"erreur": f"Échec de la rédaction : {erreur}"}, status_code=500)
@@ -11668,7 +11683,7 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
     try:
         post_genere = claude_generation.generer_post_expert(
             theme, _contexte_ia_client(client, marque=marque), contenu_article, client.nom,
-            _sujets_deja_traites_client(db, client.id, limite=14), texte_actuel,
+            _sujets_deja_traites_client(db, client.id, limite=14), texte_actuel, date_publication=_date_publication_demandee(donnees),
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
@@ -11777,7 +11792,7 @@ def publication_multi_sujets_tendance(client_id: int, request: Request, db: Sess
 
 
 @app.post("/publication-multi/{client_id}/sujets_evergreen")
-def publication_multi_sujets_evergreen(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+async def publication_multi_sujets_evergreen(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """
     Propose 5 sujets independants de l'actualite du jour (voir
     claude_generation.suggerer_sujets_evergreen) - complement aux sujets
@@ -11796,8 +11811,12 @@ def publication_multi_sujets_evergreen(client_id: int, request: Request, db: Ses
 
     try:
         sujets_deja_traites = _sujets_deja_traites_client(db, client.id, limite=15)
-        suggestions = claude_generation.suggerer_sujets_evergreen(
-            _contexte_ia_client(client), sujets_deja_traites, nombre=5, nom_client=client.nom,
+        try:
+            corps_evergreen = await request.json()
+        except Exception:
+            corps_evergreen = {}
+        suggestions = await run_in_threadpool(
+            claude_generation.suggerer_sujets_evergreen, _contexte_ia_client(client), sujets_deja_traites, 5, client.nom, date_publication=_date_publication_demandee(corps_evergreen),
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
