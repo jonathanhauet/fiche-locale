@@ -1310,6 +1310,7 @@ def _extrait_court(texte: str, longueur: int = 60) -> str:
 
 
 NB_MAX_IMAGES_PUBLICATION = 10  # limite d'un carrousel Instagram
+RESEAUX_UNE_IMAGE = ("google",)  # reseaux qui ne publient qu'une photo : on choisit laquelle parmi celles du post (champ index_image_<reseau>)
 WORDPRESS_APP_ID = "b4c6f1a2-7d3e-4f5a-9b8c-2e1d0a3c5f60"  # identifiant fixe de l'application aupres de WordPress (ecran d'autorisation)
 NB_POSTS_RECENTS_PHOTO = 15  # fenetre pour avertir d'une photo de la fiche deja reutilisee (voir _reponse_detail_client)
 COTE_MAX_IMAGE_PUBLICATION = 2048
@@ -12876,6 +12877,14 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                 urls_par_reseau[reseau] = [_televerser_image_publication(await fichier_reseau.read(), f"multi-{reseau}")]
             else:
                 urls_par_reseau[reseau] = list(urls_partagees)
+                if reseau in RESEAUX_UNE_IMAGE and len(urls_partagees) >= 2:
+                    # Reseau qui ne publie qu'une photo : celle choisie dans le composeur (place dans la liste des images), sinon la premiere.
+                    try:
+                        indice = int(formulaire.get(f"index_image_{reseau}") or 0)
+                    except ValueError:
+                        indice = 0
+                    if 0 <= indice < len(urls_partagees):
+                        urls_par_reseau[reseau] = [urls_partagees[indice]]
     except ValueError as erreur_image:
         return _erreur(f"Image refusée : {erreur_image}")
 

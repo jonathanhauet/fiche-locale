@@ -179,7 +179,7 @@
   <div class="onglet-panneau" data-onglet="visuel" hidden>
   <label for="image-partagee">Image(s) (optionnelles — partagées par défaut sur tous les réseaux, Instagram en a besoin)</label>
   <input type="file" id="image-partagee" name="image" accept="image/*" multiple>
-  <p class="texte-discret">Jusqu'à 10 images, ajoutables en plusieurs fois et réordonnables : carrousel sur Instagram, plusieurs photos sur Facebook. Google et LinkedIn n'utilisent que la première. Une image générée par l'IA reste unique ; un carrousel IA (ci-dessous) compte comme plusieurs images.</p>
+  <p class="texte-discret">Jusqu'à 10 images, ajoutables en plusieurs fois et réordonnables : carrousel sur Instagram, plusieurs photos sur Facebook. Google n'en publie qu'une (la première par défaut, au choix dans le bloc Google de l'étape 3) ; LinkedIn n'utilise que la première. Une image générée par l'IA reste unique ; un carrousel IA (ci-dessous) compte comme plusieurs images.</p>
   <div class="ligne-champs">
     <input type="text" id="prompt-image-ia" value="{{ prompt_image_initial }}" placeholder="Description de l'image (laissez vide : l'IA la déduit de votre texte de base)" style="flex:1;">
     <button type="button" id="bouton-generer-image" class="bouton-secondaire">
@@ -725,6 +725,11 @@
         <input type="file" name="image_{{ reseau }}" accept="image/*" class="champ-image-dediee" data-reseau="{{ reseau }}" hidden>
         {% endif %}
         {% if reseau == "google" %}
+        <div class="choix-photo-reseau" data-reseau="google" hidden>
+          <span class="texte-discret">Google ne publie qu'une photo par post : cliquez sur celle que vous voulez.</span>
+          <div class="images-choisies choix-photo-grille"></div>
+          <input type="hidden" name="index_image_google" class="champ-index-image" value="">
+        </div>
         <label for="select-cta-google">Bouton d'appel à l'action (Google)</label>
         <select id="select-cta-google" name="type_appel_action_google">
           {% for valeur, libelle in options_appel_action %}
@@ -1060,9 +1065,10 @@
         champ.hidden = !caseDediee.checked;
         if (!caseDediee.checked) champ.value = "";
         actualiserApercuImage(caseDediee.dataset.reseau);
+        majChoixPhotoReseau();
       });
       document.querySelector(`.champ-image-dediee[data-reseau="${caseDediee.dataset.reseau}"]`)
-        .addEventListener("change", () => actualiserApercuImage(caseDediee.dataset.reseau));
+        .addEventListener("change", () => { actualiserApercuImage(caseDediee.dataset.reseau); majChoixPhotoReseau(); });
     });
 
     // Aperçu du texte, avec simulation du point de troncature "Voir plus" de
@@ -1113,6 +1119,7 @@
     // dernier recours, l'image generee par IA (deja hebergee, voir plus bas).
     const champImagePartagee = document.getElementById("image-partagee");
     const champImageUrlIA = document.getElementById("champ-image-url-ia");
+    const choixPhotoReseau = {};   // reseau -> image retenue (fichier ou adresse), suivie meme quand on reordonne ou retire des images
 
     function lireImageEnApercu(fichier, callback) {
       if (!fichier) { callback(null); return; }
@@ -1127,7 +1134,8 @@
       if (!apercuImg) return;
       const cadre = apercuImg.closest(".apercu-cadre-image");
       const badgeNb = cadre.querySelector(".badge-nb-images");
-      const fichier = (champDedie && champDedie.files[0]) || champImagePartagee.files[0] || null;
+      const indexRetenu = indexPhotoReseau(reseau);
+      const fichier = (champDedie && champDedie.files[0]) || champImagePartagee.files[indexRetenu] || null;
       // Plusieurs images partagees : seuls Facebook et Instagram les publient toutes.
       const urlsIA = champImageUrlIA.value ? champImageUrlIA.value.split("|").filter(Boolean) : [];
       const nbImages = (champDedie && champDedie.files[0]) ? 1 : (champImagePartagee.files.length || urlsIA.length);
@@ -1142,7 +1150,7 @@
         });
         return;
       }
-      if (urlsIA.length) { apercuImg.src = urlsIA[0]; cadre.hidden = false; return; }
+      if (urlsIA.length) { apercuImg.src = urlsIA[indexRetenu] || urlsIA[0]; cadre.hidden = false; return; }
       apercuImg.removeAttribute("src");
       cadre.hidden = true;
     }
@@ -1229,6 +1237,43 @@
       });
       majBlocAvantApres();
       majPhotosTexte();
+      majChoixPhotoReseau();
+    }
+
+    // Photo retenue pour un reseau qui n'en publie qu'une (Google) : par defaut la premiere, sinon celle sur laquelle on a clique.
+    function indexPhotoReseau(reseau) {
+      const { elements } = imagesDuPost();
+      const retenue = choixPhotoReseau[reseau];
+      const i = retenue === undefined ? 0 : elements.indexOf(retenue);
+      return i >= 0 ? i : 0;
+    }
+    function majChoixPhotoReseau() {
+      document.querySelectorAll(".choix-photo-reseau").forEach((zone) => {
+        const reseau = zone.dataset.reseau;
+        const { fichiers, elements } = imagesDuPost();
+        const dedie = document.querySelector(`.champ-image-dediee[data-reseau="${reseau}"]`);
+        const champ = zone.querySelector(".champ-index-image"), grille = zone.querySelector(".choix-photo-grille");
+        zone.hidden = elements.length < 2 || !!(dedie && dedie.files.length);       // une image dediee a ce reseau l'emporte
+        grille.innerHTML = "";
+        if (zone.hidden) { champ.value = ""; return; }
+        const retenu = indexPhotoReseau(reseau);
+        champ.value = String(retenu);
+        elements.forEach((element, i) => {
+          const bloc = document.createElement("div");
+          bloc.className = "image-choisie" + (i === retenu ? " image-choisie-retenue" : "");
+          bloc.setAttribute("role", "radio"); bloc.setAttribute("aria-checked", i === retenu ? "true" : "false"); bloc.tabIndex = 0;
+          bloc.title = i === retenu ? "Photo publiée sur Google" : "Publier cette photo sur Google";
+          const img = document.createElement("img");
+          img.src = fichiers ? urlApercuFichier(element) : element; img.alt = "Photo " + (i + 1); img.draggable = false;
+          const numero = document.createElement("span");
+          numero.className = "image-choisie-numero"; numero.textContent = i === retenu ? "✓ " + (i + 1) : String(i + 1);
+          bloc.appendChild(img); bloc.appendChild(numero);
+          const choisir = () => { choixPhotoReseau[reseau] = element; majChoixPhotoReseau(); actualiserApercuImage(reseau); };
+          bloc.addEventListener("click", choisir);
+          bloc.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choisir(); } });
+          grille.appendChild(bloc);
+        });
+      });
     }
 
     // Photos de l'etape 1 : meme liste que les images du post (etape 2), montrees ici en petit pour que l'IA les regarde au moment d'ecrire le texte.
