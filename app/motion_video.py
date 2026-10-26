@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from . import personnage, personnage_bd, sons, synthese_vocale
+from . import personnage, personnage_bd, polices_client, sons, synthese_vocale
 from .montage_video import FFMPEG
 
 DOSSIER_POLICES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "polices")
@@ -163,8 +163,42 @@ def _police(nom: str, taille: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(os.path.join(DOSSIER_POLICES, nom), max(8, int(taille)))
 
 
+@functools.lru_cache(maxsize=96)
+def _police_fichier(chemin: str, taille: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(chemin, max(8, int(taille)))
+
+
+_CHEMINS_POLICES = {}                    # police de la plateforme -> fichier de la police du client (pendant un rendu : un seul a la fois)
+
+
+def appliquer_polices(titres: str = "", texte: str = "") -> None:
+    """Polices Google Fonts de la charte du client pour tout le rendu : titres (gras et accents serif) et texte courant. Police introuvable : celle de la plateforme."""
+    global _CHEMINS_POLICES
+    nouveau = {}
+    if (titres or "").strip():
+        gras, normal = polices_client.chemin(titres, 700), polices_client.chemin(titres, 400)
+        if gras:
+            nouveau[GRAS] = gras
+        if gras or normal:
+            nouveau[SERIF] = normal or gras
+    if (texte or "").strip():
+        corps = polices_client.chemin(texte, 400)
+        if corps:
+            nouveau[NORMAL] = corps
+    if nouveau != _CHEMINS_POLICES:
+        _CHEMINS_POLICES = nouveau
+        _image_texte.cache_clear()
+
+
 def police(nom: str, taille: int) -> ImageFont.FreeTypeFont:
-    return _police(GRAS if (_REMPLACE_SERIF and nom == SERIF) else nom, taille)
+    nom = GRAS if (_REMPLACE_SERIF and nom == SERIF) else nom
+    chemin = _CHEMINS_POLICES.get(nom)
+    if chemin:
+        try:
+            return _police_fichier(chemin, taille)
+        except OSError:
+            pass
+    return _police(nom, taille)
 
 
 def image_texte(texte: str, nom: str, taille: int, couleur: tuple, italique: bool = False, espacement: float = 0.0) -> Image.Image:
@@ -247,8 +281,11 @@ def bloc_texte(texte: str, nom: str, taille: int, largeur_max: float, hauteur_ma
 # --------------------------------------------------------------------------- contexte de rendu
 
 class Contexte:
-    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None, style: str = "", tete_bd: dict = None):
+    def __init__(self, format_video: str, charte: dict, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None, style: str = "", tete_bd: dict = None,
+                 polices: tuple = None):
         global _REMPLACE_SERIF
+        appliquer_polices(*(polices or ("", "")))
+        self.sous_titres = []                          # groupes de sous-titres de la voix off (voir groupes_sous_titres)
         self.tete_bd = tete_bd                         # tete BD de l'utilisateur (voir personnage_bd.preparer_pour_rendu) ou None
         self.l, self.h = FORMATS[format_video]
         self.format = format_video
@@ -739,10 +776,14 @@ def scene_cta(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     marge = ctx.px(76)
     contacts = [l for l in (sc.get("contact") or "").split(chr(10)) if l.strip()][:3]
     base = 118 if ctx.format != "horizontal" else 92
+    avec_logo = ctx.logo is not None and ctx.format != "horizontal"      # logo du client en tete du dernier ecran (format horizontal : pas la place)
+
+    def haut_logo(e):
+        return ctx.px(200 * e) if avec_logo else 0
 
     def mesure(e):
         bloc = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
-        return bloc["hauteur"] + ctx.px(70 * e) + ctx.px(220 * e) + len(contacts) * ctx.px(74 * e)
+        return bloc["hauteur"] + ctx.px(70 * e) + ctx.px(220 * e) + len(contacts) * ctx.px(74 * e) + haut_logo(e)
 
     e = echelle_pour(ctx, mesure)
     bloc = composer(ctx, sc.get("texte", ""), ctx.px(base * e), ctx.l - 2 * marge)
@@ -750,6 +791,15 @@ def scene_cta(ctx: Contexte, sc: dict, t: float) -> Image.Image:
     y0 = ctx.haut_centre(mesure(e), -0.07 if objet else 0.0)
     if objet:                                                          # objet illustre sous le texte (format vertical seulement : ailleurs il generait le texte)
         _objet_decor(ctx, image, objet, t, True)
+    if avec_logo:
+        cote = ctx.px(150 * e) * max(0.05, sortie_rebond((t - 0.1) / 0.6))
+        if cote > 8:
+            cx_logo, cy_logo = ctx.l / 2, y0 + ctx.px(75 * e)
+            ImageDraw.Draw(image).rounded_rectangle((cx_logo - cote / 2, cy_logo - cote / 2, cx_logo + cote / 2, cy_logo + cote / 2), radius=max(2, cote * 0.3), fill=(255, 255, 255))
+            petit = ctx.logo.copy()
+            petit.thumbnail((int(cote * 0.78), int(cote * 0.78)))
+            image.paste(petit.convert("RGB"), (int(cx_logo - petit.size[0] / 2), int(cy_logo - petit.size[1] / 2)), petit.getchannel("A") if petit.mode == "RGBA" else None)
+    y0 += haut_logo(e)
     dessiner_bloc(ctx, image, bloc, marge, y0, t, 0.05)
     y_bouton = y0 + bloc["hauteur"] + ctx.px(70 * e)
     p = sortie_rebond((t - 0.9) / 0.5)
@@ -1594,6 +1644,79 @@ def habillage(ctx: Contexte, image: Image.Image, avancement: float, numero: int,
     image.paste(compteur.convert("RGB"), (ctx.l - marge - compteur.size[0] + 10, y + ctx.px(16)), compteur.getchannel("A"))
 
 
+def groupes_sous_titres(ctx: Contexte, texte: str, debut: float, fin: float) -> list:
+    """Sous-titres d'une phrase dite entre debut et fin : groupes d'une ou deux lignes, chaque mot repere dans le temps (au prorata de sa longueur)."""
+    mots = (texte or "").split()
+    if not mots or fin <= debut:
+        return []
+    taille = ctx.px(40 if ctx.format == "horizontal" else 52)
+    largeur_max = ctx.l - 2 * ctx.px(120)
+    max_lignes = 1 if ctx.format == "horizontal" else 2
+    lignes, courante = [], []
+    for mot in mots:
+        if courante and largeur_texte(" ".join(courante + [mot]), GRAS, taille) > largeur_max:
+            lignes.append(courante)
+            courante = [mot]
+        else:
+            courante.append(mot)
+    if courante:
+        lignes.append(courante)
+    poids = [len(m) + 2 for m in mots]
+    temps, t = [], debut
+    for p in poids:
+        d = (fin - debut) * p / sum(poids)
+        temps.append((t, t + d))
+        t += d
+    groupes, k = [], 0
+    for i in range(0, len(lignes), max_lignes):
+        morceau = lignes[i:i + max_lignes]
+        n = sum(len(l) for l in morceau)
+        groupes.append({"lignes": morceau, "temps": temps[k:k + n], "debut": max(debut, temps[k][0] - 0.05), "fin": temps[k + n - 1][1] + 0.25, "taille": taille})
+        k += n
+    for a, b in zip(groupes, groupes[1:]):                               # un groupe ne recouvre jamais le suivant
+        a["fin"] = min(a["fin"], b["debut"])
+    return groupes
+
+
+def dessiner_sous_titres(ctx: Contexte, image: Image.Image, t: float) -> None:
+    """Sous-titre en cours : texte blanc sur pastille sombre, le mot prononce en jaune, juste au-dessus de la barre de progression."""
+    groupe = next((g for g in ctx.sous_titres if g["debut"] <= t < g["fin"]), None)
+    if groupe is None:
+        return
+    taille = groupe["taille"]
+    hauteur_ligne = int(taille * 1.32)
+    marge_h, marge_v = ctx.px(34), ctx.px(18)
+    espace = largeur_texte(" ", GRAS, taille)
+    largeurs = [largeur_texte(" ".join(l), GRAS, taille) for l in groupe["lignes"]]
+    l_boite, h_boite = int(max(largeurs) + 2 * marge_h), len(groupe["lignes"]) * hauteur_ligne + 2 * marge_v
+    calque = Image.new("RGBA", (l_boite, h_boite), (0, 0, 0, 0))
+    ImageDraw.Draw(calque).rounded_rectangle((0, 0, l_boite - 1, h_boite - 1), radius=ctx.px(28), fill=(12, 12, 16, 190))
+    k = 0
+    for i, ligne in enumerate(groupe["lignes"]):
+        x = (l_boite - largeurs[i]) / 2
+        for mot in ligne:
+            debut_mot, fin_mot = groupe["temps"][k]
+            actif = debut_mot - 0.02 <= t < fin_mot
+            couleur = (255, 214, 10) if actif else ((255, 255, 255) if t >= debut_mot else (214, 214, 220))
+            img = image_texte(mot, GRAS, taille, couleur)
+            calque.paste(img, (int(x) - 10, marge_v + i * hauteur_ligne - 10 + int(taille * 0.06)), img)
+            x += largeur_texte(mot, GRAS, taille) + espace
+            k += 1
+    pop = sortie_expo((t - groupe["debut"]) / 0.16)
+    x0, y0 = (ctx.l - l_boite) // 2, ctx.h - ctx.px(96) - ctx.px(34) - h_boite + int((1 - pop) * ctx.px(14))
+    coller(image, calque, x0, y0, borne(pop * 1.5))
+
+
+def image_couverture(ctx: Contexte, scenes: list, positions: list, index: int = 0) -> Image.Image:
+    """Image de couverture : la scene choisie une fois son texte entierement apparu, avec le nom de la marque, sans barre de progression ni compteur."""
+    index = max(0, min(int(index or 0), len(scenes) - 1))
+    debut, fin = positions[index]
+    t = debut + min(max(fin - debut - 0.2, 0.5), max(1.7, (fin - debut) * 0.6))
+    image = scene_a(ctx, scenes, positions, index, t)
+    etiquette(ctx, image, f"× {ctx.marque} ×" if ctx.marque else "", ctx.px(76), ctx.px(70), ctx.t["marque_hab"], 30)
+    return image
+
+
 def transition_balayage(ctx: Contexte, a: Image.Image, b: Image.Image, p: float) -> Image.Image:
     """b recouvre a par la gauche, derriere une bande de couleur oblique."""
     biais = int(ctx.l * 0.14)
@@ -1761,15 +1884,14 @@ def image_a(ctx: Contexte, scenes: list, positions: list, t: float) -> Image.Ima
             avant = scene_a(ctx, scenes, positions, courante - 1, t)
             image = transition_balayage(ctx, avant, image, (t - debut) / DUREE_TRANSITION)
     habillage(ctx, image, t / max(0.1, positions[-1][1]), courante + 1, n, scenes[courante]["type"] == "chiffre" and (t - debut) > DUREE_TRANSITION)
+    if ctx.sous_titres:
+        dessiner_sous_titres(ctx, image, t)
     return image
 
 
-def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque: str = "", ville: str = "", progression=None, musique: str = None,
-           images: list = None, logo: Image.Image = None, bpm: float = None, style: str = "", voix: list = None, tete_bd: dict = None) -> float:
-    """
-    Rend la video MP4 (image par image vers ffmpeg, bruitages inclus). Renvoie sa duree en secondes. voix : une entree par scene (apres nettoyage),
-    (fichier MP3, duree) ou None, voir synthese_vocale.preparer ; une scene s'allonge au besoin pour que la phrase soit dite en entier, et la musique baisse pendant qu'elle parle.
-    """
+def preparer_rendu(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", images: list = None, logo: Image.Image = None, bpm: float = None,
+                   style: str = "", voix: list = None, tete_bd: dict = None, polices: tuple = None, sous_titres: bool = False) -> tuple:
+    """(scenes nettoyees, contexte de rendu, positions, voix) : tout ce qu'il faut pour dessiner la video, ou une seule scene (apercu, couverture)."""
     if format_video not in FORMATS:
         raise ErreurMotion("Format inconnu.")
     scenes = nettoyer_scenario(scenario)
@@ -1788,8 +1910,25 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
                     niveaux = []
                 scene["parole"] = {"debut": DELAI_VOIX, "fin": DELAI_VOIX + voix[i][1], "enveloppe": niveaux}
     tete = personnage_bd.preparer_pour_rendu(tete_bd) if tete_bd else None
-    ctx = Contexte(format_video, charte, marque, ville, images, logo, style if style in STYLES else "", tete)
+    ctx = Contexte(format_video, charte, marque, ville, images, logo, style if style in STYLES else "", tete, polices)
     positions = minutage(scenes)
+    if sous_titres:                                                     # sous-titres : seulement la narration ecrite a part (champ « voix »), jamais un texte deja affiche ni la bulle du personnage
+        for i, (scene, v) in enumerate(zip(scenes, voix)):
+            if v and scene.get("voix") and scene["type"] != "personnage":
+                debut_voix = positions[i][0] + DELAI_VOIX
+                ctx.sous_titres += groupes_sous_titres(ctx, synthese_vocale.texte_a_dire(scene), debut_voix, debut_voix + v[1])
+    return scenes, ctx, positions, voix
+
+
+def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque: str = "", ville: str = "", progression=None, musique: str = None,
+           images: list = None, logo: Image.Image = None, bpm: float = None, style: str = "", voix: list = None, tete_bd: dict = None, polices: tuple = None,
+           sous_titres: bool = False, couverture: tuple = None) -> float:
+    """
+    Rend la video MP4 (image par image vers ffmpeg, bruitages inclus). Renvoie sa duree en secondes. voix : une entree par scene (apres nettoyage),
+    (fichier MP3, duree) ou None, voir synthese_vocale.preparer ; une scene s'allonge au besoin pour que la phrase soit dite en entier, et la musique baisse pendant qu'elle parle.
+    polices : (police des titres, police du texte) de la charte du client. couverture : (fichier JPEG, numero de la scene) pour l'image de couverture.
+    """
+    scenes, ctx, positions, voix = preparer_rendu(scenario, charte, format_video, marque, ville, images, logo, bpm, style, voix, tete_bd, polices, sous_titres)
     duree = positions[-1][1]
     total_images = int(duree * FPS)
     evenements = evenements_sons(scenes)
@@ -1850,6 +1989,11 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
     if processus.returncode != 0 or not os.path.exists(sortie):
         message = (erreurs[0].decode("utf-8", "replace") if erreurs else "")[-300:]
         raise ErreurMotion(message or "ffmpeg a echoue.")
+    if couverture:                                                      # image de couverture : jamais bloquante pour la video
+        try:
+            image_couverture(ctx, scenes, positions, couverture[1]).convert("RGB").save(couverture[0], format="JPEG", quality=90)
+        except Exception:
+            pass
     return duree
 
 
@@ -1902,7 +2046,8 @@ def telecharger_musique(url: str, dossier: str) -> str:
 
 
 def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", ville: str = "", sources_images: list = None, source_logo: tuple = None,
-             url_musique: str = "", bpm: float = None, archiver=None, style: str = "", voix_off: dict = None, tete_bd: dict = None) -> str:
+             url_musique: str = "", bpm: float = None, archiver=None, style: str = "", voix_off: dict = None, tete_bd: dict = None, polices: tuple = None,
+             sous_titres: bool = False, scene_couverture: int = 0) -> str:
     """
     Lance le rendu en tache de fond (un seul a la fois : il occupe le processeur) et renvoie son identifiant. sources_images : [("google", url) ou
     ("import", identifiant)] dans l'ordre des numeros de photos ; source_logo : ("url", adresse) ou ("import", identifiant).
@@ -1942,7 +2087,11 @@ def demarrer(scenario: dict, charte: dict, format_video: str, marque: str = "", 
             voix = None
             if voix_off:                       # voix off : une phrase par scene, synthetisee avant le rendu (voir synthese_vocale)
                 voix = synthese_vocale.preparer(nettoyer_scenario(scenario), voix_off.get("voix"), voix_off.get("ton", "dynamique"), dossier, voix_off.get("voix_personnage", ""))
-            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm, style, voix, tete_bd)
+            chemin_couverture = os.path.join(dossier, "couverture.jpg")
+            duree = rendre(scenario, charte, format_video, chemin, marque, ville, lambda p: etat.__setitem__("progression", round(p, 3)), musique, images, logo, bpm, style, voix, tete_bd,
+                           polices, bool(sous_titres and voix), (chemin_couverture, scene_couverture))
+            if os.path.exists(chemin_couverture):
+                etat["couverture"] = chemin_couverture
             if archiver:                       # archive automatique (hebergement + trace par client) : jamais bloquante pour la video elle-meme
                 try:
                     etat["archive"] = archiver(chemin, round(duree, 1))
@@ -1978,6 +2127,12 @@ def heberger(identifiant: str, heberger_fichier) -> dict:
                     octets = fichier.read()
                 nom = f"motion-{uuid.uuid4().hex[:12]}.mp4"
                 hebergement.update(url=heberger_fichier(octets, nom), nom_distant=nom, etat="pret")
+                if etat.get("couverture") and os.path.exists(etat["couverture"]):             # l'image de couverture est hebergee avec la video (jamais bloquant)
+                    try:
+                        with open(etat["couverture"], "rb") as fichier:
+                            hebergement["couverture_url"] = heberger_fichier(fichier.read(), nom.replace(".mp4", "-couverture.jpg"))
+                    except Exception:
+                        pass
             except Exception as erreur:
                 hebergement.update(etat="erreur", erreur=f"Hebergement de la video impossible : {str(erreur)[:250]}")
 

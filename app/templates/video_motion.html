@@ -57,6 +57,8 @@
       <button type="button" id="vm-voix-perso-ecouter" class="bouton-secondaire bouton-mini">▶ Écouter un extrait</button>
     </div>
     <p class="texte-discret" style="margin:.2rem 0">La narration lit le texte des scènes ; dans les scènes « Personnage », c'est le personnage qui parle avec sa propre voix, et sa bouche suit le son.</p>
+    <label class="vm-case"><input type="checkbox" id="vm-soustitres" checked> Sous-titres de la voix off (pour ceux qui regardent sans le son)</label>
+    <p class="texte-discret" style="margin:.2rem 0">Les sous-titres reprennent la narration écrite à part (champ « Voix off » d'une scène) et s'affichent en bas de l'écran, le mot dit en jaune. Ils ne répètent ni un texte déjà affiché ni la bulle du personnage.</p>
     <audio id="vm-voix-audio" hidden></audio>
   </div>
   <p id="vm-voix-statut" class="texte-discret" hidden></p>
@@ -82,7 +84,8 @@
     <label for="vm-fichiers">Ajouter vos propres images</label>
     <input type="file" id="vm-fichiers" accept="image/*" multiple>
     <div id="vm-choix" class="vm-grille"></div>
-    <label class="vm-case"><input type="checkbox" id="vm-logo" checked> Afficher le logo du client dans la scène « marque » (s'il en a un)</label>
+    <label class="vm-case"><input type="checkbox" id="vm-logo" checked> Afficher le logo du client dans la scène « marque » et en tête de l'écran final (s'il en a un)</label>
+    <label class="vm-case" id="vm-polices-ligne" hidden><input type="checkbox" id="vm-polices" checked> Utiliser les polices de la charte du client : <b id="vm-polices-noms"></b></label>
   </div>
 
   <div class="ligne-champs">
@@ -180,6 +183,12 @@
     <video id="vm-video" controls preload="metadata" playsinline></video>
     <div class="ligne-champs">
       <a class="bouton-secondaire" id="vm-telecharger" href="#">⬇ Télécharger la vidéo</a>
+    </div>
+    <div id="vm-couverture-bloc" hidden>
+      <h3>Image de couverture</h3>
+      <img id="vm-couverture" alt="Image de couverture de la vidéo" style="max-width:190px;border-radius:10px;display:block;margin:.3rem 0;">
+      <a class="bouton-secondaire bouton-mini" id="vm-couverture-lien" href="#">⬇ Télécharger la couverture</a>
+      <p class="texte-discret">Pour la miniature du Reel ou de la vidéo sur chaque réseau. C'est la scène « 🖼 Couverture » choisie dans le scénario (l'accroche par défaut).</p>
     </div>
     <label for="vm-legende">Texte du post (modifiable)</label>
     <textarea id="vm-legende" rows="5"></textarea>
@@ -401,14 +410,18 @@
   });
 
   // ---------- réglages enregistrés par client : couleurs, nom, ville, ton, format, logo
+  function majPolices(charte) {
+    const noms = [charte.police_titres, charte.police_texte].filter(Boolean);
+    $("vm-polices-ligne").hidden = !noms.length; $("vm-polices-noms").textContent = noms.join(" et ");
+  }
   function poserCouleur(n, valeur) { const v = normaliserHex(valeur); if (v) { $("vm-couleur" + n).value = v; $("vm-hex" + n).value = v; } }
   async function chargerProfil() {
     const zone = $("vm-profil-statut"), id = $("vm-client").value, lien = $("vm-charte-lien");
     lien.hidden = !id; if (id) lien.href = "/clients/" + id + "/charte";
-    if (!id) { zone.hidden = true; return; }
+    if (!id) { zone.hidden = true; majPolices({}); return; }
     let d;
     try { const r = await fetch("/video-motion/profil/" + id); d = await r.json(); if (!r.ok) return; } catch (e) { return; }
-    zone.hidden = false;
+    zone.hidden = false; majPolices(d.charte || {});
     if (!d.profil) {
       const charte = d.charte || {};                                    // couleurs et nom de la charte graphique du client
       poserCouleur(1, charte.couleur_principale || CHARTE_DEFAUT.principale); poserCouleur(2, charte.couleur_secondaire || CHARTE_DEFAUT.secondaire);
@@ -604,6 +617,8 @@
       const url = "/video-motion/" + v.id + "/video.mp4";
       if ($("vm-video").dataset.id !== v.id) { $("vm-video").src = url; $("vm-video").dataset.id = v.id; }
       $("vm-telecharger").href = url + "?telecharger=1";
+      $("vm-couverture-bloc").hidden = !v.couverture_prete;
+      if (v.couverture_prete) { $("vm-couverture").src = "/video-motion/" + v.id + "/couverture.jpg?v=" + v.id; $("vm-couverture-lien").href = "/video-motion/" + v.id + "/couverture.jpg?telecharger=1"; }
       if ($("vm-client").value) $("vm-pub-client").value = $("vm-client").value;
       statutPublication("");
     }
@@ -618,7 +633,7 @@
     const corps = JSON.stringify({ scenes: v.scenes.map((s) => s.type === "personnage" ? Object.assign({}, s, { forme: $("vm-forme").value }) : s), style: $("vm-style").value, voix_off: voixOff(), client_id: $("vm-client").value, titre: v.titre, legende: v.legende, format: $("vm-format").value, nom: $("vm-nom").value, ville: $("vm-ville").value, couleur1: $("vm-couleur1").value, couleur2: $("vm-couleur2").value,
       images: choix.map((c) => (c.type === "google" ? { type: "google", url: c.url } : { type: "import", id: c.id })),
       logo: ($("vm-logo").checked && logoClient && $("vm-client").value) ? { type: "client", client_id: $("vm-client").value } : null,
-      musique_id: $("vm-musique").value, bpm: $("vm-bpm").value });
+      musique_id: $("vm-musique").value, bpm: $("vm-bpm").value, polices_charte: $("vm-polices").checked, sous_titres: $("vm-voix-active").checked && $("vm-soustitres").checked, couverture: v.couverture || 0 });
     let d = null;
     try {
       for (let essai = 0; essai < 90; essai++) {
@@ -637,7 +652,7 @@
         if (i === courant) montrerRendu();
         if (e.etat === "en_cours") { await attendre(1500); continue; }
         if (e.etat === "erreur") { v.etat = "erreur"; v.erreur = e.erreur || "Échec."; return false; }
-        v.id = d.id; v.etat = "rendu"; v.duree = e.duree; return true;
+        v.id = d.id; v.etat = "rendu"; v.duree = e.duree; v.couverture_prete = !!e.couverture; return true;
       }
     } catch (e) { v.etat = "erreur"; v.erreur = "Erreur réseau."; return false; }
     finally { dessinerOnglets(); if (i === courant) montrerRendu(); }

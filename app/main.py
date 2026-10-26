@@ -8340,7 +8340,8 @@ def video_motion_profil(client_id: int, request: Request, db: Session = Depends(
     client = db.get(models.Client, client_id)
     charte = _charte_client(db, client)
     return JSONResponse({"profil": _profil_video_en_dict(profil) if profil else None, "defauts": charte_montage.lire(db),
-                         "charte": {"couleur_principale": charte["principale"], "couleur_secondaire": charte["secondaires"][0] if charte["secondaires"] else "", "nom": charte["nom"]}})
+                         "charte": {"couleur_principale": charte["principale"], "couleur_secondaire": charte["secondaires"][0] if charte["secondaires"] else "", "nom": charte["nom"],
+                                    "police_titres": charte["police_titres"], "police_texte": charte["police_texte"]}})
 
 
 @app.post("/video-motion/profil/{client_id}")
@@ -8649,6 +8650,14 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
         voix_off = {"voix": synthese_vocale.voix_valide(demande_voix.get("voix")), "ton": demande_voix.get("ton") if demande_voix.get("ton") in claude_generation.TONS_MOTION else "dynamique"}
         if demande_voix.get("voix_personnage"):                          # voix du personnage quand il parle (scenes « personnage »)
             voix_off["voix_personnage"] = synthese_vocale.voix_valide(demande_voix.get("voix_personnage"), synthese_vocale.VOIX_PERSONNAGE_DEFAUT)
+    polices = None                                                       # polices Google Fonts de la charte du client (voir polices_client), si la case est cochee
+    client_polices = db.get(models.Client, id_client) if id_client else None
+    if client_polices and donnees.get("polices_charte", True) and (client_polices.police_titres or client_polices.police_texte):
+        polices = (client_polices.police_titres or "", client_polices.police_texte or "")
+    try:
+        scene_couverture = max(0, min(int(donnees.get("couverture") or 0), 11))
+    except (TypeError, ValueError):
+        scene_couverture = 0
     titre_archive = " ".join(str(donnees.get("titre") or donnees.get("nom") or "Vidéo motion design").split())[:150]
     meta_archive = {"legende": str(donnees.get("legende") or "")[:3000], "scenes": scenario["scenes"][:12], "couleurs": [charte["principale"], charte["secondaire"]],
                     "nom": str(donnees.get("nom") or "")[:80], "ville": str(donnees.get("ville") or "")[:60], "source": "motion_design", "style": "google" if donnees.get("style") == "google" else "", "voix": voix_off["voix"] if voix_off else ""}
@@ -8668,7 +8677,8 @@ async def video_motion_rendre(request: Request, db: Session = Depends(obtenir_se
     try:
         identifiant = motion_video.demarrer(scenario, charte, format_video, str(donnees.get("nom") or "").strip()[:80], str(donnees.get("ville") or "").strip()[:60],
                                             sources_images, source_logo, url_musique, bpm, archiver, "google" if donnees.get("style") == "google" else "",
-                                            **({"voix_off": voix_off} if voix_off else {}), **({"tete_bd": tete_bd} if tete_bd else {}))
+                                            **({"voix_off": voix_off} if voix_off else {}), **({"tete_bd": tete_bd} if tete_bd else {}),
+                                            polices=polices, sous_titres=bool(donnees.get("sous_titres")), scene_couverture=scene_couverture)
     except motion_video.ErreurMotion as erreur:
         return JSONResponse({"erreur": str(erreur)}, status_code=409)
     return JSONResponse({"id": identifiant})
@@ -8883,7 +8893,8 @@ def video_motion_etat(identifiant: str, request: Request):
     if not etat:
         return JSONResponse({"erreur": "Vidéo introuvable (elle est conservée quelques heures)."}, status_code=404)
     hebergement = etat.get("hebergement") or {"etat": "absent", "erreur": ""}
-    return JSONResponse({**{cle: etat[cle] for cle in ("etat", "progression", "erreur", "duree")}, "hebergement": hebergement["etat"], "erreur_hebergement": hebergement["erreur"]})
+    return JSONResponse({**{cle: etat[cle] for cle in ("etat", "progression", "erreur", "duree")}, "hebergement": hebergement["etat"], "erreur_hebergement": hebergement["erreur"],
+                         "couverture": bool(etat.get("couverture")), "couverture_url": hebergement.get("couverture_url", "")})
 
 
 @app.post("/video-motion/{identifiant}/publication/preparer")
@@ -8948,6 +8959,17 @@ async def video_motion_publication_bibliotheque(identifiant: str, request: Reque
     db.add(ligne)
     db.commit()
     return JSONResponse({"id": ligne.id, "deja": False})
+
+
+@app.get("/video-motion/{identifiant}/couverture.jpg")
+def video_motion_couverture(identifiant: str, request: Request, telecharger: int = 0):
+    """Image de couverture de la video (scene choisie, sans barre de progression), pour la miniature d'une publication."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée."}, status_code=401)
+    etat = motion_video.ETATS.get(identifiant)
+    if not etat or not etat.get("couverture") or not os.path.exists(etat["couverture"]):
+        return JSONResponse({"erreur": "Image de couverture indisponible."}, status_code=404)
+    return FileResponse(etat["couverture"], media_type="image/jpeg", filename="couverture-video.jpg" if telecharger else None)
 
 
 @app.get("/video-motion/{identifiant}/video.mp4")
