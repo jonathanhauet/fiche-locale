@@ -97,6 +97,17 @@
       </span>
     </div>
 
+    <h2 id="voix">Voix des textes</h2>
+    <div class="charte-trois">
+      <label>Personne
+        <select id="charte-personne">{% for cle, libelle in personnes_ecriture.items() %}<option value="{{ cle }}" {% if charte.personne == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
+      </label>
+      <label>Genre de l'auteur (accords)
+        <select id="charte-genre">{% for cle, libelle in genres_ecriture.items() %}<option value="{{ cle }}" {% if charte.genre == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
+      </label>
+    </div>
+    <p class="texte-discret">Une entrepreneuse seule : « Je » et « Féminin ». Tous les textes écrits pour ce client (posts, articles, carrousels, réponses aux avis, posts programmés) suivent ce choix. En « Automatique », l'IA décide d'après le site.</p>
+
     <div class="actions-avis">
       <button type="button" class="bouton" id="charte-enregistrer"><span class="spinner" id="charte-spinner" hidden></span> 💾 Enregistrer la charte</button>
     </div>
@@ -118,6 +129,7 @@
       <li>🖼️ <b>Visuels, carrousels, avis, titres sur photo</b> : couleurs, logo, nom et décor.</li>
       <li>✨ <b>Vidéos motion design</b> : couleurs et nom{% if charte.profil_video %} (ce client a aussi des réglages propres : voir ci-dessous){% endif %}.</li>
       <li>📝 <b>Articles WordPress</b> : couleur d'accent du site.</li>
+      <li>✍️ <b>Tous les textes générés</b> : « je » ou « nous », féminin ou masculin.</li>
     </ul>
 
     {% if charte.ecarts %}
@@ -269,6 +281,7 @@
     const corps = {
       principale: normaliser($("charte-principale-hex").value), secondaires: secondaires, nom_affiche: $("charte-nom").value, style_decor: $("charte-decor").value,
       logo_position: $("charte-logo-position").value, logo_style: $("charte-logo-style").value, logo_couleur_fond: normaliser($("charte-logo-fond-hex").value), wordpress_couleur: normaliser($("charte-wp-hex").value),
+      personne_ecriture: $("charte-personne").value, genre_ecriture: $("charte-genre").value,
     };
     try { await post("/clients/" + CLIENT + "/identite-visuelle", corps); dire("charte-statut", "Charte enregistrée : elle est utilisée par tous les outils."); setTimeout(() => window.location.reload(), 900); }
     catch (e) { dire("charte-statut", e.message); }

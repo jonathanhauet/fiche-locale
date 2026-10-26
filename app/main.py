@@ -7005,8 +7005,6 @@ def modifier_client(
     whatsapp_jours: list[str] = Form(default=[]),
     whatsapp_opt_in_confirme: bool = Form(False),
     hashtags_fixes: str = Form(""),
-    personne_ecriture: str = Form(None),
-    genre_ecriture: str = Form(None),
     etiquettes: list[str] = Form(default=[]),
     localisation_active: bool = Form(False),
     localisation_ville: str = Form(""),
@@ -7034,10 +7032,6 @@ def modifier_client(
     client.whatsapp_jours = ",".join(sorted(set(whatsapp_jours), key=int)[:3])
     client.whatsapp_opt_in_confirme = whatsapp_opt_in_confirme
     client.hashtags_fixes = hashtags_fixes.strip()
-    if personne_ecriture is not None:                           # champs absents d'un autre formulaire : on ne touche a rien
-        client.personne_ecriture = personne_ecriture if personne_ecriture in ("je", "nous") else ""
-    if genre_ecriture is not None:
-        client.genre_ecriture = genre_ecriture if genre_ecriture in ("feminin", "masculin") else ""
     client.etiquettes = _obtenir_ou_creer_etiquettes(db, etiquettes)
     client.localisation_active = localisation_active
     client.localisation_ville = localisation_ville.strip()
@@ -10580,6 +10574,7 @@ def _charte_client(db: Session, client) -> dict:
         "principale": principale, "secondaires": secondaires, "nom": nom, "logo_envoye": client.logo_url or "", "logo_google": client.logo_google_url or "",
         "logo_position": logo_position_client(client), "logo_style": logo_style_client(client), "logo_fond": logo_couleur_fond_client(client), "decor": style_decor_client(client),
         "wordpress": wordpress, "reprises": reprises, "ecarts": ecarts, "profil_video": bool(video1 or video2),
+        "personne": client.personne_ecriture or "", "genre": client.genre_ecriture or "",
     }
 
 
@@ -10659,6 +10654,10 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
     if "wordpress_couleur" in donnees:
         couleur_wp = str(donnees.get("wordpress_couleur") or "").strip().lower()
         client.wordpress_couleur = couleur_wp if REGEX_COULEUR.fullmatch(couleur_wp) else ""
+    if "personne_ecriture" in donnees:                          # voix des textes generes (voir claude_generation.formater_bloc_style)
+        client.personne_ecriture = donnees["personne_ecriture"] if donnees["personne_ecriture"] in ("je", "nous") else ""
+    if "genre_ecriture" in donnees:
+        client.genre_ecriture = donnees["genre_ecriture"] if donnees["genre_ecriture"] in ("feminin", "masculin") else ""
     db.commit()
     return JSONResponse({"ok": True})
 

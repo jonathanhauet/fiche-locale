@@ -165,24 +165,7 @@
       <input type="text" name="hashtags_fixes" value="{{ client.hashtags_fixes }}" placeholder="Ex : #NicoSerrurerie #SerrurierMarseille">
     </label>
 
-    <div class="choix-image-bloc" id="bloc-style-ecriture">
-      <span class="choix-image-titre">Façon de s'exprimer dans les textes générés</span>
-      <div class="ligne-champs">
-        <label>
-          Personne
-          <select name="personne_ecriture">
-            {% for cle, libelle in personnes_ecriture.items() %}<option value="{{ cle }}" {% if (client.personne_ecriture or "") == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
-          </select>
-        </label>
-        <label>
-          Genre de l'auteur (pour les accords)
-          <select name="genre_ecriture">
-            {% for cle, libelle in genres_ecriture.items() %}<option value="{{ cle }}" {% if (client.genre_ecriture or "") == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
-          </select>
-        </label>
-      </div>
-      <p class="texte-discret">Une entrepreneuse seule : choisissez « Je » et « Féminin » ; tous les textes (posts, articles, carrousels, réponses aux avis) seront écrits à la première personne du singulier, avec les accords au féminin. En « Automatique », l'IA décide d'après le site.</p>
-    </div>
+    <p class="texte-discret" id="bloc-style-ecriture">✍️ « Je » ou « nous », féminin ou masculin : ce réglage se trouve dans la <a href="/clients/{{ client.id }}/charte#voix">charte graphique</a> (section « Voix des textes »).{% if client.personne_ecriture or client.genre_ecriture %} Actuellement : {{ {"je": "je", "nous": "nous"}.get(client.personne_ecriture, "personne automatique") }}{% if client.genre_ecriture %}, {{ {"feminin": "féminin", "masculin": "masculin"}[client.genre_ecriture] }}{% endif %}.{% endif %}</p>
 
     <div class="choix-image-bloc" id="bloc-localisation-ia">
       <span class="choix-image-titre">Localisation ciblée pour les posts IA (optionnel)</span>
