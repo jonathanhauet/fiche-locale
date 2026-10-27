@@ -85,19 +85,26 @@ def _periode_publication_cible() -> str:
 
 # Saison et reperes du moment (France et Belgique, hemisphere nord), pour que le sujet, les exemples et les conseils des textes generes correspondent a la periode reelle.
 REPERES_MOIS = {
-    1: ("hiver", "debut d'annee, froid et gel, soldes d'hiver, bonnes resolutions"),
-    2: ("hiver", "fin d'hiver, vacances de fevrier, Saint-Valentin, premiers signes du printemps"),
-    3: ("fin d'hiver et debut de printemps", "changement d'heure fin mars, grand nettoyage de printemps, jours qui rallongent"),
-    4: ("printemps", "Paques, jardin, premiers beaux jours, giboulees"),
-    5: ("printemps", "ponts de mai, fete des meres, beaux jours"),
-    6: ("debut d'ete", "premieres chaleurs, fete des peres, fin d'annee scolaire, debut des vacances"),
-    7: ("ete", "chaleur, vacances d'ete, soldes d'ete"),
-    8: ("ete", "vacances, rentree qui approche"),
+    1: ("hiver", "froid et gel, nuits longues, debut d'annee"),
+    2: ("hiver", "fin d'hiver, froid qui s'attarde, premiers signes du printemps"),
+    3: ("fin d'hiver et debut de printemps", "jours qui rallongent, premiers redoux, grand nettoyage de printemps"),
+    4: ("printemps", "premiers beaux jours, jardin, giboulees"),
+    5: ("printemps", "beaux jours, nature en fleurs, douceur"),
+    6: ("debut d'ete", "premieres chaleurs, longues soirees"),
+    7: ("ete", "chaleur, vacances d'ete"),
+    8: ("ete", "chaleur, vacances, rentree qui approche"),
     9: ("debut d'automne", "rentree, retour a la routine, jours qui raccourcissent"),
-    10: ("automne", "jours qui raccourcissent, fraicheur et pluie, changement d'heure fin octobre, vacances de la Toussaint, debut de la saison de chauffe"),
-    11: ("automne", "Toussaint, premiers froids, preparation de Noel, Black Friday fin novembre"),
-    12: ("hiver", "Noel et fetes de fin d'annee, froid, bilan de l'annee"),
+    10: ("automne", "jours qui raccourcissent, fraicheur et pluie, debut de la saison de chauffe"),
+    11: ("automne", "premiers froids, jours courts, pluie et obscurite tot, saison de chauffe"),
+    12: ("hiver", "froid, nuits longues, ambiance de fin d'annee"),
 }
+
+# Seule la SAISON oriente les textes, jamais l'evenement du jour : un fleuriste peut parler de la Saint-Valentin, une conciergerie n'a rien a dire de l'Armistice.
+CONSIGNE_SAISON_SEULE = (
+    "SAISON, PAS D'EVENEMENT : seule la saison oriente le texte (meteo, temperature, luminosite, ambiance de la periode). N'evoque AUCUNE fete, aucun jour ferie, aucun evenement "
+    "du calendrier ni evenement commercial (Black Friday, Armistice, Toussaint, Halloween, Saint-Valentin, soldes, changement d'heure, Noel...), sauf si le sujet demande par l'utilisateur ou "
+    "l'activite meme de l'entreprise y est directement liee. En cas de doute, ne l'evoque pas."
+)
 
 
 def contexte_temporel(aujourdhui: date = None, publication: date = None) -> str:
@@ -111,17 +118,15 @@ def contexte_temporel(aujourdhui: date = None, publication: date = None) -> str:
     saison, reperes = REPERES_MOIS[publication.month]
     ecart = (publication - aujourdhui).days
     dans = f"dans {ecart} jours" if ecart < 60 else f"dans environ {round(ecart / 30)} mois"
-    proches = evenements_autour(publication)
     return (
         f"Nous sommes le {aujourdhui.strftime('%d/%m/%Y')} (jour de la redaction), mais ce contenu sera PUBLIE le {JOURS_PUBLICATION[publication.weekday()]} {publication.day} "
         f"{LIBELLES_MOIS[publication.month - 1]} {publication.year}, {dans}. Ecris pour CETTE date de publication, pas pour aujourd'hui. "
-        f"Periode de publication : {saison} ({LIBELLES_MOIS[publication.month - 1]}), en France et en Belgique. Reperes a cette date : {reperes}."
-        + (f" Autour de cette date : {', '.join(proches)}." if proches else "") + "\n"
-        "COHERENCE SAISONNIERE ET TEMPORELLE : la saison, la meteo, les fetes et les evenements evoques doivent correspondre a la date de PUBLICATION. N'evoque jamais une periode, une fete "
-        "ou un evenement qui sera passe a cette date (ni ceux du moment de la redaction s'ils seront termines), ni un evenement encore tres lointain. Pas de reference relative au moment "
+        f"Periode de publication : {saison} ({LIBELLES_MOIS[publication.month - 1]}), en France et en Belgique. Reperes a cette date : {reperes}.\n"
+        "COHERENCE SAISONNIERE ET TEMPORELLE : la saison et la meteo evoquees doivent correspondre a la date de PUBLICATION. N'evoque jamais une saison ou une periode qui sera passee "
+        "a cette date (ni celle du moment de la redaction si elle sera terminee). Pas de reference relative au moment "
         "de la redaction (« aujourd'hui », « cette semaine », « ce week-end », « demain », « en ce moment ») sauf si elle reste vraie a la date de publication. N'ecris jamais la date ni le mois "
         "en toutes lettres : prefere des formulations naturelles (« a l'approche de Noel », « avec les premiers froids »). Pour une activite saisonniere, choisis l'angle de cette periode. "
-        "Si aucun lien avec la periode n'est naturel, n'en evoque aucune."
+        "Si aucun lien avec la periode n'est naturel, n'en evoque aucune.\n" + CONSIGNE_SAISON_SEULE
     )
 
 
@@ -133,37 +138,11 @@ def _contexte_du_jour(aujourdhui: date = None) -> str:
         f"Nous sommes le {aujourdhui.strftime('%d/%m/%Y')} - utilise cette date comme repere temporel reel (n'ecris jamais une annee anterieure par reflexe). "
         f"Periode : {saison} ({LIBELLES_MOIS[aujourdhui.month - 1]}), en France et en Belgique. Reperes du moment : {reperes}.\n"
         "COHERENCE SAISONNIERE : ce contenu sera lu dans les jours qui viennent. Le sujet, les exemples et les conseils doivent convenir a CETTE periode : "
-        "n'evoque jamais une saison, une meteo ou un evenement qui n'est pas celui du moment (pas de canicule, de forte chaleur ni de vacances d'ete en automne ou en hiver ; "
+        "n'evoque jamais une saison ou une meteo qui n'est pas celle du moment (pas de canicule, de forte chaleur ni de vacances d'ete en automne ou en hiver ; "
         "pas de neige ni de verglas en ete...). Pour une activite saisonniere (climatisation, chauffage, jardin, piscine, etc.), choisis l'angle qui correspond a la periode : "
         "preparer la saison qui arrive ou entretenir apres celle qui s'acheve, jamais promouvoir la saison opposee comme si elle etait la. "
-        "Si aucun lien avec la periode n'est naturel pour le sujet, n'en evoque aucune."
+        "Si aucun lien avec la periode n'est naturel pour le sujet, n'en evoque aucune.\n" + CONSIGNE_SAISON_SEULE
     )
-
-
-EVENEMENTS_FIXES = (
-    (1, 1, "le Nouvel An"), (14, 2, "la Saint-Valentin"), (1, 5, "la Fête du travail"), (8, 5, "le 8 mai"), (14, 7, "la fête nationale en France"), (21, 7, "la fête nationale en Belgique"),
-    (15, 8, "l'Assomption"), (31, 10, "Halloween"), (1, 11, "la Toussaint"), (11, 11, "l'Armistice du 11 novembre"), (6, 12, "la Saint-Nicolas"), (25, 12, "Noël"), (31, 12, "le réveillon du Nouvel An"),
-)
-
-
-def _dernier_dimanche(annee: int, mois: int) -> date:
-    jour = date(annee + (mois == 12), mois % 12 + 1, 1) - timedelta(days=1)
-    return jour - timedelta(days=(jour.weekday() + 1) % 7)
-
-
-def evenements_autour(jour: date, fenetre: int = 6) -> list:
-    """Fetes et evenements fixes de l'annee (France et Belgique) a moins de `fenetre` jours de cette date, avec leur position (« le 31 octobre », « dans 3 jours », « il y a 2 jours »)."""
-    candidats = [(date(jour.year + decalage, mois, j), nom) for decalage in (-1, 0, 1) for j, mois, nom in EVENEMENTS_FIXES]
-    candidats += [(_dernier_dimanche(jour.year + d, 3), "le passage à l'heure d'été") for d in (-1, 0, 1)] + [(_dernier_dimanche(jour.year + d, 10), "le passage à l'heure d'hiver") for d in (-1, 0, 1)]
-    vendredis = [date(jour.year + d, 11, 1) + timedelta(days=(4 - date(jour.year + d, 11, 1).weekday()) % 7 + 21) for d in (-1, 0, 1)]
-    candidats += [(v, "le Black Friday") for v in vendredis]
-    def position(ecart):
-        if ecart == 0:
-            return "ce jour-là"
-        n = abs(ecart)
-        return f"dans {n} jour{'s' if n > 1 else ''}" if ecart > 0 else f"il y a {n} jour{'s' if n > 1 else ''}"
-
-    return [f"{nom} ({position((quand - jour).days)})" for quand, nom in sorted(candidats) if abs((quand - jour).days) <= fenetre]
 
 
 def bloc_dates_publication(dates: list, nombre: int) -> str:
@@ -174,9 +153,7 @@ def bloc_dates_publication(dates: list, nombre: int) -> str:
     lignes = []
     for i, jour in enumerate(dates, 1):
         saison, reperes = REPERES_MOIS[jour.month]
-        proches = evenements_autour(jour)
-        lignes.append(f"- Post n°{i} : {JOURS_PUBLICATION[jour.weekday()]} {jour.day} {LIBELLES_MOIS[jour.month - 1]} {jour.year} ({saison} ; repères du mois : {reperes}"
-                      + (f" ; à cette date : {', '.join(proches)}" if proches else "") + ")")
+        lignes.append(f"- Post n°{i} : {JOURS_PUBLICATION[jour.weekday()]} {jour.day} {LIBELLES_MOIS[jour.month - 1]} {jour.year} ({saison} ; repères du mois : {reperes})")
     reste = ""
     if len(dates) < nombre:
         reste = f"\nLes posts n°{len(dates) + 1} à {nombre} n'ont pas de date : écris-les de façon intemporelle (aucune saison, aucune fête, aucun événement)."
@@ -184,12 +161,11 @@ def bloc_dates_publication(dates: list, nombre: int) -> str:
         "\n\n---\n\n"
         "DATES RÉELLES DE PUBLICATION. Écris les posts dans l'ordre chronologique : le 1er post du JSON sera publié à la 1re date, le 2e à la 2e, etc.\n"
         + "\n".join(lignes) + reste + "\n"
-        "RÈGLE ABSOLUE : chaque post est écrit pour SA date et pour elle seule. La saison, la météo, les fêtes, les événements et le moment de l'année doivent correspondre à cette date. "
-        "N'évoque JAMAIS une période, une fête ou un événement qui sera passé à la date du post (par exemple pas de Halloween, de fin octobre ni de changement d'heure dans un post publié fin novembre), "
-        "ni un événement encore très lointain à cette date. Pas de référence relative au moment de la rédaction (« aujourd'hui », « cette semaine », « ce week-end », « demain », « en ce moment ») "
+        "RÈGLE ABSOLUE : chaque post est écrit pour SA date et pour elle seule. La saison, la météo et le moment de l'année doivent correspondre à cette date. "
+        "N'évoque JAMAIS une saison ou une période qui sera passée à la date du post (par exemple pas de canicule dans un post publié en novembre). Pas de référence relative au moment de la rédaction (« aujourd'hui », « cette semaine », « ce week-end », « demain », « en ce moment ») "
         "sauf si elle reste vraie à la date du post. N'écris jamais la date ni le mois en toutes lettres (« le 2 novembre », « en novembre 2026 ») : préfère des formulations naturelles "
-        "(« à l'approche de Noël », « avec les premiers froids »). Si aucune période n'est naturelle pour un post, n'en évoque aucune. "
-        "COHERENCE SAISONNIERE : aucun sujet, exemple ni conseil ne doit évoquer une saison ou une météo qui ne correspond pas à la date du post."
+        "(« avec les premiers froids », « quand les jours raccourcissent »). Si aucune période n'est naturelle pour un post, n'en évoque aucune. "
+        "COHERENCE SAISONNIERE : aucun sujet, exemple ni conseil ne doit évoquer une saison ou une météo qui ne correspond pas à la date du post.\n" + CONSIGNE_SAISON_SEULE
     )
 
 
@@ -242,14 +218,14 @@ def _construire_prompt(
         "\n\n---\n\n"
         f"Periode reelle de publication : ces posts seront programmes et publies courant "
         f"{_periode_publication_cible()} (pas a la date d'aujourd'hui). C'est une information "
-        f"de contexte pour toi uniquement : si tu evoques une saison, une fete ou un evenement "
-        f"temporel, base-toi exclusivement sur cette periode-la. Ne cite en revanche JAMAIS "
+        f"de contexte pour toi uniquement : si tu evoques une saison ou une meteo, "
+        f"base-toi exclusivement sur cette periode-la. Ne cite en revanche JAMAIS "
         f"le mois ni l'annee de facon litterale dans le texte (proscrit : « en ce mois de "
         f"septembre 2026 », « en septembre 2026 »...) - ca sonne artificiel. Prefere des "
         f"formulations naturelles et indirectes (« cette rentree », « a l'approche de "
         f"l'hiver », « ces prochaines semaines »...), ou n'evoque tout simplement aucune "
-        f"periode si ce n'est pas naturel pour ce post. COHERENCE SAISONNIERE : aucun sujet, exemple ni conseil ne doit evoquer une saison, une meteo ou un "
-        f"evenement qui ne correspond pas a cette periode (pas de canicule en automne, pas de neige en ete)."
+        f"periode si ce n'est pas naturel pour ce post. COHERENCE SAISONNIERE : aucun sujet, exemple ni conseil ne doit evoquer une saison ou une meteo qui "
+        f"ne correspond pas a cette periode (pas de canicule en automne, pas de neige en ete).\n{CONSIGNE_SAISON_SEULE}"
     )
 
     if dates:                                                            # dates choisies dans le calendrier : chaque post est ecrit pour sa propre date
