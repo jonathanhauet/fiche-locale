@@ -191,8 +191,9 @@
   .ensemble-conclusion { font-weight: 600; margin: 0.2rem 0 0; }
   .resume-programme { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin: 0 0 1rem; padding: 0.8rem 1rem; border-radius: var(--rayon); background: var(--carte); border: 1px solid var(--carte-bordure); box-shadow: var(--ombre); }
   .resume-programme strong { font-size: 1.05rem; }
-  .onglets { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.1rem 0 0.5rem; margin-bottom: 0.9rem; position: sticky; top: 0; z-index: 5; background: var(--fond, #fff); scrollbar-width: thin; }
-  .onglet { display: inline-flex; align-items: center; gap: 0.45rem; flex-shrink: 0; padding: 0.45rem 0.8rem; border-radius: 999px; border: 1px solid var(--carte-bordure); background: var(--carte); color: inherit; font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+  .onglets { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.1rem 0 0.5rem; margin-bottom: 0.9rem; }
+  @media (max-width: 600px) { .onglets { gap: 0.3rem; } .onglet { padding: 0.35rem 0.6rem; font-size: 0.82rem; gap: 0.35rem; } }
+  .onglet { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.45rem 0.8rem; border-radius: 999px; border: 1px solid var(--carte-bordure); background: var(--carte); color: inherit; font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
   .onglet:hover { border-color: var(--accent, #4f46e5); }
   .onglet[aria-selected="true"] { background: var(--accent, #4f46e5); border-color: var(--accent, #4f46e5); color: #fff; }
   .onglet-inactif { color: var(--texte-discret); font-weight: 500; }
