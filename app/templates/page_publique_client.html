@@ -115,7 +115,7 @@
   .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
   .bloc-ensemble p { line-height: 1.6; }
   .pied-page-publique { color: var(--texte-discret); font-size: 0.85rem; text-align: center; margin-top: 2rem; }
-  .encart-avis { display: flex; gap: 1.1rem; align-items: center; flex-wrap: wrap; margin: 1.4rem 0 0.5rem; padding: 1rem 1.1rem; border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); box-shadow: var(--ombre); }
+  .encart-avis { display: flex; gap: 1.1rem; align-items: center; flex-wrap: wrap; margin: 0 0 1.2rem; padding: 1rem 1.1rem; border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); box-shadow: var(--ombre); }
   .encart-avis-qr { flex: 0 0 auto; width: 150px; height: auto; border-radius: 8px; border: 1px solid var(--carte-bordure); background: #fff; }
   .encart-avis-texte { flex: 1 1 240px; min-width: 0; }
   .encart-avis-texte p { margin: 0.35rem 0 0.7rem; line-height: 1.5; font-size: 0.93rem; }
@@ -364,19 +364,6 @@
       </div>
     </div>
 
-    <h2 class="titre-agenda">Vos prochaines publications</h2>
-    {% if publications %}
-    {% set ns = namespace(groupe="") %}
-    {% for p in publications %}
-    {% if loop.index == 11 %}<button type="button" class="bouton-secondaire" id="agenda-suite-bouton">Voir les {{ publications|length - 10 }} publications suivantes</button><div id="agenda-suite" hidden>{% endif %}
-    {% if p.groupe != ns.groupe %}{% set ns.groupe = p.groupe %}<h3 class="groupe-jour">{{ p.groupe }}</h3>{% endif %}
-    {{ ligne_agenda(p) }}
-    {% endfor %}
-    {% if publications|length > 10 %}</div>{% endif %}
-    {% else %}
-    <p class="vide-programme">Aucune publication n'est programmée pour le moment.</p>
-    {% endif %}
-
     {% if lien_avis %}
     <aside class="encart-avis" id="encart-avis">
       <img class="encart-avis-qr" src="/p/{{ token }}/qr-avis.png" alt="QR code pour laisser un avis Google sur la fiche de {{ nom }}" width="150" height="195" loading="lazy">
@@ -402,6 +389,19 @@
         });
       })();
     </script>
+    {% endif %}
+
+    <h2 class="titre-agenda">Vos prochaines publications</h2>
+    {% if publications %}
+    {% set ns = namespace(groupe="") %}
+    {% for p in publications %}
+    {% if loop.index == 11 %}<button type="button" class="bouton-secondaire" id="agenda-suite-bouton">Voir les {{ publications|length - 10 }} publications suivantes</button><div id="agenda-suite" hidden>{% endif %}
+    {% if p.groupe != ns.groupe %}{% set ns.groupe = p.groupe %}<h3 class="groupe-jour">{{ p.groupe }}</h3>{% endif %}
+    {{ ligne_agenda(p) }}
+    {% endfor %}
+    {% if publications|length > 10 %}</div>{% endif %}
+    {% else %}
+    <p class="vide-programme">Aucune publication n'est programmée pour le moment.</p>
     {% endif %}
   </section>
 
