@@ -574,9 +574,63 @@ def _specialite_auteur(nom_client: str = "") -> str:
     )
 
 
-def generer_post_expert(
+NB_DEJA_TRAITES_PROMPT = 25
+SEUIL_SUJET_TROP_PROCHE = 0.5
+MOTS_VIDES_SUJET = set(
+    "alors apres aussi autre autres avant avec avez avons beaucoup cela celle celui ceux chaque chez comme comment contre dans depuis donc dont encore entre est-ce etre faire fait faut "
+    "leur leurs mais meme moins notre nous nouveau nouvelle parce parfois pendant peut plus plusieurs pour pourquoi quand quelque quoi sans selon sera seront seulement sont sous souvent "
+    "tout toute toutes tous tres votre vous vraiment ainsi ceci cette cela deja elle elles encore etait etaient fois jamais jusqu mieux rien ensuite surtout toujours trop voici voila "
+    "avec dans pour plus mais sont fait faut leur sans chez donc dont bien ceux aussi tres avez etre peut sera ainsi sera elle cest nest quil quon tant tels telle vers lors afin".split()
+)
+
+
+def _mots_sujet(texte: str) -> set:
+    """Mots porteurs de sens d'un texte (sans accents ni pluriel, 4 lettres et plus, sans mots outils) : sert a reperer deux posts qui parlent de la meme chose."""
+    texte = re.sub(r"\((?:prevu|publie|programme)[^)]*\)\s*$", "", unicodedata.normalize("NFKD", texte or "").encode("ascii", "ignore").decode().lower())
+    mots = set()
+    for m in re.findall(r"[a-z]{4,}", texte):
+        if m in MOTS_VIDES_SUJET:
+            continue
+        mots.add(m[:-1] if m.endswith("s") else m)
+    return mots
+
+
+def post_trop_proche(texte: str, deja_traites: list, seuil: float = SEUIL_SUJET_TROP_PROCHE) -> str:
+    """
+    Renvoie le post deja publie ou programme dont le texte repris est le plus proche du nouveau (meme sujet, meme theme saisonnier, memes objets), ou « ».
+    Principe : part des mots-cles de chaque ancien post (hors vocabulaire du metier, present dans beaucoup d'entre eux) qui se retrouvent dans le nouveau texte.
+    """
+    anciens = [d for d in (deja_traites or []) if (d or "").strip()]
+    if not (texte or "").strip() or not anciens:
+        return ""
+    mots_anciens = [_mots_sujet(d) for d in anciens]
+    frequence = {}
+    for mots in mots_anciens:
+        for m in mots:
+            frequence[m] = frequence.get(m, 0) + 1
+    communs = {m for m, n in frequence.items() if n >= max(3, 0.35 * len(anciens))}      # vocabulaire du metier : ne prouve pas une repetition
+    mots_nouveau = _mots_sujet(texte)
+    meilleur, meilleur_score = "", 0.0
+    for ancien, mots in zip(anciens, mots_anciens):
+        mots = mots - communs
+        if len(mots) < 4:
+            continue
+        score = len(mots & mots_nouveau) / len(mots)
+        if score >= seuil and score > meilleur_score:
+            meilleur, meilleur_score = ancien, score
+    return meilleur
+
+
+CONSIGNE_VARIETE = (
+    "- VARIETE OBLIGATOIRE : ce post doit traiter un SUJET different de tous ceux ci-dessus, pas seulement les reformuler. Si un post deja publie ou programme parle d'une fete, "
+    "d'une periode ou d'un theme (ex : Noel, decorations, vacances, canicule, rentree...), ne retraite pas ce theme, meme sous un autre angle : choisis un autre aspect du metier "
+    "(autre situation, autre probleme, autre service, autre conseil). Meme saison ne veut pas dire meme sujet. Change aussi la facon d'ouvrir et de conclure."
+)
+
+
+def _generer_post_expert_une_fois(
     theme: str = "", contexte_expert: str = "", contenu_article: str = "", nom_client: str = "",
-    deja_traites: list = None, texte_actuel: str = "", date_publication: date = None,
+    deja_traites: list = None, texte_actuel: str = "", date_publication: date = None, a_eviter: str = "",
 ) -> dict:
     """
     Variante de generer_post_generique() pensee pour une seule fiche bien
@@ -617,16 +671,22 @@ def generer_post_expert(
 
     bloc_deja = ""
     if deja_traites:
-        liste = "\n".join(f"- {t}" for t in deja_traites[:14])
+        liste = "\n".join(f"- {t}" for t in deja_traites[:NB_DEJA_TRAITES_PROMPT])
         bloc_deja = (
-            "\nPosts DEJA publies ou programmes pour cette entreprise (le nouveau post doit s'en distinguer nettement : "
-            "autre sujet ou autre angle, autre premiere ligne, autres exemples, autre structure ; ne reprends aucune de leurs "
+            "\nPosts DEJA publies ou programmes pour cette entreprise, avec leur date quand elle est connue (le nouveau post doit s'en distinguer nettement : "
+            "autre sujet, autre premiere ligne, autres exemples, autre structure ; ne reprends aucune de leurs "
             f"formulations) :\n{liste}\n"
         )
     if (texte_actuel or "").strip():
         bloc_deja += (
             "\nTexte actuellement affiche dans le composeur, que l'utilisateur ne veut PAS revoir (propose un post "
             f"clairement different, pas une variante) :\n« {texte_actuel.strip()[:1200]} »\n"
+        )
+
+    if (a_eviter or "").strip():
+        bloc_deja += (
+            "\nTA PREMIERE VERSION ETAIT TROP PROCHE de ce post deja publie ou programme : « " + a_eviter.strip()[:300] + " ». "
+            "Recommence avec un sujet totalement different : un autre aspect du metier, une autre situation, un autre conseil, sans reprendre ses mots-cles ni son theme.\n"
         )
 
     consigne_sourcage = (
@@ -645,7 +705,7 @@ def generer_post_expert(
         "- Reste factuellement prudent sur l'actualite recente (dates, fonctionnalites "
         "precises) si le sujet fourni ne donne pas assez de details fiables : dans ce cas, "
         "privilegie une analyse de fond plutot que d'inventer des faits.\n"
-    )
+    ) + (CONSIGNE_VARIETE + "\n" if deja_traites and not theme.strip() else "")
 
     prompt = (
         f"{contexte_temporel(publication=date_publication)}\n"
@@ -716,6 +776,23 @@ def generer_post_expert(
     return _nettoyer_champs_post(json.loads(bloc_texte))
 
 
+def generer_post_expert(
+    theme: str = "", contexte_expert: str = "", contenu_article: str = "", nom_client: str = "",
+    deja_traites: list = None, texte_actuel: str = "", date_publication: date = None,
+) -> dict:
+    """
+    Texte d'un post d'expert (voir _generer_post_expert_une_fois). Quand l'utilisateur ne donne pas de sujet et que l'IA le choisit seule, le texte obtenu est compare aux posts
+    deja publies ou programmes : s'il en reprend un (meme sujet, meme theme), une seconde redaction est demandee sur un sujet different.
+    """
+    resultat = _generer_post_expert_une_fois(theme, contexte_expert, contenu_article, nom_client, deja_traites, texte_actuel, date_publication)
+    if (theme or "").strip() or not deja_traites:
+        return resultat                                       # un sujet impose par l'utilisateur n'est pas remis en cause
+    proche = post_trop_proche(resultat.get("texte", ""), deja_traites)
+    if not proche:
+        return resultat
+    return _generer_post_expert_une_fois(theme, contexte_expert, contenu_article, nom_client, deja_traites, texte_actuel, date_publication, a_eviter=proche)
+
+
 NB_MAX_PHOTOS_TEXTE = 6
 
 
@@ -743,8 +820,8 @@ def generer_post_depuis_photos(
     )
     bloc_deja = ""
     if deja_traites:
-        liste = "\n".join(f"- {t}" for t in deja_traites[:14])
-        bloc_deja = f"\nPosts DEJA publies ou programmes pour cette entreprise (le nouveau post doit s'en distinguer : autre premiere ligne, autres mots) :\n{liste}\n"
+        liste = "\n".join(f"- {t}" for t in deja_traites[:NB_DEJA_TRAITES_PROMPT])
+        bloc_deja = f"\nPosts DEJA publies ou programmes pour cette entreprise, avec leur date quand elle est connue (le nouveau post doit s'en distinguer : autre premiere ligne, autres mots, autre facon de conclure) :\n{liste}\n"
     if (texte_actuel or "").strip():
         bloc_deja += f"\nTexte actuellement affiche dans le composeur, que l'utilisateur ne veut PAS revoir (propose un texte clairement different) :\n« {texte_actuel.strip()[:1200]} »\n"
 

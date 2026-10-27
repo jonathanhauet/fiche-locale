@@ -3370,9 +3370,13 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
     Titre + debut du texte des posts deja generes pour ce client (tous statuts
     sauf SUPPRIME), les plus recents d'abord - fourni a l'IA pour qu'elle
     evite de reprendre les memes sujets d'un mois sur l'autre (voir
-    generer_posts_pour_client). Limite a 40 pour ne pas alourdir le prompt sur
-    un client avec un long historique.
+    generer_posts_pour_client). Chaque post porte sa date de publication ou de programmation
+    quand elle est connue, pour que l'IA sache ce qui est prevu autour de la date visee.
+    Limite a 40 par defaut pour ne pas alourdir le prompt sur un client avec un long historique.
     """
+    def date_courte(valeur) -> str:
+        return f" (prévu le {valeur.day:02d}/{valeur.month:02d})" if valeur else ""
+
     posts = (
         db.query(models.Post)
         .filter(models.Post.client_id == client_id, models.Post.statut != "SUPPRIME")
@@ -3380,7 +3384,7 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
         .limit(limite)
         .all()
     )
-    elements = [(post.cree_le, f"{post.titre} — {post.texte[:150].strip()}") for post in posts if post.texte.strip()]
+    elements = [(post.cree_le, f"{post.titre} — {post.texte[:220].strip()}", date_courte(post.date_prevue)) for post in posts if post.texte.strip()]
 
     # Posts Facebook / Instagram / LinkedIn deja publies ou programmes depuis le composeur multi-reseaux
     # (sans eux, l'IA ne voit que les posts Google et refait le meme sujet sur les autres reseaux).
@@ -3389,7 +3393,7 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
             db.query(modele).filter(modele.client_id == client_id, modele.etat != "ECHEC")
             .order_by(modele.cree_le.desc()).limit(limite).all()
         )
-        elements += [(p.cree_le, p.texte[:190].strip()) for p in lignes if (p.texte or "").strip()]
+        elements += [(p.cree_le, p.texte[:220].strip(), date_courte(p.publier_le)) for p in lignes if (p.texte or "").strip()]
     client = db.get(models.Client, client_id)
     if client and client.compte_linkedin_id:
         lignes = (
@@ -3397,20 +3401,20 @@ def _sujets_deja_traites_client(db: Session, client_id: int, limite: int = 40) -
             .filter(models.PostLinkedInProgramme.compte_linkedin_id == client.compte_linkedin_id, models.PostLinkedInProgramme.etat != "ECHEC")
             .order_by(models.PostLinkedInProgramme.cree_le.desc()).limit(limite).all()
         )
-        elements += [(p.cree_le, p.texte[:190].strip()) for p in lignes if (p.texte or "").strip()]
+        elements += [(p.cree_le, p.texte[:220].strip(), date_courte(p.publier_le)) for p in lignes if (p.texte or "").strip()]
 
     if client and _est_marque_personnelle(client.nom):
         scripts = db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(limite).all()
-        elements += [(v.cree_le, f"Vidéo YouTube : {v.sujet}") for v in scripts if (v.sujet or "").strip()]
+        elements += [(v.cree_le, f"Vidéo YouTube : {v.sujet}", "") for v in scripts if (v.sujet or "").strip()]
 
     elements.sort(key=lambda e: e[0] or datetime.min, reverse=True)
     resultat, vus = [], set()
-    for _, texte in elements:
+    for _, texte, quand in elements:
         cle = texte[:60].lower()
         if cle in vus:  # le meme texte publie sur plusieurs reseaux ne compte qu'une fois
             continue
         vus.add(cle)
-        resultat.append(texte)
+        resultat.append(texte + quand)
     return resultat[:limite]
 
 
@@ -11933,12 +11937,12 @@ async def publication_multi_generer_texte(client_id: int, request: Request, db: 
                 indication, exclu = texte_actuel, ""
             post_genere = await run_in_threadpool(
                 claude_generation.generer_post_depuis_photos, photos, indication, _contexte_ia_client(client, marque=marque), client.nom,
-                _sujets_deja_traites_client(db, client.id, limite=14), exclu, _date_publication_demandee(donnees),
+                _sujets_deja_traites_client(db, client.id, limite=claude_generation.NB_DEJA_TRAITES_PROMPT), exclu, _date_publication_demandee(donnees),
             )
             return JSONResponse(post_genere)
         post_genere = claude_generation.generer_post_expert(
             theme, _contexte_ia_client(client, marque=marque), contenu_article, client.nom,
-            _sujets_deja_traites_client(db, client.id, limite=14), texte_actuel, date_publication=_date_publication_demandee(donnees),
+            _sujets_deja_traites_client(db, client.id, limite=claude_generation.NB_DEJA_TRAITES_PROMPT), texte_actuel, date_publication=_date_publication_demandee(donnees),
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de la generation : {e}"}, status_code=500)
