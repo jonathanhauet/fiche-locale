@@ -300,7 +300,7 @@
 
   <section class="panneau panneau-actif" id="panneau-tout" data-panneau="tout">
     <details class="accueil" id="accueil" open>
-      <summary><span>👋 Bienvenue sur votre page de suivi</span><span class="accueil-bascule"></span></summary>
+      <summary><span>👋 {% if prenom %}Bonjour {{ prenom }}, bienvenue{% else %}Bienvenue{% endif %} sur votre page de suivi</span><span class="accueil-bascule"></span></summary>
       <div class="accueil-corps">
         <div class="accueil-texte">
           <p class="accueil-intro">Ici, vous voyez tout ce que je programme pour <strong>{{ nom }}</strong>, <strong>avant</strong> que ce soit publié. Rien n'est figé : vous gardez la main.</p>

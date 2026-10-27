@@ -3883,7 +3883,7 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
     manquants = [c for c in canaux if not c["actif"]]
     return templates.TemplateResponse(
         request, "page_publique_client.html",
-        {"nom": nom_affiche_carrousel(client), "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
+        {"nom": nom_affiche_carrousel(client), "prenom": " ".join((client.prenom or "").split())[:40], "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
          "nb_publications": len(publications), "logo": _logo_page_client(db, client), "canaux": canaux,
          "exemple_questions": _questions_exemple_page_client(db, client),
          "nb_actifs": len(canaux) - len(manquants), "nb_canaux": len(canaux), "premier_manquant": manquants[0]["code"] if manquants else ""},
