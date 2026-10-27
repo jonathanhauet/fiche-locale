@@ -334,6 +334,12 @@ def construire_contenu_recap(
         lien_avis_google = metadata_fiche.get("newReviewUri", "")
     except Exception:
         pass
+    if lien_avis_google and client.lien_avis_google != lien_avis_google:           # gardé pour le QR code de la page de suivi
+        try:
+            client.lien_avis_google = lien_avis_google
+            db.commit()
+        except Exception:
+            db.rollback()
 
     qr_code_avis = None
     if lien_avis_google:

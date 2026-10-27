@@ -64,6 +64,7 @@ from . import (
     google_autocomplete,
     google_business,
     google_location,
+    qr_avis,
     google_oauth,
     google_performance,
     google_place_actions,
@@ -192,6 +193,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN email TEXT DEFAULT ''"))
         if "prenom" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN prenom TEXT DEFAULT ''"))
+        if "lien_avis_google" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN lien_avis_google TEXT DEFAULT ''"))
         if "recap_actif" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN recap_actif BOOLEAN DEFAULT TRUE"))
         if "localisation_active" not in colonnes_clients:
@@ -3847,6 +3850,57 @@ def _limite_demandes_atteinte(token: str) -> bool:
     return False
 
 
+_essais_lien_avis = {}              # client_id -> instant du dernier essai de lecture du lien (pas plus d'un essai par heure : la page est publique)
+
+
+def _lien_avis_google_client(db: Session, client) -> str:
+    """
+    Lien « Laisser un avis » de la fiche Google du client : celui deja garde, sinon lu une fois sur la fiche Google (l'API le donne dans les metadonnees)
+    puis garde. Jamais bloquant : vide si Google ne le donne pas, ne repond pas dans les 8 secondes ou n'est pas connecte.
+    """
+    lien = qr_avis.lien_valide(client.lien_avis_google)
+    if lien or not (client.account_id and client.location_id):
+        return lien
+    if monotonic() - _essais_lien_avis.get(client.id, -1e9) < 3600:
+        return ""
+    _essais_lien_avis[client.id] = monotonic()
+
+    def lire():
+        identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+        if not identifiants:
+            return ""
+        return ((google_location.obtenir_infos_fiche(identifiants, client.location_id).get("metadata") or {}).get("newReviewUri") or "")
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        lien = qr_avis.lien_valide(pool.submit(lire).result(timeout=8))
+    except Exception:
+        return ""
+    finally:
+        pool.shutdown(wait=False)
+    if lien:
+        client.lien_avis_google = lien
+        db.commit()
+    return lien
+
+
+@app.get("/p/{token}/qr-avis.png")
+def page_publique_qr_avis(token: str, telecharger: int = 0, db: Session = Depends(obtenir_session)):
+    """QR code « Laisser un avis Google » de CE client (affiche PNG a imprimer) ; telecharger=1 : enregistrement du fichier."""
+    entetes = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    client = _client_par_token(db, token)
+    lien = _lien_avis_google_client(db, client) if client else ""
+    if not lien:
+        return HTMLResponse("Page introuvable.", status_code=404, headers=entetes)
+    try:
+        png = qr_avis.affiche_png(lien, nom_affiche_carrousel(client))
+    except ValueError:
+        return HTMLResponse("Page introuvable.", status_code=404, headers=entetes)
+    if telecharger:
+        entetes["Content-Disposition"] = f'attachment; filename="{qr_avis.nom_fichier(nom_affiche_carrousel(client))}"'
+    return Response(png, media_type="image/png", headers=entetes)
+
+
 @app.get("/p/{token}", response_class=HTMLResponse)
 def page_publique_client(token: str, request: Request, db: Session = Depends(obtenir_session)):
     """
@@ -3890,7 +3944,7 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
     manquants = [c for c in canaux if not c["actif"]]
     return templates.TemplateResponse(
         request, "page_publique_client.html",
-        {"nom": nom_affiche_carrousel(client), "prenom": " ".join((client.prenom or "").split())[:40], "bilans": bilans, "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
+        {"nom": nom_affiche_carrousel(client), "prenom": " ".join((client.prenom or "").split())[:40], "bilans": bilans, "lien_avis": _lien_avis_google_client(db, client), "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
          "nb_publications": len(publications), "logo": _logo_page_client(db, client), "canaux": canaux,
          "exemple_questions": _questions_exemple_page_client(db, client),
          "nb_actifs": len(canaux) - len(manquants), "nb_canaux": len(canaux), "premier_manquant": manquants[0]["code"] if manquants else ""},

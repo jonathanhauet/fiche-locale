@@ -62,6 +62,7 @@ class Client(Base):
     contenu_site = Column(Text, default="")
     # Lien secret de la page publique « publications a venir » (voir /p/{token}) : vide = page desactivee.
     token_page_client = Column(String, default="")
+    lien_avis_google = Column(String, default="")  # lien « Laisser un avis » de la fiche Google (QR code de la page de suivi)
     # Option « visibilite dans les reponses des IA » vendue au client : activee a la main par Jonathan quand le client la prend
     # (affichee « Actif » ou grisee sur la page publique ci-dessus). Independante des questions suivies.
     option_ia_active = Column(Boolean, default=False)
