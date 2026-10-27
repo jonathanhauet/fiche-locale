@@ -307,6 +307,8 @@ class EnvoiRecap(Base):
     etat = Column(String, nullable=False)  # ENVOYE, ECHEC
     erreur = Column(Text, default="")
     horodatage = Column(DateTime, default=datetime.utcnow)
+    # Bilan tel qu'il a ete envoye (HTML), garde pour la page de suivi du client. etat PAGE : bilan garde pour la page sans avoir ete envoye par email.
+    html_recap = Column(Text, default="")
 
     client = relationship("Client", back_populates="envois_recap")
 

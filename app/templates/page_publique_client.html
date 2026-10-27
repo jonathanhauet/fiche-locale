@@ -115,6 +115,10 @@
   .bloc-ensemble h2 { margin-top: 0; font-size: 1.2rem; }
   .bloc-ensemble p { line-height: 1.6; }
   .pied-page-publique { color: var(--texte-discret); font-size: 0.85rem; text-align: center; margin-top: 2rem; }
+  .liste-bilans { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; }
+  .carte-bilan { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; padding: 0.8rem 1rem; border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); color: inherit; text-decoration: none; }
+  .carte-bilan:hover { border-color: var(--accent, #4f46e5); }
+  .carte-bilan-ouvrir { font-size: 0.85rem; font-weight: 600; color: var(--accent, #4f46e5); white-space: nowrap; }
   .accueil { border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); box-shadow: var(--ombre); margin-bottom: 1rem; overflow: hidden; }
   .accueil > summary { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.85rem 1.1rem; cursor: pointer; list-style: none; font-weight: 700; font-size: 1.08rem; }
   .accueil > summary::-webkit-details-marker { display: none; }
@@ -291,8 +295,8 @@
 
   <nav class="onglets" role="tablist" aria-label="Vos canaux">
     {% for o in onglets %}
-    <button type="button" class="onglet {{ '' if o.actif else 'onglet-inactif' }}" role="tab" data-onglet="{{ o.code }}" aria-selected="{{ 'true' if loop.first else 'false' }}" title="{{ o.nom }}{% if o.code not in ('tout', 'methode') %} : {{ ('option activée' if o.code == 'geo' else 'géré avec Jonathan') if o.actif else ('option non activée' if o.code == 'geo' else 'pas encore connecté') }}{% endif %}">
-      {% if o.code == "methode" %}<span aria-hidden="true">💬</span>{% elif o.lettre %}<span class="badge-reseau badge-reseau-{{ o.code }} {{ '' if o.actif else 'badge-reseau-inactif' }}">{{ o.lettre }}</span>{% endif %}
+    <button type="button" class="onglet {{ '' if o.actif else 'onglet-inactif' }}" role="tab" data-onglet="{{ o.code }}" aria-selected="{{ 'true' if loop.first else 'false' }}" title="{{ o.nom }}{% if o.code not in ('tout', 'methode', 'bilans') %} : {{ ('option activée' if o.code == 'geo' else 'géré avec Jonathan') if o.actif else ('option non activée' if o.code == 'geo' else 'pas encore connecté') }}{% endif %}">
+      {% if o.code == "methode" %}<span aria-hidden="true">💬</span>{% elif o.code == "bilans" %}<span aria-hidden="true">📊</span>{% elif o.lettre %}<span class="badge-reseau badge-reseau-{{ o.code }} {{ '' if o.actif else 'badge-reseau-inactif' }}">{{ o.lettre }}</span>{% endif %}
       <span class="onglet-nom">{{ o.nom }}</span>{% if o.nb %}<span class="onglet-nb">{{ o.nb }}</span>{% endif %}
     </button>
     {% endfor %}
@@ -400,6 +404,23 @@
     {% endif %}
   </section>
   {% endfor %}
+
+  {% if bilans %}
+  <section class="canal panneau" id="canal-bilans" data-panneau="bilans">
+    <div class="canal-entete">
+      <h2>Vos bilans mensuels</h2>
+      <span class="statut-canal statut-actif">{{ bilans|length }} bilan{{ "s" if bilans|length > 1 }}</span>
+    </div>
+    <p class="explication-canal">Chaque mois, je vous envoie par e-mail le bilan de votre fiche Google : vos statistiques, ce qui progresse et les avis positifs. Vous les retrouvez tous ici, quand vous voulez.</p>
+    <div class="liste-bilans">
+      {% for b in bilans %}
+      <a class="carte-bilan" href="/p/{{ token }}/bilan/{{ b.id }}" target="_blank" rel="noopener">
+        <span><span aria-hidden="true">📊</span> <strong>Bilan de {{ b.libelle }}</strong></span><span class="carte-bilan-ouvrir">Ouvrir ›</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
   <section class="canal panneau" id="canal-geo" data-panneau="geo">
     <div class="canal-entete">

@@ -78,6 +78,9 @@
             <form method="post" action="/clients/{{ ligne.client.id }}/recap/envoyer">
               <button type="submit" class="bouton-secondaire" {% if not ligne.client.email %}disabled{% endif %}>Envoyer</button>
             </form>
+            <form method="post" action="/clients/{{ ligne.client.id }}/recap/page">
+              <button type="submit" class="bouton-secondaire" title="Met le bilan du mois dernier sur la page de suivi du client, sans l'envoyer par e-mail">Sur la page de suivi</button>
+            </form>
             <form method="post" action="/clients/{{ ligne.client.id }}/recap/basculer">
               {% if ligne.client.recap_actif %}
               <button type="submit" class="bouton-secondaire">Désactiver</button>

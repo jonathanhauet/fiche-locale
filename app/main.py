@@ -347,6 +347,8 @@ def _migrer_vers_multi_comptes():
                 connexion.execute(text(f"ALTER TABLE clients ADD COLUMN {colonne_charte} VARCHAR DEFAULT ''"))
         if inspecteur.has_table("creations") and "epingle" not in {c["name"] for c in inspecteur.get_columns("creations")}:
             connexion.execute(text("ALTER TABLE creations ADD COLUMN epingle BOOLEAN DEFAULT FALSE"))
+        if inspecteur.has_table("envois_recap") and "html_recap" not in {c["name"] for c in inspecteur.get_columns("envois_recap")}:
+            connexion.execute(text("ALTER TABLE envois_recap ADD COLUMN html_recap TEXT DEFAULT ''"))
         if inspecteur.has_table("pistes_musicales"):
             colonnes_pistes = {c["name"] for c in inspecteur.get_columns("pistes_musicales")}
             for nom_colonne, definition in (("source", "VARCHAR DEFAULT ''"), ("description", "TEXT DEFAULT ''"), ("bpm", "DOUBLE PRECISION"), ("ambiance", "VARCHAR DEFAULT ''")):
@@ -3875,6 +3877,11 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
            for sec in sections]
         + [{"code": "geo", "nom": "Réponses des IA", "lettre": "IA", "nb": 0, "actif": geo_actif}, {"code": "methode", "nom": "Ma méthode", "lettre": "💬", "nb": 0, "actif": True}]
     )
+    bilans = [
+        {"id": b["id"], "libelle": f"{MOIS_FR[b['mois'] - 1].capitalize()} {b['annee']}"} for b in rapport_donnees.bilans_page_client(db, client)
+    ]
+    if bilans:                                         # l'onglet n'apparait que lorsqu'un bilan est disponible
+        onglets.insert(len(onglets) - 2, {"code": "bilans", "nom": "Mes bilans", "lettre": "", "nb": 0, "actif": True})
     prochaine = publications[0] if publications else None
     canaux = [
         {"code": sec["code"], "nom": sec["nom"], "lettre": lettres[sec["code"]], "actif": sec["connecte"]}
@@ -3883,12 +3890,23 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
     manquants = [c for c in canaux if not c["actif"]]
     return templates.TemplateResponse(
         request, "page_publique_client.html",
-        {"nom": nom_affiche_carrousel(client), "prenom": " ".join((client.prenom or "").split())[:40], "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
+        {"nom": nom_affiche_carrousel(client), "prenom": " ".join((client.prenom or "").split())[:40], "bilans": bilans, "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
          "nb_publications": len(publications), "logo": _logo_page_client(db, client), "canaux": canaux,
          "exemple_questions": _questions_exemple_page_client(db, client),
          "nb_actifs": len(canaux) - len(manquants), "nb_canaux": len(canaux), "premier_manquant": manquants[0]["code"] if manquants else ""},
         headers=entetes,
     )
+
+
+@app.get("/p/{token}/bilan/{bilan_id}", response_class=HTMLResponse)
+def page_publique_bilan(token: str, bilan_id: int, db: Session = Depends(obtenir_session)):
+    """Bilan mensuel garde pour la page de suivi (le meme que celui recu par email), accessible par le lien secret de CE client uniquement."""
+    entetes = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    client = _client_par_token(db, token)
+    ligne = db.get(models.EnvoiRecap, bilan_id) if client else None
+    if not client or not ligne or ligne.client_id != client.id or not ligne.html_recap or ligne.etat not in ("ENVOYE", "PAGE"):
+        return HTMLResponse("Page introuvable.", status_code=404, headers=entetes)
+    return HTMLResponse(ligne.html_recap, headers=entetes)
 
 
 @app.post("/p/{token}/modification")
@@ -6024,6 +6042,7 @@ def recaps(request: Request, db: Session = Depends(obtenir_session)):
         dernier_envoi = (
             db.query(models.EnvoiRecap)
             .filter_by(client_id=client.id)
+            .filter(models.EnvoiRecap.etat != "PAGE")
             .order_by(models.EnvoiRecap.horodatage.desc())
             .first()
         )
@@ -6057,6 +6076,24 @@ def apercu_recap(client_id: int, request: Request, db: Session = Depends(obtenir
         return HTMLResponse(f"Impossible de generer l'apercu : {erreur}", status_code=500)
 
     return HTMLResponse(html)
+
+
+@app.post("/clients/{client_id}/recap/page")
+def garder_bilan_page_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Met le bilan du mois dernier (celui de l'email) sur la page de suivi du client, sans rien envoyer."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return HTMLResponse("Client introuvable ou sans fiche Google associee.", status_code=404)
+    mois, annee = rapport_donnees.mois_precedent(date.today())
+    try:
+        rapport_donnees.enregistrer_bilan_page(db, client, mois, annee)
+    except Exception as erreur:
+        db.rollback()
+        return HTMLResponse(f"Impossible de preparer le bilan : {erreur}", status_code=500)
+    return RedirectResponse("/recaps", status_code=303)
 
 
 @app.post("/clients/{client_id}/recap/envoyer")

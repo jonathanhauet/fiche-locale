@@ -377,6 +377,7 @@ def envoyer_recap_client(
     if deja_envoye:
         return "ENVOYE", ""
 
+    html = ""
     try:
         if not client.email:
             raise RuntimeError("Aucun email renseigne pour ce client.")
@@ -386,6 +387,41 @@ def envoyer_recap_client(
     except Exception as e:
         etat, erreur = "ECHEC", str(e)
 
-    db.add(models.EnvoiRecap(client_id=client.id, mois=mois, annee=annee, etat=etat, erreur=erreur))
+    # Le bilan envoye est garde pour la page de suivi du client (onglet « Mes bilans »).
+    db.add(models.EnvoiRecap(client_id=client.id, mois=mois, annee=annee, etat=etat, erreur=erreur, html_recap=html if etat == "ENVOYE" else ""))
     db.commit()
     return etat, erreur
+
+
+def enregistrer_bilan_page(db: Session, client: models.Client, mois: int, annee: int, cache_groupes: dict = None) -> None:
+    """
+    Garde le bilan du mois (meme contenu que l'email) pour la page de suivi du client, sans l'envoyer : utile pour un mois deja envoye avant que les
+    bilans soient conserves. Un bilan deja envoye recoit simplement son HTML ; sinon une ligne « PAGE » est creee (elle ne compte pas comme un envoi).
+    """
+    _sujet, html = construire_contenu_recap(db, client, mois, annee, cache_groupes)
+    ligne = (
+        db.query(models.EnvoiRecap).filter_by(client_id=client.id, mois=mois, annee=annee, etat="ENVOYE").order_by(models.EnvoiRecap.horodatage.desc()).first()
+        or db.query(models.EnvoiRecap).filter_by(client_id=client.id, mois=mois, annee=annee, etat="PAGE").first()
+    )
+    if ligne is None:
+        ligne = models.EnvoiRecap(client_id=client.id, mois=mois, annee=annee, etat="PAGE")
+        db.add(ligne)
+    ligne.html_recap = html
+    db.commit()
+
+
+def bilans_page_client(db: Session, client: models.Client, limite: int = 24) -> list:
+    """Bilans gardes pour la page de suivi : [{id, mois, annee}] du plus recent au plus ancien, un seul par mois."""
+    lignes = (
+        db.query(models.EnvoiRecap.id, models.EnvoiRecap.mois, models.EnvoiRecap.annee)
+        .filter(models.EnvoiRecap.client_id == client.id, models.EnvoiRecap.html_recap != "", models.EnvoiRecap.html_recap.isnot(None), models.EnvoiRecap.etat.in_(["ENVOYE", "PAGE"]))
+        .order_by(models.EnvoiRecap.annee.desc(), models.EnvoiRecap.mois.desc(), models.EnvoiRecap.horodatage.desc())
+        .all()
+    )
+    vus, bilans = set(), []
+    for identifiant, mois, annee in lignes:
+        if (annee, mois) in vus:
+            continue
+        vus.add((annee, mois))
+        bilans.append({"id": identifiant, "mois": mois, "annee": annee})
+    return bilans[:limite]
