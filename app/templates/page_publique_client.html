@@ -116,6 +116,15 @@
   .bloc-ensemble p { line-height: 1.6; }
   .pied-page-publique { color: var(--texte-discret); font-size: 0.85rem; text-align: center; margin-top: 2rem; }
   .encart-avis { display: flex; gap: 1.1rem; align-items: center; flex-wrap: wrap; margin: 0 0 1.2rem; padding: 1rem 1.1rem; border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); box-shadow: var(--ombre); }
+  .encart-avis-recents { margin: 0 0 1.2rem; padding: 1rem 1.1rem; border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); box-shadow: var(--ombre); }
+  .avis-recents-entete { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+  .avis-recents-total { font-size: 0.85rem; color: var(--texte-discret); }
+  .avis-recents-liste { display: flex; flex-direction: column; gap: 0.7rem; margin-top: 0.8rem; }
+  .avis-recent { margin: 0; padding: 0.7rem 0.9rem; border-radius: 10px; background: rgba(127, 127, 127, 0.1); }
+  .avis-recent-etoiles { color: #f5a623; letter-spacing: 0.1em; font-size: 0.95rem; }
+  .avis-recent blockquote { margin: 0.25rem 0; line-height: 1.5; font-size: 0.93rem; }
+  .avis-recent figcaption { font-size: 0.8rem; color: var(--texte-discret); }
+  .avis-recents-note { margin: 0.7rem 0 0; font-size: 0.78rem; color: var(--texte-discret); }
   .encart-avis-qr { flex: 0 0 auto; width: 150px; height: auto; border-radius: 8px; border: 1px solid var(--carte-bordure); background: #fff; }
   .encart-avis-texte { flex: 1 1 240px; min-width: 0; }
   .encart-avis-texte p { margin: 0.35rem 0 0.7rem; line-height: 1.5; font-size: 0.93rem; }
@@ -389,6 +398,25 @@
         });
       })();
     </script>
+    {% endif %}
+
+    {% if avis_recents %}
+    <section class="encart-avis-recents" id="avis-recents">
+      <div class="avis-recents-entete">
+        <strong>⭐ Vos derniers avis Google</strong>
+        <span class="avis-recents-total">{% if avis_recents.moyenne %}Note moyenne <b>{{ avis_recents.moyenne }}/5</b> · {% endif %}{{ avis_recents.total }} avis</span>
+      </div>
+      <div class="avis-recents-liste">
+        {% for a in avis_recents.avis %}
+        <figure class="avis-recent">
+          <div class="avis-recent-etoiles" aria-label="{{ a.note }} étoiles sur 5">{{ "★" * a.note }}{{ "☆" * (5 - a.note) }}</div>
+          <blockquote>{{ a.texte }}</blockquote>
+          <figcaption>{{ a.auteur }}{% if a.quand %} · {{ a.quand }}{% endif %}</figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+      <p class="avis-recents-note">Une sélection de vos derniers avis 4 et 5 étoiles, mise à jour chaque jour.</p>
+    </section>
     {% endif %}
 
     <h2 class="titre-agenda">Vos prochaines publications</h2>

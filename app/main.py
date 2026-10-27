@@ -3850,6 +3850,43 @@ def _limite_demandes_atteinte(token: str) -> bool:
     return False
 
 
+NB_AVIS_PAGE_CLIENT = 3
+LONGUEUR_MAX_AVIS_PAGE_CLIENT = 240
+NOTE_MIN_AFFICHEE_PAGE_CLIENT = 4.0
+
+
+def _avis_page_client(db: Session, client) -> dict:
+    """
+    Derniers avis Google du client pour sa page de suivi, lus dans le releve quotidien (models.AvisConnu : aucun appel a Google quand la page s'ouvre).
+    Contenu montre au client : uniquement des avis 4 et 5 etoiles avec un commentaire, nom abrege ; la note moyenne n'est affichee que si elle est de 4 ou plus.
+    Renvoie None s'il n'y a rien de positif a montrer.
+    """
+    avis_connus = db.query(models.AvisConnu).filter(models.AvisConnu.client_id == client.id, models.AvisConnu.supprime_le.is_(None)).all()
+    notes = [a.note for a in avis_connus if a.note]
+    retenus = sorted(
+        (a for a in avis_connus if (a.note or 0) >= 4 and len((a.commentaire or "").strip()) >= LONGUEUR_MIN_AVIS_MIS_EN_AVANT),
+        key=lambda a: a.date_avis or "", reverse=True,
+    )[:NB_AVIS_PAGE_CLIENT]
+    if not retenus:
+        return None
+    moyenne = round(sum(notes) / len(notes), 1) if notes else None
+    liste = []
+    for a in retenus:
+        texte = " ".join((a.commentaire or "").split())
+        if len(texte) > LONGUEUR_MAX_AVIS_PAGE_CLIENT:
+            texte = texte[: LONGUEUR_MAX_AVIS_PAGE_CLIENT].rsplit(" ", 1)[0].rstrip(",;:. ") + "…"
+        try:
+            jour = datetime.fromisoformat((a.date_avis or "").replace("Z", "+00:00")).date()
+            quand = f"{jour.day} {MOIS_FR[jour.month - 1]} {jour.year}"
+        except ValueError:
+            quand = ""
+        liste.append({"auteur": _nom_court_avis(a.auteur), "note": a.note, "texte": texte, "quand": quand})
+    return {
+        "avis": liste, "total": len(notes),
+        "moyenne": str(moyenne).replace(".", ",") if moyenne is not None and moyenne >= NOTE_MIN_AFFICHEE_PAGE_CLIENT else "",
+    }
+
+
 _essais_lien_avis = {}              # client_id -> instant du dernier essai de lecture du lien (pas plus d'un essai par heure : la page est publique)
 
 
@@ -3944,7 +3981,7 @@ def page_publique_client(token: str, request: Request, db: Session = Depends(obt
     manquants = [c for c in canaux if not c["actif"]]
     return templates.TemplateResponse(
         request, "page_publique_client.html",
-        {"nom": nom_affiche_carrousel(client), "prenom": " ".join((client.prenom or "").split())[:40], "bilans": bilans, "lien_avis": _lien_avis_google_client(db, client), "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
+        {"nom": nom_affiche_carrousel(client), "prenom": " ".join((client.prenom or "").split())[:40], "bilans": bilans, "lien_avis": _lien_avis_google_client(db, client), "avis_recents": _avis_page_client(db, client), "sections": sections, "geo_actif": geo_actif, "token": token, "onglets": onglets, "publications": publications, "prochaine": prochaine,
          "nb_publications": len(publications), "logo": _logo_page_client(db, client), "canaux": canaux,
          "exemple_questions": _questions_exemple_page_client(db, client),
          "nb_actifs": len(canaux) - len(manquants), "nb_canaux": len(canaux), "premier_manquant": manquants[0]["code"] if manquants else ""},
