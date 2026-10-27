@@ -3822,7 +3822,7 @@ def _publications_a_venir_page_client(db: Session, client) -> list:
         jour = f"{JOURS_FR[l['date'].weekday()]} {l['date'].day} {MOIS_FR[l['date'].month - 1]} {l['date'].year}"
         publications.append({
             "code_reseau": l["reseau"], "id": l["id"], "jour": jour, "heure": l.get("heure") or "",
-            "images": (l.get("images") or [])[:4], "texte": l.get("texte") or l.get("titre") or "", "video": bool(l.get("video")),
+            "images": (l.get("images") or [])[:NB_MAX_IMAGES_PUBLICATION], "texte": l.get("texte") or l.get("titre") or "", "video": bool(l.get("video")),
             "jour_court": f"{JOURS_FR[l['date'].weekday()][:3]}. {l['date'].day} {MOIS_COURTS_FR[l['date'].month - 1]}",
             "groupe": _groupe_temporel(l["date"], aujourdhui),
             "lettre": LETTRES_PAGE_CLIENT.get(l["reseau"], "?"), "nom_reseau": NOMS_COURTS_PAGE_CLIENT.get(l["reseau"], l["reseau"].capitalize()),
