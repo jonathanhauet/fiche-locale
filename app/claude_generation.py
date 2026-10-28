@@ -4033,7 +4033,7 @@ LONGUEUR_MAX_BRIEF_MOTION = 8000        # assez pour coller un script de video e
 LONGUEUR_MAX_FAITS_MOTION = 3000
 
 
-def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 20,
+def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 30,
                             nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre", style: str = "", voix_off: bool = False) -> dict:
     """
     Scenario d'une video de motion design (sans tournage) pour un client, rendue par motion_video.py : accroche, revelation, 2 a 3 temps forts, chute.
@@ -4045,8 +4045,8 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
     if not CLE_API:
         raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
     nom, ville, brief, faits = (nom or "").strip()[:120], (ville or "").strip()[:80], (brief or "").strip()[:LONGUEUR_MAX_BRIEF_MOTION], (faits or "").strip()[:LONGUEUR_MAX_FAITS_MOTION]
-    duree_cible = max(12, min(int(duree_cible or 20), 30))
-    nombre_scenes = max(4, min(round(duree_cible / 3), 9))
+    duree_cible = max(12, min(int(duree_cible or 30), 60))
+    nombre_scenes = max(4, min(round(duree_cible / 4.5), 12))
     consigne_ton = TONS_MOTION.get(ton, TONS_MOTION["dynamique"])
     structure = MODELES_MOTION.get(modele)
     if structure and nb_photos < structure["photos_min"]:
@@ -4068,7 +4068,8 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         + f"Ton : {consigne_ton}.\n"
         + (CONSIGNE_STYLE_GOOGLE if style == "google" else "")
         + (CONSIGNE_VOIX if voix_off else "")
-        + (CONSIGNES_MODELES[modele] + "\n\n" if structure else f"Durée visée : environ {duree_cible} secondes, soit {nombre_scenes} scènes de 2,5 à 4 secondes.\n\n")
+        + (CONSIGNES_MODELES[modele] + "\n\n" if structure else f"Durée visée : environ {duree_cible} secondes, soit {nombre_scenes} scènes de 4 à 6 secondes. Le spectateur doit avoir le temps de lire sur son téléphone : "
+              "compte environ 4 mots par seconde, donc des textes courts et jamais plus de 20 mots à lire dans une même scène.\n\n")
         + "Types de scènes disponibles (remplis uniquement les champs utiles à la scène, laisse les autres vides) :\n"
         "- hook : accroche d'ouverture. texte (4 à 9 mots), sous_texte (une phrase courte, facultative), accessoire (facultatif : un objet illustré parmi epingle, etoiles, recherche, fiche, avis, carte, ampoule, maison, voiture, coeur, etoile, telephone, goutte, calendrier, bouclier ; vide sinon).\n"
         "- marque : révélation du nom. nom, accroche (slogan de 3 à 6 mots).\n"
@@ -4133,6 +4134,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
                 scene["photos"] = list(range(1, min(nb_photos, 3) + 1))
         return {"titre": _nettoyer_texte_genere(donnees.get("titre", "")).replace("\u2014", "-")[:120], "legende": _nettoyer_texte_genere(donnees.get("legende", "")).replace("\u2014", "-")[:1200],
                 "scenes": retenues}
+    motion_video.laisser_le_temps_de_lire(scenes)     # l'IA minute souvent trop court : chaque scene dure au moins son temps de lecture
     if not nb_photos:                      # garde-fou : sans photo, jamais de scene photo
         scenes = [s for s in scenes if s["type"] not in ("photo", "mosaique", "avant_apres", "realisation")]
     else:                                  # numeros hors plage : ramenes dans les photos disponibles
@@ -4207,7 +4209,7 @@ def idees_video_depuis_actualite(articles: list, nom_client_metier: str = "", de
     prompt = (
         f"{contexte_temporel()}\n\n"
         f"Voici des articles d'actualité récents, avec leur texte :\n\n{liste}\n{exclusions}\n"
-        f"Propose {nombre} idées de courtes vidéos de motion design (texte animé, sans tournage, 15 à 25 secondes), {cible}. Chaque idée s'appuie sur un article différent (index_article). "
+        f"Propose {nombre} idées de courtes vidéos de motion design (texte animé, sans tournage, 20 à 45 secondes), {cible}. Chaque idée s'appuie sur un article différent (index_article). "
         "titre : 3 à 7 mots. brief : 1 à 2 phrases qui disent ce que la vidéo doit faire passer (ce que dit l'article, puis le conseil concret qui en découle). "
         "faits : 2 à 4 faits PRÉCIS repris du texte de l'article (chiffres, noms de fonctionnalités, dates, pays), chacun en une courte phrase de moins de 160 caractères, que l'utilisateur pourra vérifier. "
         "RÈGLE ABSOLUE : tu as lu le texte de chaque article ; chaque fait et chaque affirmation du brief doivent figurer dans ce texte. N'ajoute aucun chiffre, aucune date, aucun détail venu d'ailleurs, "
@@ -4243,7 +4245,7 @@ def suggerer_idees_video_motion(nom: str, contenu_site: str, deja: list = None, 
     exclusions = ("\nIdées déjà affichées (n'en reproduis aucune, propose des angles différents) :\n" + "\n".join(f"- {x[:120]}" for x in (deja or [])[:20]) + "\n") if deja else ""
     prompt = (
         f"Voici le contenu du site de l'entreprise « {(nom or '').strip()[:120]} » :\n\n{contenu}\n{exclusions}\n"
-        f"Propose {nombre} idées de courtes vidéos de motion design (texte animé, sans tournage, 15 à 25 secondes) pour ses réseaux sociaux. "
+        f"Propose {nombre} idées de courtes vidéos de motion design (texte animé, sans tournage, 20 à 45 secondes) pour ses réseaux sociaux. "
         "Chaque idée = un angle différent (un service précis, une question que se posent les clients, une promesse tenue, une façon de travailler, une zone desservie, "
         "un avantage concret). titre : 3 à 7 mots. brief : 1 à 2 phrases qui disent ce que la vidéo doit faire passer, en t'appuyant UNIQUEMENT sur ce que dit le site. "
         "Règles : français soigné avec accents ; jamais de tiret cadratin ; n'invente aucun chiffre, aucun délai, aucun prix, aucun avis ; rien de négatif ni de comparatif ; "

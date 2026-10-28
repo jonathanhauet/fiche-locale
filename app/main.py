@@ -8421,7 +8421,7 @@ async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_
     try:
         resultat = await run_in_threadpool(
             claude_generation.generer_scenario_motion, nom, str(donnees.get("ville") or ""), str(donnees.get("brief") or ""), str(donnees.get("faits") or ""),
-            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, nb_photos, bool(donnees.get("avec_logo")), modele,
+            contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 30, nb_photos, bool(donnees.get("avec_logo")), modele,
             **({"style": "google"} if donnees.get("style") == "google" else {}), **({"voix_off": True} if donnees.get("voix_off") else {}))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible d'écrire le scénario : {erreur}"}, status_code=500)
@@ -8581,7 +8581,7 @@ async def video_motion_serie(request: Request, db: Session = Depends(obtenir_ses
     except ValueError:
         deja = []
     nom, ville = str(donnees.get("nom") or client.nom).strip(), str(donnees.get("ville") or "").strip()
-    faits, ton, duree, avec_logo = str(donnees.get("faits") or ""), str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 20, bool(donnees.get("avec_logo"))
+    faits, ton, duree, avec_logo = str(donnees.get("faits") or ""), str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 30, bool(donnees.get("avec_logo"))
     try:
         idees = await run_in_threadpool(claude_generation.suggerer_idees_video_motion, client.nom, contenu, deja[-40:], nombre)
     except Exception as e:

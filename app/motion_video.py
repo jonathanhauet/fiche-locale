@@ -2010,6 +2010,27 @@ def caler_sur_tempo(scenes: list, bpm: float) -> list:
     return scenes
 
 
+LECTURE_BASE = 1.3          # secondes : entree animee du texte, puis un instant de pause avant la scene suivante
+LECTURE_PAR_MOT = 0.25      # secondes par mot a lire (environ 4 mots par seconde : une lecture sans effort sur un telephone)
+CHAMPS_A_LIRE = ("texte", "sous_texte", "titre", "libelle", "legende", "accroche", "kicker", "bouton")
+DUREE_MAX_SCENE = 6.0
+
+
+def temps_de_lecture(scene: dict) -> float:
+    """Duree minimale d'une scene pour que son texte soit lu sans courir : un temps fixe plus un temps par mot affiche."""
+    mots = sum(len(sans_balises(str(scene.get(cle) or "")).split()) for cle in CHAMPS_A_LIRE)
+    mots += sum(len(str(element).split()) for element in scene.get("items") or [])
+    return LECTURE_BASE + LECTURE_PAR_MOT * mots
+
+
+def laisser_le_temps_de_lire(scenes: list) -> list:
+    """Allonge (jamais ne raccourcit) les scenes dont le texte ne tiendrait pas dans leur duree, dans la limite d'une scene. La recherche Google a son propre rythme."""
+    for scene in scenes:
+        if scene["type"] != "recherche":
+            scene["duree"] = round(min(max(scene["duree"], temps_de_lecture(scene)), DUREE_MAX_SCENE), 1)
+    return scenes
+
+
 def duree_totale(scenes: list) -> float:
     return minutage(scenes)[-1][1] if scenes else 0.0
 
