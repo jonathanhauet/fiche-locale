@@ -2314,6 +2314,7 @@ def generer_article_blog(sujet: str, contexte: str = "", lien_cta: str = "", tex
         "- Style naturel : ecris comme un artisan ou un commercant qui explique son metier a un voisin, avec des phrases concretes et des verbes simples. Evite les formules "
         "d'IA : « dans un monde ou », « a l'ere du numerique », « plongez dans », « n'hesitez pas a », « il est important de noter que », « que vous soyez ... ou ... », "
         "« veritable », « incontournable », « booster », « se demarquer », « en conclusion ».\n"
+        f"- {CONSIGNE_STYLE_NATUREL}\n"
         "- Pas de tiret cadratin (—), pas d'emoji, aucun commentaire autour : uniquement l'article."
         + consignes_seo
         + (
@@ -2712,6 +2713,8 @@ def generer_carrousel(sujet: str, contexte: str = "", nb_points: int = 4, date_p
         "avis). Reste general plutot que de risquer une affirmation fausse. Ton positif.\n"
         "- Si le contexte contient un bloc « VOIX DU CLIENT », ecris comme lui (registre, personne grammaticale).\n"
         "- Pas de tiret cadratin (—), pas d'emoji, pas de hashtag.\n"
+        "- Ecris comme on parle a un client : pas de formule d'IA (« plongez dans », « n'hesitez pas a », « ce n'est pas seulement X, c'est Y »), "
+        "pas de liste de trois adjectifs, un fait concret par slide.\n"
         "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique."
     )
     client = Anthropic(api_key=CLE_API)
