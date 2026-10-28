@@ -29,6 +29,13 @@ TICS = [
     (r"\bce n['’]est (?:pas|plus) (?:seulement|simplement|juste|qu['’]un[e]?\b)[^.!?]{0,80}[,;:]\s*c['’]est\b", "« Ce n'est pas seulement X, c'est Y »", "balancement trop reconnaissable : dis directement Y"),
     (r"\bjoue(?:nt)? un rôle (?:clé|crucial|essentiel|central|majeur|fondamental)\b", "« Joue un rôle clé »", "dis ce que la chose fait concrètement"),
     (r"\bun (?:véritable )?gage de (?:qualité|confiance|sérénité|sécurité)\b", "« Un gage de qualité / de confiance »", "affirmation vide : donne le fait qui le prouve"),
+    (r"\b(?:se positionne|s['’]impose|s['’]affirme|se présente) comme\b", "« Se positionne comme »", "dis simplement ce que c'est ou ce que tu fais"),
+    (r",\s*(?:symbolisant|reflétant|illustrant|témoignant de|soulignant|démontrant)\s", "« , symbolisant / reflétant... »", "garde le fait, supprime le commentaire ajouté en fin de phrase"),
+    (r"\bdes experts (?:estiment|s['’]accordent|recommandent)\b|\bselon (?:de nombreux|certains) experts\b", "« Des experts estiment... »", "cite la vraie source ou retire l'affirmation"),
+    (r"\bmarque un tournant\b|\btournant (?:majeur|décisif)\b|\bmoment charnière\b", "« Marque un tournant »", "garde le fait, retire l'emphase"),
+    (r"\bniché[e]?s? (?:au|dans|en)\b|\bun écrin de\b|\bjoyau\b", "« Niché au cœur de... », « un écrin de »", "dis ce que c'est et où, sans décor"),
+    (r"\bvoyons ensemble\b|\bdécouvrons ensemble\b|\bdans cet article,? nous (?:allons )?(?:voir|découvrir|explorer)\b|\bvoici ce qu['’]il faut savoir\b", "« Voyons ensemble... »", "supprime l'annonce et passe directement au contenu"),
+    (r"\bj['’]espère que (?:cela|ça|ce texte) (?:vous )?(?:aide|est utile)\b|\bn['’]hésitez pas à me demander\b|^\s*(?:bien sûr|absolument|excellente question)\s*[!,.]", "formule de chatbot (« Bien sûr ! », « J'espère que cela vous aide »)", "retire cette enveloppe, garde seulement le contenu"),
     (r"!{2,}", "plusieurs points d'exclamation de suite", "un seul suffit, ou aucun"),
 ]
 _TICS_COMPILES = [(re.compile(m, re.IGNORECASE | re.DOTALL), exemple, conseil) for m, exemple, conseil in TICS]
