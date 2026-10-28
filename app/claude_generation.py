@@ -1506,6 +1506,14 @@ def suggerer_reponse_avis(
         "- Personnalise en fonction du contenu reel de l'avis s'il y en a un. N'invente aucun detail "
         "specifique que tu ne connais pas (nom d'employe, date, evenement precis).\n"
         "- Pas de formule signature du type « L'equipe de ... ». Reste naturel et humain.\n"
+        "- Evite les formules toutes faites du service client (« Votre satisfaction est notre priorite », « Nous restons a votre disposition », "
+        "« N'hesitez pas a... ») et ne repete pas l'avis avec d'autres mots. Quand l'avis donne un detail (le delai, la proprete, un conseil, "
+        "un probleme regle), reagis a ce detail precis plutot qu'a la note. Varie ta facon de commencer, au plus un point d'exclamation, pas d'emoji. "
+        "Pour inviter a echanger, ecris une demande precise (« appelez-moi », « ecrivez-moi ») et non « n'hesitez pas a ».\n"
+        "- Ne promets AUCUN geste commercial, remboursement, gratuite, reduction, deplacement ou delai que le contexte ne mentionne pas (ex. « sans frais », "
+        "« nous repasserons demain ») : propose seulement d'echanger directement pour trouver une solution. N'annonce pas de mesure interne inventee (« je vais voir avec mon equipe »). "
+        "Ne justifie ni ne detaille un tarif, une garantie ou une methode de travail que le contexte ne decrit pas : face a un avis sur le prix, "
+        "reconnais le ressenti et propose d'en parler directement.\n"
         "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
         "un tiret simple (-).\n"
         "- Reponds uniquement avec le texte de la reponse, sans guillemets ni commentaire autour."
@@ -1522,6 +1530,27 @@ def suggerer_reponse_avis(
     bloc_texte = next((bloc.text for bloc in reponse.content if bloc.type == "text"), None)
     if not bloc_texte:
         raise RuntimeError("L'IA n'a renvoye aucun texte exploitable.")
+
+    # La consigne ne suffit pas toujours (« n'hesitez pas a » revient dans environ une reponse sur trois) : une seule relance ciblee
+    tics = tics_ia.detecter(bloc_texte)
+    if tics:
+        consigne = (
+            "Reecris cette reponse sans ces tournures : " + " ; ".join(f"{t['exemple']} ({t['conseil']})" for t in tics)
+            + ". Garde le meme sens et la meme longueur, sans rien ajouter de nouveau. Reponds uniquement avec le texte de la reponse."
+        )
+        relance = client.messages.create(
+            model=MODELE_CLAUDE,
+            max_tokens=1024,
+            thinking={"type": "disabled"},
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": bloc_texte.strip()},
+                {"role": "user", "content": consigne},
+            ],
+        )
+        nouveau = next((bloc.text for bloc in relance.content if bloc.type == "text"), None)
+        if nouveau and nouveau.strip():
+            bloc_texte = nouveau
 
     return _nettoyer_texte_genere(bloc_texte)
 
