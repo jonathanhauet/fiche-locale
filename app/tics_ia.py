@@ -26,6 +26,9 @@ TICS = [
     (r"\béquipe (?:passionnée|dynamique|jeune et dynamique)\b", "« Équipe passionnée »", "montre-le par un exemple plutôt que de l'affirmer"),
     (r"\bsolutions? (?:innovantes?|sur mesure|complètes?|clés en main)\b", "« Solutions innovantes / sur mesure »", "précise ce que tu fais réellement"),
     (r"\bexcellence\b|\bleader (?:du|de|dans|sur)\b|\bincontournables?\b", "« Excellence », « leader », « incontournable »", "affirmation sans preuve : donne un fait vérifiable"),
+    (r"\bce n['’]est (?:pas|plus) (?:seulement|simplement|juste|qu['’]un[e]?\b)[^.!?]{0,80}[,;:]\s*c['’]est\b", "« Ce n'est pas seulement X, c'est Y »", "balancement trop reconnaissable : dis directement Y"),
+    (r"\bjoue(?:nt)? un rôle (?:clé|crucial|essentiel|central|majeur|fondamental)\b", "« Joue un rôle clé »", "dis ce que la chose fait concrètement"),
+    (r"\bun (?:véritable )?gage de (?:qualité|confiance|sérénité|sécurité)\b", "« Un gage de qualité / de confiance »", "affirmation vide : donne le fait qui le prouve"),
     (r"!{2,}", "plusieurs points d'exclamation de suite", "un seul suffit, ou aucun"),
 ]
 _TICS_COMPILES = [(re.compile(m, re.IGNORECASE | re.DOTALL), exemple, conseil) for m, exemple, conseil in TICS]
