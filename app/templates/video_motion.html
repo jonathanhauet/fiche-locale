@@ -84,6 +84,19 @@
     <button type="button" id="vm-plus" class="bouton-secondaire bouton-mini" hidden>Afficher plus de photos</button>
     <label for="vm-fichiers">Ajouter vos propres images</label>
     <input type="file" id="vm-fichiers" accept="image/*" multiple>
+    {% if banque_active %}
+    <div id="vm-banque">
+      <label for="vm-banque-q">Photos d'ambiance de la banque d'images libres de droits</label>
+      <div class="vm-banque-recherche">
+        <input type="search" id="vm-banque-q" placeholder="Ex. : toit, cuisine moderne, outils, chantier">
+        <button type="button" id="vm-banque-ok" class="bouton-secondaire bouton-mini">Rechercher</button>
+      </div>
+      <p id="vm-banque-avert" class="texte-discret"></p>
+      <div id="vm-banque-grille" class="vm-grille"></div>
+      <button type="button" id="vm-banque-plus" class="bouton-secondaire bouton-mini" hidden>Plus de résultats</button>
+      <p class="texte-discret">Photos fournies par <a href="https://pixabay.com" target="_blank" rel="noopener">Pixabay</a> (libres de droits). Pour l'ambiance seulement : à l'accroche ou à la conclusion, jamais présentées comme une réalisation du client. Évitez les photos où l'on reconnaît une marque, un logo ou une personne.</p>
+    </div>
+    {% endif %}
     <div id="vm-choix" class="vm-grille"></div>
     <label class="vm-case"><input type="checkbox" id="vm-logo" checked> Afficher le logo du client dans la scène « marque » et en tête de l'écran final (s'il en a un)</label>
     <label class="vm-case" id="vm-polices-ligne" hidden><input type="checkbox" id="vm-polices" checked> Utiliser les polices de la charte du client : <b id="vm-polices-noms"></b></label>
@@ -222,6 +235,9 @@
   .vm-miniature { position: relative; width: 84px; height: 84px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid transparent; background: #0002; }
   .vm-miniature img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .vm-miniature.choisie { border-color: #2f5eff; }
+  .vm-miniature .amb { position: absolute; bottom: 3px; left: 3px; background: #000b; color: #fff; font-size: .62rem; padding: 0 .35rem; border-radius: 4px; }
+  .vm-banque-recherche { display: flex; gap: .4rem; margin: .3rem 0; }
+  .vm-banque-recherche input { flex: 1; min-width: 0; }
   .vm-miniature .num { position: absolute; top: 3px; left: 3px; background: #2f5eff; color: #fff; font-size: .75rem; font-weight: 700; border-radius: 99px; min-width: 1.3rem; text-align: center; }
   .vm-couleur-ligne { display: flex; align-items: center; gap: .5rem; }
   .vm-couleur-ligne input[type=color] { width: 3.2rem; height: 2.4rem; padding: 2px; flex: none; cursor: pointer; }
@@ -413,7 +429,14 @@
   }
   function dessinerChoix() {
     const zone = $("vm-choix"); zone.textContent = "";
-    choix.forEach((c, i) => zone.appendChild(miniature(c.vignette, i + 1, () => { choix.splice(i, 1); dessinerChoix(); dessinerGrille(); })));
+    choix.forEach((c, i) => {
+      const m = miniature(c.vignette, i + 1, () => { choix.splice(i, 1); dessinerChoix(); dessinerGrille(); });
+      if (c.ambiance) {                                                // photo de banque d'images : repérée, avec le nom du photographe
+        const etiquette = document.createElement("span"); etiquette.className = "amb"; etiquette.textContent = "ambiance"; m.appendChild(etiquette);
+        m.title = "Photo d'ambiance de " + (c.credit || "un photographe") + " (Pixabay), libre de droits";
+      }
+      zone.appendChild(m);
+    });
   }
   let photosClient = [], jetonSuivant = "";
   function dessinerGrille() {
@@ -509,6 +532,46 @@
     }
     $("vm-fichiers").value = ""; dessinerChoix();
   });
+
+  // ---------- banque d'images libres de droits (Pixabay) : la photo choisie est téléchargée par le serveur puis traitée comme une image importée
+  const photosAmbiance = () => choix.map((c, i) => (c.ambiance ? i + 1 : 0)).filter(Boolean);
+  const formatBanque = () => ({ vertical: "portrait", horizontal: "landscape", carre: "square" })[$("vm-format").value] || "";
+  function vignetteBanque(p) {
+    const m = miniature(p.miniature, 0, async () => {
+      if (choix.some((c) => c.banqueId === p.id)) { $("vm-banque-avert").textContent = "Cette photo est déjà dans votre sélection."; return; }
+      if (choix.length >= MAX_PHOTOS) { $("vm-banque-avert").textContent = "Vous avez déjà " + MAX_PHOTOS + " photos : retirez-en une d'abord."; return; }
+      if (m.dataset.occupe) return;
+      m.dataset.occupe = "1"; m.classList.add("choisie");
+      try {
+        const r = await fetch("/video-motion/banque/importer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id }) }); const d = await r.json();
+        if (!r.ok) { $("vm-banque-avert").textContent = d.erreur || "Photo refusée."; m.classList.remove("choisie"); return; }
+        $("vm-banque-avert").textContent = "";
+        choix.push({ type: "import", id: d.id, vignette: p.miniature, ambiance: true, credit: p.photographe, banqueId: p.id }); dessinerChoix();
+      } catch (e) { $("vm-banque-avert").textContent = "Import impossible pour le moment."; m.classList.remove("choisie"); }
+      finally { m.dataset.occupe = ""; }
+    });
+    m.title = (p.description ? p.description + " - " : "") + "Photo : " + p.photographe + " (Pixabay)";
+    return m;
+  }
+  async function chercherBanque(page) {
+    const q = $("vm-banque-q").value.trim();
+    if (!q) { $("vm-banque-avert").textContent = "Indiquez ce que vous cherchez (ex. : toit, cuisine moderne, outils)."; return; }
+    $("vm-banque-avert").textContent = "Recherche..."; $("vm-banque-ok").disabled = true; $("vm-banque-plus").disabled = true;
+    try {
+      const r = await fetch("/video-motion/banque/recherche?q=" + encodeURIComponent(q) + "&page=" + page + "&orientation=" + formatBanque()); const d = await r.json();
+      if (!r.ok || d.erreur) { $("vm-banque-avert").textContent = d.erreur || "Recherche impossible."; return; }
+      if (page === 1) $("vm-banque-grille").textContent = "";
+      d.photos.forEach((p) => $("vm-banque-grille").appendChild(vignetteBanque(p)));
+      $("vm-banque-avert").textContent = d.photos.length || page > 1 ? "" : "Aucun résultat : essayez un autre mot.";
+      $("vm-banque-plus").hidden = !d.suivante; $("vm-banque-plus").dataset.page = page + 1;
+    } catch (e) { $("vm-banque-avert").textContent = "Recherche impossible pour le moment."; }
+    finally { $("vm-banque-ok").disabled = false; $("vm-banque-plus").disabled = false; }
+  }
+  if ($("vm-banque")) {
+    $("vm-banque-ok").addEventListener("click", () => chercherBanque(1));
+    $("vm-banque-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); chercherBanque(1); } });
+    $("vm-banque-plus").addEventListener("click", () => chercherBanque(parseInt($("vm-banque-plus").dataset.page, 10) || 2));
+  }
 
   const modelesScenes = () => ({
     hook: { texte: "Votre *fiche* est _invisible_", sous_texte: "", duree: 3 }, chiffre: { valeur: "4,9", suffixe: "/5", libelle: "note moyenne", duree: 3 },
@@ -639,7 +702,7 @@
     try {
       const r = await fetch("/video-motion/scenario", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient), modele: modele, style: $("vm-style").value, voix_off: $("vm-voix-active").checked }),
+        body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, brief: $("vm-brief").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value, nb_photos: choix.length, photos_ambiance: photosAmbiance(), avec_logo: !!($("vm-logo").checked && logoClient), modele: modele, style: $("vm-style").value, voix_off: $("vm-voix-active").checked }),
       });
       const d = await r.json();
       if (!r.ok) { statut(d.erreur || "Échec de l'écriture du scénario."); return; }
@@ -658,7 +721,7 @@
       const r = await fetch("/video-motion/serie", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ client_id: $("vm-client").value, nom: $("vm-nom").value, ville: $("vm-ville").value, faits: $("vm-faits").value, ton: $("vm-ton").value, duree: $("vm-duree").value,
-                               nb_videos: $("vm-nb-serie").value, nb_photos: choix.length, avec_logo: !!($("vm-logo").checked && logoClient) }),
+                               nb_videos: $("vm-nb-serie").value, nb_photos: choix.length, photos_ambiance: photosAmbiance(), avec_logo: !!($("vm-logo").checked && logoClient) }),
       });
       const d = await r.json();
       if (!r.ok) { statut(d.erreur || "Échec de la préparation de la série."); return; }

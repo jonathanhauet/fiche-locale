@@ -46,6 +46,7 @@ from . import (
     audit_prospect,
     audit_prospect_pdf,
     audit_site_technique,
+    banque_images,
     bilan_pdf,
     brevo_email,
     carrousel_visuel,
@@ -8388,7 +8389,51 @@ def page_video_motion(request: Request, db: Session = Depends(obtenir_session)):
     clients = db.query(models.Client).order_by(models.Client.nom).all()
     pistes = db.query(models.PisteMusicale).order_by(models.PisteMusicale.nom).all()
     return templates.TemplateResponse(request, "video_motion.html", {"page_actuelle": "video_motion", "clients": clients, "charte": charte_montage.lire(db), "pistes": pistes, "voix_off_choix": synthese_vocale.VOIX, "genres_voix": synthese_vocale.GENRES_VOIX,
-        "voix_defaut": synthese_vocale.VOIX_DEFAUT, "voix_personnage_defaut": synthese_vocale.VOIX_PERSONNAGE_DEFAUT, "personnage_bd": _personnage_bd_existe(db)})
+        "voix_defaut": synthese_vocale.VOIX_DEFAUT, "voix_personnage_defaut": synthese_vocale.VOIX_PERSONNAGE_DEFAUT, "personnage_bd": _personnage_bd_existe(db), "banque_active": banque_images.configuree()})
+
+
+def _photos_ambiance(donnees: dict, nb_photos: int) -> list:
+    """Numeros (a partir de 1) des photos choisies qui viennent de la banque d'images : ce ne sont pas des realisations du client."""
+    numeros = set()
+    for valeur in donnees.get("photos_ambiance") or []:
+        try:
+            if 1 <= int(valeur) <= nb_photos:
+                numeros.add(int(valeur))
+        except (TypeError, ValueError):
+            pass
+    return sorted(numeros)
+
+
+@app.get("/video-motion/banque/recherche")
+async def video_motion_banque_recherche(request: Request, q: str = "", page: int = 1, orientation: str = ""):
+    """Recherche dans la banque d'images libres de droits (Pixabay) : {"photos": [...], "suivante": bool}. Sans cle ou sans mot cherche : liste vide, jamais une erreur serveur."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    if not banque_images.configuree():
+        return JSONResponse({"photos": [], "suivante": False, "erreur": "Banque d'images non configurée (PIXABAY_API_KEY)."})
+    if not q.strip():
+        return JSONResponse({"photos": [], "suivante": False})
+    try:
+        return JSONResponse(await run_in_threadpool(banque_images.rechercher, q, page, orientation))
+    except banque_images.ErreurBanque as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=502)
+
+
+@app.post("/video-motion/banque/importer")
+async def video_motion_banque_importer(request: Request):
+    """Telecharge la photo choisie dans la banque et la garde comme une image importee. Corps : id. Reponse : id de l'import, photographe, lien."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    try:
+        octets, infos = await run_in_threadpool(banque_images.telecharger, donnees.get("id") if isinstance(donnees, dict) else None)
+        identifiant = motion_video.enregistrer_import(octets)
+    except (banque_images.ErreurBanque, motion_video.ErreurMotion) as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=502 if isinstance(erreur, banque_images.ErreurBanque) else 400)
+    return JSONResponse({"id": identifiant, **infos})
 
 
 @app.post("/video-motion/scenario")
@@ -8418,11 +8463,17 @@ async def video_motion_scenario(request: Request, db: Session = Depends(obtenir_
     modele = donnees.get("modele") if donnees.get("modele") in claude_generation.MODELES_MOTION else "libre"
     if modele != "libre" and nb_photos < claude_generation.MODELES_MOTION[modele]["photos_min"]:
         return JSONResponse({"erreur": "Choisissez d'abord " + ("2 photos : la 1re sera l'avant, la 2e l'après." if modele == "avant_apres" else "au moins 1 photo du chantier.")}, status_code=400)
+    ambiance = _photos_ambiance(donnees, nb_photos)
+    if modele != "libre" and ambiance:
+        imposees = {1, 2} if modele == "avant_apres" else set(range(1, min(nb_photos, 3) + 1))
+        if imposees & set(ambiance):
+            return JSONResponse({"erreur": "Les photos de banque d'images ne peuvent pas servir d'avant/après ni de réalisation : choisissez d'abord les photos du chantier."}, status_code=400)
     try:
         resultat = await run_in_threadpool(
             claude_generation.generer_scenario_motion, nom, str(donnees.get("ville") or ""), str(donnees.get("brief") or ""), str(donnees.get("faits") or ""),
             contenu_site, str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 30, nb_photos, bool(donnees.get("avec_logo")), modele,
-            **({"style": "google"} if donnees.get("style") == "google" else {}), **({"voix_off": True} if donnees.get("voix_off") else {}))
+            **({"style": "google"} if donnees.get("style") == "google" else {}), **({"voix_off": True} if donnees.get("voix_off") else {}),
+            **({"photos_ambiance": ambiance} if ambiance else {}))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible d'écrire le scénario : {erreur}"}, status_code=500)
     return JSONResponse(resultat)
@@ -8582,6 +8633,7 @@ async def video_motion_serie(request: Request, db: Session = Depends(obtenir_ses
         deja = []
     nom, ville = str(donnees.get("nom") or client.nom).strip(), str(donnees.get("ville") or "").strip()
     faits, ton, duree, avec_logo = str(donnees.get("faits") or ""), str(donnees.get("ton") or "dynamique"), donnees.get("duree") or 30, bool(donnees.get("avec_logo"))
+    ambiance = _photos_ambiance(donnees, nb_photos)
     try:
         idees = await run_in_threadpool(claude_generation.suggerer_idees_video_motion, client.nom, contenu, deja[-40:], nombre)
     except Exception as e:
@@ -8589,7 +8641,8 @@ async def video_motion_serie(request: Request, db: Session = Depends(obtenir_ses
 
     def ecrire(idee):
         try:
-            resultat = claude_generation.generer_scenario_motion(nom, ville, f"{idee['titre']} : {idee['brief']}", faits, contenu, ton, duree, nb_photos, avec_logo, "libre")
+            resultat = claude_generation.generer_scenario_motion(nom, ville, f"{idee['titre']} : {idee['brief']}", faits, contenu, ton, duree, nb_photos, avec_logo, "libre",
+                                                                 **({"photos_ambiance": ambiance} if ambiance else {}))
             return {**resultat, "idee": idee}
         except Exception:
             return None

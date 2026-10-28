@@ -4034,7 +4034,7 @@ LONGUEUR_MAX_FAITS_MOTION = 3000
 
 
 def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: str = "", contenu_site: str = "", ton: str = "dynamique", duree_cible: int = 30,
-                            nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre", style: str = "", voix_off: bool = False) -> dict:
+                            nb_photos: int = 0, avec_logo: bool = False, modele: str = "libre", style: str = "", voix_off: bool = False, photos_ambiance: list = None) -> dict:
     """
     Scenario d'une video de motion design (sans tournage) pour un client, rendue par motion_video.py : accroche, revelation, 2 a 3 temps forts, chute.
     Renvoie {"titre", "legende", "scenes": [...]} ; les scenes sont nettoyees par motion_video.nettoyer_scenario. Les chiffres viennent
@@ -4047,6 +4047,7 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
     nom, ville, brief, faits = (nom or "").strip()[:120], (ville or "").strip()[:80], (brief or "").strip()[:LONGUEUR_MAX_BRIEF_MOTION], (faits or "").strip()[:LONGUEUR_MAX_FAITS_MOTION]
     duree_cible = max(12, min(int(duree_cible or 30), 60))
     nombre_scenes = max(4, min(round(duree_cible / 4.5), 12))
+    ambiance = sorted({int(n) for n in (photos_ambiance or []) if 1 <= int(n) <= nb_photos})     # photos de banque d'images : de l'ambiance, jamais le travail du client
     consigne_ton = TONS_MOTION.get(ton, TONS_MOTION["dynamique"])
     structure = MODELES_MOTION.get(modele)
     if structure and nb_photos < structure["photos_min"]:
@@ -4064,6 +4065,8 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
         + (f"Photos réelles du client disponibles : {nb_photos} (numérotées de 1 à {nb_photos} ; tu ne les vois pas, ne décris donc jamais ce qu'elles montrent). "
            "Utilise-les avec des scènes « photo » et « mosaique » : jamais deux scènes photo de suite, au plus 3 scènes photo ou mosaïque en tout, "
            "et répartis les numéros pour que chaque photo serve.\n" if nb_photos else "Aucune photo disponible : n'utilise ni scène photo ni scène mosaique.\n")
+        + (f"Les photos numéro {', '.join(str(n) for n in ambiance)} sont des photos d'AMBIANCE de banque d'images : ce ne sont PAS des réalisations du client. Utilise-les seulement dans des scènes « photo » "
+           "d'accroche ou de conclusion, avec un texte posé dessus ; jamais dans mosaique, avant_apres ni realisation, et ne les présente jamais comme le travail du client.\n" if ambiance else "")
         + ("Le logo du client sera affiché dans la scène marque.\n" if avec_logo else "")
         + f"Ton : {consigne_ton}.\n"
         + (CONSIGNE_STYLE_GOOGLE if style == "google" else "")
@@ -4144,6 +4147,12 @@ def generer_scenario_motion(nom: str, ville: str = "", brief: str = "", faits: s
             if "photos" in s:
                 s["photos"] = [min(n, nb_photos) for n in s["photos"]]
         scenes = [s for s in scenes if not (s["type"] == "photo" and "photo" not in s) and not (s["type"] == "mosaique" and not s.get("photos"))]
+        if ambiance:                       # garde-fou : une photo de banque d'images ne sert jamais de realisation, d'avant/apres ni de mosaique de travaux
+            minimum = {"mosaique": 2, "avant_apres": 2, "realisation": 1}
+            for scene in scenes:
+                if scene["type"] in minimum:
+                    scene["photos"] = [n for n in scene.get("photos", []) if n not in ambiance]
+            scenes = [sc for sc in scenes if sc["type"] not in minimum or len(sc.get("photos", [])) >= minimum[sc["type"]]]
     if not scenes:
         raise RuntimeError("L'IA n'a renvoye aucune scene exploitable.")
     return {"titre": _nettoyer_texte_genere(donnees.get("titre", "")).replace("\u2014", "-")[:120], "legende": _nettoyer_texte_genere(donnees.get("legende", "")).replace("\u2014", "-")[:1200],
