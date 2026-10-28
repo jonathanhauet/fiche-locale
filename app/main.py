@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -341,6 +341,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE posts_linkedin_programmes ADD COLUMN document_titre TEXT DEFAULT ''"))
         if "favori_publication_multi" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN favori_publication_multi BOOLEAN DEFAULT FALSE"))
+        if "alerte_posts_desactivee" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN alerte_posts_desactivee BOOLEAN DEFAULT FALSE"))
         if "personne_ecriture" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN personne_ecriture VARCHAR DEFAULT ''"))
         if "genre_ecriture" not in colonnes_clients:
@@ -2814,13 +2816,15 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
             models.Post.date_prevue <= fin_mois_prochain,
         ).distinct().all()
     }
-    ids_sans_post_mois_prochain = ids_clients_avec_fiche - ids_avec_post_mois_prochain
+    ids_alerte_desactivee = {c.id for c in clients if c.alerte_posts_desactivee}
+    ids_sans_post_mois_prochain = ids_clients_avec_fiche - ids_avec_post_mois_prochain - ids_alerte_desactivee
 
     return templates.TemplateResponse(
         request,
         "clients_liste.html",
         {
             "clients": clients,
+            "ids_alerte_desactivee": ids_alerte_desactivee & ids_clients_avec_fiche,
             "google_connecte": google_oauth.google_est_connecte(db),
             "ids_avec_connaissance": ids_avec_connaissance,
             "nb_sans_email": sum(1 for c in clients if not c.email),
@@ -10424,6 +10428,21 @@ def publication_multi_basculer_favori(
         db.commit()
 
     return RedirectResponse("/" if retour == "liste" else "/publication-multi", status_code=303)
+
+
+@app.post("/clients/{client_id}/alerte-posts/basculer")
+def basculer_alerte_posts_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Active/desactive l'alerte « aucun post programme le mois prochain » d'une fiche (liste des clients)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+    client.alerte_posts_desactivee = not client.alerte_posts_desactivee
+    db.commit()
+    return {"alerte_posts_desactivee": bool(client.alerte_posts_desactivee)}
 
 
 @app.get("/publication-multi", response_class=HTMLResponse)

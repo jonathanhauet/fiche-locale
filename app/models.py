@@ -213,6 +213,9 @@ class Client(Base):
     # (etoile cliquable) : evite de faire defiler la liste pour retrouver les
     # clients publiés le plus souvent.
     favori_publication_multi = Column(Boolean, default=False)
+    # Fiche pour laquelle on ne programme pas de posts le mois suivant : plus d'alerte
+    # « aucun post programme » sur la liste des clients (reactivable d'un clic).
+    alerte_posts_desactivee = Column(Boolean, default=False)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
     posts = relationship("Post", back_populates="client", cascade="all, delete-orphan")

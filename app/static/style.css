@@ -1431,6 +1431,9 @@ button:active { transform: translateY(1px); }
 .etiquette-avertissement.etiquette-danger { background: var(--danger-clair); color: var(--danger); }
 .liste-clients li.ligne-client-non-validee { border-left: 3px solid var(--danger); }
 .liste-clients li.ligne-client-alerte { border-left: 3px solid var(--danger); }
+button.etiquette-avertissement { border: 0; font-family: inherit; cursor: pointer; }
+button.etiquette-avertissement:hover { filter: brightness(0.95); text-decoration: underline; }
+.etiquette-avertissement.etiquette-discrete { background: var(--bordure, #e5e7eb); color: var(--texte-discret, #6b7280); }
 
 /* ---------- Barre de titre ---------- */
 
