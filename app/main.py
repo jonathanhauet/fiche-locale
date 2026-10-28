@@ -12380,9 +12380,10 @@ def _traiter_message_whatsapp(db: Session, message: dict) -> None:
 
     if type_message == "text":
         texte = (message.get("text", {}).get("body") or "").strip()
-        if texte in {"1", "2", "3", "4", "5"}:
+        numero_choisi = whatsapp_business.numero_question_depuis_texte(texte)
+        if numero_choisi:
             questions = json.loads(etat.questions_json or "[]")
-            index = int(texte) - 1
+            index = numero_choisi - 1
             if 0 <= index < len(questions):
                 etat.question_choisie = questions[index]
                 etat.maj_le = datetime.utcnow()

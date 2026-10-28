@@ -5,6 +5,8 @@ reponse dictee (+ photo optionnelle) recuperee via webhook.
 """
 
 import os
+import re
+import unicodedata
 
 import requests
 from dotenv import load_dotenv
@@ -135,6 +137,30 @@ def envoyer_questions_hebdo(numero_destinataire: str, corps_questions: str) -> s
     return envoyer_message_template(
         numero_destinataire, NOM_TEMPLATE_QUESTIONS_HEBDO, "fr", parametres, boutons_reponse_rapide=["1", "2", "3", "4", "5"],
     )
+
+
+_MOTS_NUMEROS = {"un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5}
+_MOTS_SANS_SENS = {
+    "la", "le", "les", "question", "questions", "numero", "num", "n", "q", "je", "prends", "prend", "choisis", "choisi", "c", "est",
+    "ce", "sera", "celle", "du", "de", "option", "reponse", "ok", "alors",
+}
+
+
+def numero_question_depuis_texte(texte: str) -> int | None:
+    """
+    Numero (1 a 5) de la question choisie par le client dans un message tape : « 2 », « la 2 », « question 3 », « 2. », « deux »,
+    « 2️⃣ »... None si le message n'est pas un simple choix de question (un vrai message, plus de 4 mots, ou plusieurs chiffres).
+    Sans les boutons du modele, les clients tapent leur choix a leur facon : une reconnaissance stricte les laisserait sans reponse.
+    """
+    sans_accents = "".join(c for c in unicodedata.normalize("NFKD", texte or "") if not unicodedata.combining(c))
+    mots = re.sub(r"[^a-z0-9\s]", " ", sans_accents.lower()).split()
+    if not mots or len(mots) > 4:
+        return None
+    restes = [m for m in mots if m not in _MOTS_SANS_SENS]
+    if len(restes) != 1:
+        return None
+    valeur = int(restes[0]) if restes[0] in ("1", "2", "3", "4", "5") else _MOTS_NUMEROS.get(restes[0])
+    return valeur if valeur in (1, 2, 3, 4, 5) else None
 
 
 def telecharger_media(media_id: str) -> tuple[bytes, str]:
