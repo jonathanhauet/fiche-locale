@@ -37,6 +37,12 @@ TICS = [
     (r"\bvoyons ensemble\b|\bdécouvrons ensemble\b|\bdans cet article,? nous (?:allons )?(?:voir|découvrir|explorer)\b|\bvoici ce qu['’]il faut savoir\b", "« Voyons ensemble... »", "supprime l'annonce et passe directement au contenu"),
     (r"\bj['’]espère que (?:cela|ça|ce texte) (?:vous )?(?:aide|est utile)\b|\bn['’]hésitez pas à me demander\b|^\s*(?:bien sûr|absolument|excellente question)\s*[!,.]", "formule de chatbot (« Bien sûr ! », « J'espère que cela vous aide »)", "retire cette enveloppe, garde seulement le contenu"),
     (r"\bvotre satisfaction est notre (?:priorité|objectif|raison d['’]être)\b|\bnous restons à votre (?:entière )?disposition\b", "« Votre satisfaction est notre priorité »", "formule de service client : réagis à ce que la personne a dit ou dis ce que tu fais"),
+    (r"\b(?:presque )?[àa] chaque intervention\b|\bj['’]interviens [^.!?]{0,60}?\b(?:régulièrement|fréquemment|souvent)\b|"
+     r"\b(?:je|nous) (?:vois|voyons|retrouve|retrouvons|constate|constatons|croise|croisons|rencontre|rencontrons|remarque|remarquons|pose|posons|vérifie|vérifions|"
+     r"regarde|regardons|teste|testons|contrôle|contrôlons|demande|demandons|commence|commençons)\s+(?:\w+\s+){0,3}?"
+     r"(?:toujours|régulièrement|fréquemment|presque|pas mal|souvent|systématiquement)\b",
+     "« Je vois régulièrement... », « je vérifie toujours... », « à chaque intervention »",
+     "expérience ou habitude affirmée : garde-la seulement si elle est vraie pour cette entreprise, sinon formule un constat général"),
     (r"!{2,}", "plusieurs points d'exclamation de suite", "un seul suffit, ou aucun"),
 ]
 _TICS_COMPILES = [(re.compile(m, re.IGNORECASE | re.DOTALL), exemple, conseil) for m, exemple, conseil in TICS]
