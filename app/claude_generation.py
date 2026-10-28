@@ -30,6 +30,18 @@ CONSIGNE_ACCENTS = (
 RAPPEL_ACCENTS = "\n\n(Rappel : tout le texte en français doit avoir ses accents, y compris dans les premiers mots : é, è, à, ç, ô...)"
 
 
+# Consigne de style commune aux generateurs de textes a publier (posts, avis...) : meme esprit que tics_ia.py (qui detecte apres coup),
+# ici on previent l'IA en amont. Une seule definition, reprise dans chaque prompt.
+CONSIGNE_STYLE_NATUREL = (
+    "Style naturel : écris comme un artisan ou un commerçant qui parle à un client, pas comme une brochure. Pas de tournures d'IA "
+    "(« Dans un monde où... », « Plongez dans... », « N'hésitez pas à... », « Que vous soyez... ou... », « Ce n'est pas seulement X, c'est Y », "
+    "« joue un rôle clé », « un gage de qualité », « se positionne comme »), pas de liste de trois adjectifs par réflexe, pas d'adjectif valorisant "
+    "sans preuve (« excellence », « incontournable », « sur mesure »). Ne commence pas trois phrases de suite par le même mot, n'annonce pas ce que tu "
+    "vas dire, ne commente pas un fait par un participe (« , symbolisant... »), et ne termine pas en répétant le paragraphe. Préfère un fait précis du "
+    "contexte fourni et varie la longueur des phrases."
+)
+
+
 class Anthropic(_AnthropicSDK):
     """Client Anthropic qui ajoute CONSIGNE_ACCENTS (message systeme) a chaque appel de messages.create."""
 
@@ -504,6 +516,7 @@ def generer_post_generique(theme: str = "", contenu_site_reference: str = "") ->
         "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
         "un tiret simple (-).\n"
         "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique (ex. « le cabinet reçoit au cabinet »). Relis-toi avant de conclure : la derniere phrase doit etre claire, naturelle et utile.\n"
+        f"- {CONSIGNE_STYLE_NATUREL}\n"
         "- Redige aussi un titre court et un prompt en anglais pour un generateur d'images. "
         "Vise une scene concrete et specifique, directement liee au sujet precis (un lieu, un "
         "objet ou une situation reconnaissable, pas une metaphore abstraite). Evite les cliches "
@@ -725,6 +738,7 @@ def _generer_post_expert_une_fois(
         "- Ton professionnel mais humain, pas de tiret cadratin (—) : remplace par une "
         "virgule, un deux-points ou un tiret simple (-).\n"
         "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique (ex. « le cabinet reçoit au cabinet »). Relis-toi avant de conclure : la derniere phrase doit etre claire, naturelle et utile.\n"
+        f"- {CONSIGNE_STYLE_NATUREL}\n"
         "- Longueur : entre 800 et 1300 caracteres (espaces compris) - un texte de base "
         "assez court pour rester adaptable a chaque reseau ensuite.\n"
         "- Passe des lignes entre chaque paragraphe (\\n\\n) plutot qu'un bloc compact.\n"
@@ -823,6 +837,7 @@ def generer_post_depuis_photos(
         "- Termine par une courte invitation naturelle a contacter l'entreprise, sans numero, lien ni adresse inventes.\n"
         "- Aucun nom de ville ni de quartier, sauf si le contexte du site l'indique clairement comme zone d'intervention de l'entreprise ; si le contexte interdit de citer une ville, n'en cite aucune.\n"
         "- Pas de tiret cadratin (—) : remplace par une virgule, un deux-points ou un tiret simple (-). Chaque phrase apporte une information nouvelle, sans redite.\n"
+        f"- {CONSIGNE_STYLE_NATUREL}\n"
         "- Redige aussi un titre court. Pour prompt_image, ecris simplement une phrase en anglais qui decrit la photo principale (les photos existent deja, aucune image n'en sera generee)."
     )
     contenu = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(octets).decode()}} for octets in photos]
@@ -1089,6 +1104,7 @@ def generer_post_depuis_reponse(question: str, reponse_orale: str, contexte_expe
         "- Phrases courtes, un paragraphe = une seule idee (1 a 3 phrases max).\n"
         "- Termine sur une phrase forte et memorable plutot qu'une formule generique.\n"
         "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique (ex. « le cabinet reçoit au cabinet »). Relis-toi avant de conclure : la derniere phrase doit etre claire, naturelle et utile.\n"
+        f"- {CONSIGNE_STYLE_NATUREL}\n"
         "- Ton humain et direct, pas de jargon marketing creux, pas de tiret "
         "cadratin (—) : remplace par une virgule, un deux-points ou un tiret simple (-).\n"
         "- Aucune reference geographique ni nom de ville.\n"
@@ -1410,6 +1426,7 @@ def generer_posts_generiques(theme: str = "", contenu_site_reference: str = "", 
         "- N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points ou "
         "un tiret simple (-).\n"
         "- Chaque phrase apporte une information nouvelle : pas de redite ni de tournure tautologique (ex. « le cabinet reçoit au cabinet »). Relis-toi avant de conclure : la derniere phrase doit etre claire, naturelle et utile.\n"
+        f"- {CONSIGNE_STYLE_NATUREL}\n"
         "- Pour chaque proposition, redige aussi un titre court et un prompt en anglais pour un "
         "generateur d'images (illustration adaptee au theme, sans texte incruste ni logo, sans "
         "reference geographique)."
