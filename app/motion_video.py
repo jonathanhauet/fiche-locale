@@ -2063,19 +2063,39 @@ DELAI_VOIX = 0.55                       # la voix off commence un peu apres le d
 DUREE_MAX_SCENE_VOIX = 16.0             # une scene s'allonge pour laisser finir la phrase, jusqu'a cette duree
 
 
+ECHANTILLONS_FLOU = 10      # positions du balayage dessinees puis moyennees pour une image du film
+OBTURATEUR = 0.40           # part de la duree d'une image pendant laquelle « l'obturateur reste ouvert » (le flou, comme au cinema)
+
+
+def transition_floue(ctx: Contexte, a: Image.Image, b: Image.Image, p: float) -> Image.Image:
+    """
+    Le balayage avec flou de mouvement : il parcourt l'ecran en une quinzaine d'images et file a plusieurs centaines de pixels par image au depart,
+    ce qui, dessine net, saccade. On le dessine a plusieurs positions toutes proches puis on les moyenne, comme une camera. Seul le balayage est
+    redessine (les deux scenes restent celles de l'instant t) : le flou ne ralentit presque pas le rendu.
+    """
+    ecart = OBTURATEUR / FPS / DUREE_TRANSITION
+    cumul = None
+    for k in range(ECHANTILLONS_FLOU):
+        image = transition_balayage(ctx, a, b, borne(p + (k / (ECHANTILLONS_FLOU - 1) - 0.5) * ecart))
+        cumul = image if cumul is None else Image.blend(cumul, image, 1.0 / (k + 1))
+    return cumul
+
+
 def scene_a(ctx: Contexte, scenes: list, positions: list, i: int, t: float) -> Image.Image:
     """Scene i a l'instant t de la video, avec un leger zoom de camera continu."""
     debut, fin = positions[i]
     image = SCENES[scenes[i]["type"]](ctx, scenes[i], t - debut)
     zoom = 1.0 + 0.045 * borne((t - debut) / (fin - debut))
     if zoom > 1.0005:
-        l, h = int(ctx.l * zoom), int(ctx.h * zoom)
-        image = image.resize((l, h), Image.BILINEAR).crop(((l - ctx.l) // 2, (h - ctx.h) // 2, (l - ctx.l) // 2 + ctx.l, (h - ctx.h) // 2 + ctx.h))
+        # Zoom exact (a la fraction de pixel) autour du centre : un agrandissement a taille entiere suivi d'un recadrage fait « sauter » le texte
+        # d'un pixel d'une image a l'autre, ce qui se voit comme un tremblement sur un zoom lent.
+        demi_l, demi_h = ctx.l / (2 * zoom), ctx.h / (2 * zoom)
+        image = image.resize((ctx.l, ctx.h), Image.BICUBIC, box=(ctx.l / 2 - demi_l, ctx.h / 2 - demi_h, ctx.l / 2 + demi_l, ctx.h / 2 + demi_h))
     return image
 
 
-def image_a(ctx: Contexte, scenes: list, positions: list, t: float) -> Image.Image:
-    """Image de la video a l'instant t."""
+def image_a(ctx: Contexte, scenes: list, positions: list, t: float, flou: bool = False) -> Image.Image:
+    """Image de la video a l'instant t. flou : flou de mouvement sur le balayage entre deux scenes (rendu de la video, pas des apercus)."""
     n = len(scenes)
     courante = max(i for i, (debut, _) in enumerate(positions) if debut <= t + 1e-9) if t >= 0 else 0
     debut, fin = positions[courante]
@@ -2084,7 +2104,8 @@ def image_a(ctx: Contexte, scenes: list, positions: list, t: float) -> Image.Ima
         precedent_debut, precedent_fin = positions[courante - 1]
         if t < precedent_fin:
             avant = scene_a(ctx, scenes, positions, courante - 1, t)
-            image = transition_balayage(ctx, avant, image, (t - debut) / DUREE_TRANSITION)
+            p = (t - debut) / DUREE_TRANSITION
+            image = transition_floue(ctx, avant, image, p) if flou else transition_balayage(ctx, avant, image, p)
     habillage(ctx, image, t / max(0.1, positions[-1][1]), courante + 1, n, scenes[courante]["type"] == "chiffre" and (t - debut) > DUREE_TRANSITION)
     if ctx.sous_titres:
         dessiner_sous_titres(ctx, image, t)
@@ -2172,7 +2193,12 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
         etiquettes.append("[voix_b]" if musique else "[voix]")
     limiteur = ",alimiter=limit=0.95" if entrees_voix else ""
     parties.append("".join(etiquettes) + f"amix=inputs={len(etiquettes)}:duration=longest:dropout_transition=0:normalize=0,atrim=0:{duree:.2f},apad=whole_dur={duree:.2f}{limiteur}[a]")
-    commande += ["-filter_complex", ";".join(parties), "-map", "0:v", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    # Les images sont en RVB : sans matrice indiquee, ffmpeg convertit en BT.601 alors que les navigateurs et telephones lisent une video HD en
+    # BT.709, d'ou des couleurs de marque legerement decalees. On convertit en BT.709 et on l'ecrit dans le fichier.
+    parties.append("[0:v]scale=out_color_matrix=bt709:out_range=tv,format=yuv420p[v]")
+    commande += ["-filter_complex", ";".join(parties), "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+                 "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+                 "-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709:range=tv",
                  "-c:a", "aac", "-b:a", "160k", "-t", f"{duree:.2f}", "-movflags", "+faststart", sortie]
     processus = subprocess.Popen(commande, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     erreurs = []
@@ -2180,7 +2206,7 @@ def rendre(scenario: dict, charte: dict, format_video: str, sortie: str, marque:
     lecteur.start()
     try:
         for i in range(total_images):
-            processus.stdin.write(image_a(ctx, scenes, positions, i / FPS).tobytes())
+            processus.stdin.write(image_a(ctx, scenes, positions, i / FPS, flou=True).tobytes())
             if progression:
                 progression((i + 1) / total_images)
         processus.stdin.close()
