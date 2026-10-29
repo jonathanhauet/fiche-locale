@@ -47,6 +47,13 @@
       <label for="amf-auteur">Nom affiché</label>
       <input type="text" id="amf-auteur" maxlength="40">
 
+      <p class="amf-titre-groupe">Format</p>
+      <div class="amf-choix">
+        <label class="amf-chip"><input type="radio" name="amf-format" value="google" checked> Publication Google (1200 × 900)</label>
+        <label class="amf-chip"><input type="radio" name="amf-format" value="portrait"> Portrait (1080 × 1350)</label>
+      </div>
+      <p id="amf-format-aide" class="texte-discret" style="margin:.3rem 0 0">Format 4:3 d'une publication de fiche Google. Le bas de l'image peut être coupé dans l'aperçu mobile : le texte et le logo restent donc en haut.</p>
+
       <p class="amf-titre-groupe">Style</p>
       <div class="amf-choix">
         <label class="amf-chip"><input type="radio" name="amf-layout" value="plein" checked> Plein</label>
@@ -54,11 +61,20 @@
         <label class="amf-chip"><input type="radio" name="amf-layout" value="sombre"> Sombre</label>
       </div>
 
+      <p class="amf-titre-groupe">Taille du texte</p>
+      <div class="amf-choix">
+        <label class="amf-chip">Plus petit <input type="range" id="amf-taille" min="60" max="140" step="5" value="100" aria-label="Taille du texte"> Plus grand</label>
+        <button type="button" id="amf-taille-auto" class="bouton-secondaire bouton-mini">Taille automatique</button>
+      </div>
+      <p class="texte-discret" style="margin:.3rem 0 0">Le texte reste toujours dans le cadre : s'il est long, il ne grossira pas au-delà de ce qui tient.</p>
+
       <p class="amf-titre-groupe">Photo de fond (facultatif)</p>
       <div class="amf-choix">
+        <label class="bouton-secondaire bouton-mini amf-fichier">💻 Importer depuis mon ordinateur<input type="file" id="amf-photo-fichier" accept="image/*" hidden></label>
         <button type="button" id="amf-photo-fiche" class="bouton-secondaire bouton-mini">📷 Choisir une photo de la fiche</button>
         <button type="button" id="amf-photo-retirer" class="bouton-secondaire bouton-mini" hidden>Retirer la photo</button>
       </div>
+      <p id="amf-photo-info" class="texte-discret" style="margin:.3rem 0 0" hidden></p>
       <div id="amf-photos" class="amf-photos" hidden></div>
       <label class="amf-chip" id="amf-voile-ligne" hidden>Assombrissement <input type="range" id="amf-voile" min="40" max="90" value="68"></label>
 
@@ -66,9 +82,9 @@
     </div>
 
     <div class="amf-apercu">
-      <div class="amf-cadre"><img id="amf-image" alt="Aperçu du visuel de l'avis" hidden><span id="amf-attente" class="texte-discret">Aperçu en préparation...</span></div>
+      <div class="amf-cadre" id="amf-cadre"><img id="amf-image" alt="Aperçu du visuel de l'avis" hidden><span id="amf-attente" class="texte-discret">Aperçu en préparation...</span></div>
       <button type="button" id="amf-telecharger" class="bouton"><span class="spinner" id="amf-spinner" hidden></span>⬇ Télécharger l'image</button>
-      <p class="texte-discret" style="text-align:center;margin:.4rem 0 0">JPEG 1080 × 1350 (format 4:5, adapté à Instagram, Facebook et LinkedIn).</p>
+      <p id="amf-dimensions" class="texte-discret" style="text-align:center;margin:.4rem 0 0">JPEG 1200 × 900 (format 4:3 d'une publication Google).</p>
       <p id="amf-erreur" class="texte-discret" role="alert" hidden></p>
     </div>
   </div>
@@ -91,13 +107,15 @@
   @media (max-width: 860px) { .amf-edition { grid-template-columns: minmax(0, 1fr); } }
   .amf-titre-groupe { font-weight: 600; margin: .9rem 0 .3rem; }
   .amf-choix { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-  .amf-chip, .amf-case { display: inline-flex; gap: .4rem; align-items: center; border: 1px solid var(--carte-bordure); border-radius: 999px; padding: .25rem .7rem; font-size: .9rem; cursor: pointer; width: auto; }
-  .amf-case { border: 0; padding: .6rem 0 0; }
-  .amf-chip input, .amf-case input { width: auto; margin: 0; }
+  .amf-chip, .amf-case { display: inline-flex; flex-direction: row; gap: .5rem; align-items: center; justify-content: flex-start; text-align: left; margin: 0; border: 1px solid var(--carte-bordure); border-radius: 999px; padding: .3rem .8rem; font-size: .9rem; cursor: pointer; width: auto; }
+  .amf-case { border: 0; padding: .8rem 0 0; display: flex; }
+  .amf-chip input, .amf-case input { width: auto; flex: none; margin: 0; }
+  .amf-chip input[type="range"] { width: 9rem; }
   .amf-photos { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; max-height: 14rem; overflow: auto; }
   .amf-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
   .amf-photos img.choisie { border-color: var(--accent); }
-  .amf-cadre { position: relative; width: 100%; aspect-ratio: 4 / 5; border: 1px solid var(--carte-bordure); border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: .8rem; }
+  .amf-fichier { cursor: pointer; display: inline-flex; align-items: center; }
+  .amf-cadre { position: relative; width: 100%; aspect-ratio: 4 / 3; border: 1px solid var(--carte-bordure); border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: .8rem; }
   .amf-cadre img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .amf-apercu .bouton { width: 100%; justify-content: center; }
 </style>
@@ -117,7 +135,37 @@
       texte: $("amf-texte").value, auteur: $("amf-auteur").value, note: choisi ? choisi.note : 5,
       layout: document.querySelector('input[name="amf-layout"]:checked').value, photo_url: photoUrl,
       voile: parseInt($("amf-voile").value, 10), sans_logo: !$("amf-logo").checked,
+      format: formatChoisi(), taille_texte: parseInt($("amf-taille").value, 10),
     };
+  }
+
+  const formatChoisi = () => document.querySelector('input[name="amf-format"]:checked').value;
+  function appliquerFormat() {
+    const google = formatChoisi() === "google";
+    $("amf-cadre").style.aspectRatio = google ? "4 / 3" : "4 / 5";
+    $("amf-dimensions").textContent = google ? "JPEG 1200 × 900 (format 4:3 d'une publication Google)." : "JPEG 1080 × 1350 (format 4:5, adapté à Instagram, Facebook et LinkedIn).";
+    $("amf-format-aide").textContent = google
+      ? "Format 4:3 d'une publication de fiche Google. Le bas de l'image peut être coupé dans l'aperçu mobile : le texte et le logo restent donc en haut."
+      : "Format portrait 4:5, adapté à Instagram, Facebook et LinkedIn.";
+    apercu();
+  }
+
+  // Photo de fond : importée depuis l'ordinateur ou choisie parmi celles de la fiche Google.
+  function definirPhoto(url, libelle) {
+    photoUrl = url;
+    $("amf-photo-retirer").hidden = !url; $("amf-voile-ligne").hidden = !url;
+    $("amf-photo-info").hidden = !libelle; $("amf-photo-info").textContent = libelle || "";
+    $("amf-photos").querySelectorAll("img").forEach((i) => i.classList.toggle("choisie", !!url && i.dataset.url === url));
+    apercu();
+  }
+  async function importerPhoto(fichier) {
+    erreur(""); $("amf-photo-info").hidden = false; $("amf-photo-info").textContent = "Envoi de la photo...";
+    try {
+      const formulaire = new FormData(); formulaire.append("type_media", "photo"); formulaire.append("fichier", fichier);
+      const r = await fetch("/publication-multi/" + clientId() + "/carrousel/media", { method: "POST", body: formulaire }); const d = await r.json();
+      if (!r.ok || !d.url) throw new Error(d.erreur || "Photo refusée.");
+      definirPhoto(d.url, "Photo importée : " + fichier.name);
+    } catch (e) { $("amf-photo-info").hidden = true; erreur(e.message || "Import impossible pour le moment."); }
   }
 
   function dessinerListe() {
@@ -158,7 +206,7 @@
   function selectionner(a) {
     choisi = a; photoUrl = ""; erreur("");
     $("amf-texte").value = a.texte; $("amf-auteur").value = a.auteur;
-    $("amf-photo-retirer").hidden = true; $("amf-voile-ligne").hidden = true; $("amf-photos").querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie"));
+    $("amf-photo-retirer").hidden = true; $("amf-voile-ligne").hidden = true; $("amf-photo-info").hidden = true; $("amf-photos").querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie"));
     $("amf-etape-edition").hidden = false; dessinerListe();
     $("amf-etape-edition").scrollIntoView({ behavior: "smooth", block: "start" });
     apercu();
@@ -186,11 +234,8 @@
       zone.textContent = "";
       if (!(d.photos || []).length) { zone.textContent = "Aucune photo sur cette fiche."; return; }
       d.photos.slice(0, 60).forEach((p) => {
-        const img = document.createElement("img"); img.src = p.miniature; img.alt = ""; img.loading = "lazy";
-        img.addEventListener("click", () => {
-          zone.querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie")); img.classList.add("choisie");
-          photoUrl = p.url; $("amf-photo-retirer").hidden = false; $("amf-voile-ligne").hidden = false; apercu();
-        });
+        const img = document.createElement("img"); img.src = p.miniature; img.alt = ""; img.loading = "lazy"; img.dataset.url = p.url;
+        img.addEventListener("click", () => definirPhoto(p.url, "Photo de la fiche choisie"));
         zone.appendChild(img);
       });
     } catch (e) { zone.textContent = "Photos indisponibles pour le moment."; }
@@ -219,10 +264,11 @@
   $("amf-logo").addEventListener("change", apercu);
   document.querySelectorAll('input[name="amf-layout"]').forEach((r) => r.addEventListener("change", apercu));
   $("amf-photo-fiche").addEventListener("click", chargerPhotos);
-  $("amf-photo-retirer").addEventListener("click", () => {
-    photoUrl = ""; $("amf-photo-retirer").hidden = true; $("amf-voile-ligne").hidden = true;
-    $("amf-photos").querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie")); apercu();
-  });
+  $("amf-photo-retirer").addEventListener("click", () => definirPhoto("", ""));
+  $("amf-photo-fichier").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) importerPhoto(f); });
+  $("amf-taille").addEventListener("input", planifier);
+  $("amf-taille-auto").addEventListener("click", () => { $("amf-taille").value = 100; apercu(); });
+  document.querySelectorAll('input[name="amf-format"]').forEach((r) => r.addEventListener("change", appliquerFormat));
   $("amf-telecharger").addEventListener("click", telecharger);
   if (clientId()) chargerAvis();
 })();

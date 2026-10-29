@@ -268,25 +268,26 @@ def _recadrer(photo: Image.Image, largeur: int = LARGEUR, hauteur: int = HAUTEUR
     return photo.crop((gauche, haut, gauche + largeur, haut + hauteur))
 
 
-def _photo_assombrie(photo: Image.Image, marque: tuple, voile_pourcent: int = None) -> Image.Image:
+def _photo_assombrie(photo: Image.Image, marque: tuple, voile_pourcent: int = None, taille: tuple = None) -> Image.Image:
     """
     Photo de fond : voile sombre teinte de la couleur de marque. Par defaut plus dense en bas (couverture de carrousel) ;
     avec voile_pourcent (40 a 90), opacite quasi uniforme reglee par l'utilisateur (avis, texte a lire partout).
     """
-    base = _recadrer(photo)
-    voile = Image.new("RGB", (LARGEUR, HAUTEUR), _melange((10, 10, 14), marque, 0.25))
+    largeur, hauteur = taille or (LARGEUR, HAUTEUR)
+    base = _recadrer(photo, largeur, hauteur)
+    voile = Image.new("RGB", (largeur, hauteur), _melange((10, 10, 14), marque, 0.25))
     if voile_pourcent is None:
-        masque = Image.linear_gradient("L").resize((LARGEUR, HAUTEUR))  # noir en haut -> blanc en bas
+        masque = Image.linear_gradient("L").resize((largeur, hauteur))  # noir en haut -> blanc en bas
         masque = masque.point(lambda v: 130 + int(v * 0.45))
     else:
         opacite = max(40, min(90, int(voile_pourcent))) / 100
-        masque = Image.linear_gradient("L").resize((LARGEUR, HAUTEUR)).point(lambda v: int(255 * min(1.0, opacite - 0.06 + 0.12 * v / 255)))
+        masque = Image.linear_gradient("L").resize((largeur, hauteur)).point(lambda v: int(255 * min(1.0, opacite - 0.06 + 0.12 * v / 255)))
     return Image.composite(voile, base, masque)
 
 
 def _coller_logo(
     image: Image.Image, logo: Image.Image, haut: int, position: str = "haut_droite", style: str = "pastille",
-    couleur_fond: str = "",
+    couleur_fond: str = "", zone: tuple = None,
 ) -> None:
     """
     Logo sur un fond derriere lui (blanc par defaut - lisible sur tous les fonds), place dans l'un des 5
@@ -296,6 +297,7 @@ def _coller_logo(
     disparaissent sinon sur un fond blanc. haut : position verticale pour les 2 coins du haut uniquement (deja
     calculee par l'appelant pour eviter le texte) - ignoree pour les positions du bas.
     """
+    largeur_image, hauteur_image, marge_image = zone or (LARGEUR, HAUTEUR, MARGE)
     logo = logo.convert("RGBA")
     ratio = min(220 / logo.width, 96 / logo.height)
     logo = logo.resize((max(1, round(logo.width * ratio)), max(1, round(logo.height * ratio))), Image.LANCZOS)
@@ -307,15 +309,15 @@ def _coller_logo(
         largeur, hauteur = logo.width + 2 * marge, logo.height + 2 * marge
 
     if position == "haut_gauche":
-        x, y = MARGE, haut
+        x, y = marge_image, haut
     elif position == "bas_droite":
-        x, y = LARGEUR - MARGE - largeur, HAUTEUR - MARGE - hauteur
+        x, y = largeur_image - marge_image - largeur, hauteur_image - marge_image - hauteur
     elif position == "bas_gauche":
-        x, y = MARGE, HAUTEUR - MARGE - hauteur
+        x, y = marge_image, hauteur_image - marge_image - hauteur
     elif position == "bas_centre":
-        x, y = (LARGEUR - largeur) // 2, HAUTEUR - MARGE - hauteur
+        x, y = (largeur_image - largeur) // 2, hauteur_image - marge_image - hauteur
     else:  # "haut_droite" (defaut, non-regression)
-        x, y = LARGEUR - MARGE - largeur, haut
+        x, y = largeur_image - marge_image - largeur, haut
 
     couleur_fond_rgba = (255, 255, 255, 255)
     hexa = (couleur_fond or "").lstrip("#")
@@ -511,7 +513,7 @@ def _etoile(dessin, centre_x: int, centre_y: int, rayon: int, couleur) -> None:
 def dessiner_avis(
     texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
     secondaires: list = None, photo: Image.Image = None, voile: int = 68, decor: str = "auto", graine: int = 0,
-    logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "",
+    logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "", echelle_texte: float = 1.0,
 ) -> Image.Image:
     """
     Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client.
@@ -542,7 +544,8 @@ def dessiner_avis(
         _etoile(d, MARGE + 34 + i * 76, 470, 34, OR_ETOILES if i < note else _melange(p["fond"], p["texte"], 0.25))
 
     citation = " ".join((texte or "").split())
-    police, lignes, pas = _texte_ajuste(d, citation, "normal", 68, 34, zone, 500, 1.32)
+    taille_max = max(24, round(68 * echelle_texte))        # echelle_texte : 1.0 = taille automatique habituelle ; la citation reste toujours dans sa boite
+    police, lignes, pas = _texte_ajuste(d, citation, "normal", taille_max, min(34, taille_max), zone, 500, 1.32)
     if len(_lignes(d, citation, police, zone)) > len(lignes):
         lignes[-1] = lignes[-1].rstrip(" ,;:.") + "\u2026"
     y = 540
@@ -554,4 +557,88 @@ def dessiner_avis(
     d.text((MARGE, y_auteur), auteur or "Un client", font=_police("gras", 48), fill=p["texte"])
     d.text((MARGE, y_auteur + 64), "Avis Google", font=_police("normal", 34), fill=p["doux"])
     d.text((MARGE, HAUTEUR - 110), nom_client, font=_police("normal", 30), fill=p["doux"])
+    return image
+
+
+# --------------------------------------------------------------------------- avis au format « publication Google » (4:3)
+
+LARGEUR_GOOGLE, HAUTEUR_GOOGLE = 1200, 900
+MARGE_GOOGLE = 110
+BAS_RESERVE_GOOGLE = 90        # Google peut couper un peu le bas de l'image dans l'apercu mobile : ni texte ni logo dans cette bande
+
+
+def _fond_decor_google(layout: str, p: dict, marque: tuple, decor: str, graine: int) -> Image.Image:
+    """Fond decore 1200x900 : le decor du portrait est dessine en 1080x1350 puis son centre (4:3) est agrandi ; les reperes de bord sont refaits."""
+    portrait = Image.new("RGB", (LARGEUR, HAUTEUR), p["fond"])
+    _decor(ImageDraw.Draw(portrait), layout, p, marque, decor, graine)
+    haut = (HAUTEUR - LARGEUR * 3 // 4) // 2
+    fond = portrait.crop((0, haut, LARGEUR, haut + LARGEUR * 3 // 4)).resize((LARGEUR_GOOGLE, HAUTEUR_GOOGLE), Image.LANCZOS)
+    if layout == "clair":
+        d = ImageDraw.Draw(fond)
+        d.rectangle((0, 0, LARGEUR_GOOGLE, 26), fill=p["accent"])
+        d.rectangle((0, HAUTEUR_GOOGLE - 26, LARGEUR_GOOGLE, HAUTEUR_GOOGLE), fill=p.get("accent2", p["accent"]))
+    return fond
+
+
+def dessiner_avis_google(
+    texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
+    secondaires: list = None, photo: Image.Image = None, voile: int = 68, decor: str = "auto", graine: int = 0,
+    logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "", echelle_texte: float = 1.0,
+) -> Image.Image:
+    """
+    Visuel d'avis pour une publication de fiche Google (1200x900, 4:3) : etoiles, citation, auteur, tout centre horizontalement et le bloc centre
+    verticalement dans la zone sure (le bas de l'image peut etre coupe dans l'apercu mobile). Le logo reste en haut, meme si la position
+    enregistree est en bas.
+    """
+    marque = _rgb(couleur)
+    layout = layout if layout in LAYOUTS else "plein"
+    p = _avec_secondaire(_palette(layout, marque), secondaires)
+    taille = (LARGEUR_GOOGLE, HAUTEUR_GOOGLE)
+    if photo is not None:
+        p = _avec_secondaire({
+            "fond": (12, 12, 16), "texte": (255, 255, 255), "doux": (225, 225, 230),
+            "accent": _melange(marque, (255, 255, 255), 0.35 if _luminance(marque) > 0.5 else 0.6),
+            "pastille": marque, "sur_accent": (255, 255, 255),
+        }, secondaires)
+        image = _photo_assombrie(photo, marque, voile, taille)
+    else:
+        image = _fond_decor_google(layout, p, marque, decor, graine)
+    d = ImageDraw.Draw(image)
+
+    haut_zone = 60
+    if logo is not None:
+        position = logo_position if str(logo_position).startswith("haut") else ("haut_gauche" if logo_position == "bas_gauche" else "haut_droite")
+        _coller_logo(image, logo, 44, position, logo_style, logo_couleur_fond, zone=(LARGEUR_GOOGLE, HAUTEUR_GOOGLE, 56))
+        haut_zone = 190
+    bas_zone = HAUTEUR_GOOGLE - BAS_RESERVE_GOOGLE
+    largeur_texte = LARGEUR_GOOGLE - 2 * MARGE_GOOGLE
+    note = max(1, min(5, int(note or 5)))
+    centre_x = LARGEUR_GOOGLE // 2
+
+    hauteur_fixe = 52 + 34 + 36 + 18 + 56 + 14 + 38         # etoiles, ecart, ecart, trait, auteur, ecart, « Avis Google »
+    citation = "\u201c" + " ".join((texte or "").split()) + "\u201d"
+    taille_max = max(22, round(58 * echelle_texte))
+    police, lignes, pas = _texte_ajuste(d, citation, "normal", taille_max, min(28, taille_max), largeur_texte, max(120, bas_zone - haut_zone - hauteur_fixe), 1.3)
+    if len(_lignes(d, citation, police, largeur_texte)) > len(lignes):
+        lignes[-1] = lignes[-1].rstrip(" ,;:.\u201d") + "\u2026\u201d"
+    if len(lignes) > 1 and len(lignes[-1].strip(" ”!?.…:;»")) < 3:                   # derniere ligne orpheline (un « ! » ou un mot de 2 lettres) : on y ramene le dernier mot de la ligne d'avant
+        debut_ligne, _, dernier_mot = lignes[-2].rpartition(" ")
+        if debut_ligne and d.textlength(dernier_mot + " " + lignes[-1], font=police) <= largeur_texte:
+            lignes[-2], lignes[-1] = debut_ligne, dernier_mot + " " + lignes[-1]
+    hauteur_bloc = hauteur_fixe + len(lignes) * pas
+    y = haut_zone + max(0, (bas_zone - haut_zone - hauteur_bloc) // 2)
+
+    for i in range(5):                                       # etoiles centrees
+        _etoile(d, centre_x + (i - 2) * 66, y + 26, 26, OR_ETOILES if i < note else _melange(p["fond"], p["texte"], 0.25))
+    y += 52 + 34
+    for ligne in lignes:                                     # citation centree, ligne par ligne
+        d.text((centre_x, y), ligne, font=police, fill=p["texte"], anchor="mt")
+        y += pas
+    y += 36
+    d.rectangle((centre_x - 45, y, centre_x + 45, y + 8), fill=p["accent2"])
+    y += 8 + 18
+    d.text((centre_x, y), auteur or "Un client", font=_police("gras", 40), fill=p["texte"], anchor="mt")
+    y += 56 + 14
+    pied = "Avis Google" + (f"  \u00b7  {nom_client}" if nom_client else "")
+    d.text((centre_x, y), pied, font=_police("normal", 28), fill=p["doux"], anchor="mt")
     return image

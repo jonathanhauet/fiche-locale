@@ -11747,13 +11747,19 @@ def _preparer_visuel_avis(client, donnees: dict):
     except (TypeError, ValueError):
         voile = 68
     nom_client = " ".join(str(donnees.get("nom_affiche") or "").split())[:60] or nom_affiche_carrousel(client)
+    try:
+        echelle_texte = max(60, min(140, int(donnees.get("taille_texte") or 100))) / 100
+    except (TypeError, ValueError):
+        echelle_texte = 1.0
+    # Portrait 1080x1350 (composeur, Instagram/LinkedIn) par defaut ; « google » : 1200x900 (4:3), le format d'une publication de fiche Google.
+    fonction_dessin = carrousel_visuel.dessiner_avis_google if donnees.get("format") == "google" else carrousel_visuel.dessiner_avis
 
     def dessiner():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
         photo = _image_depuis_url_autorisee(photo_url)
-        return carrousel_visuel.dessiner_avis(
+        return fonction_dessin(
             texte, auteur, note, layout, couleur, nom_client, logo, secondaires, photo, voile, decor, graine_decor,
-            logo_position, logo_style, logo_couleur_fond,
+            logo_position, logo_style, logo_couleur_fond, echelle_texte=echelle_texte,
         )
 
     return dessiner, auteur, note, texte
@@ -11777,7 +11783,7 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
     def fabriquer():
         image = dessiner()
         if not final:
-            image = image.resize((720, 900), Image.LANCZOS)
+            image = image.resize((720, round(720 * image.height / image.width)), Image.LANCZOS)      # 720x900 en portrait, 720x540 au format Google
         tampon = io.BytesIO()
         image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
         if not final:
@@ -11850,7 +11856,7 @@ async def avis_mise_en_forme_telecharger(client_id: int, request: Request, db: S
             db.commit()
         except Exception:
             db.rollback()
-    base = unicodedata.normalize("NFKD", f"avis {nom_affiche_carrousel(client)} {auteur}").encode("ascii", "ignore").decode()
+    base = unicodedata.normalize("NFKD", f"avis {nom_affiche_carrousel(client)} {auteur}{' google' if donnees.get('format') == 'google' else ''}").encode("ascii", "ignore").decode()
     nom_fichier = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")[:80] or "avis"
     return Response(content=octets, media_type="image/jpeg", headers={"Content-Disposition": f'attachment; filename="{nom_fichier}.jpg"', "Cache-Control": "no-store"})
 
