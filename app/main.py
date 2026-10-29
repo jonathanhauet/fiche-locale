@@ -11799,12 +11799,17 @@ def page_avis_mise_en_forme(request: Request, client_id: int = None, db: Session
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
-    clients = (
-        db.query(models.Client)
-        .filter(models.Client.account_id != "", models.Client.location_id != "", ~models.Client.etiquettes.any(models.Etiquette.isolee == True))  # noqa: E712
-        .order_by(models.Client.nom).all()
-    )
-    return templates.TemplateResponse(request, "avis_mise_en_forme.html", {"clients": clients, "client_id": client_id})
+    tous = db.query(models.Client).filter(models.Client.account_id != "", models.Client.location_id != "").order_by(models.Client.nom).all()
+    # Les clients rangés dans un espace isolé (voir /espaces) sont absents des vues générales : ici on les propose aussi, regroupés par espace.
+    clients, espaces = [], {}
+    for c in tous:
+        isolee = next((e for e in sorted(c.etiquettes, key=lambda e: e.nom) if e.isolee), None)
+        if isolee:
+            espaces.setdefault(isolee.nom, []).append(c)
+        else:
+            clients.append(c)
+    groupes = [(nom, espaces[nom]) for nom in sorted(espaces, key=str.lower)]
+    return templates.TemplateResponse(request, "avis_mise_en_forme.html", {"clients": tous, "clients_libres": clients, "groupes_espaces": groupes, "client_id": client_id})
 
 
 @app.post("/avis/mise-en-forme/{client_id}/telecharger")

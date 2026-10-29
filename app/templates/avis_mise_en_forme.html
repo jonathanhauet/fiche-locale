@@ -20,7 +20,12 @@
   <h2><span class="amf-num">1</span> Choisissez la fiche</h2>
   <select id="amf-client">
     <option value="">Choisir un client...</option>
-    {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+    {% for c in clients_libres %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+    {% for nom_espace, membres in groupes_espaces %}
+    <optgroup label="Espace : {{ nom_espace }}">
+      {% for c in membres %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
   </select>
   <p id="amf-statut" class="texte-discret" hidden></p>
 </section>
