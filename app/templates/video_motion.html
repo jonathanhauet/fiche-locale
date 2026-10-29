@@ -9,84 +9,70 @@
 </div>
 
 <p class="texte-vide">
-  Une vidéo de 20 secondes à 1 minute créée entièrement par code, sans aucun tournage : texte animé, chiffres, listes, transitions et bruitages,
-  aux couleurs du client. L'IA écrit le scénario, vous le relisez et le corrigez, puis la vidéo est générée.
+  Créez une courte vidéo animée (texte, chiffres, photos) aux couleurs du client, sans aucun tournage.
+  <b>Comment ça marche :</b> vous remplissez les 4 étapes ci-dessous, l'IA écrit le scénario, vous le relisez et le corrigez, puis la vidéo est générée.
 </p>
 
-<div class="formulaire">
-  <label for="vm-client">Client (facultatif : reprend son nom et le contenu de son site)</label>
-  <select id="vm-client">
-    <option value="">Aucun, je saisis les informations</option>
-    {% for c in clients %}<option value="{{ c.id }}" data-nom="{{ c.nom }}">{{ c.nom }}</option>{% endfor %}
-  </select>
+<div class="formulaire vm-formulaire">
 
-  <p id="vm-profil-statut" class="texte-discret" hidden></p>
-  <a id="vm-charte-lien" class="texte-discret" href="#" target="_blank" rel="noopener" hidden>🎨 Voir la charte graphique de ce client</a>
-
-  <label for="vm-modele">Modèle de vidéo</label>
-  <select id="vm-modele">
-    <option value="libre">Libre : l'IA compose le scénario</option>
-    <option value="avant_apres">Avant / Après : un curseur révèle le résultat (2 photos)</option>
-    <option value="realisation">Réalisation de la semaine : photos, commune et description</option>
-    <option value="personnage">Personnage animé : un personnage explique dans des bulles</option>
-    <option value="recherche_google">Recherche Google : la requête se tape, le plan et les résultats apparaissent</option>
-  </select>
-  <p id="vm-modele-aide" class="texte-discret" hidden></p>
-
-  <label for="vm-forme">Personnage</label>
-  <select id="vm-forme">
-    <option value="detaille">Détaillé (visage, tenue, mains)</option>
-    <option value="geo">Géométrique (formes simples, façon Google)</option>
-    <option value="moi" {% if not personnage_bd %}disabled{% endif %}>Moi en BD (ta tête dessinée){% if not personnage_bd %} : à créer dans « Mon personnage BD »{% endif %}</option>
-  </select>
-
-  <label class="vm-case"><input type="checkbox" id="vm-voix-active"> Voix off (voix de synthèse OpenAI, environ 1 centime par vidéo)</label>
-  <div id="vm-voix-bloc" hidden>
+  <section class="vm-etape">
+    <h2><span class="vm-num">1</span> Pour qui ?</h2>
+    <p class="texte-discret vm-etape-aide">Choisissez un client pour reprendre son nom, ses couleurs et le contenu de son site. Sinon, laissez « Aucun » et remplissez à la main.</p>
+    <label for="vm-client">Client</label>
+    <select id="vm-client">
+      <option value="">Aucun, je saisis les informations</option>
+      {% for c in clients %}<option value="{{ c.id }}" data-nom="{{ c.nom }}">{{ c.nom }}</option>{% endfor %}
+    </select>
+    <p id="vm-profil-statut" class="texte-discret" hidden></p>
+    <a id="vm-charte-lien" class="texte-discret" href="#" target="_blank" rel="noopener" hidden>🎨 Voir la charte graphique de ce client</a>
     <div class="ligne-champs">
-      <label for="vm-voix" style="margin:0">Voix off (narration)</label>
-      <select id="vm-voix">
-        {% for cle, libelle in voix_off_choix.items() %}<option value="{{ cle }}" {% if cle == voix_defaut %}selected{% endif %}>{{ libelle }} ({{ genres_voix.get(cle, "") }})</option>{% endfor %}
-      </select>
-      <button type="button" id="vm-voix-ecouter" class="bouton-secondaire bouton-mini">▶ Écouter un extrait</button>
+      <div><label for="vm-nom">Nom affiché dans la vidéo</label><input type="text" id="vm-nom" maxlength="80" placeholder="Ex : GoldUnion Agen"></div>
+      <div><label for="vm-ville">Ville</label><input type="text" id="vm-ville" maxlength="60" placeholder="Ex : Agen"></div>
     </div>
+  </section>
+
+  <section class="vm-etape">
+    <h2><span class="vm-num">2</span> Que voulez-vous dire ?</h2>
+    <label for="vm-modele">Type de vidéo</label>
+    <select id="vm-modele">
+      <option value="libre">Libre : l'IA compose le scénario</option>
+      <option value="avant_apres">Avant / Après : un curseur révèle le résultat (2 photos)</option>
+      <option value="realisation">Réalisation de la semaine : photos, commune et description</option>
+      <option value="personnage">Personnage animé : un personnage explique dans des bulles</option>
+      <option value="recherche_google">Recherche Google : la requête se tape, le plan et les résultats apparaissent</option>
+    </select>
+    <p id="vm-modele-aide" class="texte-discret" hidden></p>
+
+    <label for="vm-brief">Votre message</label>
+    <textarea id="vm-brief" rows="6" maxlength="8000" placeholder="Ex : rachat d'or à Agen, estimation gratuite et paiement immédiat, on pèse devant le client"></textarea>
+    <p class="texte-discret vm-etape-aide">Quelques lignes suffisent. Vous pouvez aussi coller un script ou un article entier (jusqu'à 8 000 caractères) : l'IA en garde l'essentiel.</p>
+
     <div class="ligne-champs">
-      <label for="vm-voix-perso" style="margin:0">Voix du personnage (quand il parle)</label>
-      <select id="vm-voix-perso">
-        {% for cle, libelle in voix_off_choix.items() %}<option value="{{ cle }}" {% if cle == voix_personnage_defaut %}selected{% endif %}>{{ libelle }} ({{ genres_voix.get(cle, "") }})</option>{% endfor %}
-      </select>
-      <button type="button" id="vm-voix-perso-ecouter" class="bouton-secondaire bouton-mini">▶ Écouter un extrait</button>
+      <button type="button" id="vm-idees" class="bouton-secondaire"><span class="spinner" id="vm-spinner-idees" hidden></span>💡 Pas d'idée ? Proposer des idées d'après le site du client</button>
+      <button type="button" id="vm-idees-actu" class="bouton-secondaire" title="Sans client : l'actualité du référencement local et de Google. Avec un client : l'actualité de son métier."><span class="spinner" id="vm-spinner-actu" hidden></span>📰 Idées d'après l'actualité</button>
     </div>
-    <p class="texte-discret" style="margin:.2rem 0">La narration lit le texte des scènes ; dans les scènes « Personnage », c'est le personnage qui parle avec sa propre voix, et sa bouche suit le son.</p>
-    <label class="vm-case"><input type="checkbox" id="vm-soustitres" checked> Sous-titres de la voix off (pour ceux qui regardent sans le son)</label>
-    <p class="texte-discret" style="margin:.2rem 0">Les sous-titres reprennent la narration écrite à part (champ « Voix off » d'une scène) et s'affichent en bas de l'écran, le mot dit en jaune. Ils ne répètent ni un texte déjà affiché ni la bulle du personnage.</p>
-    <audio id="vm-voix-audio" hidden></audio>
-  </div>
-  <p id="vm-voix-statut" class="texte-discret" hidden></p>
+    <p id="vm-suggestions-statut" class="texte-discret" hidden></p>
+    <div id="vm-idees-liste" class="vm-idees"></div>
 
-  <label for="vm-style">Style visuel</label>
-  <select id="vm-style">
-    <option value="">Aux couleurs du client (fond sombre)</option>
-    <option value="google">Style Google : fond blanc, bleu, rouge, jaune, vert, personnage en illustration</option>
-  </select>
+    <label for="vm-faits">Chiffres, avis et coordonnées à utiliser (facultatif)</label>
+    <textarea id="vm-faits" rows="3" maxlength="3000" placeholder="Ex : 4,8 sur 5 sur Google (127 avis) / ouvert depuis 2009 / avis : « Estimation honnête, paiement sur place » (Marie L.) / site : goldunion.fr/agen / tél : 05 53 00 00 00"></textarea>
+    <p class="texte-discret vm-etape-aide">L'IA n'emploie que les chiffres et avis écrits ici : elle n'en invente jamais.</p>
+    <div class="ligne-champs">
+      <button type="button" id="vm-faits-site" class="bouton-secondaire"><span class="spinner" id="vm-spinner-faits" hidden></span>📌 Reprendre les faits du site du client</button>
+    </div>
+  </section>
 
-  <div class="ligne-champs">
-    <button type="button" id="vm-idees" class="bouton-secondaire"><span class="spinner" id="vm-spinner-idees" hidden></span>💡 Idées de vidéo (d'après le site du client)</button>
-    <button type="button" id="vm-idees-actu" class="bouton-secondaire" title="Sans client : l'actualité du référencement local et de Google. Avec un client : l'actualité de son métier."><span class="spinner" id="vm-spinner-actu" hidden></span>📰 Idées d'après l'actualité</button>
-    <button type="button" id="vm-faits-site" class="bouton-secondaire"><span class="spinner" id="vm-spinner-faits" hidden></span>📌 Reprendre les faits du site</button>
-  </div>
-  <p id="vm-suggestions-statut" class="texte-discret" hidden></p>
-  <div id="vm-idees-liste" class="vm-idees"></div>
-
-  <div class="vm-photos">
-    <label>Photos à utiliser dans la vidéo (cliquez pour choisir : photo 1, photo 2, etc.)</label>
+  <section class="vm-etape vm-photos">
+    <h2><span class="vm-num">3</span> Photos (facultatif)</h2>
+    <p class="texte-discret vm-etape-aide">Cliquez sur les photos à utiliser : l'ordre des clics donne leur numéro (1, 2, 3...). Les photos de la fiche Google du client s'affichent ici dès que vous le choisissez.</p>
     <p id="vm-photos-avert" class="texte-discret"></p>
     <div id="vm-grille" class="vm-grille"></div>
     <button type="button" id="vm-plus" class="bouton-secondaire bouton-mini" hidden>Afficher plus de photos</button>
-    <label for="vm-fichiers">Ajouter vos propres images</label>
+    <label for="vm-fichiers">Ou ajoutez vos propres images</label>
     <input type="file" id="vm-fichiers" accept="image/*" multiple>
     {% if banque_active %}
-    <div id="vm-banque">
-      <label for="vm-banque-q">Photos d'ambiance de la banque d'images libres de droits</label>
+    <details id="vm-banque" class="vm-avance vm-avance-interne">
+      <summary>Chercher des photos d'ambiance gratuites (banque d'images)</summary>
       <div class="vm-banque-recherche">
         <input type="search" id="vm-banque-q" placeholder="Ex. : toit, cuisine moderne, outils, chantier">
         <button type="button" id="vm-banque-ok" class="bouton-secondaire bouton-mini">Rechercher</button>
@@ -95,86 +81,124 @@
       <div id="vm-banque-grille" class="vm-grille"></div>
       <button type="button" id="vm-banque-plus" class="bouton-secondaire bouton-mini" hidden>Plus de résultats</button>
       <p class="texte-discret">Photos fournies par <a href="https://pixabay.com" target="_blank" rel="noopener">Pixabay</a> (libres de droits). Pour l'ambiance seulement : à l'accroche ou à la conclusion, jamais présentées comme une réalisation du client. Évitez les photos où l'on reconnaît une marque, un logo ou une personne.</p>
-    </div>
+    </details>
     {% endif %}
     <div id="vm-choix" class="vm-grille"></div>
+  </section>
+
+  <section class="vm-etape">
+    <h2><span class="vm-num">4</span> Durée, format et ton</h2>
+    <div class="ligne-champs">
+      <div>
+        <label for="vm-duree">Durée</label>
+        <select id="vm-duree"><option value="20">20 secondes</option><option value="30" selected>30 secondes</option><option value="45">45 secondes</option><option value="60">1 minute</option></select>
+      </div>
+      <div>
+        <label for="vm-format">Format</label>
+        <select id="vm-format"><option value="vertical">Vertical 9:16 (Reel, TikTok, Short)</option><option value="carre">Carré 1:1</option><option value="horizontal">Horizontal 16:9</option></select>
+      </div>
+      <div>
+        <label for="vm-ton">Ton</label>
+        <select id="vm-ton">
+          <option value="dynamique">Dynamique</option><option value="elegant">Élégant</option><option value="chaleureux">Chaleureux</option>
+          <option value="premium">Premium sobre</option><option value="humour">Décalé et léger</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <div class="vm-action">
+    <button type="button" id="vm-scenario" class="bouton"><span class="spinner" id="vm-spinner" hidden></span>🎬 Écrire le scénario</button>
+    <p class="texte-discret">Vous pourrez relire et corriger le scénario avant de générer la vidéo.</p>
+  </div>
+  <p id="vm-statut" class="texte-vide" hidden></p>
+
+  <details class="vm-avance">
+    <summary>Réglages avancés : style, voix off, musique, couleurs</summary>
+
+    <label for="vm-style">Style visuel</label>
+    <select id="vm-style">
+      <option value="">Aux couleurs du client (fond sombre)</option>
+      <option value="google">Style Google : fond blanc, bleu, rouge, jaune, vert, personnage en illustration</option>
+    </select>
+
+    <label for="vm-forme">Personnage (pour les scènes avec un personnage)</label>
+    <select id="vm-forme">
+      <option value="detaille">Détaillé (visage, tenue, mains)</option>
+      <option value="geo">Géométrique (formes simples, façon Google)</option>
+      <option value="moi" {% if not personnage_bd %}disabled{% endif %}>Moi en BD (ta tête dessinée){% if not personnage_bd %} : à créer dans « Mon personnage BD »{% endif %}</option>
+    </select>
+
+    <label class="vm-case"><input type="checkbox" id="vm-voix-active"> Voix off (voix de synthèse OpenAI, environ 1 centime par vidéo)</label>
+    <div id="vm-voix-bloc" hidden>
+      <div class="ligne-champs">
+        <label for="vm-voix" style="margin:0">Voix off (narration)</label>
+        <select id="vm-voix">
+          {% for cle, libelle in voix_off_choix.items() %}<option value="{{ cle }}" {% if cle == voix_defaut %}selected{% endif %}>{{ libelle }} ({{ genres_voix.get(cle, "") }})</option>{% endfor %}
+        </select>
+        <button type="button" id="vm-voix-ecouter" class="bouton-secondaire bouton-mini">▶ Écouter un extrait</button>
+      </div>
+      <div class="ligne-champs">
+        <label for="vm-voix-perso" style="margin:0">Voix du personnage (quand il parle)</label>
+        <select id="vm-voix-perso">
+          {% for cle, libelle in voix_off_choix.items() %}<option value="{{ cle }}" {% if cle == voix_personnage_defaut %}selected{% endif %}>{{ libelle }} ({{ genres_voix.get(cle, "") }})</option>{% endfor %}
+        </select>
+        <button type="button" id="vm-voix-perso-ecouter" class="bouton-secondaire bouton-mini">▶ Écouter un extrait</button>
+      </div>
+      <p class="texte-discret" style="margin:.2rem 0">La narration lit le texte des scènes ; dans les scènes « Personnage », c'est le personnage qui parle avec sa propre voix, et sa bouche suit le son.</p>
+      <label class="vm-case"><input type="checkbox" id="vm-soustitres" checked> Sous-titres de la voix off (pour ceux qui regardent sans le son)</label>
+      <p class="texte-discret" style="margin:.2rem 0">Les sous-titres reprennent la narration écrite à part (champ « Voix off » d'une scène) et s'affichent en bas de l'écran, le mot dit en jaune. Ils ne répètent ni un texte déjà affiché ni la bulle du personnage.</p>
+      <audio id="vm-voix-audio" hidden></audio>
+    </div>
+    <p id="vm-voix-statut" class="texte-discret" hidden></p>
+
+    <div class="ligne-champs">
+      <div>
+        <label for="vm-musique">Musique (bibliothèque musicale)</label>
+        <select id="vm-musique"><option value="">Aucune, bruitages seulement</option>{% for p in pistes %}<option value="{{ p.id }}" data-bpm="{{ p.bpm|round|int if p.bpm else '' }}">{{ p.nom }}{% if p.source == "ia" %} (IA){% endif %}</option>{% endfor %}</select>
+      </div>
+      <div><label for="vm-bpm">Tempo de la piste en BPM (facultatif : les scènes changent sur les temps)</label><input type="number" id="vm-bpm" min="50" max="200" placeholder="Ex : 120"></div>
+    </div>
+    {% set mia_select = "vm-musique" %}{% set mia_texte = "miaTexteVideo" %}{% set mia_bpm = "vm-bpm" %}
+    {% include "_musique_ia.html" %}
+
+    <div class="ligne-champs">
+      <div class="vm-couleur">
+        <label for="vm-couleur1">Couleur principale</label>
+        <div class="vm-couleur-ligne">
+          <input type="color" id="vm-couleur1" value="{{ charte.principale }}" title="Choisir une couleur">
+          <input type="text" id="vm-hex1" class="vm-hex" maxlength="7" value="{{ charte.principale }}" placeholder="#2f5eff" spellcheck="false" autocomplete="off" aria-label="Couleur principale en hexadécimal">
+          <button type="button" class="bouton-secondaire bouton-mini vm-pipette" data-cible="1" title="Prélever une couleur n'importe où sur l'écran">💧 Pipette</button>
+        </div>
+      </div>
+      <div class="vm-couleur">
+        <label for="vm-couleur2">Couleur secondaire</label>
+        <div class="vm-couleur-ligne">
+          <input type="color" id="vm-couleur2" value="{{ charte.secondaire }}" title="Choisir une couleur">
+          <input type="text" id="vm-hex2" class="vm-hex" maxlength="7" value="{{ charte.secondaire }}" placeholder="#ffd60a" spellcheck="false" autocomplete="off" aria-label="Couleur secondaire en hexadécimal">
+          <button type="button" class="bouton-secondaire bouton-mini vm-pipette" data-cible="2" title="Prélever une couleur n'importe où sur l'écran">💧 Pipette</button>
+        </div>
+      </div>
+      <p id="vm-couleur-statut" class="texte-discret" hidden></p>
+    </div>
+
     <label class="vm-case"><input type="checkbox" id="vm-logo" checked> Afficher le logo du client dans la scène « marque » et en tête de l'écran final (s'il en a un)</label>
     <label class="vm-case" id="vm-polices-ligne" hidden><input type="checkbox" id="vm-polices" checked> Utiliser les polices de la charte du client : <b id="vm-polices-noms"></b></label>
-  </div>
 
-  <div class="ligne-champs">
-    <div><label for="vm-nom">Nom affiché dans la vidéo</label><input type="text" id="vm-nom" maxlength="80" placeholder="Ex : GoldUnion Agen"></div>
-    <div><label for="vm-ville">Ville</label><input type="text" id="vm-ville" maxlength="60" placeholder="Ex : Agen"></div>
-  </div>
-
-  <label for="vm-brief">Ce que la vidéo doit faire passer (jusqu'à 8 000 caractères : vous pouvez coller un script ou un article entier, l'IA en tire l'essentiel)</label>
-  <textarea id="vm-brief" rows="6" maxlength="8000" placeholder="Ex : rachat d'or à Agen, estimation gratuite et paiement immédiat, on pèse devant le client"></textarea>
-
-  <label for="vm-faits">Faits vérifiés à utiliser (seuls chiffres et avis autorisés dans la vidéo)</label>
-  <textarea id="vm-faits" rows="3" maxlength="3000" placeholder="Ex : 4,8 sur 5 sur Google (127 avis) / ouvert depuis 2009 / avis : « Estimation honnête, paiement sur place » (Marie L.) / site : goldunion.fr/agen / tél : 05 53 00 00 00"></textarea>
-
-  <div class="ligne-champs">
-    <div>
-      <label for="vm-ton">Ton</label>
-      <select id="vm-ton">
-        <option value="dynamique">Dynamique</option><option value="elegant">Élégant</option><option value="chaleureux">Chaleureux</option>
-        <option value="premium">Premium sobre</option><option value="humour">Décalé et léger</option>
-      </select>
+    <div class="ligne-champs">
+      <button type="button" id="vm-profil-enregistrer" class="bouton-secondaire" title="Couleurs, nom, ville, ton, format et logo : retrouvés automatiquement quand vous choisissez ce client">💾 Enregistrer ces réglages pour ce client</button>
     </div>
-    <div>
-      <label for="vm-duree">Durée</label>
-      <select id="vm-duree"><option value="20">20 secondes</option><option value="30" selected>30 secondes</option><option value="45">45 secondes</option><option value="60">1 minute</option></select>
-    </div>
-    <div>
-      <label for="vm-format">Format</label>
-      <select id="vm-format"><option value="vertical">Vertical 9:16 (Reel, TikTok, Short)</option><option value="carre">Carré 1:1</option><option value="horizontal">Horizontal 16:9</option></select>
-    </div>
-  </div>
+  </details>
 
-  <div class="ligne-champs">
-    <div>
-      <label for="vm-musique">Musique (bibliothèque musicale)</label>
-      <select id="vm-musique"><option value="">Aucune, bruitages seulement</option>{% for p in pistes %}<option value="{{ p.id }}" data-bpm="{{ p.bpm|round|int if p.bpm else '' }}">{{ p.nom }}{% if p.source == "ia" %} (IA){% endif %}</option>{% endfor %}</select>
+  <details class="vm-avance">
+    <summary>📅 Préparer plusieurs vidéos d'un coup (les vidéos du mois)</summary>
+    <p class="texte-discret">Reprend le contenu du site du client : chaque vidéo traite un sujet différent, et les sujets déjà utilisés les mois précédents ne reviennent pas. Choisissez d'abord un client.</p>
+    <div class="ligne-champs vm-serie">
+      <label for="vm-nb-serie">Nombre de vidéos</label>
+      <select id="vm-nb-serie"><option value="3">3 vidéos</option><option value="4" selected>4 vidéos</option><option value="5">5 vidéos</option><option value="6">6 vidéos</option></select>
+      <button type="button" id="vm-serie" class="bouton-secondaire"><span class="spinner" id="vm-spinner-serie" hidden></span>📅 Préparer les vidéos du mois</button>
     </div>
-    <div><label for="vm-bpm">Tempo de la piste en BPM (facultatif : les scènes changent sur les temps)</label><input type="number" id="vm-bpm" min="50" max="200" placeholder="Ex : 120"></div>
-  </div>
-  {% set mia_select = "vm-musique" %}{% set mia_texte = "miaTexteVideo" %}{% set mia_bpm = "vm-bpm" %}
-  {% include "_musique_ia.html" %}
-
-  <div class="ligne-champs">
-    <div class="vm-couleur">
-      <label for="vm-couleur1">Couleur principale</label>
-      <div class="vm-couleur-ligne">
-        <input type="color" id="vm-couleur1" value="{{ charte.principale }}" title="Choisir une couleur">
-        <input type="text" id="vm-hex1" class="vm-hex" maxlength="7" value="{{ charte.principale }}" placeholder="#2f5eff" spellcheck="false" autocomplete="off" aria-label="Couleur principale en hexadécimal">
-        <button type="button" class="bouton-secondaire bouton-mini vm-pipette" data-cible="1" title="Prélever une couleur n'importe où sur l'écran">💧 Pipette</button>
-      </div>
-    </div>
-    <div class="vm-couleur">
-      <label for="vm-couleur2">Couleur secondaire</label>
-      <div class="vm-couleur-ligne">
-        <input type="color" id="vm-couleur2" value="{{ charte.secondaire }}" title="Choisir une couleur">
-        <input type="text" id="vm-hex2" class="vm-hex" maxlength="7" value="{{ charte.secondaire }}" placeholder="#ffd60a" spellcheck="false" autocomplete="off" aria-label="Couleur secondaire en hexadécimal">
-        <button type="button" class="bouton-secondaire bouton-mini vm-pipette" data-cible="2" title="Prélever une couleur n'importe où sur l'écran">💧 Pipette</button>
-      </div>
-    </div>
-    <p id="vm-couleur-statut" class="texte-discret" hidden></p>
-  </div>
-
-  <div class="ligne-champs">
-    <button type="button" id="vm-profil-enregistrer" class="bouton-secondaire" title="Couleurs, nom, ville, ton, format et logo : retrouvés automatiquement quand vous choisissez ce client">💾 Enregistrer ces réglages pour ce client</button>
-  </div>
-
-  <div class="ligne-champs">
-    <button type="button" id="vm-scenario" class="bouton"><span class="spinner" id="vm-spinner" hidden></span>🎬 Écrire le scénario</button>
-  </div>
-  <div class="ligne-champs vm-serie">
-    <label for="vm-nb-serie">Série de vidéos</label>
-    <select id="vm-nb-serie"><option value="3">3 vidéos</option><option value="4" selected>4 vidéos</option><option value="5">5 vidéos</option><option value="6">6 vidéos</option></select>
-    <button type="button" id="vm-serie" class="bouton-secondaire"><span class="spinner" id="vm-spinner-serie" hidden></span>📅 Préparer les vidéos du mois</button>
-  </div>
-  <p class="texte-discret">La série reprend le contenu du site du client : chaque vidéo traite un sujet différent, et les sujets déjà utilisés les mois précédents ne reviennent pas.</p>
-  <p id="vm-statut" class="texte-vide" hidden></p>
+  </details>
 </div>
 
 <div id="vm-zone-scenario" hidden>
@@ -235,6 +259,16 @@
   .vm-miniature { position: relative; width: 84px; height: 84px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid transparent; background: #0002; }
   .vm-miniature img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .vm-miniature.choisie { border-color: #2f5eff; }
+  .vm-etape { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1rem 1.1rem 1.1rem; margin: 0 0 1rem; }
+  .vm-etape > h2 { display: flex; align-items: center; gap: .6rem; font-size: 1.05rem; margin: 0 0 .4rem; }
+  .vm-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: #fff; font-size: .9rem; font-weight: 700; }
+  .vm-etape-aide { margin: .2rem 0 .6rem; }
+  .vm-action { margin: 1.2rem 0; }
+  .vm-action .bouton { width: 100%; justify-content: center; font-size: 1.05rem; padding: .85rem 1rem; }
+  .vm-action .texte-discret { text-align: center; margin: .4rem 0 0; }
+  details.vm-avance { border: 1px solid var(--carte-bordure); border-radius: 12px; padding: .2rem 1rem .6rem; margin: 0 0 .8rem; background: var(--carte); }
+  details.vm-avance > summary { cursor: pointer; font-weight: 600; padding: .6rem 0; }
+  details.vm-avance-interne { margin: .8rem 0 0; background: transparent; }
   .vm-miniature .amb { position: absolute; bottom: 3px; left: 3px; background: #000b; color: #fff; font-size: .62rem; padding: 0 .35rem; border-radius: 4px; }
   .vm-banque-recherche { display: flex; gap: .4rem; margin: .3rem 0; }
   .vm-banque-recherche input { flex: 1; min-width: 0; }
