@@ -12737,24 +12737,12 @@ def publication_multi_charger_brouillon_whatsapp(
     return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
 
 
-@app.post("/publication-multi/{client_id}/generer_image")
-async def publication_multi_generer_image(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, format_image: str, prefixe_fichier: str):
     """
-    Genere une image via Gemini a partir d'un prompt (voir gemini_images.py -
-    meme mecanisme que la generation d'image sur un post deja cree, mais ici
-    rien n'est encore enregistre en base : la composition multi-reseaux n'est
-    qu'un formulaire tant qu'elle n'est pas publiee/programmee). Renvoie
-    l'URL hebergee sur OVH, prete a servir d'image partagee du formulaire.
+    Image IA avec les options du visuel (type, cadrage, decor, lumiere, personnes, texte en francais, varier, couleurs de marque), partagee par le
+    composeur multi-reseaux (carre 1:1) et les posts de la fiche client (4:3, le format d'un post Google). donnees : prompt_image, texte_post,
+    inclure_reference, options. Renvoie (charge utile, code HTTP) ; rien n'est enregistre sur un post : c'est a l'appelant de le faire.
     """
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
-
-    client = db.get(models.Client, client_id)
-    if not client:
-        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
-
-    donnees = await request.json()
     prompt_image = (donnees.get("prompt_image") or "").strip()
     inclure_reference = bool(donnees.get("inclure_reference"))
     texte_post = (donnees.get("texte_post") or "").strip()
@@ -12792,12 +12780,12 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
         # Options cochees : l'IA ecrit le prompt en appliquant ces consignes (a partir de l'idee saisie,
         # sinon du texte du post). Sans aucune option, on garde le chemin d'origine ci-dessous.
         if not prompt_image and not texte_post:
-            return JSONResponse({"erreur": "Ecrivez le texte de base ou decrivez l'image souhaitee."}, status_code=400)
+            return {"erreur": "Ecrivez le texte de base ou decrivez l'image souhaitee."}, 400
         recents = []
         if varier:
             recents = [
                 r.prompt for r in db.query(models.PromptImageGenere)
-                .filter(models.PromptImageGenere.client_id == client_id)
+                .filter(models.PromptImageGenere.client_id == client.id)
                 .order_by(models.PromptImageGenere.id.desc()).limit(6).all()
             ]
         try:
@@ -12808,14 +12796,14 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
             )
             options_appliquees = True
         except Exception as e:
-            return JSONResponse({"erreur": f"Impossible de preparer la description de l'image : {e}"}, status_code=500)
+            return {"erreur": f"Impossible de preparer la description de l'image : {e}"}, 500
     elif not prompt_image:
         if not texte_post:
-            return JSONResponse({"erreur": "Ecrivez le texte de base ou decrivez l'image souhaitee."}, status_code=400)
+            return {"erreur": "Ecrivez le texte de base ou decrivez l'image souhaitee."}, 400
         try:
             prompt_image = prompt_genere = claude_generation.prompt_image_depuis_texte(texte_post)
         except Exception as e:
-            return JSONResponse({"erreur": f"Impossible de deduire la description de l'image du texte : {e}"}, status_code=500)
+            return {"erreur": f"Impossible de deduire la description de l'image du texte : {e}"}, 500
 
     images_reference = None
     if inclure_reference and client.photos_reference:
@@ -12828,7 +12816,7 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
             except Exception:
                 continue
         if not images_reference:
-            return JSONResponse({"erreur": "Impossible de recuperer les photos de reference."}, status_code=500)
+            return {"erreur": "Impossible de recuperer les photos de reference."}, 500
 
         # Les prompts de post decrivent des scenes sans personne : on les reecrit
         # pour que l'auteur soit le sujet (sinon Gemini ignore les photos).
@@ -12839,28 +12827,78 @@ async def publication_multi_generer_image(client_id: int, request: Request, db: 
                 pass  # repli : prompt d'origine, complete par la consigne de gemini_images
 
     try:
-        # Carre plutot que paysage : reste correct sur Google/Facebook/LinkedIn
-        # et evite le format mal adapte a Instagram (bandes noires) qui
-        # resulterait du format paysage par defaut.
-        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio="1:1", images_reference=images_reference, texte_autorise=texte_fr)
-        nom_fichier = f"multi-ia-{uuid.uuid4().hex[:10]}.png"
+        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr)
+        nom_fichier = f"{prefixe_fichier}-{uuid.uuid4().hex[:10]}.png"
         url_image = ovh_upload.envoyer_octets(octets_image, nom_fichier)
     except Exception as e:
-        return JSONResponse({"erreur": f"Echec de la generation de l'image : {e}"}, status_code=500)
+        return {"erreur": f"Echec de la generation de l'image : {e}"}, 500
 
-    _archiver_creation(db, client_id, "visuel", "Image IA", [url_image], format_video="1:1", meta={"prompt": prompt_image[:1500], "source": "image_ia"})
+    _archiver_creation(db, client.id, "visuel", "Image IA", [url_image], format_video=format_image, meta={"prompt": prompt_image[:1500], "source": "image_ia"})
     if varier:
         try:
-            db.add(models.PromptImageGenere(client_id=client_id, prompt=prompt_image[:1500]))
+            db.add(models.PromptImageGenere(client_id=client.id, prompt=prompt_image[:1500]))
             db.commit()
         except Exception:
             db.rollback()
 
-    return JSONResponse({
+    return {
         "url": url_image, "prompt_utilise": prompt_image if (images_reference or options_appliquees) else "",
         "prompt_genere": prompt_genere, "avertissement": avertissement,
         "choix_aleatoires": claude_generation.libelles_choix_aleatoires(choix) if varier else [],
-    })
+    }, 200
+
+
+@app.post("/publication-multi/{client_id}/generer_image")
+async def publication_multi_generer_image(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Genere une image via Gemini a partir d'un prompt (voir gemini_images.py -
+    meme mecanisme que la generation d'image sur un post deja cree, mais ici
+    rien n'est encore enregistre en base : la composition multi-reseaux n'est
+    qu'un formulaire tant qu'elle n'est pas publiee/programmee). Renvoie
+    l'URL hebergee sur OVH, prete a servir d'image partagee du formulaire.
+    """
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+
+    donnees = await request.json()
+    # Carre plutot que paysage : reste correct sur Google/Facebook/LinkedIn et evite le format mal adapte a Instagram
+    # (bandes noires) qui resulterait du format paysage par defaut.
+    charge, code = await _generer_image_ia_pour_client(db, client, donnees, "1:1", "multi-ia")
+    return JSONResponse(charge, status_code=code)
+
+
+@app.post("/posts/{post_id}/generer_image_ia")
+async def generer_image_post_ia(post_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Image IA d'un post de la fiche client, avec les memes options que le composeur multi-reseaux. Corps : options, inclure_reference, et
+    facultativement prompt_image (sinon celui du post). Le texte du post sert de base si aucune description n'existe. Format 4:3 (celui d'un
+    post Google). En cas de succes, l'image devient celle du post.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    post = db.get(models.Post, post_id)
+    if not post:
+        return JSONResponse({"erreur": "Post introuvable."}, status_code=404)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    if not isinstance(recu, dict):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    donnees = {
+        "prompt_image": str(recu.get("prompt_image") or post.prompt_image or ""), "texte_post": post.texte or "",
+        "inclure_reference": bool(recu.get("inclure_reference")), "options": recu.get("options") if isinstance(recu.get("options"), dict) else {},
+    }
+    charge, code = await _generer_image_ia_pour_client(db, post.client, donnees, "4:3", f"post-{post.id}-ia")
+    if code == 200:
+        post.image_url = charge["url"]
+        db.commit()
+    return JSONResponse(charge, status_code=code)
 
 
 @app.post("/publication-multi/{client_id}/generer_carrousel_images_ia")

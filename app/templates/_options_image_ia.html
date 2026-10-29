@@ -1,0 +1,91 @@
+{# Options de l'image IA d'un post, les memes que dans le composeur multi-reseaux. A inclure avec « client_oia » (le client concerne).
+   Le bouton de generation appelle window.genererImageIA(postId, bouton, zoneStatut[, prompt]). #}
+<details class="options-visuel" id="options-image-ia">
+  <summary>🎨 Options de l'image IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
+  <p class="texte-discret">Ces choix s'appliquent à l'image créée avec le bouton « Générer l'image (IA) ». Format 4:3, celui d'un post Google.</p>
+  {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
+  {% if groupe != "personnes" or client_oia.photos_reference %}
+  <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}" {% if groupe == "illustration" %}id="oia-groupe-illustration" hidden{% endif %}>
+    <legend>{{ libelles_groupes_visuel[groupe] }}{% if choix_multiples %} <span class="texte-discret">(plusieurs possibles)</span>{% endif %}</legend>
+    {% for identifiant, libelle, _consigne in options_visuel[groupe] %}
+    <label class="etiquette-chip-case">
+      <input type="{{ 'checkbox' if choix_multiples else 'radio' }}" name="oia-{{ groupe }}" value="{{ identifiant }}">
+      {{ libelle }}
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+  {% endfor %}
+  <div class="groupe-options-visuel">
+    <label class="etiquette-chip-case">
+      <input type="checkbox" id="oia-texte-fr">
+      Ajouter quelques mots en français dans l'image (à relire : l'IA peut faire des fautes)
+    </label>
+    <label class="etiquette-chip-case">
+      <input type="checkbox" id="oia-varier">
+      Varier automatiquement (l'IA évite de refaire les derniers visuels de ce client)
+    </label>
+    <label class="etiquette-chip-case">
+      <input type="checkbox" id="oia-couleur-marque" {% if not couleur_marque_client(client_oia) %}disabled{% endif %}>
+      Intégrer les couleurs de la marque
+    </label>
+    {% if not couleur_marque_client(client_oia) %}<p class="texte-discret">Couleur de marque non enregistrée : à définir dans le bloc « Identité visuelle » du composeur multi-réseaux.</p>{% endif %}
+    <button type="button" id="oia-effacer" class="bouton-secondaire">Tout décocher</button>
+  </div>
+</details>
+<script>
+(function () {
+  const panneau = document.getElementById("options-image-ia");
+  if (!panneau) return;
+  const groupeIllustration = document.getElementById("oia-groupe-illustration");
+  const typeIllustration = panneau.querySelector('input[name="oia-type"][value="illustration"]');
+
+  // Styles d'illustration : visibles seulement pour le type « Illustration simple ».
+  function majIllustration() {
+    if (!groupeIllustration || !typeIllustration) return;
+    groupeIllustration.hidden = !typeIllustration.checked;
+    if (groupeIllustration.hidden) groupeIllustration.querySelectorAll("input").forEach((c) => { c.checked = false; });
+  }
+  panneau.querySelectorAll('input[name="oia-type"]').forEach((r) => r.addEventListener("change", majIllustration));
+  document.getElementById("oia-effacer").addEventListener("click", () => {
+    panneau.querySelectorAll("input").forEach((c) => { c.checked = false; });
+    majIllustration();
+  });
+
+  function lireOptions() {
+    const options = {};
+    ["type", "illustration", "cadrage", "decor", "lumiere", "personnes"].forEach((groupe) => {
+      const cochees = Array.from(panneau.querySelectorAll('input[name="oia-' + groupe + '"]:checked')).map((c) => c.value);
+      if (cochees.length) options[groupe] = (groupe === "cadrage" || groupe === "decor" || groupe === "lumiere") ? cochees : cochees[0];
+    });
+    if (document.getElementById("oia-varier").checked) options.varier = true;
+    if (document.getElementById("oia-texte-fr").checked) options.texte_fr = true;
+    const couleur = document.getElementById("oia-couleur-marque");
+    if (couleur.checked && !couleur.disabled) options.couleur_marque = true;
+    return options;
+  }
+
+  window.genererImageIA = async function (postId, bouton, statut, prompt) {
+    const options = lireOptions();
+    const corps = { options: options, inclure_reference: ["moi", "moi_client", "lieu_reference"].includes(options.personnes) };
+    if (prompt) corps.prompt_image = prompt;
+    const libelle = bouton.textContent;
+    bouton.disabled = true; bouton.textContent = "⏳ Génération en cours...";
+    statut.hidden = false; statut.textContent = "Génération de l'image (peut prendre une trentaine de secondes)...";
+    let recharger = false, delai = 0;
+    try {
+      const reponse = await fetch("/posts/" + postId + "/generer_image_ia", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      let donnees = {};
+      try { donnees = await reponse.json(); } catch (e) { /* reponse non JSON : message generique ci-dessous */ }
+      if (!reponse.ok) { statut.textContent = donnees.erreur || "Échec de la génération de l'image."; return; }
+      statut.textContent = donnees.avertissement ? "Image créée. " + donnees.avertissement : "Image créée.";
+      recharger = true; delai = donnees.avertissement ? 3500 : 300;
+    } catch (e) {
+      statut.textContent = "Génération impossible pour le moment : réessayez dans un instant.";
+    } finally {
+      bouton.disabled = false; bouton.textContent = libelle;
+    }
+    if (recharger) setTimeout(() => { window.location.hash = "post-" + postId; window.location.reload(); }, delai);
+  };
+})();
+</script>

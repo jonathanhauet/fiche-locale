@@ -1029,6 +1029,7 @@
 <h2>Brouillons à valider ({{ brouillons|length }})</h2>
 <p class="texte-discret">Les posts déjà programmés, publiés ou rejetés apparaissent dans le résumé multi-réseaux ci-dessus.</p>
 {% if brouillons %}
+{% set client_oia = client %}{% include "_options_image_ia.html" %}
 <ul class="liste-posts">
   {% for post in brouillons %}
   <li class="carte-post-revue" id="post-{{ post.id }}">
@@ -1052,11 +1053,11 @@
 
     {% if not post.image_url %}
     <div class="ligne-actions-rapides actions-image-rapides">
-      {% if post.prompt_image %}
-      <form method="post" action="/posts/{{ post.id }}/generer_image" class="formulaire-image-rapide">
-        <input type="hidden" name="retour" value="client">
-        <button type="submit" class="bouton-secondaire">🎨 Générer l'image (IA)</button>
-      </form>
+      {% if post.prompt_image or post.texte %}
+      <div class="formulaire-image-rapide">
+        <button type="button" class="bouton-secondaire bouton-image-ia" data-post-id="{{ post.id }}">🎨 Générer l'image (IA)</button>
+      </div>
+      <p class="texte-discret statut-image-ia" data-post-id="{{ post.id }}" role="status" hidden></p>
       {% endif %}
       <form method="post" action="/posts/{{ post.id }}/televerser_image" enctype="multipart/form-data" class="formulaire-image-rapide">
         <input type="hidden" name="retour" value="client">
@@ -1940,4 +1941,13 @@
 })();
 </script>
 <script src="/static/calendrier_champ.js?v={{ version_calendrier_js }}"></script>
+<script>
+// Image IA d'un brouillon : avec les options du panneau « Options de l'image IA » (voir _options_image_ia.html).
+document.querySelectorAll(".bouton-image-ia").forEach((bouton) => {
+  bouton.addEventListener("click", () => {
+    const statut = document.querySelector('.statut-image-ia[data-post-id="' + bouton.dataset.postId + '"]');
+    window.genererImageIA(bouton.dataset.postId, bouton, statut);
+  });
+});
+</script>
 {% endblock %}
