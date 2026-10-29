@@ -2555,7 +2555,7 @@ def libelles_choix_aleatoires(choix: dict) -> list[str]:
 
 def prompt_image_avec_options(
     idee: str, texte_post: str, choix: dict, avec_reference: bool, recents: list[str] = None, couleur: str = "",
-    couleurs_secondaires: list = None, texte_fr: bool = False,
+    couleurs_secondaires: list = None, texte_fr: bool = False, agences: bool = False,
 ) -> str:
     """
     Prompt d'image (anglais) qui applique les options cochees a l'idee de la scene (ou, sans idee,
@@ -2580,7 +2580,15 @@ def prompt_image_avec_options(
             lignes.append(f"- {libelle}: " + "; ".join(consignes) + ".")
     personnes = choix["personnes"]
     if personnes in REFERENCE_LIEU:
-        if avec_reference:
+        if avec_reference and agences:
+            # Les photos de reference montrent plusieurs agences d'une meme marque : on en tire l'ambiance, pas un batiment precis, et surtout aucun logo ni texte.
+            lignes.append(
+                "- Place: an agency of the brand shown in the reference photos (they show several agencies of the same brand). Take only the "
+                "atmosphere from them: color palette, materials, furniture, lighting, level of finish. Do not copy one specific building. NEVER "
+                "describe or request any logo, sign, shop sign, lettering, text or brand mark: signs, walls, screens and documents are plain and blank. "
+                "Any person is a generic person, not one of the people from the photos."
+            )
+        elif avec_reference:
             consigne_style = (
                 " Render it fully in the chosen illustration style (not a photo pasted in) while keeping it clearly recognizable."
                 if choix["type"] == "illustration" else ""

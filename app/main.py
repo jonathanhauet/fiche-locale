@@ -2630,6 +2630,74 @@ def generer_image_lot(
     return _redirection_apres_action_lot(lot_id, lots_param)
 
 
+NB_MAX_REFERENCES_LOT = 10          # Gemini accepte 14 images de reference au maximum
+NB_MAX_FICHIERS_REFERENCE_LOT = 8
+
+
+@app.post("/posts/lot/{lot_id}/generer_image_ia")
+async def generer_image_lot_ia(lot_id: str, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Image IA d'un lot de posts (la meme image pour toutes les fiches du lot), avec les options du visuel et des photos de reference. Formulaire :
+    options (JSON : type, illustration, cadrage, decor, lumiere, varier), client_reference_id (client dont on reprend les photos de reference),
+    fichiers (captures ou photos importees pour cette image). Avec des photos de reference, elles montrent plusieurs agences d'une meme marque :
+    seule leur ambiance est reprise, et l'image ne contient jamais de logo, d'enseigne, de texte ni de vraie personne (voir gemini_images.INSTRUCTION_AGENCES).
+    Format 4:3, celui d'un post Google. En cas de succes, l'image devient celle de tous les posts du lot.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    posts = _tous_posts_du_lot(db, lot_id)
+    if not posts:
+        return JSONResponse({"erreur": "Lot introuvable."}, status_code=404)
+
+    formulaire = await request.form()
+    try:
+        options = json.loads(str(formulaire.get("options") or "{}"))
+    except ValueError:
+        options = {}
+    # Dans un lot : pas de texte dans l'image, pas de « couleurs du client » (le lot concerne plusieurs fiches), pas de « qui apparait »
+    options = {cle: valeur for cle, valeur in (options if isinstance(options, dict) else {}).items() if cle in ("type", "illustration", "cadrage", "decor", "lumiere", "varier")}
+
+    references = []
+    identifiant_reference = str(formulaire.get("client_reference_id") or "").strip()
+    if identifiant_reference:
+        client_reference = db.get(models.Client, int(identifiant_reference)) if identifiant_reference.isdigit() else None
+        if not client_reference or not client_reference.photos_reference:
+            return JSONResponse({"erreur": "Cette fiche n'a pas de photos de reference : chargez-les dans sa page, ou importez une capture ici."}, status_code=400)
+        for photo in client_reference.photos_reference:
+            try:
+                references.append(_jpeg_normalise(requests.get(photo.image_url, timeout=20).content, 1536))
+            except Exception:
+                continue
+        if not references:
+            return JSONResponse({"erreur": "Impossible de recuperer les photos de reference de cette fiche."}, status_code=500)
+    fichiers = [f for f in formulaire.getlist("fichiers") if hasattr(f, "read")]
+    if len(fichiers) > NB_MAX_FICHIERS_REFERENCE_LOT:
+        return JSONResponse({"erreur": f"{NB_MAX_FICHIERS_REFERENCE_LOT} images de reference au maximum."}, status_code=400)
+    for fichier in fichiers:
+        octets = await fichier.read()
+        if len(octets) > 12 * 1024 * 1024:
+            return JSONResponse({"erreur": "Image de reference trop lourde (12 Mo maximum)."}, status_code=400)
+        try:
+            references.append(_jpeg_normalise(octets, 1536))
+        except ValueError as erreur:
+            return JSONResponse({"erreur": f"Image de reference refusee : {erreur}"}, status_code=400)
+    references = references[:NB_MAX_REFERENCES_LOT]
+    if references:
+        options["personnes"] = "lieu_reference"
+
+    premier = posts[0]
+    donnees = {"prompt_image": premier.prompt_image, "texte_post": premier.texte, "inclure_reference": bool(references), "options": options}
+    client = db.get(models.Client, premier.client_id)
+    charge, code = await _generer_image_ia_pour_client(
+        db, client, donnees, "4:3", f"lot-{lot_id}-ia", references=references or None, agences=bool(references),
+    )
+    if code == 200:
+        for post in posts:
+            post.image_url = charge["url"]
+        db.commit()
+    return JSONResponse(charge, status_code=code)
+
+
 @app.post("/posts/lot/{lot_id}/televerser_image_masse")
 async def televerser_image_lot(
     lot_id: str, request: Request, db: Session = Depends(obtenir_session)
@@ -12743,19 +12811,22 @@ def publication_multi_charger_brouillon_whatsapp(
     return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
 
 
-async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, format_image: str, prefixe_fichier: str):
+async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, format_image: str, prefixe_fichier: str, references: list = None, agences: bool = False):
     """
     Image IA avec les options du visuel (type, cadrage, decor, lumiere, personnes, texte en francais, varier, couleurs de marque), partagee par le
-    composeur multi-reseaux (carre 1:1) et les posts de la fiche client (4:3, le format d'un post Google). donnees : prompt_image, texte_post,
-    inclure_reference, options. Renvoie (charge utile, code HTTP) ; rien n'est enregistre sur un post : c'est a l'appelant de le faire.
+    composeur multi-reseaux (carre 1:1), les posts de la fiche client (4:3, le format d'un post Google) et les posts en masse. donnees : prompt_image,
+    texte_post, inclure_reference, options. Renvoie (charge utile, code HTTP) ; rien n'est enregistre sur un post : c'est a l'appelant de le faire.
+    references : photos de reference deja pretes (JPEG), a la place de celles du client. agences : elles montrent plusieurs agences d'une meme marque ;
+    seule l'ambiance est reprise, jamais un logo, un texte ni une vraie personne, et aucun texte n'est autorise dans l'image.
     """
     prompt_image = (donnees.get("prompt_image") or "").strip()
-    inclure_reference = bool(donnees.get("inclure_reference"))
+    a_references = bool(references) if references is not None else bool(client.photos_reference)
+    inclure_reference = bool(donnees.get("inclure_reference")) or bool(agences and references)
     texte_post = (donnees.get("texte_post") or "").strip()
     options_recues = donnees.get("options") if isinstance(donnees.get("options"), dict) else {}
     varier = bool(options_recues.get("varier"))
-    texte_fr = bool(options_recues.get("texte_fr"))
-    couleur_marque = bool(options_recues.get("couleur_marque")) and bool(couleur_marque_client(client))
+    texte_fr = bool(options_recues.get("texte_fr")) and not agences           # jamais de texte dans les images d'agences : un mot deforme pourrait porter prejudice
+    couleur_marque = bool(options_recues.get("couleur_marque")) and bool(couleur_marque_client(client)) and not agences
     choix = claude_generation.choisir_options_visuel(options_recues, varier=varier)
     avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier) or texte_fr
     avertissement = ""
@@ -12763,7 +12834,7 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
         if choix["personnes"] in claude_generation.REFERENCE_LIEU:
             # Photos de reference d'un lieu/batiment (pas un visage) : jamais soumises aux limites ci-dessous,
             # qui n'existent que pour eviter de gaspiller une photo de visage sur un cadrage qui ne le montrerait pas.
-            inclure_reference = bool(client.photos_reference)
+            inclure_reference = a_references
         else:
             # Un type sans visage (detail, lieu, schema dessine) ou "qui apparait" sans moi : pas de photos de reference.
             # Les autres styles d'illustration (BD, humour...) peuvent tres bien mettre en scene la personne.
@@ -12776,7 +12847,7 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
                     avertissement = "Ce choix de visuel n'affiche pas de visage : vos photos de reference n'ont pas ete utilisees."
                 inclure_reference = False
             elif choix["personnes"] in claude_generation.PERSONNES_AVEC_REFERENCE:
-                inclure_reference = bool(client.photos_reference)
+                inclure_reference = a_references
 
     # Texte saisi a la main : pas de prompt d'image fourni par un generateur,
     # on le deduit du texte (et le navigateur l'affiche pour qu'on puisse l'ajuster).
@@ -12796,9 +12867,9 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
             ]
         try:
             prompt_image = prompt_genere = claude_generation.prompt_image_avec_options(
-                prompt_image, texte_post, choix, bool(inclure_reference and client.photos_reference), recents,
+                prompt_image, texte_post, choix, bool(inclure_reference and a_references), recents,
                 couleur_marque_client(client) if couleur_marque else "", couleurs_secondaires_client(client) if couleur_marque else [],
-                texte_fr,
+                texte_fr, agences=agences,
             )
             options_appliquees = True
         except Exception as e:
@@ -12812,7 +12883,9 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
             return {"erreur": f"Impossible de deduire la description de l'image du texte : {e}"}, 500
 
     images_reference = None
-    if inclure_reference and client.photos_reference:
+    if inclure_reference and references:
+        images_reference = list(references)
+    elif inclure_reference and client.photos_reference and references is None:
         images_reference = []
         for photo in client.photos_reference:
             try:
@@ -12826,14 +12899,17 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
 
         # Les prompts de post decrivent des scenes sans personne : on les reecrit
         # pour que l'auteur soit le sujet (sinon Gemini ignore les photos).
-        if not options_appliquees:  # avec options, le prompt met deja l'auteur en scene
+        if not options_appliquees and not agences:  # avec options, le prompt met deja l'auteur en scene ; pour des agences, personne n'est l'auteur
             try:
                 prompt_image = claude_generation.prompt_image_avec_auteur(prompt_image, texte_post)
             except Exception:
                 pass  # repli : prompt d'origine, complete par la consigne de gemini_images
 
     try:
-        octets_image = gemini_images.generer_image(prompt_image, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr)
+        octets_image = gemini_images.generer_image(
+            prompt_image, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr, sans_logo=True,
+            **({"instruction_personne": gemini_images.INSTRUCTION_AGENCES, "nettoyer_interdictions_visage": False} if agences else {}),
+        )
         nom_fichier = f"{prefixe_fichier}-{uuid.uuid4().hex[:10]}.png"
         url_image = ovh_upload.envoyer_octets(octets_image, nom_fichier)
     except Exception as e:

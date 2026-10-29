@@ -1,10 +1,11 @@
-{# Options de l'image IA d'un post, les memes que dans le composeur multi-reseaux. A inclure avec « client_oia » (le client concerne).
-   Le bouton de generation appelle window.genererImageIA(postId, bouton, zoneStatut[, prompt]). #}
+{# Options de l'image IA d'un post, les memes que dans le composeur multi-reseaux. A inclure avec « client_oia » (le client concerne), ou avec
+   « oia_masse » pour des posts en masse sur plusieurs fiches (alors sans « qui apparait », sans texte dans l'image et sans couleurs de marque).
+   Le bouton de generation appelle window.genererImageIA(postId, bouton, zoneStatut[, prompt]) ; window.optionsImageIA() renvoie les options cochees. #}
 <details class="options-visuel" id="options-image-ia">
   <summary>🎨 Options de l'image IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
   <p class="texte-discret">Ces choix s'appliquent à l'image créée avec le bouton « Générer l'image (IA) ». Format 4:3, celui d'un post Google.</p>
   {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
-  {% if groupe != "personnes" or client_oia.photos_reference %}
+  {% if groupe != "personnes" or (not oia_masse and client_oia.photos_reference) %}
   <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}" {% if groupe == "illustration" %}id="oia-groupe-illustration" hidden{% endif %}>
     <legend>{{ libelles_groupes_visuel[groupe] }}{% if choix_multiples %} <span class="texte-discret">(plusieurs possibles)</span>{% endif %}</legend>
     {% for identifiant, libelle, _consigne in options_visuel[groupe] %}
@@ -17,19 +18,23 @@
   {% endif %}
   {% endfor %}
   <div class="groupe-options-visuel">
+    {% if not oia_masse %}
     <label class="etiquette-chip-case">
       <input type="checkbox" id="oia-texte-fr">
       Ajouter quelques mots en français dans l'image (à relire : l'IA peut faire des fautes)
     </label>
+    {% endif %}
     <label class="etiquette-chip-case">
       <input type="checkbox" id="oia-varier">
       Varier automatiquement (l'IA évite de refaire les derniers visuels de ce client)
     </label>
+    {% if not oia_masse %}
     <label class="etiquette-chip-case">
       <input type="checkbox" id="oia-couleur-marque" {% if not couleur_marque_client(client_oia) %}disabled{% endif %}>
       Intégrer les couleurs de la marque
     </label>
     {% if not couleur_marque_client(client_oia) %}<p class="texte-discret">Couleur de marque non enregistrée : à définir dans le bloc « Identité visuelle » du composeur multi-réseaux.</p>{% endif %}
+    {% endif %}
     <button type="button" id="oia-effacer" class="bouton-secondaire">Tout décocher</button>
   </div>
 </details>
@@ -59,11 +64,12 @@
       if (cochees.length) options[groupe] = (groupe === "cadrage" || groupe === "decor" || groupe === "lumiere") ? cochees : cochees[0];
     });
     if (document.getElementById("oia-varier").checked) options.varier = true;
-    if (document.getElementById("oia-texte-fr").checked) options.texte_fr = true;
-    const couleur = document.getElementById("oia-couleur-marque");
-    if (couleur.checked && !couleur.disabled) options.couleur_marque = true;
+    const texteFr = document.getElementById("oia-texte-fr"), couleur = document.getElementById("oia-couleur-marque");       // absents pour des posts en masse
+    if (texteFr && texteFr.checked) options.texte_fr = true;
+    if (couleur && couleur.checked && !couleur.disabled) options.couleur_marque = true;
     return options;
   }
+  window.optionsImageIA = lireOptions;
 
   window.genererImageIA = async function (postId, bouton, statut, prompt) {
     const options = lireOptions();

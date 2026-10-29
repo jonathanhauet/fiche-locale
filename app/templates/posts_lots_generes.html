@@ -9,6 +9,31 @@
 {% if not groupes %}
 <p class="texte-vide">Aucun post à relire (lot introuvable ou déjà traité).</p>
 {% else %}
+<p class="bandeau-verification-ia"><strong>⚠️ Images créées par l'IA : vérifiez chacune avant de valider.</strong> Aucun logo, aucune enseigne, aucun texte ni aucun visage reconnaissable ne doit y apparaître. Si l'image ne convient pas, régénérez-la ou remplacez-la par une vraie photo.</p>
+
+{% set oia_masse = true %}{% set client_oia = none %}{% include "_options_image_ia.html" %}
+
+<details class="options-visuel" id="references-image-ia" open>
+  <summary>📷 Photos de référence pour l'ambiance des images (facultatif)</summary>
+  <p class="texte-discret">Elles servent à reprendre l'ambiance, les couleurs et le style de tes agences. L'IA n'en recopie ni logo, ni enseigne, ni texte, ni visage. La même image sert ensuite à toutes les fiches du groupe.</p>
+  <label>Reprendre les photos de référence d'une fiche
+    <select id="ref-client">
+      <option value="">Aucune</option>
+      {% for c in clients_du_groupe %}{% if c.photos_reference %}<option value="{{ c.id }}">{{ c.nom }} ({{ c.photos_reference|length }} photo{{ "s" if c.photos_reference|length > 1 else "" }})</option>{% endif %}{% endfor %}
+    </select>
+  </label>
+  {% if not clients_du_groupe|selectattr("photos_reference")|list %}
+  <p class="texte-discret">Aucune fiche de ce groupe n'a encore de photos de référence : ajoutez-en dans sa page (« Photos de référence », 5 au maximum, une capture d'écran de ton dossier compte pour une), ou importez-les ci-dessous.</p>
+  {% endif %}
+  <div id="ref-zone" class="zone-references" tabindex="0">
+    <strong>Collez une capture d'écran ici (Ctrl+V)</strong>
+    <span class="texte-discret">ou</span>
+    <label class="bouton-secondaire bouton-mini">Importer des images<input type="file" id="ref-fichiers" accept="image/*" multiple hidden></label>
+  </div>
+  <p id="ref-message" class="texte-discret" role="status" hidden></p>
+  <div id="ref-vignettes" class="vignettes-references"></div>
+</details>
+
 <ul class="liste-posts">
   {% for groupe in groupes %}
   <li class="carte-post-revue" id="lot-{{ groupe.lot_id }}">
@@ -25,7 +50,7 @@
     </div>
     <p class="texte-discret">{{ groupe.nb_fiches }} fiche{{ "s" if groupe.nb_fiches > 1 else "" }}</p>
     {% if groupe.image_url %}
-    <p class="texte-legende-apercu">Aperçu au format utilisé par Google pour les posts (4:3).</p>
+    <p class="texte-legende-apercu">Aperçu au format utilisé par Google pour les posts (4:3).{% if groupe.en_attente %} <strong>À vérifier : aucun logo, enseigne, texte ni visage reconnaissable.</strong>{% endif %}</p>
     <div class="apercu-image-conteneur">
       <img src="{{ groupe.image_url }}" alt="" class="apercu-image">
       {% if groupe.en_attente %}
@@ -38,11 +63,10 @@
     {% if groupe.en_attente %}
     {% if not groupe.image_url %}
     <div class="ligne-actions-rapides actions-image-rapides">
-      {% if groupe.prompt_image %}
-      <form method="post" action="/posts/lot/{{ groupe.lot_id }}/generer_image_masse" class="formulaire-image-rapide">
-        <input type="hidden" name="lots_param" value="{{ lots_param }}">
-        <button type="submit" class="bouton-secondaire">🎨 Générer l'image (IA)</button>
-      </form>
+      {% if groupe.prompt_image or groupe.texte %}
+      <div class="formulaire-image-rapide">
+        <button type="button" class="bouton-secondaire bouton-image-lot" data-lot-id="{{ groupe.lot_id }}">🎨 Générer l'image (IA)</button>
+      </div>
       {% endif %}
       <form method="post" action="/posts/lot/{{ groupe.lot_id }}/televerser_image_masse" enctype="multipart/form-data" class="formulaire-image-rapide">
         <input type="hidden" name="lots_param" value="{{ lots_param }}">
@@ -50,6 +74,7 @@
         <button type="submit" class="bouton-secondaire">Téléverser</button>
       </form>
     </div>
+    <p class="texte-discret statut-image-lot" data-lot-id="{{ groupe.lot_id }}" role="status" hidden></p>
     <details class="bloc-repliable">
       <summary>Ou choisir une photo d'une fiche du groupe</summary>
       <label>
@@ -126,6 +151,107 @@
   </div>
 </div>
 
+<style>
+  .bandeau-verification-ia { background: var(--attention-clair, #fff4d6); color: var(--attention, #7a4b00); border: 1px solid var(--attention, #d9a400); border-radius: 10px; padding: .7rem .9rem; margin: .8rem 0; }
+  .zone-references { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; border: 2px dashed var(--carte-bordure); border-radius: 10px; padding: .9rem 1rem; margin: .6rem 0; cursor: text; }
+  .zone-references:focus { outline: 2px solid var(--accent); }
+  .vignettes-references { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .vignettes-references .ref-carte { position: relative; }
+  .vignettes-references img { height: 84px; border-radius: 8px; display: block; }
+  .vignettes-references button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: #c0392b; color: #fff; cursor: pointer; line-height: 1; }
+</style>
+<script>
+(function () {
+  // Photos de reference pour l'ambiance des images : gardees (reduites en JPEG) dans la session du navigateur, pour survivre au rechargement de la page apres chaque image.
+  const CLE_REFS = "refs-image-ia", CLE_CLIENT = "ref-client-image-ia", MAX = 8;
+  const zone = document.getElementById("ref-zone");
+  if (!zone) return;
+  const $ = (id) => document.getElementById(id);
+  let refs = [];
+  try { refs = JSON.parse(sessionStorage.getItem(CLE_REFS) || "[]"); } catch (e) { refs = []; }
+  try { const c = sessionStorage.getItem(CLE_CLIENT); if (c && $("ref-client").querySelector('option[value="' + c + '"]')) $("ref-client").value = c; } catch (e) { /* stockage indisponible */ }
+
+  function message(texte) { $("ref-message").hidden = !texte; $("ref-message").textContent = texte || ""; }
+  function enregistrer() {
+    try { sessionStorage.setItem(CLE_REFS, JSON.stringify(refs)); } catch (e) { message("Ces images sont trop lourdes pour être gardées au rechargement de la page : elles resteront utilisables jusqu'au prochain rechargement."); }
+  }
+  function dessiner() {
+    const conteneur = $("ref-vignettes"); conteneur.textContent = "";
+    refs.forEach((src, i) => {
+      const carte = document.createElement("div"); carte.className = "ref-carte";
+      const img = document.createElement("img"); img.src = src; img.alt = "Photo de référence " + (i + 1);
+      const retirer = document.createElement("button"); retirer.type = "button"; retirer.textContent = "×"; retirer.title = "Retirer cette image";
+      retirer.addEventListener("click", () => { refs.splice(i, 1); enregistrer(); dessiner(); });
+      carte.appendChild(img); carte.appendChild(retirer); conteneur.appendChild(carte);
+    });
+  }
+  // Une capture ou une photo est reduite (1536 px au plus) et convertie en JPEG avant d'etre gardee puis envoyee.
+  function reduire(fichier) {
+    return new Promise((resoudre, rejeter) => {
+      const url = URL.createObjectURL(fichier), image = new Image();
+      image.onload = () => {
+        const echelle = Math.min(1, 1536 / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement("canvas"); canvas.width = Math.round(image.naturalWidth * echelle); canvas.height = Math.round(image.naturalHeight * echelle);
+        const contexte = canvas.getContext("2d"); contexte.fillStyle = "#fff"; contexte.fillRect(0, 0, canvas.width, canvas.height); contexte.drawImage(image, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url); resoudre(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      image.onerror = () => { URL.revokeObjectURL(url); rejeter(new Error("image illisible")); };
+      image.src = url;
+    });
+  }
+  async function ajouter(fichiers) {
+    message("");
+    for (const fichier of fichiers) {
+      if (!fichier.type.startsWith("image/")) continue;
+      if (refs.length >= MAX) { message(MAX + " images de référence au maximum : retirez-en une d'abord."); break; }
+      try { refs.push(await reduire(fichier)); } catch (e) { message("Une image n'a pas pu être lue."); }
+    }
+    enregistrer(); dessiner();
+  }
+  $("ref-fichiers").addEventListener("change", (e) => { const f = Array.from(e.target.files); e.target.value = ""; ajouter(f); });
+  document.addEventListener("paste", (e) => {                                  // Ctrl+V d'une capture d'ecran, n'importe ou sur la page (sauf si on colle du texte)
+    const images = Array.from((e.clipboardData && e.clipboardData.files) || []).filter((f) => f.type.startsWith("image/"));
+    if (!images.length) return;
+    e.preventDefault(); ajouter(images);
+  });
+  zone.addEventListener("dragover", (e) => e.preventDefault());
+  zone.addEventListener("drop", (e) => { e.preventDefault(); ajouter(Array.from(e.dataTransfer.files)); });
+  $("ref-client").addEventListener("change", () => { try { sessionStorage.setItem(CLE_CLIENT, $("ref-client").value); } catch (e) { /* stockage indisponible */ } });
+  dessiner();
+
+  function enBlob(dataUrl) {
+    const [entete, donnees] = dataUrl.split(","), binaire = atob(donnees), octets = new Uint8Array(binaire.length);
+    for (let i = 0; i < binaire.length; i++) octets[i] = binaire.charCodeAt(i);
+    return new Blob([octets], { type: (entete.match(/:(.*?);/) || [])[1] || "image/jpeg" });
+  }
+  document.querySelectorAll(".bouton-image-lot").forEach((bouton) => {
+    bouton.addEventListener("click", async () => {
+      const lotId = bouton.dataset.lotId, statut = document.querySelector('.statut-image-lot[data-lot-id="' + lotId + '"]');
+      const donnees = new FormData();
+      donnees.append("options", JSON.stringify(window.optionsImageIA ? window.optionsImageIA() : {}));
+      if ($("ref-client").value) donnees.append("client_reference_id", $("ref-client").value);
+      refs.forEach((src, i) => donnees.append("fichiers", enBlob(src), "reference-" + (i + 1) + ".jpg"));
+      const libelle = bouton.textContent;
+      bouton.disabled = true; bouton.textContent = "⏳ Génération en cours...";
+      statut.hidden = false; statut.textContent = "Génération de l'image (peut prendre une trentaine de secondes)...";
+      let recharger = false;
+      try {
+        const reponse = await fetch("/posts/lot/" + lotId + "/generer_image_ia", { method: "POST", body: donnees });
+        let resultat = {};
+        try { resultat = await reponse.json(); } catch (e) { /* reponse non JSON : message generique ci-dessous */ }
+        if (!reponse.ok) { statut.textContent = resultat.erreur || "Échec de la génération de l'image."; return; }
+        statut.textContent = "Image créée : vérifiez-la avant de valider.";
+        recharger = true;
+      } catch (e) {
+        statut.textContent = "Génération impossible pour le moment : réessayez dans un instant.";
+      } finally {
+        bouton.disabled = false; bouton.textContent = libelle;
+      }
+      if (recharger) setTimeout(() => { window.location.hash = "lot-" + lotId; window.location.reload(); }, 300);
+    });
+  });
+})();
+</script>
 <script src="/static/calendrier_champ.js?v={{ version_calendrier_js }}"></script>
 <script>
 (function () {
