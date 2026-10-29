@@ -20,10 +20,10 @@
   <h2><span class="amf-num">1</span> Choisissez la fiche</h2>
   <select id="amf-client">
     <option value="">Choisir un client...</option>
-    {% for c in clients_libres %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+    {% for c in clients_libres %}<option value="{{ c.id }}" data-logo="{{ '1' if c.id in ids_avec_logo else '' }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
     {% for nom_espace, membres in groupes_espaces %}
     <optgroup label="Espace : {{ nom_espace }}">
-      {% for c in membres %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+      {% for c in membres %}<option value="{{ c.id }}" data-logo="{{ '1' if c.id in ids_avec_logo else '' }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
     </optgroup>
     {% endfor %}
   </select>
@@ -43,6 +43,12 @@
     <div class="amf-reglages">
       <label for="amf-texte">Texte affiché (raccourcissez-le si besoin, sans le déformer)</label>
       <textarea id="amf-texte" rows="6" maxlength="900"></textarea>
+      <div class="amf-choix amf-surlignage">
+        <button type="button" id="amf-surligner" class="bouton-secondaire bouton-mini" title="Sélectionnez d'abord des mots dans le texte ci-dessus">🖍 Surligner la sélection</button>
+        <button type="button" id="amf-desurligner" class="bouton-secondaire bouton-mini">Retirer les surlignages</button>
+        <label class="amf-chip">Couleur du surlignage <input type="color" id="amf-couleur-surlignage" value="#ffd60a" aria-label="Couleur du surlignage"></label>
+      </div>
+      <p id="amf-surlignage-aide" class="texte-discret" style="margin:.3rem 0 1rem">Sélectionnez des mots dans le texte, puis cliquez sur « Surligner la sélection » : ils s'entourent d'*astérisques* et ressortent sur le visuel.</p>
 
       <label for="amf-auteur">Nom affiché</label>
       <input type="text" id="amf-auteur" maxlength="40">
@@ -78,7 +84,14 @@
       <div id="amf-photos" class="amf-photos" hidden></div>
       <label class="amf-chip" id="amf-voile-ligne" hidden>Assombrissement <input type="range" id="amf-voile" min="40" max="90" value="68"></label>
 
-      <label class="amf-case"><input type="checkbox" id="amf-logo" checked> Afficher le logo du client</label>
+      <p class="amf-titre-groupe">Logo</p>
+      <label class="amf-case" style="padding-top:0"><input type="checkbox" id="amf-logo" checked> Afficher le logo du client</label>
+      <p id="amf-logo-absent" class="texte-discret" style="margin:.3rem 0 0" hidden>Ce client n'a pas encore de logo. Ajoutez-le : il sera enregistré pour ce client et réutilisé dans tous ses visuels.</p>
+      <div class="amf-choix" style="margin-top:.4rem">
+        <button type="button" id="amf-logo-ajouter" class="bouton-secondaire bouton-mini">🖼 Ajouter le logo du client</button>
+        <input type="file" id="amf-logo-fichier" accept="image/*" hidden>
+      </div>
+      <p id="amf-logo-info" class="texte-discret" style="margin:.3rem 0 0" hidden></p>
     </div>
 
     <div class="amf-apercu">
@@ -111,6 +124,7 @@
   .amf-case { border: 0; padding: .8rem 0 0; display: flex; }
   .amf-chip input, .amf-case input { width: auto; flex: none; margin: 0; }
   .amf-chip input[type="range"] { width: 9rem; }
+  .amf-chip input[type="color"] { width: 2.4rem; height: 1.7rem; padding: 0; border: 0; background: none; cursor: pointer; }
   .amf-photos { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; max-height: 14rem; overflow: auto; }
   .amf-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
   .amf-photos img.choisie { border-color: var(--accent); }
@@ -136,6 +150,7 @@
       layout: document.querySelector('input[name="amf-layout"]:checked').value, photo_url: photoUrl,
       voile: parseInt($("amf-voile").value, 10), sans_logo: !$("amf-logo").checked,
       format: formatChoisi(), taille_texte: parseInt($("amf-taille").value, 10),
+      surligner: true, couleur_surlignage: $("amf-couleur-surlignage").value,
     };
   }
 
@@ -148,6 +163,42 @@
       ? "Format 4:3 d'une publication de fiche Google. Le bas de l'image peut être coupé dans l'aperçu mobile : le texte et le logo restent donc en haut."
       : "Format portrait 4:5, adapté à Instagram, Facebook et LinkedIn.";
     apercu();
+  }
+
+  // Surlignage : les mots choisis sont entourés d'*asterisques* dans le texte ; le serveur les dessine sur un fond de couleur.
+  function surlignerSelection() {
+    const champ = $("amf-texte"), aide = $("amf-surlignage-aide");
+    let debut = champ.selectionStart, fin = champ.selectionEnd;
+    const valeur = champ.value;
+    while (debut < fin && /\s/.test(valeur[debut])) debut++;                // la selection ne garde ni espace ni retour a la ligne aux extremites
+    while (fin > debut && /\s/.test(valeur[fin - 1])) fin--;
+    if (debut >= fin) { aide.textContent = "Sélectionnez d'abord des mots dans le texte, puis cliquez sur « Surligner la sélection »."; return; }
+    const selection = valeur.slice(debut, fin).replace(/\*/g, "");           // une selection deja en partie surlignee est refondue en un seul surlignage
+    champ.value = valeur.slice(0, debut) + "*" + selection + "*" + valeur.slice(fin);
+    champ.setSelectionRange(debut, debut + selection.length + 2);
+    aide.textContent = "Surlignage ajouté. Pour en retirer un, utilisez « Retirer les surlignages ».";
+    apercu();
+  }
+
+  // Logo : s'il manque, on peut l'ajouter ici ; il est alors enregistre pour le client (comme dans le composeur multi-reseaux).
+  function logoPresent() { const o = $("amf-client").selectedOptions[0]; return !!(o && o.dataset.logo); }
+  function majLogo(recocher) {                                                 // recocher : afficher le logo par defaut (changement de client, logo qui vient d'etre ajoute)
+    const present = logoPresent(), aucunClient = !clientId();
+    $("amf-logo-absent").hidden = present || aucunClient;
+    $("amf-logo").disabled = !present;
+    if (!present) $("amf-logo").checked = false; else if (recocher) $("amf-logo").checked = true;
+    $("amf-logo-ajouter").textContent = present ? "🖼 Remplacer le logo du client" : "🖼 Ajouter le logo du client";
+  }
+  async function importerLogo(fichier) {
+    const info = $("amf-logo-info"); info.hidden = false; info.textContent = "Envoi du logo..."; erreur("");
+    try {
+      const formulaire = new FormData(); formulaire.append("type_media", "logo"); formulaire.append("fichier", fichier);
+      const r = await fetch("/publication-multi/" + clientId() + "/carrousel/media", { method: "POST", body: formulaire }); const d = await r.json();
+      if (!r.ok || !d.url) throw new Error(d.erreur || "Logo refusé.");
+      $("amf-client").selectedOptions[0].dataset.logo = "1";
+      majLogo(true);
+      info.textContent = "Logo enregistré pour ce client."; apercu();
+    } catch (e) { info.hidden = true; erreur(e.message || "Import du logo impossible pour le moment."); }
   }
 
   // Photo de fond : importée depuis l'ordinateur ou choisie parmi celles de la fiche Google.
@@ -205,7 +256,8 @@
 
   function selectionner(a) {
     choisi = a; photoUrl = ""; erreur("");
-    $("amf-texte").value = a.texte; $("amf-auteur").value = a.auteur;
+    $("amf-texte").value = a.texte.replace(/\*/g, ""); $("amf-auteur").value = a.auteur;      // les asterisques servent au surlignage : ceux de l'avis sont retires
+    majLogo();
     $("amf-photo-retirer").hidden = true; $("amf-voile-ligne").hidden = true; $("amf-photo-info").hidden = true; $("amf-photos").querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie"));
     $("amf-etape-edition").hidden = false; dessinerListe();
     $("amf-etape-edition").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -256,7 +308,7 @@
     finally { $("amf-telecharger").disabled = false; $("amf-spinner").hidden = true; }
   }
 
-  $("amf-client").addEventListener("change", chargerAvis);
+  $("amf-client").addEventListener("change", () => { $("amf-logo-info").hidden = true; majLogo(true); chargerAvis(); });
   $("amf-filtre").addEventListener("input", dessinerListe);
   $("amf-texte").addEventListener("input", planifier);
   $("amf-auteur").addEventListener("input", planifier);
@@ -267,9 +319,18 @@
   $("amf-photo-retirer").addEventListener("click", () => definirPhoto("", ""));
   $("amf-photo-fichier").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) importerPhoto(f); });
   $("amf-taille").addEventListener("input", planifier);
+  $("amf-surligner").addEventListener("click", surlignerSelection);
+  $("amf-desurligner").addEventListener("click", () => { $("amf-texte").value = $("amf-texte").value.replace(/\*/g, ""); $("amf-surlignage-aide").textContent = "Surlignages retirés."; apercu(); });
+  $("amf-couleur-surlignage").addEventListener("input", planifier);
+  $("amf-logo-ajouter").addEventListener("click", () => {
+    if (logoPresent() && !confirm("Remplacer le logo enregistré de ce client ? Il sera changé partout où il est utilisé.")) return;
+    $("amf-logo-fichier").click();
+  });
+  $("amf-logo-fichier").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) importerLogo(f); });
   $("amf-taille-auto").addEventListener("click", () => { $("amf-taille").value = 100; apercu(); });
   document.querySelectorAll('input[name="amf-format"]').forEach((r) => r.addEventListener("change", appliquerFormat));
   $("amf-telecharger").addEventListener("click", telecharger);
+  majLogo(true);
   if (clientId()) chargerAvis();
 })();
 </script>

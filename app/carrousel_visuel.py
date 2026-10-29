@@ -510,10 +510,81 @@ def _etoile(dessin, centre_x: int, centre_y: int, rayon: int, couleur) -> None:
     dessin.polygon(points, fill=couleur)
 
 
+COULEUR_SURLIGNAGE = (255, 214, 10)      # jaune surligneur par defaut
+
+
+def _mots_surlignes(texte: str) -> tuple:
+    """
+    « Un *très bon* accueil » -> ("Un très bon accueil", [False, True, True, False]) : le texte sans les asterisques, et pour chaque mot s'il est
+    surligne. Un asterisque resté seul est ignore ; un signe de ponctuation collé a un mot surligne (« *super*! ») est surligne avec lui.
+    """
+    texte = " ".join((texte or "").split())
+    if texte.count("*") % 2:
+        dernier = texte.rindex("*")
+        texte = texte[:dernier] + texte[dernier + 1:]
+    mots, drapeaux, courant, drapeau_mot, actif = [], [], "", False, False
+    for caractere in texte:
+        if caractere == "*":
+            actif = not actif
+        elif caractere == " ":
+            if courant:
+                mots.append(courant); drapeaux.append(drapeau_mot)
+            courant, drapeau_mot = "", False
+        else:
+            courant += caractere
+            drapeau_mot = drapeau_mot or actif
+    if courant:
+        mots.append(courant); drapeaux.append(drapeau_mot)
+    return " ".join(mots), drapeaux
+
+
+def _tracer_ligne(dessin, x: float, y: float, ligne: str, police, couleur: tuple, drapeaux: list = None, marqueur: tuple = COULEUR_SURLIGNAGE,
+                  centre: bool = False, ancre: str = "la") -> None:      # ancre sur la ligne d'ascendante (« a ») : tous les mots d'une ligne partagent la meme ligne de base
+    """
+    Une ligne de citation, dont certains mots sont surlignes (fond arrondi de la couleur du marqueur derriere eux, texte sombre ou clair selon son
+    contraste). Sans mot surligne, la ligne est dessinee d'un seul trait, exactement comme avant. centre : x est alors le milieu de la ligne.
+    """
+    if not drapeaux or not any(drapeaux):
+        dessin.text((x, y), ligne, font=police, fill=couleur, anchor=("m" + ancre[1]) if centre else ancre)
+        return
+    mots = ligne.split(" ")
+    drapeaux = (list(drapeaux) + [False] * len(mots))[:len(mots)]
+    gauche = x - dessin.textlength(ligne, font=police) / 2 if centre else x
+    debuts = [gauche + dessin.textlength(" ".join(mots[:k]) + (" " if k else ""), font=police) for k in range(len(mots))]
+    fins = [gauche + dessin.textlength(" ".join(mots[:k + 1]), font=police) for k in range(len(mots))]
+    taille = getattr(police, "size", 40)
+    haut_glyphes, bas_glyphes = police.getbbox("Hg", anchor="l" + ancre[1])[1::2]
+    couleur_sur_marqueur = (20, 20, 26) if _luminance(marqueur) > 0.55 else (255, 255, 255)
+    k = 0
+    while k < len(mots):                                      # un seul fond pour une suite de mots surlignes
+        if not drapeaux[k]:
+            k += 1
+            continue
+        j = k
+        while j + 1 < len(mots) and drapeaux[j + 1]:
+            j += 1
+        marge = 0.1 * taille
+        dessin.rounded_rectangle((debuts[k] - marge, y + haut_glyphes - 0.12 * taille, fins[j] + marge, y + bas_glyphes + 0.08 * taille), radius=0.22 * taille, fill=marqueur)
+        k = j + 1
+    for k, mot in enumerate(mots):
+        dessin.text((debuts[k], y), mot, font=police, fill=couleur_sur_marqueur if drapeaux[k] else couleur, anchor="l" + ancre[1])
+
+
+def _drapeaux_par_ligne(lignes: list, drapeaux: list) -> list:
+    """Repartit la liste des drapeaux (un par mot, dans l'ordre) sur les lignes deja decoupees."""
+    resultat, i = [], 0
+    for ligne in lignes:
+        n = len(ligne.split(" "))
+        resultat.append(drapeaux[i:i + n] if drapeaux else None)
+        i += n
+    return resultat
+
+
 def dessiner_avis(
     texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
     secondaires: list = None, photo: Image.Image = None, voile: int = 68, decor: str = "auto", graine: int = 0,
     logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "", echelle_texte: float = 1.0,
+    surligner: bool = False, couleur_surlignage: str = "",
 ) -> Image.Image:
     """
     Visuel de mise en avant d'un avis client (1080x1350) : guillemet, etoiles, citation, auteur, nom du client.
@@ -543,14 +614,15 @@ def dessiner_avis(
     for i in range(5):
         _etoile(d, MARGE + 34 + i * 76, 470, 34, OR_ETOILES if i < note else _melange(p["fond"], p["texte"], 0.25))
 
-    citation = " ".join((texte or "").split())
+    citation, drapeaux = _mots_surlignes(texte) if surligner else (" ".join((texte or "").split()), None)      # surligner : les mots entre *asterisques* sont surlignes
+    marqueur = _rgb(couleur_surlignage) if couleur_surlignage else COULEUR_SURLIGNAGE
     taille_max = max(24, round(68 * echelle_texte))        # echelle_texte : 1.0 = taille automatique habituelle ; la citation reste toujours dans sa boite
     police, lignes, pas = _texte_ajuste(d, citation, "normal", taille_max, min(34, taille_max), zone, 500, 1.32)
     if len(_lignes(d, citation, police, zone)) > len(lignes):
         lignes[-1] = lignes[-1].rstrip(" ,;:.") + "\u2026"
     y = 540
-    for ligne in lignes:
-        d.text((MARGE, y), ligne, font=police, fill=p["texte"])
+    for ligne, drapeaux_ligne in zip(lignes, _drapeaux_par_ligne(lignes, drapeaux)):
+        _tracer_ligne(d, MARGE, y, ligne, police, p["texte"], drapeaux_ligne, marqueur)
         y += pas
     y_auteur = min(max(y + 40, 1130), HAUTEUR - 230)
     d.rectangle((MARGE, y_auteur - 26, MARGE + 110, y_auteur - 16), fill=p["accent2"])
@@ -584,6 +656,7 @@ def dessiner_avis_google(
     texte: str, auteur: str, note: int, layout: str, couleur: str, nom_client: str, logo: Image.Image = None,
     secondaires: list = None, photo: Image.Image = None, voile: int = 68, decor: str = "auto", graine: int = 0,
     logo_position: str = "haut_droite", logo_style: str = "pastille", logo_couleur_fond: str = "", echelle_texte: float = 1.0,
+    surligner: bool = False, couleur_surlignage: str = "",
 ) -> Image.Image:
     """
     Visuel d'avis pour une publication de fiche Google (1200x900, 4:3) : etoiles, citation, auteur, tout centre horizontalement et le bloc centre
@@ -616,7 +689,9 @@ def dessiner_avis_google(
     centre_x = LARGEUR_GOOGLE // 2
 
     hauteur_fixe = 52 + 34 + 36 + 18 + 56 + 14 + 38         # etoiles, ecart, ecart, trait, auteur, ecart, « Avis Google »
-    citation = "\u201c" + " ".join((texte or "").split()) + "\u201d"
+    texte_propre, drapeaux = _mots_surlignes(texte) if surligner else (" ".join((texte or "").split()), None)
+    marqueur = _rgb(couleur_surlignage) if couleur_surlignage else COULEUR_SURLIGNAGE
+    citation = "\u201c" + texte_propre + "\u201d"
     taille_max = max(22, round(58 * echelle_texte))
     police, lignes, pas = _texte_ajuste(d, citation, "normal", taille_max, min(28, taille_max), largeur_texte, max(120, bas_zone - haut_zone - hauteur_fixe), 1.3)
     if len(_lignes(d, citation, police, largeur_texte)) > len(lignes):
@@ -631,8 +706,8 @@ def dessiner_avis_google(
     for i in range(5):                                       # etoiles centrees
         _etoile(d, centre_x + (i - 2) * 66, y + 26, 26, OR_ETOILES if i < note else _melange(p["fond"], p["texte"], 0.25))
     y += 52 + 34
-    for ligne in lignes:                                     # citation centree, ligne par ligne
-        d.text((centre_x, y), ligne, font=police, fill=p["texte"], anchor="mt")
+    for ligne, drapeaux_ligne in zip(lignes, _drapeaux_par_ligne(lignes, drapeaux)):      # citation centree, ligne par ligne
+        _tracer_ligne(d, centre_x, y, ligne, police, p["texte"], drapeaux_ligne, marqueur, centre=True, ancre="ma")
         y += pas
     y += 36
     d.rectangle((centre_x - 45, y, centre_x + 45, y + 8), fill=p["accent2"])

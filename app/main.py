@@ -11753,13 +11753,18 @@ def _preparer_visuel_avis(client, donnees: dict):
         echelle_texte = 1.0
     # Portrait 1080x1350 (composeur, Instagram/LinkedIn) par defaut ; « google » : 1200x900 (4:3), le format d'une publication de fiche Google.
     fonction_dessin = carrousel_visuel.dessiner_avis_google if donnees.get("format") == "google" else carrousel_visuel.dessiner_avis
+    # Surlignage : seulement si la page le demande (les mots entre *asterisques* sont surlignes) ; ailleurs, un asterisque d'un avis reste un asterisque.
+    surlignage = {}
+    if donnees.get("surligner") is True:
+        couleur_surlignage = str(donnees.get("couleur_surlignage") or "").strip()
+        surlignage = {"surligner": True, "couleur_surlignage": couleur_surlignage if REGEX_COULEUR.fullmatch(couleur_surlignage) else ""}
 
     def dessiner():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
         photo = _image_depuis_url_autorisee(photo_url)
         return fonction_dessin(
             texte, auteur, note, layout, couleur, nom_client, logo, secondaires, photo, voile, decor, graine_decor,
-            logo_position, logo_style, logo_couleur_fond, echelle_texte=echelle_texte,
+            logo_position, logo_style, logo_couleur_fond, echelle_texte=echelle_texte, **surlignage,
         )
 
     return dessiner, auteur, note, texte
@@ -11806,6 +11811,7 @@ def page_avis_mise_en_forme(request: Request, client_id: int = None, db: Session
     if redirection:
         return redirection
     tous = db.query(models.Client).filter(models.Client.account_id != "", models.Client.location_id != "").order_by(models.Client.nom).all()
+    ids_avec_logo = [c.id for c in tous if (c.logo_url or "").strip()]
     # Les clients rangés dans un espace isolé (voir /espaces) sont absents des vues générales : ici on les propose aussi, regroupés par espace.
     clients, espaces = [], {}
     for c in tous:
@@ -11815,7 +11821,7 @@ def page_avis_mise_en_forme(request: Request, client_id: int = None, db: Session
         else:
             clients.append(c)
     groupes = [(nom, espaces[nom]) for nom in sorted(espaces, key=str.lower)]
-    return templates.TemplateResponse(request, "avis_mise_en_forme.html", {"clients": tous, "clients_libres": clients, "groupes_espaces": groupes, "client_id": client_id})
+    return templates.TemplateResponse(request, "avis_mise_en_forme.html", {"clients": tous, "clients_libres": clients, "groupes_espaces": groupes, "client_id": client_id, "ids_avec_logo": ids_avec_logo})
 
 
 @app.post("/avis/mise-en-forme/{client_id}/telecharger")
@@ -11852,7 +11858,7 @@ async def avis_mise_en_forme_telecharger(client_id: int, request: Request, db: S
     review_id = str(donnees.get("review_id") or "").strip()[:200]
     if review_id and not db.query(models.AvisMisEnAvant).filter_by(client_id=client.id, review_id=review_id).first():
         try:
-            db.add(models.AvisMisEnAvant(client_id=client.id, review_id=review_id, auteur=auteur[:80], extrait=texte[:200]))
+            db.add(models.AvisMisEnAvant(client_id=client.id, review_id=review_id, auteur=auteur[:80], extrait=texte.replace("*", "")[:200]))
             db.commit()
         except Exception:
             db.rollback()
