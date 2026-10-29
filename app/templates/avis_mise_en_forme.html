@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% set page_actuelle = "avis_mise_en_forme" %}
+{% block titre %}Mettre en forme un avis — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/avis">&larr; Retour aux avis</a></p>
+
+<div class="barre-titre">
+  <h1>Mettre en forme un avis</h1>
+</div>
+
+<p class="texte-vide">
+  Choisissez un avis d'une fiche, mettez-le en forme (texte, style, photo de fond), puis téléchargez l'image pour la publier où vous voulez.
+  C'est le même visuel que dans le composeur multi-réseaux.
+</p>
+
+{% if not clients %}
+<p class="texte-vide">Aucun client avec une fiche Google reliée. Associez d'abord une fiche à un client.</p>
+{% else %}
+<section class="amf-etape">
+  <h2><span class="amf-num">1</span> Choisissez la fiche</h2>
+  <select id="amf-client">
+    <option value="">Choisir un client...</option>
+    {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+  </select>
+  <p id="amf-statut" class="texte-discret" hidden></p>
+</section>
+
+<section class="amf-etape" id="amf-etape-avis" hidden>
+  <h2><span class="amf-num">2</span> Choisissez un avis</h2>
+  <p class="texte-discret">Seuls les avis de 4 et 5 étoiles avec un vrai commentaire sont proposés. Les avis déjà mis en avant sont signalés et passent en bas de la liste.</p>
+  <input type="search" id="amf-filtre" placeholder="Filtrer par mot ou par prénom...">
+  <div id="amf-liste" class="amf-liste"></div>
+</section>
+
+<section class="amf-etape" id="amf-etape-edition" hidden>
+  <h2><span class="amf-num">3</span> Mettez-le en forme, puis téléchargez</h2>
+  <div class="amf-edition">
+    <div class="amf-reglages">
+      <label for="amf-texte">Texte affiché (raccourcissez-le si besoin, sans le déformer)</label>
+      <textarea id="amf-texte" rows="6" maxlength="900"></textarea>
+
+      <label for="amf-auteur">Nom affiché</label>
+      <input type="text" id="amf-auteur" maxlength="40">
+
+      <p class="amf-titre-groupe">Style</p>
+      <div class="amf-choix">
+        <label class="amf-chip"><input type="radio" name="amf-layout" value="plein" checked> Plein</label>
+        <label class="amf-chip"><input type="radio" name="amf-layout" value="clair"> Clair</label>
+        <label class="amf-chip"><input type="radio" name="amf-layout" value="sombre"> Sombre</label>
+      </div>
+
+      <p class="amf-titre-groupe">Photo de fond (facultatif)</p>
+      <div class="amf-choix">
+        <button type="button" id="amf-photo-fiche" class="bouton-secondaire bouton-mini">📷 Choisir une photo de la fiche</button>
+        <button type="button" id="amf-photo-retirer" class="bouton-secondaire bouton-mini" hidden>Retirer la photo</button>
+      </div>
+      <div id="amf-photos" class="amf-photos" hidden></div>
+      <label class="amf-chip" id="amf-voile-ligne" hidden>Assombrissement <input type="range" id="amf-voile" min="40" max="90" value="68"></label>
+
+      <label class="amf-case"><input type="checkbox" id="amf-logo" checked> Afficher le logo du client</label>
+    </div>
+
+    <div class="amf-apercu">
+      <div class="amf-cadre"><img id="amf-image" alt="Aperçu du visuel de l'avis" hidden><span id="amf-attente" class="texte-discret">Aperçu en préparation...</span></div>
+      <button type="button" id="amf-telecharger" class="bouton"><span class="spinner" id="amf-spinner" hidden></span>⬇ Télécharger l'image</button>
+      <p class="texte-discret" style="text-align:center;margin:.4rem 0 0">JPEG 1080 × 1350 (format 4:5, adapté à Instagram, Facebook et LinkedIn).</p>
+      <p id="amf-erreur" class="texte-discret" role="alert" hidden></p>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<style>
+  .amf-etape { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1rem 1.1rem 1.1rem; margin: 0 0 1rem; }
+  .amf-etape > h2 { display: flex; align-items: center; gap: .6rem; font-size: 1.05rem; margin: 0 0 .5rem; }
+  .amf-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: #fff; font-size: .9rem; font-weight: 700; }
+  .amf-liste { display: flex; flex-direction: column; gap: .5rem; margin-top: .6rem; max-height: 28rem; overflow: auto; }
+  .amf-avis { border: 1px solid var(--carte-bordure); border-radius: 10px; padding: .6rem .8rem; cursor: pointer; text-align: left; }
+  .amf-avis:hover { border-color: var(--accent); }
+  .amf-avis.choisi { border-color: var(--accent); background: var(--accent-clair); }
+  .amf-avis-tete { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; font-size: .85rem; margin-bottom: .2rem; }
+  .amf-etoiles { color: #f5a623; letter-spacing: 1px; }
+  .amf-deja { background: var(--attention-clair, #fff4d6); color: var(--attention, #a16207); border-radius: 999px; padding: .05rem .55rem; font-size: .75rem; }
+  .amf-avis p { margin: 0; font-size: .92rem; }
+  .amf-edition { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 360px); gap: 1.4rem; align-items: start; }
+  @media (max-width: 860px) { .amf-edition { grid-template-columns: minmax(0, 1fr); } }
+  .amf-titre-groupe { font-weight: 600; margin: .9rem 0 .3rem; }
+  .amf-choix { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  .amf-chip, .amf-case { display: inline-flex; gap: .4rem; align-items: center; border: 1px solid var(--carte-bordure); border-radius: 999px; padding: .25rem .7rem; font-size: .9rem; cursor: pointer; width: auto; }
+  .amf-case { border: 0; padding: .6rem 0 0; }
+  .amf-chip input, .amf-case input { width: auto; margin: 0; }
+  .amf-photos { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; max-height: 14rem; overflow: auto; }
+  .amf-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+  .amf-photos img.choisie { border-color: var(--accent); }
+  .amf-cadre { position: relative; width: 100%; aspect-ratio: 4 / 5; border: 1px solid var(--carte-bordure); border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: .8rem; }
+  .amf-cadre img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .amf-apercu .bouton { width: 100%; justify-content: center; }
+</style>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  if (!$("amf-client")) return;
+  let avisListe = [], choisi = null, photoUrl = "", jeton = 0, minuteur = null;
+
+  function dire(message) { const z = $("amf-statut"); z.textContent = message || ""; z.hidden = !message; }
+  function erreur(message) { const z = $("amf-erreur"); z.textContent = message || ""; z.hidden = !message; }
+  const clientId = () => $("amf-client").value;
+
+  function corps() {
+    return {
+      texte: $("amf-texte").value, auteur: $("amf-auteur").value, note: choisi ? choisi.note : 5,
+      layout: document.querySelector('input[name="amf-layout"]:checked').value, photo_url: photoUrl,
+      voile: parseInt($("amf-voile").value, 10), sans_logo: !$("amf-logo").checked,
+    };
+  }
+
+  function dessinerListe() {
+    const zone = $("amf-liste"), terme = $("amf-filtre").value.trim().toLowerCase();
+    zone.textContent = "";
+    const visibles = avisListe.filter((a) => !terme || (a.texte + " " + a.auteur).toLowerCase().includes(terme));
+    if (!visibles.length) { const p = document.createElement("p"); p.className = "texte-discret"; p.textContent = avisListe.length ? "Aucun avis ne correspond." : "Aucun avis de 4 ou 5 étoiles avec commentaire sur cette fiche."; zone.appendChild(p); return; }
+    visibles.forEach((a) => {
+      const carte = document.createElement("div"); carte.className = "amf-avis" + (choisi && choisi.review_id === a.review_id ? " choisi" : ""); carte.tabIndex = 0; carte.setAttribute("role", "button");
+      const tete = document.createElement("div"); tete.className = "amf-avis-tete";
+      const etoiles = document.createElement("span"); etoiles.className = "amf-etoiles"; etoiles.textContent = "★".repeat(a.note) + "☆".repeat(5 - a.note); tete.appendChild(etoiles);
+      const nom = document.createElement("strong"); nom.textContent = a.auteur; tete.appendChild(nom);
+      if (a.date) { const d = document.createElement("span"); d.className = "texte-discret"; d.textContent = a.date.split("-").reverse().join("/"); tete.appendChild(d); }
+      if (a.deja_utilise) { const b = document.createElement("span"); b.className = "amf-deja"; b.textContent = "déjà mis en avant le " + a.deja_utilise; tete.appendChild(b); }
+      const texte = document.createElement("p"); texte.textContent = a.texte.length > 260 ? a.texte.slice(0, 260) + "…" : a.texte;
+      carte.appendChild(tete); carte.appendChild(texte);
+      const choisir = () => selectionner(a);
+      carte.addEventListener("click", choisir);
+      carte.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choisir(); } });
+      zone.appendChild(carte);
+    });
+  }
+
+  async function chargerAvis() {
+    avisListe = []; choisi = null; photoUrl = ""; $("amf-etape-edition").hidden = true; $("amf-photos").hidden = true; $("amf-photos").textContent = "";
+    $("amf-photo-retirer").hidden = true; $("amf-voile-ligne").hidden = true;
+    const id = clientId();
+    $("amf-etape-avis").hidden = !id;
+    if (!id) { dire(""); return; }
+    dire("Chargement des avis de la fiche..."); $("amf-liste").textContent = "";
+    try {
+      const r = await fetch("/publication-multi/" + id + "/avis"); const d = await r.json();
+      if (!r.ok) { dire(d.erreur || "Avis indisponibles pour cette fiche."); $("amf-etape-avis").hidden = true; return; }
+      avisListe = d.avis || []; dire(avisListe.length + " avis proposés."); dessinerListe();
+    } catch (e) { dire("Impossible de charger les avis pour le moment."); $("amf-etape-avis").hidden = true; }
+  }
+
+  function selectionner(a) {
+    choisi = a; photoUrl = ""; erreur("");
+    $("amf-texte").value = a.texte; $("amf-auteur").value = a.auteur;
+    $("amf-photo-retirer").hidden = true; $("amf-voile-ligne").hidden = true; $("amf-photos").querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie"));
+    $("amf-etape-edition").hidden = false; dessinerListe();
+    $("amf-etape-edition").scrollIntoView({ behavior: "smooth", block: "start" });
+    apercu();
+  }
+
+  async function apercu() {
+    if (!choisi) return;
+    const mien = ++jeton; erreur("");
+    $("amf-attente").hidden = false; $("amf-attente").textContent = "Aperçu en préparation...";
+    try {
+      const r = await fetch("/publication-multi/" + clientId() + "/avis/visuel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign(corps(), { mode: "apercu" })) });
+      const d = await r.json();
+      if (mien !== jeton) return;
+      if (!r.ok) { $("amf-attente").textContent = d.erreur || "Aperçu impossible."; return; }
+      $("amf-image").src = d.image; $("amf-image").hidden = false; $("amf-attente").hidden = true;
+    } catch (e) { if (mien === jeton) $("amf-attente").textContent = "Aperçu impossible pour le moment."; }
+  }
+  function planifier() { clearTimeout(minuteur); minuteur = setTimeout(apercu, 450); }
+
+  async function chargerPhotos() {
+    const zone = $("amf-photos"); zone.hidden = false; zone.textContent = "Chargement des photos de la fiche...";
+    try {
+      const r = await fetch("/publication-multi/" + clientId() + "/avis/photos"); const d = await r.json();
+      if (!r.ok) { zone.textContent = d.erreur || "Photos indisponibles."; return; }
+      zone.textContent = "";
+      if (!(d.photos || []).length) { zone.textContent = "Aucune photo sur cette fiche."; return; }
+      d.photos.slice(0, 60).forEach((p) => {
+        const img = document.createElement("img"); img.src = p.miniature; img.alt = ""; img.loading = "lazy";
+        img.addEventListener("click", () => {
+          zone.querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie")); img.classList.add("choisie");
+          photoUrl = p.url; $("amf-photo-retirer").hidden = false; $("amf-voile-ligne").hidden = false; apercu();
+        });
+        zone.appendChild(img);
+      });
+    } catch (e) { zone.textContent = "Photos indisponibles pour le moment."; }
+  }
+
+  async function telecharger() {
+    if (!choisi) return;
+    erreur(""); $("amf-telecharger").disabled = true; $("amf-spinner").hidden = false;
+    try {
+      const r = await fetch("/avis/mise-en-forme/" + clientId() + "/telecharger", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign(corps(), { review_id: choisi.review_id })) });
+      if (!r.ok) { let m = "Téléchargement impossible."; try { m = (await r.json()).erreur || m; } catch (e) {} erreur(m); return; }
+      const blob = await r.blob(), lien = document.createElement("a");
+      const nomFichier = ((r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] || "avis.jpg";
+      lien.href = URL.createObjectURL(blob); lien.download = nomFichier; document.body.appendChild(lien); lien.click(); lien.remove();
+      setTimeout(() => URL.revokeObjectURL(lien.href), 4000);
+      choisi.deja_utilise = choisi.deja_utilise || new Date().toLocaleDateString("fr-FR"); dessinerListe();
+    } catch (e) { erreur("Téléchargement impossible pour le moment."); }
+    finally { $("amf-telecharger").disabled = false; $("amf-spinner").hidden = true; }
+  }
+
+  $("amf-client").addEventListener("change", chargerAvis);
+  $("amf-filtre").addEventListener("input", dessinerListe);
+  $("amf-texte").addEventListener("input", planifier);
+  $("amf-auteur").addEventListener("input", planifier);
+  $("amf-voile").addEventListener("input", planifier);
+  $("amf-logo").addEventListener("change", apercu);
+  document.querySelectorAll('input[name="amf-layout"]').forEach((r) => r.addEventListener("change", apercu));
+  $("amf-photo-fiche").addEventListener("click", chargerPhotos);
+  $("amf-photo-retirer").addEventListener("click", () => {
+    photoUrl = ""; $("amf-photo-retirer").hidden = true; $("amf-voile-ligne").hidden = true;
+    $("amf-photos").querySelectorAll("img.choisie").forEach((i) => i.classList.remove("choisie")); apercu();
+  });
+  $("amf-telecharger").addEventListener("click", telecharger);
+  if (clientId()) chargerAvis();
+})();
+</script>
+{% endblock %}

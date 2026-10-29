@@ -11721,18 +11721,15 @@ def publication_multi_photos_whatsapp(client_id: int, request: Request, db: Sess
     return JSONResponse({"photos": [{"url": p.image_url, "miniature": p.image_url} for p in photos]})
 
 
-@app.post("/publication-multi/{client_id}/avis/visuel")
-async def publication_multi_avis_visuel(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
-    """Dessine le visuel de l'avis. mode "apercu" : image en base64 ; mode "final" : JPEG heberge sur OVH (URL renvoyee)."""
-    if not utilisateur_connecte(request):
-        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
-    client = db.get(models.Client, client_id)
-    if not client:
-        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
-    donnees = await request.json()
+def _preparer_visuel_avis(client, donnees: dict):
+    """
+    Parametres du visuel d'un avis a partir d'une requete (composeur multi-reseaux ou page « Mettre en forme un avis ») : renvoie
+    (dessiner, auteur, note, texte) ; dessiner() renvoie l'image 1080x1350 et doit s'executer dans _avec_polices_client (polices du client).
+    ValueError si le texte de l'avis est vide.
+    """
     texte = " ".join(str(donnees.get("texte") or "").split())[:900]
     if not texte:
-        return JSONResponse({"erreur": "Le texte de l'avis est vide."}, status_code=400)
+        raise ValueError("Le texte de l'avis est vide.")
     auteur = " ".join(str(donnees.get("auteur") or "").split())[:40]
     try:
         note = max(1, min(5, int(donnees.get("note") or 5)))
@@ -11743,7 +11740,6 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
     logo_position, logo_style = _logo_position_demandee(donnees, client), _logo_style_demandee(donnees, client)
     logo_couleur_fond = _logo_couleur_fond_demandee(donnees, client)
     layout = donnees.get("layout") if donnees.get("layout") in carrousel_visuel.LAYOUTS else "plein"
-    final = donnees.get("mode") == "final"
     logo_url, sans_logo = client.logo_url, bool(donnees.get("sans_logo"))
     photo_url = str(donnees.get("photo_url") or "").strip()
     try:
@@ -11752,13 +11748,34 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
         voile = 68
     nom_client = " ".join(str(donnees.get("nom_affiche") or "").split())[:60] or nom_affiche_carrousel(client)
 
-    def fabriquer():
+    def dessiner():
         logo = None if sans_logo else _image_depuis_url_publique(logo_url)
         photo = _image_depuis_url_autorisee(photo_url)
-        image = carrousel_visuel.dessiner_avis(
+        return carrousel_visuel.dessiner_avis(
             texte, auteur, note, layout, couleur, nom_client, logo, secondaires, photo, voile, decor, graine_decor,
             logo_position, logo_style, logo_couleur_fond,
         )
+
+    return dessiner, auteur, note, texte
+
+
+@app.post("/publication-multi/{client_id}/avis/visuel")
+async def publication_multi_avis_visuel(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Dessine le visuel de l'avis. mode "apercu" : image en base64 ; mode "final" : JPEG heberge sur OVH (URL renvoyee)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    donnees = await request.json()
+    final = donnees.get("mode") == "final"
+    try:
+        dessiner, auteur, note, _texte = _preparer_visuel_avis(client, donnees)
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+
+    def fabriquer():
+        image = dessiner()
         if not final:
             image = image.resize((720, 900), Image.LANCZOS)
         tampon = io.BytesIO()
@@ -11774,6 +11791,63 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
     if final:
         _archiver_creation(db, client_id, "visuel", "Visuel avis Google", [resultat], meta={"auteur": auteur, "note": note, "source": "avis"})
     return JSONResponse({"image": resultat})
+
+
+@app.get("/avis/mise-en-forme", response_class=HTMLResponse)
+def page_avis_mise_en_forme(request: Request, client_id: int = None, db: Session = Depends(obtenir_session)):
+    """Page « Mettre en forme un avis » : choisir un avis d'une fiche, le mettre en forme comme dans le composeur, puis telecharger l'image."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    clients = (
+        db.query(models.Client)
+        .filter(models.Client.account_id != "", models.Client.location_id != "", ~models.Client.etiquettes.any(models.Etiquette.isolee == True))  # noqa: E712
+        .order_by(models.Client.nom).all()
+    )
+    return templates.TemplateResponse(request, "avis_mise_en_forme.html", {"clients": clients, "client_id": client_id})
+
+
+@app.post("/avis/mise-en-forme/{client_id}/telecharger")
+async def avis_mise_en_forme_telecharger(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Visuel de l'avis en JPEG 1080x1350, a telecharger (meme dessin que le composeur, voir _preparer_visuel_avis). Corps : comme /publication-multi/{id}/avis/visuel,
+    plus review_id : l'avis est alors marque « deja mis en avant » dans la liste des avis du composeur.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        donnees = await request.json()
+    except Exception:
+        donnees = None
+    if not isinstance(donnees, dict):
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    try:
+        dessiner, auteur, note, texte = _preparer_visuel_avis(client, donnees)
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+
+    def encoder():
+        tampon = io.BytesIO()
+        dessiner().save(tampon, format="JPEG", quality=95, subsampling=0)
+        return tampon.getvalue()
+
+    try:
+        octets = await run_in_threadpool(_avec_polices_client(client, encoder))
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec du dessin du visuel : {erreur}"}, status_code=500)
+    review_id = str(donnees.get("review_id") or "").strip()[:200]
+    if review_id and not db.query(models.AvisMisEnAvant).filter_by(client_id=client.id, review_id=review_id).first():
+        try:
+            db.add(models.AvisMisEnAvant(client_id=client.id, review_id=review_id, auteur=auteur[:80], extrait=texte[:200]))
+            db.commit()
+        except Exception:
+            db.rollback()
+    base = unicodedata.normalize("NFKD", f"avis {nom_affiche_carrousel(client)} {auteur}").encode("ascii", "ignore").decode()
+    nom_fichier = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")[:80] or "avis"
+    return Response(content=octets, media_type="image/jpeg", headers={"Content-Disposition": f'attachment; filename="{nom_fichier}.jpg"', "Cache-Control": "no-store"})
 
 
 @app.post("/publication-multi/{client_id}/avis/texte")
