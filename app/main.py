@@ -4542,6 +4542,73 @@ def _references_ambiance(client, maximum: int = NB_MAX_REFERENCES_IMAGE) -> list
     return images
 
 
+FORMATS_IMAGE_IA = {"4:3": "Google (4:3)", "1:1": "Carré (1:1)", "4:5": "Portrait (4:5)", "9:16": "Vertical (9:16)", "16:9": "Paysage (16:9)"}
+
+
+@app.get("/images-ia", response_class=HTMLResponse)
+def page_images_ia(request: Request, client_id: int = None, db: Session = Depends(obtenir_session)):
+    """Images IA d'ambiance : bibliotheque de photos d'une fiche, puis images creees a partir d'une description, a telecharger."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    libres, groupes = _clients_par_espace(db.query(models.Client).order_by(models.Client.nom).all())
+    return templates.TemplateResponse(request, "images_ia.html", {
+        "clients_libres": libres, "groupes_espaces": groupes, "client_id": client_id, "formats": FORMATS_IMAGE_IA,
+        "page_actuelle": "images_ia",
+    })
+
+
+@app.get("/clients/{client_id}/photos_ambiance")
+def lister_photos_ambiance_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Bibliotheque d'ambiance d'une fiche : {"photos": [{id, url}], "total", "maximum"}."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    return JSONResponse({
+        "photos": [{"id": p.id, "url": p.image_url} for p in client.photos_ambiance], "total": len(client.photos_ambiance),
+        "maximum": NB_MAX_PHOTOS_AMBIANCE, "photos_reference": len(client.photos_reference),
+    })
+
+
+@app.post("/images-ia/{client_id}/generer")
+async def images_ia_generer(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Cree une image a partir d'une description, en s'inspirant des photos de la fiche (bibliotheque d'ambiance + photos de reference). Corps : description,
+    format (4:3, 1:1, 4:5, 9:16 ou 16:9), options (type, cadrage, decor, lumiere...), utiliser_bibliotheque (true : l'IA recoit une dizaine de photos de la fiche ;
+    seule leur ambiance est reprise, jamais un logo, une enseigne, un texte ni un visage). L'image n'est rattachee a aucun post : elle est gardee dans « Creations par client ».
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    if not isinstance(recu, dict):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    description = " ".join(str(recu.get("description") or "").split())[:800]
+    if not description:
+        return JSONResponse({"erreur": "Decrivez l'image voulue."}, status_code=400)
+    format_image = recu.get("format") if recu.get("format") in FORMATS_IMAGE_IA else "4:3"
+    options = {cle: valeur for cle, valeur in (recu.get("options") if isinstance(recu.get("options"), dict) else {}).items() if cle in CLES_OPTIONS_AMBIANCE}
+    references, agences = None, False
+    if recu.get("utiliser_bibliotheque") is True:
+        references = await run_in_threadpool(_references_ambiance, client)
+        if not references:
+            return JSONResponse({"erreur": "Cette fiche n'a pas encore de photos : ajoutez-en dans la bibliotheque, ou decochez « S'inspirer des photos de la fiche »."}, status_code=400)
+        agences = True
+        options["personnes"] = "lieu_reference"
+    donnees = {"prompt_image": description, "texte_post": "", "inclure_reference": bool(references), "options": options}
+    charge, code = await _generer_image_ia_pour_client(db, client, donnees, format_image, f"image-ia-{client.id}", references=references, agences=agences)
+    if code == 200:
+        charge["references_utilisees"] = len(references or [])
+    return JSONResponse(charge, status_code=code)
+
+
 @app.post("/clients/{client_id}/photos_ambiance")
 async def ajouter_photos_ambiance_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Ajoute des photos a la bibliotheque d'ambiance d'une fiche (plusieurs fichiers par appel). Reponse : ajoutees, erreurs (une phrase par fichier refuse), total."""
@@ -11955,6 +12022,18 @@ async def publication_multi_avis_visuel(client_id: int, request: Request, db: Se
     return JSONResponse({"image": resultat})
 
 
+def _clients_par_espace(clients: list) -> tuple:
+    """(clients sans espace isole, [(nom de l'espace, clients)]) : les clients d'un espace isole sont proposes sous le nom de leur espace."""
+    libres, espaces = [], {}
+    for c in clients:
+        isolee = next((e for e in sorted(c.etiquettes, key=lambda e: e.nom) if e.isolee), None)
+        if isolee:
+            espaces.setdefault(isolee.nom, []).append(c)
+        else:
+            libres.append(c)
+    return libres, [(nom, espaces[nom]) for nom in sorted(espaces, key=str.lower)]
+
+
 @app.get("/avis/mise-en-forme", response_class=HTMLResponse)
 def page_avis_mise_en_forme(request: Request, client_id: int = None, db: Session = Depends(obtenir_session)):
     """Page « Mettre en forme un avis » : choisir un avis d'une fiche, le mettre en forme comme dans le composeur, puis telecharger l'image."""
@@ -11964,14 +12043,7 @@ def page_avis_mise_en_forme(request: Request, client_id: int = None, db: Session
     tous = db.query(models.Client).filter(models.Client.account_id != "", models.Client.location_id != "").order_by(models.Client.nom).all()
     ids_avec_logo = [c.id for c in tous if (c.logo_url or "").strip()]
     # Les clients rangés dans un espace isolé (voir /espaces) sont absents des vues générales : ici on les propose aussi, regroupés par espace.
-    clients, espaces = [], {}
-    for c in tous:
-        isolee = next((e for e in sorted(c.etiquettes, key=lambda e: e.nom) if e.isolee), None)
-        if isolee:
-            espaces.setdefault(isolee.nom, []).append(c)
-        else:
-            clients.append(c)
-    groupes = [(nom, espaces[nom]) for nom in sorted(espaces, key=str.lower)]
+    clients, groupes = _clients_par_espace(tous)
     return templates.TemplateResponse(request, "avis_mise_en_forme.html", {"clients": tous, "clients_libres": clients, "groupes_espaces": groupes, "client_id": client_id, "ids_avec_logo": ids_avec_logo})
 
 

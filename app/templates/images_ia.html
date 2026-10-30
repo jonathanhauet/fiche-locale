@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% set page_actuelle = "images_ia" %}
+{% block titre %}Images IA (ambiance) — Fiche Locale{% endblock %}
+{% block contenu %}
+<div class="barre-titre">
+  <h1>Images IA d'ambiance</h1>
+</div>
+
+<p class="texte-vide">
+  Chargez une fois les photos d'une marque (agences, intérieurs, vitrines, produits), puis décrivez l'image voulue : l'IA s'en inspire pour l'ambiance, les couleurs et les matières, et en crée une nouvelle à télécharger.
+  Elle ne recopie jamais de logo, d'enseigne, de texte ni de visage reconnaissable.
+</p>
+
+<section class="ia-etape">
+  <h2><span class="ia-num">1</span> Choisissez la fiche</h2>
+  <select id="ia-client">
+    <option value="">Choisir un client...</option>
+    {% for c in clients_libres %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+    {% for nom_espace, membres in groupes_espaces %}
+    <optgroup label="Espace : {{ nom_espace }}">
+      {% for c in membres %}<option value="{{ c.id }}" {% if client_id == c.id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+</section>
+
+<section class="ia-etape" id="ia-etape-photos" hidden>
+  <h2><span class="ia-num">2</span> <span>Ses photos d'ambiance (<span id="ia-total">0</span>/<span id="ia-maximum">60</span>)</span></h2>
+  <p class="texte-discret">Plus il y a de photos variées, mieux l'IA saisit l'ambiance. À chaque image, elle en reçoit une dizaine tirées au hasard (jusqu'à 60 photos par fiche).</p>
+  <div class="grille-photos-reference" id="ia-grille"></div>
+  <p id="ia-vide" class="texte-vide" hidden>Aucune photo d'ambiance pour l'instant : ajoutez-en pour que l'IA s'en inspire (vous pouvez aussi créer une image sans photos).</p>
+  <div class="formulaire-ligne">
+    <label class="bouton-secondaire">Ajouter des photos<input type="file" id="ia-fichiers" accept="image/*" multiple hidden></label>
+    <button type="button" id="ia-tout-supprimer" class="bouton-secondaire" hidden>Tout supprimer</button>
+  </div>
+  <p id="ia-statut-photos" class="texte-discret" role="status" hidden></p>
+</section>
+
+<section class="ia-etape" id="ia-etape-image" hidden>
+  <h2><span class="ia-num">3</span> Décrivez l'image</h2>
+  <label for="ia-description">Quelle image voulez-vous ?</label>
+  <textarea id="ia-description" rows="3" maxlength="800" placeholder="Ex. : un conseiller accueille un client au comptoir de l'agence, lumière chaleureuse"></textarea>
+
+  <p class="ia-titre-groupe">Format</p>
+  <div class="ia-choix">
+    {% for valeur, libelle in formats.items() %}
+    <label class="ia-chip"><input type="radio" name="ia-format" value="{{ valeur }}" {% if valeur == "4:3" %}checked{% endif %}> {{ libelle }}</label>
+    {% endfor %}
+  </div>
+
+  <label class="ia-chip ia-bibliotheque"><input type="checkbox" id="ia-bibliotheque" checked> <span id="ia-bibliotheque-libelle">S'inspirer des photos de la fiche</span></label>
+
+  {% set oia_masse = true %}{% set client_oia = none %}{% include "_options_image_ia.html" %}
+
+  <div class="ia-action">
+    <button type="button" id="ia-generer" class="bouton"><span class="spinner" id="ia-spinner" hidden></span>🎨 Générer l'image</button>
+    <p class="texte-discret">Aucun texte, aucun logo dans l'image : vérifiez chaque résultat avant de l'utiliser. Chaque image créée est gardée dans « Créations par client ».</p>
+  </div>
+  <p id="ia-erreur" class="message-erreur" role="alert" hidden></p>
+</section>
+
+<section class="ia-etape" id="ia-resultats" hidden>
+  <h2>Images créées</h2>
+  <div class="ia-galerie" id="ia-galerie"></div>
+</section>
+
+<style>
+  .ia-etape { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1rem 1.1rem 1.1rem; margin: 0 0 1rem; }
+  .ia-etape > h2 { display: flex; align-items: center; gap: .6rem; font-size: 1.05rem; margin: 0 0 .5rem; }
+  .ia-num { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: #fff; font-size: .9rem; font-weight: 700; }
+  .ia-titre-groupe { font-weight: 600; margin: .9rem 0 .3rem; }
+  .ia-choix { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  .ia-chip { display: inline-flex; flex-direction: row; gap: .5rem; align-items: center; justify-content: flex-start; text-align: left; margin: 0; border: 1px solid var(--carte-bordure); border-radius: 999px; padding: .3rem .8rem; font-size: .9rem; cursor: pointer; width: auto; }
+  .ia-chip input { width: auto; flex: none; margin: 0; }
+  .ia-bibliotheque { margin: .9rem 0 .4rem; }
+  .ia-action { margin: 1rem 0 .4rem; }
+  .ia-action .bouton { width: 100%; justify-content: center; font-size: 1.05rem; padding: .8rem 1rem; }
+  .ia-action .texte-discret { text-align: center; margin: .4rem 0 0; }
+  .ia-galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+  .ia-resultat img { width: 100%; border-radius: 10px; border: 1px solid var(--carte-bordure); display: block; }
+  .ia-resultat .ia-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+  .ia-resultat .ia-note { margin: .3rem 0 0; }
+  .grille-photos-reference .carte-photo-reference img { cursor: default; }
+</style>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  let photosTotal = 0;
+  const idClient = () => $("ia-client").value;
+  const dire = (id, texte) => { const z = $(id); z.hidden = !texte; z.textContent = texte || ""; };
+
+  function majBibliotheque() {
+    const n = photosTotal;
+    $("ia-vide").hidden = n > 0; $("ia-tout-supprimer").hidden = n === 0;
+    const case_ = $("ia-bibliotheque");
+    case_.disabled = n === 0; if (n === 0) case_.checked = false;
+    $("ia-bibliotheque-libelle").textContent = n ? "S'inspirer des photos de la fiche (" + n + " photo" + (n > 1 ? "s" : "") + " : l'IA en tire l'ambiance, sans logo ni texte)" : "S'inspirer des photos de la fiche (aucune photo pour l'instant)";
+  }
+
+  async function chargerPhotos(recocher) {
+    const id = idClient();
+    $("ia-etape-photos").hidden = $("ia-etape-image").hidden = !id;
+    if (!id) return;
+    try {
+      const reponse = await fetch("/clients/" + id + "/photos_ambiance"); const donnees = await reponse.json();
+      if (!reponse.ok) { dire("ia-statut-photos", donnees.erreur || "Photos indisponibles."); return; }
+      const grille = $("ia-grille"); grille.textContent = "";
+      donnees.photos.forEach((p) => {
+        const carte = document.createElement("div"); carte.className = "carte-photo-reference"; carte.dataset.photoId = p.id;
+        const img = document.createElement("img"); img.src = p.url; img.alt = "Photo d'ambiance"; img.loading = "lazy";
+        const retirer = document.createElement("button"); retirer.type = "button"; retirer.className = "bouton-supprimer-photo-reference bouton-retirer-ambiance"; retirer.textContent = "×"; retirer.title = "Retirer";
+        carte.appendChild(img); carte.appendChild(retirer); grille.appendChild(carte);
+      });
+      photosTotal = donnees.total; $("ia-total").textContent = donnees.total; $("ia-maximum").textContent = donnees.maximum;
+      const avantVide = $("ia-bibliotheque").disabled;
+      majBibliotheque(); if (recocher || avantVide) $("ia-bibliotheque").checked = donnees.total > 0;
+    } catch (e) { dire("ia-statut-photos", "Photos indisponibles pour le moment."); }
+  }
+
+  $("ia-client").addEventListener("change", () => { dire("ia-statut-photos", ""); dire("ia-erreur", ""); chargerPhotos(true); });
+
+  // Envoi par petits lots, avec la progression : une bibliotheque entiere ne tient pas dans une seule requete.
+  $("ia-fichiers").addEventListener("change", async (evenement) => {
+    const fichiers = Array.from(evenement.target.files); evenement.target.value = "";
+    if (!fichiers.length || !idClient()) return;
+    const LOT = 4, erreurs = []; let ajoutees = 0;
+    for (let i = 0; i < fichiers.length; i += LOT) {
+      const donnees = new FormData(); fichiers.slice(i, i + LOT).forEach((f) => donnees.append("fichiers", f));
+      dire("ia-statut-photos", "Envoi des photos : " + Math.min(i + LOT, fichiers.length) + " sur " + fichiers.length + "...");
+      try {
+        const reponse = await fetch("/clients/" + idClient() + "/photos_ambiance", { method: "POST", body: donnees });
+        const resultat = await reponse.json().catch(() => ({}));
+        if (!reponse.ok) { erreurs.push(resultat.erreur || "Envoi impossible."); break; }
+        ajoutees += resultat.ajoutees; erreurs.push(...(resultat.erreurs || []));
+      } catch (e) { erreurs.push("Envoi impossible pour le moment."); break; }
+    }
+    await chargerPhotos(false);
+    dire("ia-statut-photos", ajoutees + " photo(s) ajoutée(s)." + (erreurs.length ? " Problèmes : " + erreurs.slice(0, 3).join(" ; ") + (erreurs.length > 3 ? " (et " + (erreurs.length - 3) + " autres)" : "") : ""));
+    if (ajoutees) $("ia-bibliotheque").checked = true;
+  });
+  $("ia-grille").addEventListener("click", async (evenement) => {
+    const bouton = evenement.target.closest(".bouton-retirer-ambiance");
+    if (!bouton) return;
+    const reponse = await fetch("/clients/" + idClient() + "/photos_ambiance/" + bouton.closest(".carte-photo-reference").dataset.photoId + "/supprimer", { method: "POST" });
+    if (!reponse.ok) { dire("ia-statut-photos", "Suppression impossible pour le moment."); return; }
+    bouton.closest(".carte-photo-reference").remove(); photosTotal = (await reponse.json()).total; $("ia-total").textContent = photosTotal; majBibliotheque();
+  });
+  $("ia-tout-supprimer").addEventListener("click", async () => {
+    if (!confirm("Supprimer toutes les photos d'ambiance de cette fiche ?")) return;
+    const reponse = await fetch("/clients/" + idClient() + "/photos_ambiance/tout_supprimer", { method: "POST" });
+    if (!reponse.ok) { dire("ia-statut-photos", "Suppression impossible pour le moment."); return; }
+    $("ia-grille").textContent = ""; photosTotal = 0; $("ia-total").textContent = 0; majBibliotheque(); dire("ia-statut-photos", "Bibliothèque vidée.");
+  });
+
+  // Telechargement : l'image est lue via la plateforme (meme origine), puis enregistree sous un nom clair.
+  async function telecharger(url, bouton) {
+    bouton.disabled = true;
+    try {
+      const reponse = await fetch("/image_proxy?url=" + encodeURIComponent(url));
+      if (!reponse.ok) throw new Error("echec");
+      const blob = await reponse.blob(), lien = document.createElement("a");
+      lien.href = URL.createObjectURL(blob); lien.download = "image-ia.png"; document.body.appendChild(lien); lien.click(); lien.remove();
+      setTimeout(() => URL.revokeObjectURL(lien.href), 4000);
+    } catch (e) { dire("ia-erreur", "Téléchargement impossible pour le moment : faites un clic droit sur l'image pour l'enregistrer."); }
+    finally { bouton.disabled = false; }
+  }
+  function ajouterResultat(donnees) {
+    $("ia-resultats").hidden = false;
+    const carte = document.createElement("div"); carte.className = "ia-resultat";
+    const img = document.createElement("img"); img.src = donnees.url; img.alt = "Image créée par l'IA";
+    const actions = document.createElement("div"); actions.className = "ia-actions";
+    const dl = document.createElement("button"); dl.type = "button"; dl.className = "bouton-secondaire bouton-mini"; dl.textContent = "⬇ Télécharger"; dl.addEventListener("click", () => telecharger(donnees.url, dl));
+    actions.appendChild(dl);
+    const note = document.createElement("p"); note.className = "texte-discret ia-note";
+    note.textContent = "À vérifier : aucun logo, enseigne, texte ni visage reconnaissable." + (donnees.references_utilisees ? " (" + donnees.references_utilisees + " photos de la fiche utilisées pour l'ambiance)" : "") + (donnees.avertissement ? " " + donnees.avertissement : "");
+    carte.appendChild(img); carte.appendChild(actions); carte.appendChild(note);
+    $("ia-galerie").prepend(carte);
+  }
+
+  $("ia-generer").addEventListener("click", async () => {
+    const description = $("ia-description").value.trim();
+    if (!description) { dire("ia-erreur", "Décrivez d'abord l'image voulue."); $("ia-description").focus(); return; }
+    dire("ia-erreur", "");
+    const corps = {
+      description: description, format: document.querySelector('input[name="ia-format"]:checked').value,
+      options: window.optionsImageIA ? window.optionsImageIA() : {}, utiliser_bibliotheque: $("ia-bibliotheque").checked,
+    };
+    const bouton = $("ia-generer"); bouton.disabled = true; $("ia-spinner").hidden = false;
+    try {
+      const reponse = await fetch("/images-ia/" + idClient() + "/generer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      const donnees = await reponse.json().catch(() => ({}));
+      if (!reponse.ok) { dire("ia-erreur", donnees.erreur || "Échec de la génération de l'image."); return; }
+      ajouterResultat(donnees);
+    } catch (e) { dire("ia-erreur", "Génération impossible pour le moment : réessayez dans un instant."); }
+    finally { bouton.disabled = false; $("ia-spinner").hidden = true; }
+  });
+
+  majBibliotheque();
+  if (idClient()) chargerPhotos(true);
+})();
+</script>
+{% endblock %}
