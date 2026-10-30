@@ -18,6 +18,7 @@ import tempfile
 import secrets
 import threading
 import unicodedata
+import random
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
@@ -2632,14 +2633,16 @@ def generer_image_lot(
 
 NB_MAX_REFERENCES_LOT = 10          # Gemini accepte 14 images de reference au maximum
 NB_MAX_FICHIERS_REFERENCE_LOT = 8
+# Options du visuel permises avec des photos d'ambiance : jamais de texte dans l'image, ni de couleurs de marque, ni de « qui apparait » (voir _generer_image_ia_pour_client)
+CLES_OPTIONS_AMBIANCE = ("type", "illustration", "cadrage", "decor", "lumiere", "varier")
 
 
 @app.post("/posts/lot/{lot_id}/generer_image_ia")
 async def generer_image_lot_ia(lot_id: str, request: Request, db: Session = Depends(obtenir_session)):
     """
     Image IA d'un lot de posts (la meme image pour toutes les fiches du lot), avec les options du visuel et des photos de reference. Formulaire :
-    options (JSON : type, illustration, cadrage, decor, lumiere, varier), client_reference_id (client dont on reprend les photos de reference),
-    fichiers (captures ou photos importees pour cette image). Avec des photos de reference, elles montrent plusieurs agences d'une meme marque :
+    options (JSON : type, illustration, cadrage, decor, lumiere, varier), client_reference_id (client dont on reprend les photos de reference et un echantillon
+    de sa bibliotheque d'ambiance), fichiers (captures ou photos importees pour cette image), prompt_image (description de l'image souhaitee, facultative). Avec des photos de reference, elles montrent plusieurs agences d'une meme marque :
     seule leur ambiance est reprise, et l'image ne contient jamais de logo, d'enseigne, de texte ni de vraie personne (voir gemini_images.INSTRUCTION_AGENCES).
     Format 4:3, celui d'un post Google. En cas de succes, l'image devient celle de tous les posts du lot.
     """
@@ -2655,19 +2658,15 @@ async def generer_image_lot_ia(lot_id: str, request: Request, db: Session = Depe
     except ValueError:
         options = {}
     # Dans un lot : pas de texte dans l'image, pas de « couleurs du client » (le lot concerne plusieurs fiches), pas de « qui apparait »
-    options = {cle: valeur for cle, valeur in (options if isinstance(options, dict) else {}).items() if cle in ("type", "illustration", "cadrage", "decor", "lumiere", "varier")}
+    options = {cle: valeur for cle, valeur in (options if isinstance(options, dict) else {}).items() if cle in CLES_OPTIONS_AMBIANCE}
 
     references = []
     identifiant_reference = str(formulaire.get("client_reference_id") or "").strip()
     if identifiant_reference:
         client_reference = db.get(models.Client, int(identifiant_reference)) if identifiant_reference.isdigit() else None
-        if not client_reference or not client_reference.photos_reference:
-            return JSONResponse({"erreur": "Cette fiche n'a pas de photos de reference : chargez-les dans sa page, ou importez une capture ici."}, status_code=400)
-        for photo in client_reference.photos_reference:
-            try:
-                references.append(_jpeg_normalise(requests.get(photo.image_url, timeout=20).content, 1536))
-            except Exception:
-                continue
+        if not client_reference or not (client_reference.photos_reference or client_reference.photos_ambiance):
+            return JSONResponse({"erreur": "Cette fiche n'a pas de photos : chargez-les dans sa page (photos de reference ou bibliotheque d'ambiance), ou importez une capture ici."}, status_code=400)
+        references = await run_in_threadpool(_references_ambiance, client_reference)
         if not references:
             return JSONResponse({"erreur": "Impossible de recuperer les photos de reference de cette fiche."}, status_code=500)
     fichiers = [f for f in formulaire.getlist("fichiers") if hasattr(f, "read")]
@@ -2686,7 +2685,8 @@ async def generer_image_lot_ia(lot_id: str, request: Request, db: Session = Depe
         options["personnes"] = "lieu_reference"
 
     premier = posts[0]
-    donnees = {"prompt_image": premier.prompt_image, "texte_post": premier.texte, "inclure_reference": bool(references), "options": options}
+    description = " ".join(str(formulaire.get("prompt_image") or "").split())[:600]           # l'image que tu veux ; sinon, celle que l'IA a prevue avec le post
+    donnees = {"prompt_image": description or premier.prompt_image, "texte_post": premier.texte, "inclure_reference": bool(references), "options": options}
     client = db.get(models.Client, premier.client_id)
     charge, code = await _generer_image_ia_pour_client(
         db, client, donnees, "4:3", f"lot-{lot_id}-ia", references=references or None, agences=bool(references),
@@ -4518,6 +4518,89 @@ def supprimer_document_client(client_id: int, document_id: int, request: Request
 
 
 NB_MAX_PHOTOS_REFERENCE = 5
+
+
+NB_MAX_PHOTOS_AMBIANCE = 60
+NB_MAX_REFERENCES_IMAGE = 10        # Gemini accepte 14 images de reference au maximum
+
+
+def _references_ambiance(client, maximum: int = NB_MAX_REFERENCES_IMAGE) -> list:
+    """
+    Photos de reference d'une fiche pour une image IA, en JPEG : d'abord ses photos de reference (un collage, par exemple), puis un echantillon pris au
+    hasard dans sa bibliotheque d'ambiance, 10 au plus au total. Le tirage change a chaque image, ce qui varie les inspirations. Photo illisible : ignoree.
+    """
+    urls = [p.image_url for p in client.photos_reference][:maximum]
+    bibliotheque = [p.image_url for p in client.photos_ambiance]
+    random.shuffle(bibliotheque)
+    urls += bibliotheque[:max(0, maximum - len(urls))]
+    images = []
+    for url in urls:
+        try:
+            images.append(_jpeg_normalise(requests.get(url, timeout=20).content, 1536))
+        except Exception:
+            continue
+    return images
+
+
+@app.post("/clients/{client_id}/photos_ambiance")
+async def ajouter_photos_ambiance_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Ajoute des photos a la bibliotheque d'ambiance d'une fiche (plusieurs fichiers par appel). Reponse : ajoutees, erreurs (une phrase par fichier refuse), total."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    formulaire = await request.form()
+    fichiers = [f for f in formulaire.getlist("fichiers") if hasattr(f, "read")]
+    if not fichiers:
+        return JSONResponse({"erreur": "Choisissez au moins une image."}, status_code=400)
+    ajoutees, erreurs = 0, []
+    for fichier in fichiers:
+        nom = (getattr(fichier, "filename", "") or "image")[:60]
+        if len(client.photos_ambiance) + ajoutees >= NB_MAX_PHOTOS_AMBIANCE:
+            erreurs.append(f"{nom} : {NB_MAX_PHOTOS_AMBIANCE} photos au maximum dans la bibliotheque.")
+            continue
+        octets = await fichier.read()
+        if len(octets) > 20 * 1024 * 1024:
+            erreurs.append(f"{nom} : image trop lourde (20 Mo maximum).")
+            continue
+        try:
+            jpeg = await run_in_threadpool(_jpeg_normalise, octets, 1600)
+        except ValueError:
+            erreurs.append(f"{nom} : image illisible (utilisez des fichiers JPG ou PNG).")
+            continue
+        try:
+            url = await run_in_threadpool(ovh_upload.envoyer_octets, jpeg, f"ambiance_{client.id}_{uuid.uuid4().hex[:10]}.jpg")
+        except Exception as erreur:
+            erreurs.append(f"{nom} : envoi impossible ({erreur}).")
+            continue
+        db.add(models.PhotoAmbianceClient(client_id=client.id, image_url=url))
+        ajoutees += 1
+    db.commit()
+    return JSONResponse({"ajoutees": ajoutees, "erreurs": erreurs, "total": db.query(models.PhotoAmbianceClient).filter_by(client_id=client.id).count()})
+
+
+@app.post("/clients/{client_id}/photos_ambiance/tout_supprimer")
+def supprimer_toutes_photos_ambiance_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    if not db.get(models.Client, client_id):
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    supprimees = db.query(models.PhotoAmbianceClient).filter_by(client_id=client_id).delete()
+    db.commit()
+    return JSONResponse({"supprimees": supprimees, "total": 0})
+
+
+@app.post("/clients/{client_id}/photos_ambiance/{photo_id}/supprimer")
+def supprimer_photo_ambiance_client(client_id: int, photo_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    photo = db.get(models.PhotoAmbianceClient, photo_id)
+    if not photo or photo.client_id != client_id:
+        return JSONResponse({"erreur": "Photo introuvable."}, status_code=404)
+    db.delete(photo)
+    db.commit()
+    return JSONResponse({"total": db.query(models.PhotoAmbianceClient).filter_by(client_id=client_id).count()})
 
 
 @app.post("/clients/{client_id}/photos_reference")
@@ -12976,7 +13059,15 @@ async def generer_image_post_ia(post_id: int, request: Request, db: Session = De
         "prompt_image": str(recu.get("prompt_image") or post.prompt_image or ""), "texte_post": post.texte or "",
         "inclure_reference": bool(recu.get("inclure_reference")), "options": recu.get("options") if isinstance(recu.get("options"), dict) else {},
     }
-    charge, code = await _generer_image_ia_pour_client(db, post.client, donnees, "4:3", f"post-{post.id}-ia")
+    references, agences = None, False
+    if recu.get("utiliser_bibliotheque") is True:      # s'inspirer des photos de la fiche : memes garde-fous que les posts en masse (ambiance seulement, rien d'ecrit)
+        references = await run_in_threadpool(_references_ambiance, post.client)
+        if not references:
+            return JSONResponse({"erreur": "Cette fiche n'a pas de photos d'ambiance ni de photos de reference : chargez-les dans sa page."}, status_code=400)
+        agences = True
+        donnees["inclure_reference"] = True
+        donnees["options"] = {**{cle: valeur for cle, valeur in donnees["options"].items() if cle in CLES_OPTIONS_AMBIANCE}, "personnes": "lieu_reference"}
+    charge, code = await _generer_image_ia_pour_client(db, post.client, donnees, "4:3", f"post-{post.id}-ia", references=references, agences=agences)
     if code == 200:
         post.image_url = charge["url"]
         db.commit()

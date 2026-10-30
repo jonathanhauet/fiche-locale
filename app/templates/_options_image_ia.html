@@ -18,6 +18,12 @@
   {% endif %}
   {% endfor %}
   <div class="groupe-options-visuel">
+    {% if not oia_masse and (client_oia.photos_ambiance or client_oia.photos_reference) %}
+    <label class="etiquette-chip-case">
+      <input type="checkbox" id="oia-bibliotheque">
+      S'inspirer des photos de cette fiche ({{ client_oia.photos_ambiance|length + client_oia.photos_reference|length }} photos : l'IA en tire l'ambiance, sans logo, sans texte ni visage reconnaissable ; les options « mots en français » et « couleurs de la marque » sont alors ignorées)
+    </label>
+    {% endif %}
     {% if not oia_masse %}
     <label class="etiquette-chip-case">
       <input type="checkbox" id="oia-texte-fr">
@@ -74,6 +80,8 @@
   window.genererImageIA = async function (postId, bouton, statut, prompt) {
     const options = lireOptions();
     const corps = { options: options, inclure_reference: ["moi", "moi_client", "lieu_reference"].includes(options.personnes) };
+    const bibliotheque = document.getElementById("oia-bibliotheque");
+    if (bibliotheque && bibliotheque.checked) corps.utiliser_bibliotheque = true;
     if (prompt) corps.prompt_image = prompt;
     const libelle = bouton.textContent;
     bouton.disabled = true; bouton.textContent = "⏳ Génération en cours...";

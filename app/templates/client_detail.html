@@ -272,6 +272,25 @@
     <p class="texte-discret">3 à 5 photos sous différents angles, bien visibles et bien éclairées (un visage, ou un lieu/bâtiment à reproduire fidèlement — par exemple un programme immobilier). 5 maximum. Utilisées selon le choix fait dans « Qui ou quoi apparaît » au moment de générer une image.</p>
   </div>
 
+  <div class="choix-image-bloc" id="bibliotheque-ambiance">
+    <span class="choix-image-titre">Bibliothèque de photos d'ambiance (<span id="ambiance-total">{{ client.photos_ambiance|length }}</span>/60)</span>
+    <p class="texte-discret">Chargez ici beaucoup de photos de la marque : agences, intérieurs, vitrines, produits. Quand vous générez une image (sur cette fiche ou dans les posts en masse), l'IA en reçoit une dizaine tirées au hasard et s'en inspire pour l'ambiance, les couleurs et les matières, afin d'en créer une nouvelle. Elle n'en recopie jamais de logo, d'enseigne, de texte ni de visage.</p>
+    <div class="grille-photos-reference" id="grille-ambiance">
+      {% for photo in client.photos_ambiance %}
+      <div class="carte-photo-reference" data-photo-id="{{ photo.id }}">
+        <img src="{{ photo.image_url }}" alt="Photo d'ambiance" loading="lazy">
+        <button type="button" class="bouton-supprimer-photo-reference bouton-retirer-ambiance" data-photo-id="{{ photo.id }}" title="Retirer">×</button>
+      </div>
+      {% endfor %}
+    </div>
+    <p id="ambiance-vide" class="texte-vide" {% if client.photos_ambiance %}hidden{% endif %}>Aucune photo d'ambiance pour l'instant.</p>
+    <div class="formulaire-ligne">
+      <label class="bouton-secondaire">Ajouter des photos<input type="file" id="ambiance-fichiers" accept="image/*" multiple hidden></label>
+      <button type="button" id="ambiance-tout-supprimer" class="bouton-secondaire" {% if not client.photos_ambiance %}hidden{% endif %}>Tout supprimer</button>
+    </div>
+    <p id="ambiance-statut" class="texte-discret" role="status" hidden></p>
+  </div>
+
   {% if client.numero_whatsapp and client.whatsapp_opt_in_confirme %}
   <div class="bloc-section">
     {% if request.query_params.get("whatsapp_envoye") == "1" %}
@@ -1941,6 +1960,52 @@
 })();
 </script>
 <script src="/static/calendrier_champ.js?v={{ version_calendrier_js }}"></script>
+<script>
+// Bibliotheque de photos d'ambiance : envoi par petits lots (une page pleine de photos ne tient pas dans une seule requete), avec la progression.
+(function () {
+  const champ = document.getElementById("ambiance-fichiers");
+  if (!champ) return;
+  const idClient = {{ client.id }}, statut = document.getElementById("ambiance-statut");
+  const dire = (texte) => { statut.hidden = !texte; statut.textContent = texte || ""; };
+  function majTotal(total) {
+    document.getElementById("ambiance-total").textContent = total;
+    document.getElementById("ambiance-vide").hidden = total > 0;
+    document.getElementById("ambiance-tout-supprimer").hidden = total === 0;
+  }
+  champ.addEventListener("change", async () => {
+    const fichiers = Array.from(champ.files); champ.value = "";
+    if (!fichiers.length) return;
+    const LOT = 4, erreurs = []; let envoyees = 0, ajoutees = 0;
+    for (let i = 0; i < fichiers.length; i += LOT) {
+      const donnees = new FormData();
+      fichiers.slice(i, i + LOT).forEach((f) => donnees.append("fichiers", f));
+      dire("Envoi des photos : " + Math.min(i + LOT, fichiers.length) + " sur " + fichiers.length + "...");
+      try {
+        const reponse = await fetch("/clients/" + idClient + "/photos_ambiance", { method: "POST", body: donnees });
+        const resultat = await reponse.json().catch(() => ({}));
+        if (!reponse.ok) { erreurs.push(resultat.erreur || "Envoi impossible."); break; }
+        ajoutees += resultat.ajoutees; erreurs.push(...(resultat.erreurs || []));
+      } catch (e) { erreurs.push("Envoi impossible pour le moment."); break; }
+      envoyees += Math.min(LOT, fichiers.length - i);
+    }
+    dire(ajoutees + " photo(s) ajoutée(s)." + (erreurs.length ? " Problèmes : " + erreurs.slice(0, 3).join(" ; ") + (erreurs.length > 3 ? " (et " + (erreurs.length - 3) + " autres)" : "") : ""));
+    if (ajoutees) setTimeout(() => window.location.reload(), erreurs.length ? 2500 : 600);
+  });
+  document.getElementById("grille-ambiance").addEventListener("click", async (evenement) => {
+    const bouton = evenement.target.closest(".bouton-retirer-ambiance");
+    if (!bouton) return;
+    const reponse = await fetch("/clients/" + idClient + "/photos_ambiance/" + bouton.dataset.photoId + "/supprimer", { method: "POST" });
+    if (!reponse.ok) { dire("Suppression impossible pour le moment."); return; }
+    bouton.closest(".carte-photo-reference").remove(); majTotal((await reponse.json()).total);
+  });
+  document.getElementById("ambiance-tout-supprimer").addEventListener("click", async () => {
+    if (!confirm("Supprimer toutes les photos de la bibliothèque d'ambiance de cette fiche ?")) return;
+    const reponse = await fetch("/clients/" + idClient + "/photos_ambiance/tout_supprimer", { method: "POST" });
+    if (!reponse.ok) { dire("Suppression impossible pour le moment."); return; }
+    document.getElementById("grille-ambiance").textContent = ""; majTotal(0); dire("Bibliothèque vidée.");
+  });
+})();
+</script>
 <script>
 // Image IA d'un brouillon : avec les options du panneau « Options de l'image IA » (voir _options_image_ia.html).
 document.querySelectorAll(".bouton-image-ia").forEach((bouton) => {

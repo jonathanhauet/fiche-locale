@@ -1631,6 +1631,12 @@ button.etiquette-avertissement:hover { filter: brightness(0.95); text-decoration
   right: -0.3rem;
 }
 
+.carte-photo-reference .bouton-retirer-ambiance {          /* meme coin que le bouton des photos de reference, sans formulaire autour */
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+}
+
 .bouton-supprimer-photo-reference {
   width: 1.4rem;
   height: 1.4rem;

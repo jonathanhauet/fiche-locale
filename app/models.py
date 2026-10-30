@@ -244,6 +244,7 @@ class Client(Base):
     etats_conversation_whatsapp = relationship("EtatConversationWhatsApp", back_populates="client", cascade="all, delete-orphan")
     brouillons_whatsapp = relationship("BrouillonWhatsApp", back_populates="client", cascade="all, delete-orphan")
     photos_reference = relationship("PhotoReferenceClient", back_populates="client", cascade="all, delete-orphan")
+    photos_ambiance = relationship("PhotoAmbianceClient", back_populates="client", cascade="all, delete-orphan", order_by="PhotoAmbianceClient.id")
 
 
 class Post(Base):
@@ -1152,6 +1153,23 @@ class PhotoWhatsAppRecue(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     image_url = Column(String, nullable=False)
     cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class PhotoAmbianceClient(Base):
+    """
+    Bibliotheque de photos d'ambiance d'une fiche (agences, interieurs, vitrines, produits...), jusqu'a 60 : pour chaque image generee, l'IA en recoit
+    un echantillon et s'en inspire (couleurs, matieres, style) pour en creer une nouvelle, sans jamais recopier un logo, une enseigne, un texte ni
+    un visage (voir gemini_images.INSTRUCTION_AGENCES et main._references_ambiance).
+    """
+
+    __tablename__ = "photos_ambiance_client"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    image_url = Column(String, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="photos_ambiance")
 
 
 class PhotoReferenceClient(Base):
