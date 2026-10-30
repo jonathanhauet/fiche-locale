@@ -3,7 +3,7 @@
    Le bouton de generation appelle window.genererImageIA(postId, bouton, zoneStatut[, prompt]) ; window.optionsImageIA() renvoie les options cochees. #}
 <details class="options-visuel" id="options-image-ia">
   <summary>🎨 Options de l'image IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
-  <p class="texte-discret">Ces choix s'appliquent à l'image créée avec le bouton « Générer l'image (IA) ». Format 4:3, celui d'un post Google.</p>
+  <p class="texte-discret">Ces choix s'appliquent à l'image créée avec le bouton « Générer l'image (IA) ». Format 4:3, celui d'un post Google. Par défaut, l'IA peut ajouter des textes, des enseignes et des logos : vérifiez chaque image.</p>
   {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
   {% if groupe != "personnes" or (not oia_masse and client_oia.photos_reference) %}
   <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}" {% if groupe == "illustration" %}id="oia-groupe-illustration" hidden{% endif %}>
@@ -21,7 +21,7 @@
     {% if not oia_masse and (client_oia.photos_ambiance or client_oia.photos_reference) %}
     <label class="etiquette-chip-case">
       <input type="checkbox" id="oia-bibliotheque">
-      S'inspirer des photos de cette fiche ({{ client_oia.photos_ambiance|length + client_oia.photos_reference|length }} photos : l'IA en tire l'ambiance, sans logo, sans texte ni visage reconnaissable ; les options « mots en français » et « couleurs de la marque » sont alors ignorées)
+      S'inspirer des photos de cette fiche ({{ client_oia.photos_ambiance|length + client_oia.photos_reference|length }} photos : l'IA en reprend l'ambiance et le style, sans reproduire les visages ; les options « mots en français » et « couleurs de la marque » sont alors ignorées)
     </label>
     {% endif %}
     {% if not oia_masse %}
@@ -41,6 +41,10 @@
     </label>
     {% if not couleur_marque_client(client_oia) %}<p class="texte-discret">Couleur de marque non enregistrée : à définir dans le bloc « Identité visuelle » du composeur multi-réseaux.</p>{% endif %}
     {% endif %}
+    <label class="etiquette-chip-case">
+      <input type="checkbox" id="oia-prudent">
+      Mode prudent : aucun texte ni logo dans l'image (l'IA contrôle chaque image et la refait si besoin)
+    </label>
     <button type="button" id="oia-effacer" class="bouton-secondaire">Tout décocher</button>
   </div>
 </details>
@@ -70,6 +74,7 @@
       if (cochees.length) options[groupe] = (groupe === "cadrage" || groupe === "decor" || groupe === "lumiere") ? cochees : cochees[0];
     });
     if (document.getElementById("oia-varier").checked) options.varier = true;
+    if (document.getElementById("oia-prudent").checked) options.prudent = true;                  // sinon : textes, enseignes et logos permis
     const texteFr = document.getElementById("oia-texte-fr"), couleur = document.getElementById("oia-couleur-marque");       // absents pour des posts en masse
     if (texteFr && texteFr.checked) options.texte_fr = true;
     if (couleur && couleur.checked && !couleur.disabled) options.couleur_marque = true;

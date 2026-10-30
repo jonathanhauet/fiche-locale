@@ -2633,8 +2633,13 @@ def generer_image_lot(
 
 NB_MAX_REFERENCES_LOT = 10          # Gemini accepte 14 images de reference au maximum
 NB_MAX_FICHIERS_REFERENCE_LOT = 8
-# Options du visuel permises avec des photos d'ambiance : jamais de texte dans l'image, ni de couleurs de marque, ni de « qui apparait » (voir _generer_image_ia_pour_client)
-CLES_OPTIONS_AMBIANCE = ("type", "illustration", "cadrage", "decor", "lumiere", "varier")
+# Options du visuel permises avec des photos d'ambiance : pas de « mots voulus » dans l'image, ni de couleurs de marque, ni de « qui apparait » (voir _generer_image_ia_pour_client) ;
+# « prudent » : aucun texte ni logo dans l'image, avec controle automatique (sinon, texte et logos sont permis)
+CLES_OPTIONS_AMBIANCE = ("type", "illustration", "cadrage", "decor", "lumiere", "varier", "prudent")
+def _securite_image(options: dict) -> str:
+    """« prudent » si la case du mode prudent est cochee (aucun texte ni logo, avec controle automatique), « libre » sinon."""
+    return "prudent" if isinstance(options, dict) and options.get("prudent") is True else "libre"
+
 
 
 @app.post("/posts/lot/{lot_id}/generer_image_ia")
@@ -2689,7 +2694,7 @@ async def generer_image_lot_ia(lot_id: str, request: Request, db: Session = Depe
     donnees = {"prompt_image": description or premier.prompt_image, "texte_post": premier.texte, "inclure_reference": bool(references), "options": options}
     client = db.get(models.Client, premier.client_id)
     charge, code = await _generer_image_ia_pour_client(
-        db, client, donnees, "4:3", f"lot-{lot_id}-ia", references=references or None, agences=bool(references),
+        db, client, donnees, "4:3", f"lot-{lot_id}-ia", references=references or None, agences=bool(references), securite=_securite_image(options),
     )
     if code == 200:
         for post in posts:
@@ -4604,7 +4609,7 @@ async def images_ia_generer(client_id: int, request: Request, db: Session = Depe
         agences = True
         options["personnes"] = "lieu_reference"
     donnees = {"prompt_image": description, "texte_post": "", "inclure_reference": bool(references), "options": options}
-    charge, code = await _generer_image_ia_pour_client(db, client, donnees, format_image, f"image-ia-{client.id}", references=references, agences=agences)
+    charge, code = await _generer_image_ia_pour_client(db, client, donnees, format_image, f"image-ia-{client.id}", references=references, agences=agences, securite=_securite_image(options))
     if code == 200:
         charge["references_utilisees"] = len(references or [])
     return JSONResponse(charge, status_code=code)
@@ -12967,21 +12972,25 @@ def publication_multi_charger_brouillon_whatsapp(
     return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
 
 
-async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, format_image: str, prefixe_fichier: str, references: list = None, agences: bool = False):
+async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, format_image: str, prefixe_fichier: str, references: list = None, agences: bool = False,
+                                        securite: str = "defaut"):
     """
     Image IA avec les options du visuel (type, cadrage, decor, lumiere, personnes, texte en francais, varier, couleurs de marque), partagee par le
     composeur multi-reseaux (carre 1:1), les posts de la fiche client (4:3, le format d'un post Google) et les posts en masse. donnees : prompt_image,
     texte_post, inclure_reference, options. Renvoie (charge utile, code HTTP) ; rien n'est enregistre sur un post : c'est a l'appelant de le faire.
-    references : photos de reference deja pretes (JPEG), a la place de celles du client. agences : elles montrent plusieurs agences d'une meme marque ;
-    seule l'ambiance est reprise, jamais un logo, un texte ni une vraie personne, et aucun texte n'est autorise dans l'image.
+    references : photos de reference deja pretes (JPEG), a la place de celles du client. agences : elles montrent plusieurs agences d'une meme marque.
+    securite : « defaut » (composeur : comportement d'origine, aucun controle), « libre » (texte, logos et enseignes permis, l'IA ne cherche pas a les eviter,
+    aucun controle : c'est a vous de verifier) ou « prudent » (aucun texte ni logo : la scene est composee pour n'en montrer aucun, chaque image est controlee
+    par l'IA et refaite 2 fois au plus). Dans tous les cas, les vraies personnes des photos de reference d'agences ne sont jamais reproduites.
     """
+    libre, prudent = securite == "libre", securite == "prudent"
     prompt_image = (donnees.get("prompt_image") or "").strip()
     a_references = bool(references) if references is not None else bool(client.photos_reference)
     inclure_reference = bool(donnees.get("inclure_reference")) or bool(agences and references)
     texte_post = (donnees.get("texte_post") or "").strip()
     options_recues = donnees.get("options") if isinstance(donnees.get("options"), dict) else {}
     varier = bool(options_recues.get("varier"))
-    texte_fr = bool(options_recues.get("texte_fr")) and not agences           # jamais de texte dans les images d'agences : un mot deforme pourrait porter prejudice
+    texte_fr = bool(options_recues.get("texte_fr")) and not agences           # images d'agences : pas de « mots voulus » ; le texte est soit permis (libre), soit interdit (prudent)
     couleur_marque = bool(options_recues.get("couleur_marque")) and bool(couleur_marque_client(client)) and not agences
     choix = claude_generation.choisir_options_visuel(options_recues, varier=varier)
     avec_options = claude_generation.options_visuel_actives(choix, couleur_marque, varier) or texte_fr
@@ -13025,7 +13034,7 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
             prompt_image = prompt_genere = claude_generation.prompt_image_avec_options(
                 prompt_image, texte_post, choix, bool(inclure_reference and a_references), recents,
                 couleur_marque_client(client) if couleur_marque else "", couleurs_secondaires_client(client) if couleur_marque else [],
-                texte_fr, agences=agences,
+                texte_fr, agences=agences, marques_libres=libre,
             )
             options_appliquees = True
         except Exception as e:
@@ -13063,13 +13072,15 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
 
     def produire():
         """Generation puis controle automatique : tant que l'image montre un texte, un logo ou un rectangle vide, on la refait (2 fois au plus)."""
-        consigne_en_plus, controle, problemes = "", "non_applicable" if texte_fr else "non_verifie", []
-        for tentative in range(1 if texte_fr else 1 + NB_RETENTATIVES_CONTROLE_IMAGE):
+        controle_actif = prudent and not texte_fr             # mode prudent : l'image est controlee ; sinon (libre, composeur, mots voulus) elle est livree telle quelle
+        consigne_en_plus, controle, problemes = "", "non_verifie" if controle_actif else "non_applicable", []
+        instruction = gemini_images.INSTRUCTION_AGENCES_LIBRE if libre else gemini_images.INSTRUCTION_AGENCES
+        for tentative in range(1 + NB_RETENTATIVES_CONTROLE_IMAGE if controle_actif else 1):
             octets = gemini_images.generer_image(
-                prompt_image + consigne_en_plus, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr, sans_logo=True,
-                **({"instruction_personne": gemini_images.INSTRUCTION_AGENCES, "nettoyer_interdictions_visage": False} if agences else {}),
+                prompt_image + consigne_en_plus, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr or libre, sans_logo=prudent,
+                **({"instruction_personne": instruction, "nettoyer_interdictions_visage": False} if agences else {}),
             )
-            if texte_fr:                                  # quelques mots voulus dans l'image : pas de controle de texte
+            if not controle_actif:
                 break
             try:
                 resultat = claude_generation.controler_image(octets)
@@ -13163,7 +13174,7 @@ async def generer_image_post_ia(post_id: int, request: Request, db: Session = De
         agences = True
         donnees["inclure_reference"] = True
         donnees["options"] = {**{cle: valeur for cle, valeur in donnees["options"].items() if cle in CLES_OPTIONS_AMBIANCE}, "personnes": "lieu_reference"}
-    charge, code = await _generer_image_ia_pour_client(db, post.client, donnees, "4:3", f"post-{post.id}-ia", references=references, agences=agences)
+    charge, code = await _generer_image_ia_pour_client(db, post.client, donnees, "4:3", f"post-{post.id}-ia", references=references, agences=agences, securite=_securite_image(donnees["options"]))
     if code == 200:
         post.image_url = charge["url"]
         db.commit()

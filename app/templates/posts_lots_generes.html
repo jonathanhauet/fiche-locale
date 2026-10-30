@@ -9,13 +9,13 @@
 {% if not groupes %}
 <p class="texte-vide">Aucun post à relire (lot introuvable ou déjà traité).</p>
 {% else %}
-<p class="bandeau-verification-ia"><strong>⚠️ Images créées par l'IA : vérifiez chacune avant de valider.</strong> Aucun logo, aucune enseigne, aucun texte ni aucun visage reconnaissable ne doit y apparaître. Si l'image ne convient pas, régénérez-la ou remplacez-la par une vraie photo.</p>
+<p class="bandeau-verification-ia"><strong>⚠️ Images créées par l'IA : vérifiez chacune avant de valider.</strong> Elles peuvent contenir des logos, des enseignes ou des textes, parfois inexacts. Cochez « Mode prudent » dans les options de l'image pour les interdire. Si l'image ne convient pas, régénérez-la ou remplacez-la par une vraie photo.</p>
 
 {% set oia_masse = true %}{% set client_oia = none %}{% include "_options_image_ia.html" %}
 
 <details class="options-visuel" id="references-image-ia" open>
   <summary>📷 Photos de référence pour l'ambiance des images (facultatif)</summary>
-  <p class="texte-discret">Elles servent à reprendre l'ambiance, les couleurs et le style de tes agences. L'IA n'en recopie ni logo, ni enseigne, ni texte, ni visage. La même image sert ensuite à toutes les fiches du groupe.</p>
+  <p class="texte-discret">Elles servent à reprendre l'ambiance, les couleurs et le style de tes agences (logo et enseigne compris, sauf en mode prudent). L'IA ne reproduit pas les visages. La même image sert ensuite à toutes les fiches du groupe.</p>
   <label>Reprendre les photos de référence d'une fiche
     <select id="ref-client">
       <option value="">Aucune</option>
@@ -52,7 +52,7 @@
     </div>
     <p class="texte-discret">{{ groupe.nb_fiches }} fiche{{ "s" if groupe.nb_fiches > 1 else "" }}</p>
     {% if groupe.image_url %}
-    <p class="texte-legende-apercu">Aperçu au format utilisé par Google pour les posts (4:3).{% if groupe.en_attente %} <strong>À vérifier : aucun logo, enseigne, texte ni visage reconnaissable.</strong>{% endif %}</p>
+    <p class="texte-legende-apercu">Aperçu au format utilisé par Google pour les posts (4:3).{% if groupe.en_attente %} <strong>À vérifier : logos, enseignes et textes éventuels, parfois inexacts.</strong>{% endif %}</p>
     <div class="apercu-image-conteneur">
       <img src="{{ groupe.image_url }}" alt="" class="apercu-image">
       {% if groupe.en_attente %}
@@ -232,7 +232,7 @@
   function donnees_controle(resultat) {
     if (resultat.controle === "attention") return "Image créée. " + (resultat.avertissement || "Un texte ou un logo semble visible : vérifiez-la avant de valider.");
     if (resultat.controle === "ok") return "Image créée. Contrôle automatique : aucun texte ni logo détecté. Vérifiez-la quand même avant de valider.";
-    return "Image créée : vérifiez-la avant de valider.";
+    return "Image créée : vérifiez-la (logos, enseignes et textes éventuels) avant de valider.";
   }
   document.querySelectorAll(".bouton-image-lot").forEach((bouton) => {
     bouton.addEventListener("click", async () => {

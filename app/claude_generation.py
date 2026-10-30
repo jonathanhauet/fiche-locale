@@ -2555,7 +2555,7 @@ def libelles_choix_aleatoires(choix: dict) -> list[str]:
 
 def prompt_image_avec_options(
     idee: str, texte_post: str, choix: dict, avec_reference: bool, recents: list[str] = None, couleur: str = "",
-    couleurs_secondaires: list = None, texte_fr: bool = False, agences: bool = False,
+    couleurs_secondaires: list = None, texte_fr: bool = False, agences: bool = False, marques_libres: bool = False,
 ) -> str:
     """
     Prompt d'image (anglais) qui applique les options cochees a l'idee de la scene (ou, sans idee,
@@ -2580,7 +2580,14 @@ def prompt_image_avec_options(
             lignes.append(f"- {libelle}: " + "; ".join(consignes) + ".")
     personnes = choix["personnes"]
     if personnes in REFERENCE_LIEU:
-        if avec_reference and agences:
+        if avec_reference and agences and marques_libres:
+            lignes.append(
+                "- Place: an agency of the brand shown in the reference photos (they show several agencies of the same brand). Take the look from them: "
+                "color palette, materials, furniture, lighting, style of signage. Do not copy one specific building. The brand's logo and signage may "
+                "appear where they would naturally be (storefront sign, reception wall, screens), reproduced as faithfully as possible from the "
+                "photos. Any person is a generic person, not one of the people from the photos."
+            )
+        elif avec_reference and agences:
             # Les photos de reference montrent plusieurs agences d'une meme marque : on en tire l'ambiance, pas un batiment precis, et surtout aucun logo ni texte.
             lignes.append(
                 "- Place: an agency of the brand shown in the reference photos (they show several agencies of the same brand). Take only the "
@@ -2654,6 +2661,9 @@ def prompt_image_avec_options(
             "that they must be rendered EXACTLY as written, with correct French spelling and accents, and that no other "
             "text appears. No logo, no geographic reference. "
             if texte_fr else
+            "Text and brands are allowed where they would naturally appear in the scene (storefront sign, screens, license plates, posters); any visible "
+            "text must be short and written exactly, in French or as plain numbers. No geographic reference. "
+            if marques_libres else
             "No text, no logo, no brand emblem, no geographic reference. Design the scene so that nothing carrying writing is in view (screens off or "
             "turned away, vehicles shown from an angle that hides plates and badges, no signs, posters or documents, plain clothing), and never describe "
             "blank white boards, empty plates or blank screens. "

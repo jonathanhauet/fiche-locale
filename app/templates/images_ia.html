@@ -8,7 +8,7 @@
 
 <p class="texte-vide">
   Chargez une fois les photos d'une marque (agences, intérieurs, vitrines, produits), puis décrivez l'image voulue : l'IA s'en inspire pour l'ambiance, les couleurs et les matières, et en crée une nouvelle à télécharger.
-  Elle ne recopie jamais de logo, d'enseigne, de texte ni de visage reconnaissable.
+  Elle peut reproduire le logo, l'enseigne et du texte, parfois de façon inexacte : vérifiez chaque image, ou cochez « Mode prudent » dans les options pour les interdire. Elle ne reproduit pas les visages des photos.
 </p>
 
 <section class="ia-etape">
@@ -54,7 +54,7 @@
 
   <div class="ia-action">
     <button type="button" id="ia-generer" class="bouton"><span class="spinner" id="ia-spinner" hidden></span>🎨 Générer l'image</button>
-    <p class="texte-discret">Aucun texte, aucun logo dans l'image : vérifiez chaque résultat avant de l'utiliser. Chaque image créée est gardée dans « Créations par client ».</p>
+    <p class="texte-discret">Vérifiez chaque résultat avant de l'utiliser (logos et textes éventuels). Chaque image créée est gardée dans « Créations par client ».</p>
   </div>
   <p id="ia-erreur" class="message-erreur" role="alert" hidden></p>
 </section>
@@ -95,7 +95,7 @@
     $("ia-vide").hidden = n > 0; $("ia-tout-supprimer").hidden = n === 0;
     const case_ = $("ia-bibliotheque");
     case_.disabled = n === 0; if (n === 0) case_.checked = false;
-    $("ia-bibliotheque-libelle").textContent = n ? "S'inspirer des photos de la fiche (" + n + " photo" + (n > 1 ? "s" : "") + " : l'IA en tire l'ambiance, sans logo ni texte)" : "S'inspirer des photos de la fiche (aucune photo pour l'instant)";
+    $("ia-bibliotheque-libelle").textContent = n ? "S'inspirer des photos de la fiche (" + n + " photo" + (n > 1 ? "s" : "") + " : l'IA en reprend l'ambiance et le style)" : "S'inspirer des photos de la fiche (aucune photo pour l'instant)";
   }
 
   async function chargerPhotos(recocher) {
@@ -174,7 +174,7 @@
     actions.appendChild(dl);
     const note = document.createElement("p"); note.className = "texte-discret ia-note";
     const controle = donnees.controle === "ok" ? "✓ Contrôle automatique : aucun texte ni logo détecté. " : (donnees.controle === "attention" ? "⚠️ " : "");
-    note.textContent = controle + "À vérifier : aucun logo, enseigne, texte ni visage reconnaissable." + (donnees.references_utilisees ? " (" + donnees.references_utilisees + " photos de la fiche utilisées pour l'ambiance)" : "") + (donnees.avertissement ? " " + donnees.avertissement : "");
+    note.textContent = controle + (donnees.controle === "non_applicable" ? "À vérifier : logos, enseignes et textes éventuels, parfois inexacts." : "À vérifier avant de l'utiliser.") + (donnees.references_utilisees ? " (" + donnees.references_utilisees + " photos de la fiche utilisées pour l'ambiance)" : "") + (donnees.avertissement ? " " + donnees.avertissement : "");
     if (donnees.controle === "attention") note.style.color = "var(--danger, #c0392b)";
     carte.appendChild(img); carte.appendChild(actions); carte.appendChild(note);
     $("ia-galerie").prepend(carte);

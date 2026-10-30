@@ -274,7 +274,7 @@
 
   <div class="choix-image-bloc" id="bibliotheque-ambiance">
     <span class="choix-image-titre">Bibliothèque de photos d'ambiance (<span id="ambiance-total">{{ client.photos_ambiance|length }}</span>/60)</span>
-    <p class="texte-discret">Chargez ici beaucoup de photos de la marque : agences, intérieurs, vitrines, produits. Quand vous générez une image (sur cette fiche ou dans les posts en masse), l'IA en reçoit une dizaine tirées au hasard et s'en inspire pour l'ambiance, les couleurs et les matières, afin d'en créer une nouvelle. Elle n'en recopie jamais de logo, d'enseigne, de texte ni de visage.</p>
+    <p class="texte-discret">Chargez ici beaucoup de photos de la marque : agences, intérieurs, vitrines, produits. Quand vous générez une image (sur cette fiche ou dans les posts en masse), l'IA en reçoit une dizaine tirées au hasard et s'en inspire pour l'ambiance, les couleurs et les matières, afin d'en créer une nouvelle. Elle peut reprendre le logo et l'enseigne de la marque (case « Mode prudent » pour l'éviter) ; elle ne reproduit pas les visages.</p>
     <div class="grille-photos-reference" id="grille-ambiance">
       {% for photo in client.photos_ambiance %}
       <div class="carte-photo-reference" data-photo-id="{{ photo.id }}">

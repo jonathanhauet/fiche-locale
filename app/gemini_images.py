@@ -38,6 +38,17 @@ INSTRUCTION_AGENCES = (
     "Scene to depict: "
 )
 
+# Variante libre (reglage par defaut des images d'agences) : le logo et l'enseigne de la marque, ainsi que du texte, peuvent apparaitre ; seules les vraies
+# personnes des photos ne doivent pas etre reproduites. Le mode prudent (INSTRUCTION_AGENCES) interdit au contraire tout ecrit et toute marque.
+INSTRUCTION_AGENCES_LIBRE = (
+    "The attached photos show several real agencies of the same brand (storefronts, interiors, reception desks, displays). Use them as the reference "
+    "for the brand's look: the color palette, the materials, the furniture, the lighting, the level of finish and the style of the signage. Create a NEW "
+    "photorealistic image of an agency in that same style, as a candid, natural photo. The brand's logo and signage may appear where they would "
+    "naturally be (storefront sign, reception wall, screens, displays), reproduced as faithfully as you can from the photos; any other text must be "
+    "short and spelled correctly. Any person in the image must be a generic person who does not resemble the people in the attached photos. "
+    "Scene to depict: "
+)
+
 # Les prompts de post demandent souvent "no recognizable faces" / "no people" : contradictoire
 # (et prioritaire, selon Gemini) quand on veut justement qu'une personne apparaisse.
 _INTERDICTIONS_VISAGE = re.compile(
