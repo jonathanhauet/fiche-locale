@@ -228,6 +228,12 @@
     for (let i = 0; i < binaire.length; i++) octets[i] = binaire.charCodeAt(i);
     return new Blob([octets], { type: (entete.match(/:(.*?);/) || [])[1] || "image/jpeg" });
   }
+  // Resultat du controle automatique de l'image (texte, logo, plaque ou ecran vide) : message affiche avant le rechargement de la page.
+  function donnees_controle(resultat) {
+    if (resultat.controle === "attention") return "Image créée. " + (resultat.avertissement || "Un texte ou un logo semble visible : vérifiez-la avant de valider.");
+    if (resultat.controle === "ok") return "Image créée. Contrôle automatique : aucun texte ni logo détecté. Vérifiez-la quand même avant de valider.";
+    return "Image créée : vérifiez-la avant de valider.";
+  }
   document.querySelectorAll(".bouton-image-lot").forEach((bouton) => {
     bouton.addEventListener("click", async () => {
       const lotId = bouton.dataset.lotId, statut = document.querySelector('.statut-image-lot[data-lot-id="' + lotId + '"]');
@@ -240,20 +246,20 @@
       const libelle = bouton.textContent;
       bouton.disabled = true; bouton.textContent = "⏳ Génération en cours...";
       statut.hidden = false; statut.textContent = "Génération de l'image (peut prendre une trentaine de secondes)...";
-      let recharger = false;
+      let recharger = false, delaiRechargement = 300;
       try {
         const reponse = await fetch("/posts/lot/" + lotId + "/generer_image_ia", { method: "POST", body: donnees });
         let resultat = {};
         try { resultat = await reponse.json(); } catch (e) { /* reponse non JSON : message generique ci-dessous */ }
         if (!reponse.ok) { statut.textContent = resultat.erreur || "Échec de la génération de l'image."; return; }
-        statut.textContent = "Image créée : vérifiez-la avant de valider.";
-        recharger = true;
+        statut.textContent = donnees_controle(resultat);
+        recharger = true; delaiRechargement = resultat.controle === "attention" ? 6000 : 1800;
       } catch (e) {
         statut.textContent = "Génération impossible pour le moment : réessayez dans un instant.";
       } finally {
         bouton.disabled = false; bouton.textContent = libelle;
       }
-      if (recharger) setTimeout(() => { window.location.hash = "lot-" + lotId; window.location.reload(); }, 300);
+      if (recharger) setTimeout(() => { window.location.hash = "lot-" + lotId; window.location.reload(); }, delaiRechargement);
     });
   });
 })();

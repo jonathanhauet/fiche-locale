@@ -29,9 +29,12 @@ INSTRUCTION_PERSONNE = (
 INSTRUCTION_AGENCES = (
     "The attached photos show several real agencies of the same brand (storefronts, interiors, reception desks, displays). Use them ONLY as "
     "inspiration for the overall atmosphere: the color palette, the materials, the furniture, the lighting and the level of finish. Create a NEW "
-    "photorealistic image of an agency in that same style, as a candid, natural photo. STRICT RULES: do NOT reproduce, copy or invent any logo, brand "
-    "mark, sign, shop sign, lettering, text, number or symbol: every sign, wall, screen, poster, document, packaging and piece of clothing must be "
-    "plain and blank, or out of focus. Any person in the image must be a generic person who does not resemble the people in the attached photos. "
+    "photorealistic image of an agency in that same style, as a candid, natural photo. STRICT RULES ABOUT WRITING AND BRANDS: do NOT reproduce, copy "
+    "or invent any logo, brand mark, brand emblem, sign, shop sign, lettering, text, number or symbol. Achieve this by COMPOSING the shot so that "
+    "nothing carrying writing is in view: screens switched off (dark glass) or turned away from the camera, any license plate and vehicle badge kept "
+    "out of frame by choosing an angle or a crop that hides them, no posters or signs, no printed documents, plain clothing without prints. Never "
+    "leave conspicuous empty white rectangles (blank screens, blank plates, blank posters): a surface that must stay visible looks natural, dark or "
+    "softly out of focus. Any person in the image must be a generic person who does not resemble the people in the attached photos. "
     "Scene to depict: "
 )
 
@@ -63,8 +66,9 @@ CONSIGNE_SANS_TEXTE = (
 
 # Jamais de logo ni de marque dessines : meme quand quelques mots sont autorises (un logo approximatif peut porter prejudice a une entreprise).
 CONSIGNE_SANS_LOGO = (
-    "\n\nIMPORTANT: do not draw any logo, brand mark, trademark or shop sign anywhere. Storefront signs, screens, posters, packaging and "
-    "clothing must stay blank or out of focus."
+    "\n\nIMPORTANT: do not draw any logo, brand mark, brand emblem (car badges included), trademark or shop sign anywhere. Compose the shot so "
+    "that nothing carrying writing is visible: screens switched off or turned away, license plates and badges out of frame, no posters or signs. "
+    "Never show conspicuous blank white rectangles (empty plates, blank screens): keep such surfaces out of view, or natural and out of focus."
 )
 
 

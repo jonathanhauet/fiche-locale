@@ -92,8 +92,8 @@
       let donnees = {};
       try { donnees = await reponse.json(); } catch (e) { /* reponse non JSON : message generique ci-dessous */ }
       if (!reponse.ok) { statut.textContent = donnees.erreur || "Échec de la génération de l'image."; return; }
-      statut.textContent = donnees.avertissement ? "Image créée. " + donnees.avertissement : "Image créée.";
-      recharger = true; delai = donnees.avertissement ? 3500 : 300;
+      statut.textContent = donnees.avertissement ? "Image créée. " + donnees.avertissement : (donnees.controle === "ok" ? "Image créée. Contrôle automatique : aucun texte ni logo détecté (à vérifier quand même)." : "Image créée.");
+      recharger = true; delai = donnees.avertissement ? 6000 : (donnees.controle === "ok" ? 1800 : 300);
     } catch (e) {
       statut.textContent = "Génération impossible pour le moment : réessayez dans un instant.";
     } finally {

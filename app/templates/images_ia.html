@@ -173,7 +173,9 @@
     const dl = document.createElement("button"); dl.type = "button"; dl.className = "bouton-secondaire bouton-mini"; dl.textContent = "⬇ Télécharger"; dl.addEventListener("click", () => telecharger(donnees.url, dl));
     actions.appendChild(dl);
     const note = document.createElement("p"); note.className = "texte-discret ia-note";
-    note.textContent = "À vérifier : aucun logo, enseigne, texte ni visage reconnaissable." + (donnees.references_utilisees ? " (" + donnees.references_utilisees + " photos de la fiche utilisées pour l'ambiance)" : "") + (donnees.avertissement ? " " + donnees.avertissement : "");
+    const controle = donnees.controle === "ok" ? "✓ Contrôle automatique : aucun texte ni logo détecté. " : (donnees.controle === "attention" ? "⚠️ " : "");
+    note.textContent = controle + "À vérifier : aucun logo, enseigne, texte ni visage reconnaissable." + (donnees.references_utilisees ? " (" + donnees.references_utilisees + " photos de la fiche utilisées pour l'ambiance)" : "") + (donnees.avertissement ? " " + donnees.avertissement : "");
+    if (donnees.controle === "attention") note.style.color = "var(--danger, #c0392b)";
     carte.appendChild(img); carte.appendChild(actions); carte.appendChild(note);
     $("ia-galerie").prepend(carte);
   }

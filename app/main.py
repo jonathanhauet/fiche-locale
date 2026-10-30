@@ -4520,6 +4520,7 @@ def supprimer_document_client(client_id: int, document_id: int, request: Request
 NB_MAX_PHOTOS_REFERENCE = 5
 
 
+NB_RETENTATIVES_CONTROLE_IMAGE = 2     # une image avec du texte ou un logo est refaite 2 fois au plus avant d'etre montree avec un avertissement
 NB_MAX_PHOTOS_AMBIANCE = 60
 NB_MAX_REFERENCES_IMAGE = 10        # Gemini accepte 14 images de reference au maximum
 
@@ -13060,15 +13061,38 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
             except Exception:
                 pass  # repli : prompt d'origine, complete par la consigne de gemini_images
 
-    try:
-        octets_image = gemini_images.generer_image(
-            prompt_image, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr, sans_logo=True,
-            **({"instruction_personne": gemini_images.INSTRUCTION_AGENCES, "nettoyer_interdictions_visage": False} if agences else {}),
-        )
+    def produire():
+        """Generation puis controle automatique : tant que l'image montre un texte, un logo ou un rectangle vide, on la refait (2 fois au plus)."""
+        consigne_en_plus, controle, problemes = "", "non_applicable" if texte_fr else "non_verifie", []
+        for tentative in range(1 if texte_fr else 1 + NB_RETENTATIVES_CONTROLE_IMAGE):
+            octets = gemini_images.generer_image(
+                prompt_image + consigne_en_plus, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr, sans_logo=True,
+                **({"instruction_personne": gemini_images.INSTRUCTION_AGENCES, "nettoyer_interdictions_visage": False} if agences else {}),
+            )
+            if texte_fr:                                  # quelques mots voulus dans l'image : pas de controle de texte
+                break
+            try:
+                resultat = claude_generation.controler_image(octets)
+            except Exception:
+                controle, problemes = "non_verifie", []     # controle indisponible : l'image est montee telle quelle, a verifier a l'oeil
+                break
+            if not resultat["probleme"]:
+                controle, problemes = "ok", []
+                break
+            controle, problemes = "attention", resultat["elements"]
+            consigne_en_plus = (
+                "\n\nIMPORTANT: the previous attempt was rejected because it showed: " + "; ".join(problemes[:4]) + ". Compose the shot differently "
+                "so that none of this is visible (another angle, a tighter crop, screens off, no vehicle front or rear in view)."
+            )
         nom_fichier = f"{prefixe_fichier}-{uuid.uuid4().hex[:10]}.png"
-        url_image = ovh_upload.envoyer_octets(octets_image, nom_fichier)
+        return ovh_upload.envoyer_octets(octets, nom_fichier), controle, problemes
+
+    try:
+        url_image, controle, problemes_controle = await run_in_threadpool(produire)
     except Exception as e:
         return {"erreur": f"Echec de la generation de l'image : {e}"}, 500
+    if controle == "attention":
+        avertissement = (avertissement + " " if avertissement else "") + "Contrôle automatique : " + ", ".join(problemes_controle) + " : vérifiez cette image avant de l'utiliser, ou régénérez-la."
 
     _archiver_creation(db, client.id, "visuel", "Image IA", [url_image], format_video=format_image, meta={"prompt": prompt_image[:1500], "source": "image_ia"})
     if varier:
@@ -13080,7 +13104,7 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
 
     return {
         "url": url_image, "prompt_utilise": prompt_image if (images_reference or options_appliquees) else "",
-        "prompt_genere": prompt_genere, "avertissement": avertissement,
+        "prompt_genere": prompt_genere, "avertissement": avertissement, "controle": controle, "problemes": problemes_controle,
         "choix_aleatoires": claude_generation.libelles_choix_aleatoires(choix) if varier else [],
     }, 200
 

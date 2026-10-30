@@ -2585,8 +2585,9 @@ def prompt_image_avec_options(
             lignes.append(
                 "- Place: an agency of the brand shown in the reference photos (they show several agencies of the same brand). Take only the "
                 "atmosphere from them: color palette, materials, furniture, lighting, level of finish. Do not copy one specific building. NEVER "
-                "describe or request any logo, sign, shop sign, lettering, text or brand mark: signs, walls, screens and documents are plain and blank. "
-                "Any person is a generic person, not one of the people from the photos."
+                "describe or request any logo, sign, shop sign, lettering, text or brand mark. Compose the scene so that nothing carrying writing is "
+                "in view: screens off or turned away, vehicles shown from an angle that hides plates and badges, no sign, poster or printed document. "
+                "Never describe blank white boards, empty plates or blank screens. Any person is a generic person, not one of the people from the photos."
             )
         elif avec_reference:
             consigne_style = (
@@ -2653,7 +2654,9 @@ def prompt_image_avec_options(
             "that they must be rendered EXACTLY as written, with correct French spelling and accents, and that no other "
             "text appears. No logo, no geographic reference. "
             if texte_fr else
-            "No text anywhere (papers, screens, signs, clothes, labels, numbers), no logo, no geographic reference. "
+            "No text, no logo, no brand emblem, no geographic reference. Design the scene so that nothing carrying writing is in view (screens off or "
+            "turned away, vehicles shown from an angle that hides plates and badges, no signs, posters or documents, plain clothing), and never describe "
+            "blank white boards, empty plates or blank screens. "
         ) +
         "Avoid generic "
         "AI-illustration cliches (padlock/shield, abstract dashboard, light bulb, handshake, connected globe, gears) "
@@ -2669,6 +2672,55 @@ def prompt_image_avec_options(
     if not texte:
         raise RuntimeError("L'IA n'a renvoye aucun prompt exploitable.")
     return _nettoyer_texte_genere(texte)
+
+
+SCHEMA_CONTROLE_IMAGE = {
+    "type": "object",
+    "properties": {"probleme": {"type": "boolean"}, "elements": {"type": "array", "items": {"type": "string"}}},
+    "required": ["probleme", "elements"], "additionalProperties": False,
+}
+
+
+def controler_image(octets: bytes) -> dict:
+    """
+    Controle d'une image generee avant de la montrer : {"probleme": bool, "elements": [description courte en francais]}. Il y a probleme des qu'on voit un
+    texte lisible ou pseudo-lisible, des chiffres, une plaque avec des caracteres, un logo ou un embleme de marque (y compris un badge de voiture), une
+    enseigne avec des lettres, ou un rectangle blanc vide qui a l'air d'un texte manquant (plaque ou ecran vierge, affiche blanche).
+    Leve une exception si l'image est illisible ou si l'IA est indisponible : l'appelant continue alors sans controle.
+    """
+    import base64
+    import io
+
+    from PIL import Image
+
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    image = Image.open(io.BytesIO(octets))
+    image.load()
+    image = image.convert("RGB")
+    image.thumbnail((1024, 1024))
+    tampon = io.BytesIO()
+    image.save(tampon, format="JPEG", quality=85)
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=400, thinking={"type": "disabled"},
+        output_config={"format": {"type": "json_schema", "schema": SCHEMA_CONTROLE_IMAGE}},
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(tampon.getvalue()).decode()}},
+            {"type": "text", "text": (
+                "Cette image generee par IA va illustrer une publication d'entreprise. Verifie-la avec rigueur. Elle pose probleme si on y voit UN SEUL de ces elements : "
+                "un texte, des lettres ou des chiffres (lisibles ou deformes), une plaque d'immatriculation avec des caracteres, un logo, un embleme ou un badge de marque "
+                "(y compris sur une voiture, un vetement, un emballage ou une enseigne), un panneau ou une enseigne avec des lettres, ou un rectangle blanc ou vide qui a l'air "
+                "d'un texte manquant (plaque vierge, ecran blanc, affiche blanche). Reponds probleme=true si c'est le cas, et liste en elements, en francais et en quelques mots chacun "
+                "(5 au plus), ce que tu vois. Sinon probleme=false et elements vide."
+            )},
+        ]}],
+    )
+    texte = next((b.text for b in reponse.content if b.type == "text"), None)
+    if not texte:
+        raise RuntimeError("Le controle n'a renvoye aucun resultat.")
+    donnees = json.loads(texte)
+    return {"probleme": bool(donnees.get("probleme")), "elements": [str(e).strip()[:120] for e in donnees.get("elements", []) if str(e).strip()][:5]}
 
 
 SCHEMA_CARROUSEL = {
