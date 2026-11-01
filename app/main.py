@@ -7,6 +7,8 @@ puis ouvrir http://localhost:8000
 """
 
 import asyncio
+import logging
+import collections
 import base64
 import calendar
 import io
@@ -4624,11 +4626,47 @@ async def prompteur_generer(request: Request, db: Session = Depends(obtenir_sess
     client = None
     if str(recu.get("client_id") or "").isdigit():
         client = db.get(models.Client, int(recu["client_id"]))
+    cta = recu.get("cta") if recu.get("cta") in claude_generation.CTA_PROMPTEUR and recu.get("cta") != "defaut" else ""
     try:
-        texte = await run_in_threadpool(claude_generation.generer_texte_prompteur, sujet, secondes, ton, _contexte_ia_client(client) if client else "")
+        texte = await run_in_threadpool(claude_generation.generer_texte_prompteur, sujet, secondes, ton, _contexte_prompteur(db, client),
+                                        **({"cta": cta} if cta else {}))
     except Exception as erreur:
         return JSONResponse({"erreur": f"Impossible d'ecrire le texte : {erreur}"}, status_code=500)
     return JSONResponse({"texte": texte, "mots": len(texte.split())})
+
+
+def _contexte_prompteur(db: Session, client) -> str:
+    """Ce que l'IA sait de l'entreprise pour ecrire un texte de prompteur : sa fiche, sa ville et quelques extraits d'avis deja mis en avant (vrais avis, jamais inventes)."""
+    if not client:
+        return ""
+    morceaux = [_contexte_ia_client(client)]
+    ville = (getattr(client, "localisation_ville", "") or "").strip()
+    if ville:
+        morceaux.append(f"Ville de l'entreprise : {ville}.")
+    avis = [a.extrait.strip() for a in db.query(models.AvisMisEnAvant).filter(models.AvisMisEnAvant.client_id == client.id)
+            .order_by(models.AvisMisEnAvant.utilise_le.desc()).limit(5).all() if (a.extrait or "").strip()]
+    if avis:
+        morceaux.append("Extraits d'avis réels de clients (tu peux en citer un fidèlement, sans le modifier) :\n" + "\n".join(f"- {a[:220]}" for a in avis))
+    return "\n\n".join(m for m in morceaux if m)
+
+
+@app.post("/prompteur/accroches")
+async def prompteur_accroches(request: Request, db: Session = Depends(obtenir_session)):
+    """Trois autres accroches pour le texte en cours (corps : texte, client_id facultatif). Reponse : {"accroches": [...]}."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    if not isinstance(recu, dict) or not str(recu.get("texte") or "").strip():
+        return JSONResponse({"erreur": "Ecrivez d'abord le texte."}, status_code=400)
+    client = db.get(models.Client, int(recu["client_id"])) if str(recu.get("client_id") or "").isdigit() else None
+    try:
+        accroches = await run_in_threadpool(claude_generation.accroches_prompteur, str(recu["texte"]), _contexte_prompteur(db, client))
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Impossible de proposer des accroches : {erreur}"}, status_code=500)
+    return JSONResponse({"accroches": accroches})
 
 
 @app.post("/prompteur/transcrire")
@@ -4675,7 +4713,123 @@ def _enregistrement_prompteur_dict(ligne) -> dict:
     meta = _meta_creation(ligne)
     urls = json.loads(ligne.urls_json or "[]")
     return {"id": ligne.id, "titre": ligne.titre, "url": urls[0] if urls else "", "date": ligne.cree_le.strftime("%d/%m/%Y %H:%M") if ligne.cree_le else "",
-            "duree": round(ligne.duree or 0), "orientation": meta.get("orientation", "portrait"), "taille": meta.get("taille", 0), "client_id": ligne.client_id}
+            "duree": round(ligne.duree or 0), "orientation": meta.get("orientation", "portrait"), "taille": meta.get("taille", 0), "client_id": ligne.client_id,
+            "texte": (meta.get("texte") or "")[:3000], "coupe": bool(meta.get("coupes")), "avertissement": meta.get("avertissement", "")}
+
+
+DOSSIER_ENVOIS_PROMPTEUR = os.path.join(tempfile.gettempdir(), "fiche_locale_prompteur_envois")
+TAILLE_MORCEAU_PROMPTEUR = 12 * 1024 * 1024
+MORCEAUX_MAX_PROMPTEUR = 400
+ENVOI_PROMPTEUR_VALIDE = re.compile(r"^[0-9a-f]{16,40}$")
+ENVOIS_EN_COURS_PROMPTEUR = set()
+
+
+def _dossier_envoi_prompteur(uid: str, creer: bool = False):
+    """Dossier temporaire des morceaux d'un envoi (identifiant choisi par la page, valide ou refuse) ; None s'il n'existe pas."""
+    if not ENVOI_PROMPTEUR_VALIDE.match(uid or ""):
+        return None
+    chemin = os.path.join(DOSSIER_ENVOIS_PROMPTEUR, uid)
+    if creer:
+        os.makedirs(chemin, exist_ok=True)
+    return chemin if os.path.isdir(chemin) else None
+
+
+def _nettoyer_envois_prompteur() -> None:
+    """Retire les envois abandonnes depuis plus d'un jour et demi."""
+    if not os.path.isdir(DOSSIER_ENVOIS_PROMPTEUR):
+        return
+    limite = datetime.now().timestamp() - 36 * 3600
+    for nom in os.listdir(DOSSIER_ENVOIS_PROMPTEUR):
+        chemin = os.path.join(DOSSIER_ENVOIS_PROMPTEUR, nom)
+        try:
+            if os.path.getmtime(chemin) < limite:
+                shutil.rmtree(chemin, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _gardes_prompteur(coupes):
+    """Parties a garder [(debut, fin)] en secondes d'apres ce que la page envoie (paragraphes refaits retires) ; None si la liste n'a pas de sens."""
+    if not isinstance(coupes, list) or not 1 <= len(coupes) <= 80:
+        return None
+    try:
+        gardes = sorted((float(a), float(b)) for a, b in coupes)
+    except (TypeError, ValueError):
+        return None
+    precedent = 0.0
+    for debut, fin in gardes:
+        if debut < 0 or fin - debut < 0.3 or debut < precedent - 1e-6 or fin > 6 * 3600:
+            return None
+        precedent = fin
+    return gardes
+
+
+def _couper_enregistrement(source: str, gardes: list, sortie: str) -> None:
+    """Assemble les parties gardees de la video (ffmpeg) : image et son restent synchrones, sortie MP4 lisible partout."""
+    filtres, entrees = [], ""
+    for i, (debut, fin) in enumerate(gardes):
+        filtres.append(f"[0:v]trim=start={debut:.3f}:end={fin:.3f},setpts=PTS-STARTPTS[v{i}]")
+        filtres.append(f"[0:a]atrim=start={debut:.3f}:end={fin:.3f},asetpts=PTS-STARTPTS[a{i}]")
+        entrees += f"[v{i}][a{i}]"
+    filtres.append(f"{entrees}concat=n={len(gardes)}:v=1:a=1[v][a]")
+    commande = [montage_parole.FFMPEG, "-y", "-i", source, "-filter_complex", ";".join(filtres), "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast",
+                "-crf", "21", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", sortie]
+    resultat = montage_parole._lancer(commande, 1200)
+    if resultat.returncode != 0 or not os.path.exists(sortie) or os.path.getsize(sortie) < 1024:
+        raise RuntimeError(((resultat.stderr or "")[-300:]).strip() or "ffmpeg a echoue")
+
+
+def _envoyer_enregistrement_prompteur(chemin: str, extension: str, coupes=None) -> dict:
+    """
+    Envoie la video sur l'hebergement OVH, apres avoir retire les paragraphes refaits (coupes : parties a garder). Si la coupe echoue, la video complete est gardee et
+    l'avertissement le dit. Quand elle reussit, la prise complete est aussi conservee (brut_url) pour pouvoir tout reprendre. Leve une exception si l'envoi echoue.
+    """
+    base = f"prompteur-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    gardes = _gardes_prompteur(coupes)
+    final, extension_finale, avertissement = chemin, extension, ""
+    if coupes and not gardes:
+        avertissement = "La liste des paragraphes refaits était illisible : la vidéo complète a été gardée."
+    elif gardes:
+        sortie = os.path.join(os.path.dirname(chemin), "coupee.mp4")
+        try:
+            _couper_enregistrement(chemin, gardes, sortie)
+            final, extension_finale = sortie, "mp4"
+        except Exception:
+            avertissement = "Les paragraphes refaits n'ont pas pu être coupés automatiquement : la vidéo complète a été gardée."
+            gardes = None
+    with open(final, "rb") as ouvert:
+        url = ovh_upload.envoyer_octets(ouvert, f"{base}.{extension_finale}")
+    brut_url = ""
+    if final != chemin:
+        try:
+            with open(chemin, "rb") as ouvert:
+                brut_url = ovh_upload.envoyer_octets(ouvert, f"{base}-brut.{extension}")
+        except Exception:
+            brut_url = ""
+    return {"url": url, "taille": os.path.getsize(final), "brut_url": brut_url, "avertissement": avertissement,
+            "coupes": [[round(a, 2), round(b, 2)] for a, b in gardes] if gardes else []}
+
+
+def _archiver_enregistrement_prompteur(db: Session, envoi: dict, texte: str, duree, orientation: str, client_id, uid: str = ""):
+    """Inscrit la video envoyee dans l'archive des creations. Renvoie la creation, ou None si l'inscription echoue."""
+    try:
+        secondes = max(0.0, min(float(duree), 6 * 3600))
+    except (TypeError, ValueError):
+        secondes = 0.0
+    texte = (texte or "").strip()[:12000]
+    client = db.get(models.Client, int(client_id)) if str(client_id or "").isdigit() else None
+    debut = " ".join(texte.split())[:50]
+    titre = "Prompteur · " + (debut or "vidéo") + f" · {datetime.now(ZoneInfo('Europe/Brussels')).strftime('%d/%m %H:%M')}"
+    meta = {"source": "prompteur", "texte": texte, "orientation": orientation, "taille": envoi["taille"]}
+    if uid:
+        meta["envoi"] = uid
+    if envoi.get("coupes"):
+        meta["coupes"] = envoi["coupes"]
+        if envoi.get("brut_url"):
+            meta["brut_url"] = envoi["brut_url"]
+    if envoi.get("avertissement"):
+        meta["avertissement"] = envoi["avertissement"]
+    return creations.enregistrer(db, client.id if client else None, "video", titre, [envoi["url"]], FORMATS_PROMPTEUR[orientation], secondes, meta)
 
 
 @app.post("/prompteur/enregistrements")
@@ -4704,27 +4858,120 @@ async def prompteur_garder_enregistrement(
                 sortie.write(morceau)
         if taille < 1024:
             return JSONResponse({"erreur": "Video vide."}, status_code=400)
-        nom_distant = f"prompteur-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.{extension}"
         try:
-            with open(chemin, "rb") as ouvert:
-                url = await run_in_threadpool(ovh_upload.envoyer_octets, ouvert, nom_distant)
+            envoi = await run_in_threadpool(_envoyer_enregistrement_prompteur, chemin, extension)
         except Exception as erreur:
             return JSONResponse({"erreur": f"Envoi vers l'hebergement impossible : {erreur}"}, status_code=502)
     finally:
         shutil.rmtree(dossier, ignore_errors=True)
-    try:
-        secondes = max(0.0, min(float(duree), 6 * 3600))
-    except ValueError:
-        secondes = 0.0
-    texte = (texte or "").strip()[:12000]
-    client = db.get(models.Client, int(client_id)) if client_id.isdigit() else None
-    debut = " ".join(texte.split())[:50]
-    titre = "Prompteur · " + (debut or "vidéo") + f" · {datetime.now(ZoneInfo('Europe/Brussels')).strftime('%d/%m %H:%M')}"
-    ligne = creations.enregistrer(db, client.id if client else None, "video", titre, [url], FORMATS_PROMPTEUR[orientation], secondes,
-                                  {"source": "prompteur", "texte": texte, "orientation": orientation, "taille": taille})
+    ligne = _archiver_enregistrement_prompteur(db, envoi, texte, duree, orientation, client_id)
     if not ligne:
         return JSONResponse({"erreur": "Enregistrement dans l'archive impossible."}, status_code=500)
-    return JSONResponse({"id": ligne.id, "url": url, "titre": ligne.titre})
+    return JSONResponse({"id": ligne.id, "url": envoi["url"], "titre": ligne.titre})
+
+
+# Envoi par morceaux (reprenable) : la page decoupe la video en morceaux de 4 Mo, les envoie un a un (elle sait lesquels sont deja arrives si la connexion saute),
+# puis demande l'assemblage. L'identifiant d'envoi (choisi par la page) rend « terminer » repetable sans doublon.
+
+@app.get("/prompteur/envois/{uid}")
+def prompteur_etat_envoi(uid: str, request: Request):
+    """Morceaux deja recus pour cet envoi : {"recus": {"0": taille, ...}} (vide si l'envoi n'existe pas)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    dossier = _dossier_envoi_prompteur(uid)
+    recus = {}
+    for nom in (os.listdir(dossier) if dossier else []):
+        if nom.endswith(".part") and nom[:-5].isdigit():
+            recus[nom[:-5]] = os.path.getsize(os.path.join(dossier, nom))
+    return JSONResponse({"recus": recus})
+
+
+@app.post("/prompteur/envois/{uid}/terminer")
+async def prompteur_terminer_envoi(uid: str, request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Assemble les morceaux recus, retire les paragraphes refaits (corps : coupes = parties a garder, en secondes), envoie la video sur OVH et l'inscrit dans l'archive.
+    Corps : total (nombre de morceaux), extension, texte, duree, orientation, client_id, coupes. Reponse : {"id", "url", "titre", "avertissement"}.
+    Sans danger si la page repete la demande : la video deja archivee pour cet envoi est renvoyee.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    if not isinstance(recu, dict) or not ENVOI_PROMPTEUR_VALIDE.match(uid):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    for ligne in db.query(models.Creation).filter(models.Creation.genre == "video", models.Creation.meta_json.like(f'%"envoi": "{uid}"%')).all():
+        if _meta_creation(ligne).get("envoi") == uid:
+            urls = json.loads(ligne.urls_json or "[]")
+            return JSONResponse({"id": ligne.id, "url": urls[0] if urls else "", "titre": ligne.titre, "avertissement": _meta_creation(ligne).get("avertissement", "")})
+    dossier = _dossier_envoi_prompteur(uid)
+    if not dossier:
+        return JSONResponse({"erreur": "Envoi introuvable : la video doit etre renvoyee."}, status_code=404)
+    try:
+        total = int(recu.get("total") or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if not 1 <= total <= MORCEAUX_MAX_PROMPTEUR:
+        return JSONResponse({"erreur": "Nombre de morceaux invalide."}, status_code=400)
+    manquants = [i for i in range(total) if not os.path.exists(os.path.join(dossier, f"{i}.part"))]
+    if manquants:
+        return JSONResponse({"erreur": "Il manque des morceaux : l'envoi reprend.", "manquants": manquants[:50]}, status_code=409)
+    if uid in ENVOIS_EN_COURS_PROMPTEUR:
+        return JSONResponse({"erreur": "Cette video est deja en cours de traitement, patiente quelques instants."}, status_code=409)
+    ENVOIS_EN_COURS_PROMPTEUR.add(uid)
+    try:
+        extension = "mp4" if recu.get("extension") == "mp4" else "webm"
+        orientation = recu.get("orientation") if recu.get("orientation") in FORMATS_PROMPTEUR else "portrait"
+        chemin = os.path.join(dossier, f"video.{extension}")
+        taille = 0
+        with open(chemin, "wb") as sortie:
+            for i in range(total):
+                with open(os.path.join(dossier, f"{i}.part"), "rb") as morceau:
+                    donnees = morceau.read()
+                taille += len(donnees)
+                sortie.write(donnees)
+        if taille < 1024:
+            return JSONResponse({"erreur": "Video vide."}, status_code=400)
+        try:
+            envoi = await run_in_threadpool(_envoyer_enregistrement_prompteur, chemin, extension, recu.get("coupes") or None)
+        except Exception as erreur:
+            return JSONResponse({"erreur": f"Envoi vers l'hebergement impossible : {erreur}"}, status_code=502)     # les morceaux restent : la page peut reessayer
+        ligne = _archiver_enregistrement_prompteur(db, envoi, str(recu.get("texte") or ""), recu.get("duree"), orientation, recu.get("client_id"), uid)
+        if not ligne:
+            return JSONResponse({"erreur": "Enregistrement dans l'archive impossible."}, status_code=500)
+        shutil.rmtree(dossier, ignore_errors=True)
+        return JSONResponse({"id": ligne.id, "url": envoi["url"], "titre": ligne.titre, "avertissement": envoi.get("avertissement", "")})
+    finally:
+        ENVOIS_EN_COURS_PROMPTEUR.discard(uid)
+
+
+@app.post("/prompteur/envois/{uid}/{index}")
+async def prompteur_envoyer_morceau(uid: str, index: int, request: Request):
+    """Recoit un morceau de la video (corps brut). Le meme morceau peut etre renvoye : il remplace le precedent."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    if not ENVOI_PROMPTEUR_VALIDE.match(uid) or not 0 <= index < MORCEAUX_MAX_PROMPTEUR:
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    declare = request.headers.get("content-length") or ""
+    if declare.isdigit() and int(declare) > TAILLE_MORCEAU_PROMPTEUR:
+        return JSONResponse({"erreur": "Morceau trop gros."}, status_code=413)
+    octets = await request.body()
+    if not octets or len(octets) > TAILLE_MORCEAU_PROMPTEUR:
+        return JSONResponse({"erreur": "Morceau vide ou trop gros."}, status_code=400)
+    nouveau = not os.path.isdir(os.path.join(DOSSIER_ENVOIS_PROMPTEUR, uid))
+    dossier = _dossier_envoi_prompteur(uid, creer=True)
+    if nouveau:
+        _nettoyer_envois_prompteur()
+    deja = sum(os.path.getsize(os.path.join(dossier, n)) for n in os.listdir(dossier) if n.endswith(".part") and n != f"{index}.part")
+    if deja + len(octets) > TAILLE_MAX_ENREGISTREMENT_PROMPTEUR:
+        shutil.rmtree(dossier, ignore_errors=True)
+        return JSONResponse({"erreur": f"Video trop lourde ({TAILLE_MAX_ENREGISTREMENT_PROMPTEUR // (1024 * 1024)} Mo maximum) : filmez plus court ou en 720p."}, status_code=400)
+    provisoire = os.path.join(dossier, f"{index}.tmp")
+    with open(provisoire, "wb") as sortie:
+        sortie.write(octets)
+    os.replace(provisoire, os.path.join(dossier, f"{index}.part"))
+    return JSONResponse({"ok": True, "index": index, "taille": len(octets)})
 
 
 @app.get("/prompteur/enregistrements")
@@ -4744,8 +4991,33 @@ def prompteur_supprimer_enregistrement(identifiant: int, request: Request, db: S
     ligne = _enregistrement_prompteur(db, identifiant)
     if not ligne:
         return JSONResponse({"erreur": "Video introuvable."}, status_code=404)
+    brut = creations.nom_distant(_meta_creation(ligne).get("brut_url") or "")
     creations.supprimer(db, ligne)
+    if brut:
+        try:
+            ovh_upload.supprimer_fichier(brut)
+        except Exception:
+            pass
     return JSONResponse({"ok": True})
+
+
+@app.post("/prompteur/enregistrements/{identifiant}/renommer")
+async def prompteur_renommer_enregistrement(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    ligne = _enregistrement_prompteur(db, identifiant)
+    if not ligne:
+        return JSONResponse({"erreur": "Video introuvable."}, status_code=404)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    titre = " ".join(str((recu or {}).get("titre") or "").split())[:120] if isinstance(recu, dict) else ""
+    if not titre:
+        return JSONResponse({"erreur": "Donnez un titre."}, status_code=400)
+    ligne.titre = titre
+    db.commit()
+    return JSONResponse({"ok": True, "titre": titre})
 
 
 def _telecharger_video(url: str, chemin: str, taille_max: int) -> None:
@@ -4761,18 +5033,21 @@ def _telecharger_video(url: str, chemin: str, taille_max: int) -> None:
                 sortie.write(morceau)
 
 
-@app.post("/prompteur/enregistrements/{identifiant}/sous-titres")
-async def prompteur_sous_titrer(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+async def _montage_depuis_enregistrement(db: Session, identifiant: int, request: Request, preparer: bool):
     """
-    Ouvre la video filmee dans le montage video avec les seuls sous-titres (aucune coupe, aucun effet) : le texte se corrige ensuite dans l'editeur
-    du montage, qui re-rend la video. Reponse : {"id", "adresse"} ; le montage reste modifiable quelques heures (voir montage_parole).
+    Ouvre la video filmee dans le montage video. preparer=False : sous-titres seulement (aucun effet) ; preparer=True : montage complet pret a publier (silences et
+    « euh » retires, sous-titres, style par defaut de la plateforme, musique). Corps facultatif : caler (sous-titres calques sur le texte lu : noms et mots mal
+    compris corriges, prises ratees retirees), musique (preparer seulement). Reponse : {"id", "adresse"} ; le montage reste modifiable quelques heures.
     """
-    if not utilisateur_connecte(request):
-        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
     ligne = _enregistrement_prompteur(db, identifiant)
     urls = json.loads(ligne.urls_json or "[]") if ligne else []
     if not ligne or not urls:
         return JSONResponse({"erreur": "Video introuvable."}, status_code=404)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    recu = recu if isinstance(recu, dict) else {}
     extension = urls[0].split("?")[0].rsplit(".", 1)[-1].lower()
     extension = extension if extension in EXTENSIONS_VIDEO_MONTAGE else "mp4"
     montage_id, dossier = montage_parole.nouveau_dossier_montage()
@@ -4782,15 +5057,73 @@ async def prompteur_sous_titrer(identifiant: int, request: Request, db: Session 
     except Exception as erreur:
         shutil.rmtree(dossier, ignore_errors=True)
         return JSONResponse({"erreur": f"Impossible de recuperer la video : {erreur}"}, status_code=502)
-    orientation = _meta_creation(ligne).get("orientation", "portrait")
-    brut = {
-        "libelle": ligne.titre, "silences": False, "hesitations": False, "sous_titres": True, "mode": "montage",
-        "format": FORMATS_PROMPTEUR.get(orientation, "vertical"), "style": "tendance", "bruitages": False, "pastille": False, "transition": "aucune",
-        "effets": {cle: False for cle in montage_parole.EFFETS_DEFAUT},
-    }
+    meta = _meta_creation(ligne)
+    brut = {"libelle": ligne.titre, "mode": "montage", "format": FORMATS_PROMPTEUR.get(meta.get("orientation", "portrait"), "vertical"), "sous_titres": True}
+    if recu.get("caler") and (meta.get("texte") or "").strip():
+        brut["script"] = meta["texte"]
+    if preparer:
+        brut.update({"silences": True, "hesitations": True})
+        modele = regles_montage.style_par_defaut(db)
+        if modele:
+            brut["modele"] = modele
+        else:
+            brut["style"] = "tendance"
+        if recu.get("musique", True):
+            pistes = (db.query(models.PisteMusicale).filter(models.PisteMusicale.fichier_url != "").order_by(models.PisteMusicale.cree_le.desc()).limit(10).all())
+            if pistes:
+                brut["musique_id"] = random.choice(pistes).id
+    else:
+        brut.update({"silences": False, "hesitations": False, "style": "tendance", "bruitages": False, "pastille": False, "transition": "aucune",
+                     "effets": {cle: False for cle in montage_parole.EFFETS_DEFAUT}})
     opts = await run_in_threadpool(_options_montage, brut, dossier, db)
     montage_parole.lancer_montage(montage_id, dossier, source, opts, _choisir_retouches, _choisir_extraits, _choisir_tendance, _aligner_script, _preparer_sortie_auto)
     return JSONResponse({"id": montage_id, "adresse": f"/montage-video?id={montage_id}"})
+
+
+@app.post("/prompteur/enregistrements/{identifiant}/sous-titres")
+async def prompteur_sous_titrer(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Ouvre la video filmee dans le montage video avec les seuls sous-titres (corps facultatif : caler). Voir _montage_depuis_enregistrement."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    return await _montage_depuis_enregistrement(db, identifiant, request, False)
+
+
+@app.post("/prompteur/enregistrements/{identifiant}/preparer")
+async def prompteur_preparer_publication(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Ouvre la video filmee dans le montage video, deja montee pour etre publiee (corps facultatif : caler, musique). Voir _montage_depuis_enregistrement."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    return await _montage_depuis_enregistrement(db, identifiant, request, True)
+
+
+# Rapport automatique de la camera : ce que le telephone renvoie (taille de l'image, essais) pour corriger sans demander de capture d'ecran.
+DIAGNOSTICS_PROMPTEUR = collections.deque(maxlen=60)
+CLES_DIAGNOSTIC_PROMPTEUR = ("agent", "format", "qualite", "camera", "essais", "image", "ecran", "installee", "note")
+
+
+@app.post("/prompteur/diagnostic")
+async def prompteur_diagnostic(request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    if not isinstance(recu, dict):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    ligne = {cle: str(recu.get(cle) if recu.get(cle) is not None else "")[:300] for cle in CLES_DIAGNOSTIC_PROMPTEUR}
+    ligne["date"] = datetime.now(ZoneInfo("Europe/Brussels")).strftime("%d/%m/%Y %H:%M:%S")
+    DIAGNOSTICS_PROMPTEUR.appendleft(ligne)
+    logging.getLogger("uvicorn.error").warning("PROMPTEUR diagnostic camera : %s", json.dumps(ligne, ensure_ascii=False))
+    return JSONResponse({"ok": True})
+
+
+@app.get("/prompteur/diagnostics")
+def prompteur_diagnostics(request: Request):
+    """Les derniers rapports de camera recus (du plus recent au plus ancien) ; vide apres un redemarrage du serveur."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    return JSONResponse({"rapports": list(DIAGNOSTICS_PROMPTEUR)})
 
 
 FORMATS_IMAGE_IA = {"4:3": "Google (4:3)", "1:1": "Carré (1:1)", "4:5": "Portrait (4:5)", "9:16": "Vertical (9:16)", "16:9": "Paysage (16:9)"}

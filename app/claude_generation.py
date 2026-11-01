@@ -2684,7 +2684,18 @@ def prompt_image_avec_options(
     return _nettoyer_texte_genere(texte)
 
 
-def generer_texte_prompteur(sujet: str, secondes: int = 60, ton: str = "naturel", contexte: str = "") -> str:
+CTA_PROMPTEUR = {
+    "defaut": "termine par une phrase d'appel à l'action simple",
+    "appeler": "termine en invitant à appeler l'entreprise pour en parler (sans inventer de numéro : dis simplement « appelez-nous »)",
+    "reserver": "termine en invitant à réserver ou à prendre rendez-vous",
+    "venir": "termine en invitant à passer nous voir sur place",
+    "site": "termine en invitant à consulter le site ou la fiche Google de l'entreprise",
+    "suivre": "termine en invitant à suivre la page pour ne rien rater",
+    "aucun": "termine par une phrase de conclusion qui résume l'idée, sans appel à l'action",
+}
+
+
+def generer_texte_prompteur(sujet: str, secondes: int = 60, ton: str = "naturel", contexte: str = "", cta: str = "defaut") -> str:
     """
     Texte a lire face camera (prompteur), en francais parle : phrases courtes, une idee par phrase, sans titre ni didascalie. Environ 150 mots par minute.
     contexte : ce que l'on sait de l'entreprise (facultatif) ; l'IA n'invente aucun fait ni chiffre absent de ce contexte.
@@ -2706,7 +2717,7 @@ def generer_texte_prompteur(sujet: str, secondes: int = 60, ton: str = "naturel"
         + (f"\nCe que l'on sait de l'entreprise (n'invente rien en dehors) :\n{contexte.strip()[:6000]}\n" if (contexte or "").strip() else "")
         + f"\nDurée visée : environ {secondes} secondes, soit environ {mots} mots. Ton : {tons.get(ton, tons['naturel'])}.\n\n"
         "Règles : français parlé, phrases courtes (15 mots au plus), une idée par phrase. Commence par une accroche qui retient l'attention en quelques secondes, "
-        "termine par une phrase d'appel à l'action simple. Écris les nombres en toutes lettres comme on les dit (« vingt-quatre heures »). Aucun titre, aucune "
+        f"{CTA_PROMPTEUR.get(cta, CTA_PROMPTEUR['defaut'])}. Écris les nombres en toutes lettres comme on les dit (« vingt-quatre heures »). Aucun titre, aucune "
         "indication scénique entre parenthèses, aucun émoji, aucun hashtag, aucune liste à puces. N'invente aucun chiffre, prix ni fait absent du contexte. "
         f"{CONSIGNE_STYLE_NATUREL}\n\nRéponds uniquement avec le texte à lire, rien d'autre."
     )
@@ -2721,6 +2732,34 @@ def generer_texte_prompteur(sujet: str, secondes: int = 60, ton: str = "naturel"
     if not texte:
         raise RuntimeError("L'IA n'a renvoyé aucun texte exploitable.")
     return _nettoyer_texte_genere(texte)
+
+
+def accroches_prompteur(texte: str, contexte: str = "") -> list:
+    """
+    Trois autres facons de commencer un texte de prompteur : chacune est une phrase d'accroche (quinze mots au plus, a l'oral) qui remplace la premiere phrase du texte.
+    Leve une exception si l'IA est indisponible ou ne renvoie rien d'exploitable.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    texte = (texte or "").strip()[:6000]
+    if not texte:
+        raise ValueError("Écrivez d'abord le texte.")
+    prompt = (
+        "Voici le texte qu'une personne va lire face caméra pour une courte vidéo :\n\n" + texte + "\n\n"
+        + (f"Ce que l'on sait de l'entreprise (n'invente rien en dehors) :\n{contexte.strip()[:4000]}\n\n" if (contexte or "").strip() else "")
+        + "Propose trois accroches différentes pour remplacer la toute première phrase : une question, une affirmation qui surprend, une promesse concrète. "
+        "Chacune doit rester cohérente avec la suite du texte, tenir en quinze mots au plus, et se dire naturellement à voix haute. Aucun émoji, aucun hashtag, "
+        "aucun chiffre ni fait qui ne figure pas dans le texte ou le contexte. "
+        f"{CONSIGNE_STYLE_NATUREL}\n\nRéponds par exactement trois lignes, une accroche par ligne, sans numéro ni puce ni guillemets."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(model=MODELE_CLAUDE, max_tokens=400, thinking={"type": "disabled"}, messages=[{"role": "user", "content": prompt}])
+    brut = next((b.text for b in reponse.content if b.type == "text"), "")
+    lignes = [_nettoyer_texte_genere(re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", ligne).strip().strip('"«» ')) for ligne in brut.splitlines()]
+    lignes = [ligne for ligne in lignes if ligne][:3]
+    if not lignes:
+        raise RuntimeError("L'IA n'a renvoyé aucune accroche exploitable.")
+    return lignes
 
 
 SCHEMA_CONTROLE_IMAGE = {

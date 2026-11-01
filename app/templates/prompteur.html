@@ -40,7 +40,7 @@
   #ecran-camera { position: fixed; inset: 0; max-width: none; padding: 0; background: #000; overflow: hidden; }
   #apercu { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
   #prompteur { position: absolute; left: 0; right: 0; top: env(safe-area-inset-top); height: var(--hauteur, 30vh); background: rgba(0, 0, 0, var(--opacite, .55)); border-radius: 0 0 16px 16px; }
-  #fenetre { position: absolute; inset: 0; overflow: hidden; padding: 0 16px; }
+  #fenetre { position: absolute; inset: 0; overflow: hidden; padding: 0 calc((100% - var(--largeur, 90%)) / 2); }
   #fenetre.manuel { overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #defilant { padding: calc(var(--hauteur, 30vh) * .14) 0 60% 0; font-size: var(--taille, 44px); line-height: 1.32; font-weight: 700; text-shadow: 0 1px 6px rgba(0,0,0,.9); text-align: center; }
   #defilant p { margin: 0 0 .7em; }
@@ -73,6 +73,13 @@
   .video-carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 14px; padding: 12px; margin: 12px 0; }
   .video-carte video { width: 100%; max-height: 50vh; background: #000; border-radius: 10px; }
   .video-carte h3 { font-size: 1rem; margin: 0 0 4px; }
+  #prompteur.miroir #fenetre { transform: scaleX(-1); }
+  .pause-marque { display: block; margin: 0 0 .5em; color: rgba(255,255,255,.55); font-size: .5em; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  #etat.depasse { background: rgba(230, 140, 0, .92); }
+  #paragraphes { position: absolute; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 172px); display: flex; gap: 10px; align-items: center; }
+  #paragraphes button { flex: 1; min-height: 50px; border-radius: 14px; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.6); color: #fff; font-size: .95rem; font-weight: 600; cursor: pointer; }
+  #paragraphes button:disabled { opacity: .4; }
+  #paragraphes span { flex: none; font-size: .78rem; background: rgba(0,0,0,.55); border-radius: 999px; padding: 6px 10px; text-align: center; }
   video.resultat { width: 100%; max-height: 66vh; background: #000; border-radius: 14px; margin: 10px 0; }
 </style>
 </head>
@@ -84,6 +91,11 @@
   <h1>Prompteur</h1>
   <p class="discret">Écris ou colle ton texte, ouvre la caméra, appuie sur le bouton rouge : le texte défile en haut de l'écran et suit ta voix.</p>
   <button class="bouton" id="voir-videos" type="button" style="width:100%">📁 Mes vidéos filmées</button>
+  <div class="panneau" id="en-attente" hidden>
+    <div id="en-attente-texte" style="padding-top:12px"></div>
+    <progress id="en-attente-barre" max="100" value="0" style="width:100%;margin-top:8px" hidden></progress>
+    <div class="ligne" style="margin-top:10px"><button class="bouton principal" id="en-attente-envoyer" type="button">☁️ Envoyer maintenant</button><button class="bouton" id="en-attente-supprimer" type="button">🗑 Abandonner</button></div>
+  </div>
 
   <label for="texte">Ton texte</label>
   <textarea id="texte" placeholder="Colle ou écris ici ce que tu vas dire face caméra…"></textarea>
@@ -92,7 +104,12 @@
   <div class="ligne">
     <button class="bouton" id="coller" type="button">📋 Coller</button>
     <button class="bouton" id="ouvrir-ia" type="button">✨ Écrire avec l'IA</button>
+    <button class="bouton" id="accroches" type="button">🎣 Autres accroches</button>
     <button class="bouton" id="vider" type="button">🗑 Vider</button>
+  </div>
+  <div class="panneau" id="panneau-accroches" hidden>
+    <p class="discret" id="accroches-etat" style="padding-top:12px"></p>
+    <div id="liste-accroches"></div>
   </div>
 
   <div class="panneau" id="panneau-ia" hidden>
@@ -106,6 +123,8 @@
     </div>
     <label for="ia-client">Pour quelle entreprise ? (facultatif : l'IA s'appuie sur ce qu'elle sait d'elle)</label>
     <select id="ia-client"><option value="">Aucune, texte général</option>{% for c in clients %}<option value="{{ c.id }}" {% if c.id == client_marque_id %}selected{% endif %}>{{ c.nom }}</option>{% endfor %}</select>
+    <label for="ia-cta">Fin de la vidéo</label>
+    <select id="ia-cta"><option value="defaut">Appel à l'action simple</option><option value="appeler">Inviter à appeler</option><option value="reserver">Inviter à réserver</option><option value="venir">Inviter à passer nous voir</option><option value="site">Renvoyer vers le site ou la fiche Google</option><option value="suivre">Inviter à suivre la page</option><option value="aucun">Conclusion, sans appel à l'action</option></select>
     <button class="bouton principal" id="ia-generer" type="button" style="margin-top:14px">Écrire le texte</button>
     <p class="erreur" id="ia-erreur" role="alert" hidden></p>
   </div>
@@ -133,11 +152,22 @@
     <input type="range" id="hauteur" min="18" max="65" step="1" value="30">
     <label for="opacite">Fond sombre derrière le texte : <span id="opacite-val">55</span> %</label>
     <input type="range" id="opacite" min="15" max="90" step="5" value="55">
+    <label for="largeur">Largeur du texte : <span id="largeur-val">78</span> % de l'écran</label>
+    <input type="range" id="largeur" min="40" max="100" step="2" value="78">
+    <label class="choix"><input type="checkbox" id="miroir-actif"><span>Texte en miroir (pour un prompteur à vitre)</span></label>
     <div class="ligne">
       <div><label for="camera">Caméra</label><select id="camera"><option value="avant">Avant (selfie)</option><option value="arriere">Arrière</option></select></div>
       <div><label for="qualite">Qualité</label><select id="qualite"><option value="720">HD 720p</option><option value="1080">Full HD 1080p</option></select></div>
     </div>
     <label class="choix"><input type="checkbox" id="decompte-actif" checked><span>Compte à rebours de 3 secondes avant de filmer</span></label>
+  </details>
+
+  <details class="panneau">
+    <summary>Prises et durée</summary>
+    <label class="choix"><input type="checkbox" id="para-actif"><span><strong>Filmer paragraphe par paragraphe</strong> : pendant l'enregistrement, « ✓ Suivant » valide le paragraphe et « ↩ Refaire » le recommence. Les prises refaites sont retirées de la vidéo gardée dans ta bibliothèque (la prise complète reste ici). Sépare tes paragraphes par un retour à la ligne.</span></label>
+    <label for="cible">Durée visée en secondes (facultatif)</label>
+    <input type="number" id="cible" min="0" max="900" step="5" inputmode="numeric" placeholder="Ex. : 60">
+    <p class="discret">Le chronomètre affiche « 00:42 / 01:00 » et devient orange si tu dépasses. Astuce : écris [pause] dans ton texte pour marquer une respiration (elle n'est pas lue par le suivi de la voix).</p>
   </details>
 
   <label>Format de la vidéo</label>
@@ -162,6 +192,7 @@
   </div>
   <div id="decompte" hidden></div>
   <div id="message-camera" hidden></div>
+  <div id="paragraphes" hidden><button id="para-refaire" type="button" disabled>↩ Refaire</button><span id="para-info"></span><button id="para-suivant" type="button" disabled>✓ Suivant</button></div>
   <div id="zoom-ligne" hidden><span>Zoom</span><input type="range" id="zoom" min="1" max="2" step="0.1" value="1" aria-label="Zoom de la caméra"></div>
   <div id="commandes">
     <button class="rond" id="moins" type="button" aria-label="Texte plus petit">A−</button>
@@ -184,7 +215,11 @@
     <button class="bouton" id="envoi-reessayer" type="button" hidden style="margin-top:8px">🔁 Réessayer l'envoi</button>
     <p class="discret" style="margin:8px 0 0">Ne ferme pas cette page avant la fin de l'envoi : ensuite tu retrouves la vidéo dans « Mes vidéos » et sur la plateforme (Créations).</p>
   </div>
-  <button class="bouton principal" id="sous-titrer" type="button" disabled style="margin-top:0">💬 Ajouter des sous-titres</button>
+  <p class="discret" id="info-coupes" hidden></p>
+  <label class="choix"><input type="checkbox" id="caler" checked><span>Caler les sous-titres sur mon texte : corrige les noms et les mots mal compris, et retire les prises ratées.</span></label>
+  <button class="bouton principal" id="preparer" type="button" disabled style="margin-top:0">🚀 Préparer pour publier</button>
+  <p class="discret" style="margin:6px 0 10px">Retire les silences et les « euh », ajoute les sous-titres, le style et la musique de la plateforme, puis ouvre l'éditeur pour publier.</p>
+  <button class="bouton" id="sous-titrer" type="button" disabled style="width:100%">💬 Sous-titres seulement</button>
   <p class="erreur" id="erreur-sous-titres" role="alert" hidden></p>
   <p class="discret" id="info-sous-titres">Les sous-titres se corrigent ensuite dans l'éditeur de montage de la plateforme (plus confortable sur ordinateur).</p>
   <div class="ligne">
@@ -204,6 +239,7 @@
   <button class="bouton" id="retour-videos" type="button">&larr; Retour</button>
   <h1 style="margin-top:14px">Mes vidéos</h1>
   <p class="discret">Chaque vidéo filmée ici est gardée automatiquement. Tu peux la revoir, la télécharger, ajouter des sous-titres ou la supprimer. Elles sont aussi dans « Créations » sur la plateforme.</p>
+  <label class="choix"><input type="checkbox" id="caler-videos" checked><span>Caler les sous-titres sur mon texte (corrige les noms et retire les prises ratées)</span></label>
   <p class="discret" id="videos-etat">Chargement…</p>
   <div id="liste-videos"></div>
 </main>
@@ -220,16 +256,21 @@
     enregistreur: null, morceaux: [], mime: "", blob: null, debut: 0, minuteur: null, capture: null, envoiEnCours: false, erreursSuivi: 0,
     reconnaissance: null, verrou: null, bruit: 0.01, dernierImage: 0, cible: 0,
     confirmee: 0, parle: false, derniereParole: 0, vitesseMots: 2.2, derniereConf: 0, canvas: null, jetonEnvoi: 0, idGarde: null, duree: 0,
+    debutsPara: [], para: { k: 0, limite: 0, ecartes: [] }, coupes: null, totalEnreg: 0, conseils: [], msgFormat: "", maxNiveau: 0, diagEnvoye: false, jetonCamera: 0,
+    delaiReessai: 1500, element: null, envoiActif: false, reprise: false, enAttente: [],
   };
   const CLIENT_MARQUE = "{{ client_marque_id or '' }}";
-  const reglages = { texte: "", taille: 44, hauteur: 30, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait" };
-  try { Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}")); if (reglages.disposition !== 2) { reglages.disposition = 2; reglages.hauteur = 30; } } catch (e) { /* stockage indisponible : reglages par defaut */ }
+  const reglages = { texte: "", taille: 44, hauteur: 30, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait", largeur: 78, miroir: false, paragraphes: false, cible: 0, caler: true, cta: "defaut" };
+  try { Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}")); if (reglages.disposition !== 3) { if (!reglages.disposition) reglages.hauteur = 30; reglages.largeur = 78; reglages.disposition = 3; } } catch (e) { /* stockage indisponible : reglages par defaut */ }
   const sauver = () => { try { localStorage.setItem(CLE, JSON.stringify(reglages)); } catch (e) { /* stockage indisponible */ } };
 
   // ------------------------------------------------------------------ ecran 1 : texte et reglages
   const FORMATS = { portrait: { grand: [1080, 1920], petit: [720, 1280] }, large: { grand: [1080, 1440], petit: [720, 960] }, paysage: { grand: [1920, 1080], petit: [1280, 720] } };
+  // Mots a lire : « [pause] » marque une respiration dans le texte, elle n'est pas lue et n'entre pas dans le suivi de la voix.
+  const PAUSE = /\[pause\]/i;
+  function motsTexte(texte) { return Suivi.decouper(String(texte || "").replace(/\[pause\]/gi, " ")); }
   function majCompteur() {
-    const n = Suivi.decouper($("texte").value).length;
+    const n = motsTexte($("texte").value).length;
     $("compteur").textContent = n ? n + " mot" + (n > 1 ? "s" : "") + " · environ " + Suivi.dureeEstimee(n, reglages.vitesse) + " s à voix posée" : "0 mot";
   }
   function appliquerReglagesAffichage() {
@@ -237,12 +278,17 @@
     racine.setProperty("--taille", reglages.taille + "px");
     racine.setProperty("--hauteur", reglages.hauteur + "vh");
     racine.setProperty("--opacite", reglages.opacite / 100);
+    racine.setProperty("--largeur", reglages.largeur + "%");
+    $("prompteur").classList.toggle("miroir", !!reglages.miroir);
+    $("largeur-val").textContent = reglages.largeur;
     $("taille-val").textContent = reglages.taille; $("hauteur-val").textContent = reglages.hauteur; $("opacite-val").textContent = reglages.opacite; $("vitesse-val").textContent = reglages.vitesse;
   }
   function chargerReglagesDansLaPage() {
     $("texte").value = reglages.texte;
     $("taille").value = reglages.taille; $("hauteur").value = reglages.hauteur; $("opacite").value = reglages.opacite; $("vitesse").value = reglages.vitesse;
     $("camera").value = reglages.camera; $("qualite").value = reglages.qualite; $("decompte-actif").checked = !!reglages.decompte;
+    $("largeur").value = reglages.largeur; $("miroir-actif").checked = !!reglages.miroir; $("para-actif").checked = !!reglages.paragraphes; $("cible").value = reglages.cible || "";
+    $("caler").checked = $("caler-videos").checked = !!reglages.caler; $("ia-cta").value = reglages.cta;
     let radio = document.querySelector('input[name="mode"][value="' + reglages.mode + '"]');
     if (!radio || radio.disabled) radio = document.querySelector('input[name="mode"][value="fixe"]');
     radio.checked = true; reglages.mode = radio.value;
@@ -252,10 +298,14 @@
   }
   document.querySelectorAll('input[name="format"]').forEach((r) => r.addEventListener("change", () => { reglages.format = r.value; sauver(); }));
   $("texte").addEventListener("input", () => { reglages.texte = $("texte").value; sauver(); majCompteur(); });
-  [["taille", "taille"], ["hauteur", "hauteur"], ["opacite", "opacite"], ["vitesse", "vitesse"]].forEach(([id, cle]) => {
+  [["taille", "taille"], ["hauteur", "hauteur"], ["opacite", "opacite"], ["vitesse", "vitesse"], ["largeur", "largeur"]].forEach(([id, cle]) => {
     $(id).addEventListener("input", () => { reglages[cle] = parseInt($(id).value, 10); appliquerReglagesAffichage(); sauver(); majCompteur(); if (id === "taille" || id === "hauteur") repositionner(); });
   });
   $("camera").addEventListener("change", () => { reglages.camera = $("camera").value; sauver(); });
+  $("miroir-actif").addEventListener("change", () => { reglages.miroir = $("miroir-actif").checked; appliquerReglagesAffichage(); sauver(); });
+  $("para-actif").addEventListener("change", () => { reglages.paragraphes = $("para-actif").checked; sauver(); });
+  $("cible").addEventListener("input", () => { reglages.cible = Math.max(0, parseInt($("cible").value, 10) || 0); sauver(); });
+  $("ia-cta").addEventListener("change", () => { reglages.cta = $("ia-cta").value; sauver(); });
   $("qualite").addEventListener("change", () => { reglages.qualite = $("qualite").value; sauver(); });
   $("decompte-actif").addEventListener("change", () => { reglages.decompte = $("decompte-actif").checked; sauver(); });
   document.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener("change", () => { reglages.mode = r.value; sauver(); }));
@@ -273,10 +323,10 @@
     const bouton = $("ia-generer"); bouton.disabled = true; const libelle = bouton.textContent; bouton.textContent = "⏳ Écriture en cours…";
     try {
       const reponse = await fetch("/prompteur/generer", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sujet: sujet, secondes: parseInt($("ia-duree").value, 10), ton: $("ia-ton").value, client_id: $("ia-client").value }) });
+        body: JSON.stringify({ sujet: sujet, secondes: parseInt($("ia-duree").value, 10), ton: $("ia-ton").value, client_id: $("ia-client").value, cta: $("ia-cta").value }) });
       const donnees = await reponse.json().catch(() => ({}));
       if (!reponse.ok) throw new Error(donnees.erreur || (reponse.status === 401 ? "Session expirée : reconnecte-toi." : "Échec de l'écriture."));
-      $("texte").value = donnees.texte; reglages.texte = donnees.texte; sauver(); majCompteur(); $("panneau-ia").hidden = true;
+      $("texte").value = donnees.texte; reglages.texte = donnees.texte; if (!reglages.cible) { reglages.cible = parseInt($("ia-duree").value, 10) || 0; $("cible").value = reglages.cible || ""; } sauver(); majCompteur(); $("panneau-ia").hidden = true;
       $("texte").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (e) { erreur.textContent = e.message || "Écriture impossible pour le moment."; erreur.hidden = false; }
     finally { bouton.disabled = false; bouton.textContent = libelle; }
@@ -293,15 +343,25 @@
   // ------------------------------------------------------------------ texte du prompteur
   function construireTexte() {
     const conteneur = $("defilant"); conteneur.textContent = "";
-    etat.spans = []; etat.mots = [];
+    etat.spans = []; etat.mots = []; etat.debutsPara = [];
     ($("texte").value || "").split(/\n+/).forEach((ligne) => {
-      const mots = Suivi.decouper(ligne); if (!mots.length) return;
+      const morceaux = ligne.split(/(\[pause\])/i).filter((m) => m.trim());
+      if (!morceaux.length) return;
       const p = document.createElement("p");
-      mots.forEach((mot, i) => {
-        const s = document.createElement("span"); s.className = "mot"; s.textContent = mot; p.appendChild(s);
-        if (i < mots.length - 1) p.appendChild(document.createTextNode(" "));
-        etat.spans.push(s); etat.mots.push(mot);
+      let debutPara = etat.spans.length;
+      morceaux.forEach((morceau) => {
+        if (PAUSE.test(morceau)) {
+          const marque = document.createElement("span"); marque.className = "pause-marque"; marque.textContent = "⏸ pause"; p.appendChild(marque); return;
+        }
+        const mots = Suivi.decouper(morceau);
+        if (mots.length && p.lastChild && p.lastChild.nodeType === 1) p.appendChild(document.createTextNode(" "));
+        mots.forEach((mot, i) => {
+          const s = document.createElement("span"); s.className = "mot"; s.textContent = mot; p.appendChild(s);
+          if (i < mots.length - 1) p.appendChild(document.createTextNode(" "));
+          etat.spans.push(s); etat.mots.push(mot);
+        });
       });
+      if (etat.spans.length > debutPara) etat.debutsPara.push(debutPara);
       conteneur.appendChild(p);
     });
     etat.normes = etat.mots.map(Suivi.normaliser);
@@ -458,17 +518,68 @@
     if (!v.videoWidth || $("ecran-camera").hidden) return;
     $("diag").textContent = "image " + v.videoWidth + "×" + v.videoHeight + (etat.essaisCamera ? " (essais " + etat.essaisCamera + ")" : "");
     if (etat.enregistrement) return;
-    messageCamera(ecartFormat(v.videoWidth, v.videoHeight) > 0.6
-      ? (reglages.format === "paysage" ? "Tourne le téléphone à l'horizontale pour filmer en paysage." : "L'image n'est pas en portrait : tiens le téléphone droit, sinon la vidéo sera très recadrée.") : "");
+    etat.msgFormat = ecartFormat(v.videoWidth, v.videoHeight) > 0.6
+      ? (reglages.format === "paysage" ? "Tourne le téléphone à l'horizontale pour filmer en paysage." : "L'image n'est pas en portrait : tiens le téléphone droit, sinon la vidéo sera très recadrée.") : "";
+    majMessages(); envoyerDiagnostic();
   }
   $("apercu").addEventListener("loadedmetadata", indiceFormat);
   $("apercu").addEventListener("resize", indiceFormat);
+
+  // ------------------------------------------------------------------ conseils avant de filmer et rapport automatique de la camera
+  function analyserLumiere(d, largeur, hauteur) {
+    let c = 0, nc = 0, b = 0, nb = 0;
+    for (let y = 0; y < hauteur; y++) for (let x = 0; x < largeur; x++) {
+      const i = (y * largeur + x) * 4, l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      if (x >= largeur * 0.25 && x < largeur * 0.75 && y >= hauteur * 0.25 && y < hauteur * 0.75) { c += l; nc++; } else { b += l; nb++; }
+    }
+    c = nc ? c / nc : 0; b = nb ? b / nb : 0;
+    return { centre: c, bords: b, moyenne: (c * nc + b * nb) / Math.max(1, nc + nb) };
+  }
+  function conseilsLumiere(m) {
+    if (m.moyenne < 55) return ["Il fait sombre : place-toi face à une fenêtre ou une lampe."];
+    if (m.bords > 170 && m.centre < m.bords * 0.55) return ["Le fond est plus lumineux que toi : tourne-toi pour que la lumière arrive sur ton visage."];
+    return [];
+  }
+  function majMessages() { messageCamera([etat.msgFormat].concat(etat.conseils || []).filter(Boolean).join(" ")); }
+  async function controlerPrise() {
+    const jeton = etat.jetonCamera;
+    await attendre(1500);
+    if (jeton !== etat.jetonCamera || etat.enregistrement || $("ecran-camera").hidden) return;
+    const v = $("apercu"), conseils = [];
+    try {
+      if (v.videoWidth) {
+        const c = document.createElement("canvas"); c.width = 32; c.height = 32;
+        const g = c.getContext("2d"); g.drawImage(v, 0, 0, 32, 32);
+        conseils.push.apply(conseils, conseilsLumiere(analyserLumiere(g.getImageData(0, 0, 32, 32).data, 32, 32)));
+      }
+    } catch (e) { /* mesure de la lumiere impossible : pas de conseil */ }
+    await attendre(1500);
+    if (jeton !== etat.jetonCamera || etat.enregistrement || $("ecran-camera").hidden) return;
+    if (etat.flux && !etat.flux.getAudioTracks().length) conseils.push("Aucun micro n'est branché : autorise le micro pour ce site.");
+    else if (etat.contexteAudio && etat.maxNiveau === 0) conseils.push("Le micro ne capte rien : vérifie qu'il n'est pas bloqué ou couvert.");
+    etat.conseils = conseils; majMessages();
+    if (conseils.length) setTimeout(() => { if (jeton === etat.jetonCamera) { etat.conseils = []; majMessages(); } }, 9000);
+  }
+  // Rapport envoye une fois par ouverture de la camera : ce que le telephone renvoie vraiment (pour corriger sans capture d'ecran).
+  function envoyerDiagnostic() {
+    if (etat.diagEnvoye) return;
+    const v = $("apercu"), piste = etat.flux && etat.flux.getVideoTracks()[0], reglagesPiste = piste && piste.getSettings ? piste.getSettings() : {};
+    if (!v.videoWidth) return;
+    etat.diagEnvoye = true;
+    const charge = {
+      agent: navigator.userAgent, format: reglages.format, qualite: reglages.qualite, camera: reglages.camera, essais: etat.essaisCamera || "", image: v.videoWidth + "x" + v.videoHeight,
+      ecran: window.innerWidth + "x" + window.innerHeight + "@" + (window.devicePixelRatio || 1),
+      installee: String(!!(window.navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches))),
+      note: "piste " + (reglagesPiste.width || "?") + "x" + (reglagesPiste.height || "?") + (reglagesPiste.zoom ? " zoom " + reglagesPiste.zoom : ""),
+    };
+    try { fetch("/prompteur/diagnostic", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(charge) }).catch(() => { /* rapport facultatif */ }); } catch (e) { /* rapport facultatif */ }
+  }
 
   async function ouvrirCamera() {
     $("erreur-ouverture").hidden = true;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $("erreur-ouverture").textContent = "Ce navigateur n'autorise pas la caméra : ouvre la page avec Chrome (Android) ou Safari (iPhone)."; $("erreur-ouverture").hidden = false; return; }
     if (!window.MediaRecorder) { $("erreur-ouverture").textContent = "Ce navigateur ne sait pas enregistrer de vidéo : mets-le à jour, ou utilise Chrome (Android) ou Safari (iPhone)."; $("erreur-ouverture").hidden = false; return; }
-    if (!Suivi.decouper($("texte").value).length) { $("erreur-ouverture").textContent = "Écris ou colle d'abord le texte à lire."; $("erreur-ouverture").hidden = false; return; }
+    if (!motsTexte($("texte").value).length) { $("erreur-ouverture").textContent = "Écris ou colle d'abord le texte à lire."; $("erreur-ouverture").hidden = false; return; }
     arreterFlux();
     try { etat.flux = await ouvrirFlux(); }
     catch (e) {
@@ -479,7 +590,9 @@
     const video = $("apercu"); video.srcObject = etat.flux; video.style.transform = reglages.camera === "avant" ? "scaleX(-1)" : "none";
     try { await video.play(); } catch (e) { /* lecture automatique refusee : l'apercu demarre au premier toucher */ }
     afficherEcran("camera"); ajusterCadre(); construireTexte(); etat.positionFlottante = 0; $("fenetre").classList.toggle("manuel", reglages.mode === "manuel");
-    appliquerReglagesAffichage(); messageCamera(""); majEtat("Prêt"); demarrerNiveau(); preparerZoom(etat.flux.getVideoTracks()[0]); indiceFormat();
+    appliquerReglagesAffichage(); etat.msgFormat = ""; etat.conseils = []; etat.diagEnvoye = false; etat.maxNiveau = 0; etat.coupes = null; etat.jetonCamera++;
+    messageCamera(""); majEtat("Prêt"); demarrerNiveau(); preparerZoom(etat.flux.getVideoTracks()[0]); indiceFormat();
+    $("paragraphes").hidden = !reglages.paragraphes; $("para-suivant").disabled = $("para-refaire").disabled = true; etat.para = { k: 0, limite: 0, ecartes: [] }; majInfoPara(); controlerPrise();
   }
   function arreterFlux() {
     arreterCanvas();
@@ -487,7 +600,7 @@
     if (etat.contexteAudio) { try { etat.contexteAudio.close(); } catch (e) { /* deja ferme */ } etat.contexteAudio = null; }
     etat.capture = null;
   }
-  function majEtat(texte, rec) { $("etat").textContent = texte; $("etat").classList.toggle("rec", !!rec); }
+  function majEtat(texte, rec) { $("etat").textContent = texte; $("etat").classList.toggle("rec", !!rec); if (!rec) $("etat").classList.remove("depasse"); }
 
   // Niveau du micro (jauge) ; sert aussi a mesurer le bruit ambiant avant l'enregistrement.
   function demarrerNiveau() {
@@ -505,6 +618,7 @@
       let somme = 0; for (let i = 0; i < donnees.length; i++) somme += donnees[i] * donnees[i];
       const rms = Math.sqrt(somme / donnees.length);
       $("niveau").firstElementChild.style.width = Math.min(100, rms * 600) + "%";
+      if (rms > etat.maxNiveau) etat.maxNiveau = rms;
       if (!etat.enregistrement) etat.bruit = etat.bruit * 0.97 + rms * 0.03;
       const maintenant = performance.now();
       if (rms > Math.max(0.012, etat.bruit * 3)) { etat.parle = true; etat.derniereParole = maintenant; }
@@ -553,6 +667,7 @@
       $("decompte").hidden = true;
     }
     placer(0); etat.pause = false; $("pause").textContent = "⏸"; etat.derniereConf = 0;
+    etat.coupes = null; etat.para = { k: 0, limite: 0, ecartes: [] }; etat.conseils = []; etat.msgFormat = "";
     etat.mime = choisirMime(); etat.morceaux = [];
     const options = Object.assign({ videoBitsPerSecond: reglages.qualite === "1080" ? 6000000 : 4000000 }, etat.mime ? { mimeType: etat.mime } : {});
     const source = fluxPourEnregistrer();
@@ -566,13 +681,21 @@
     etat.enregistreur.onstop = terminerEnregistrement;
     etat.enregistreur.start(1000);
     etat.enregistrement = true; etat.debut = Date.now(); $("bouton-rec").classList.add("actif"); $("bouton-rec").disabled = false;
+    $("para-suivant").disabled = $("para-refaire").disabled = false; majInfoPara();
     messageCamera(""); demanderVerrou();
-    etat.minuteur = setInterval(() => { const s = Math.floor((Date.now() - etat.debut) / 1000); majEtat("● " + String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"), true); }, 500);
+    const horloge = (s) => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    etat.minuteur = setInterval(() => {
+      const s = Math.floor((Date.now() - etat.debut) / 1000);
+      majEtat("● " + horloge(s) + (reglages.cible > 0 ? " / " + horloge(reglages.cible) : ""), true);
+      $("etat").classList.toggle("depasse", reglages.cible > 0 && s > reglages.cible);
+    }, 500);
     demarrerSuivi();
   }
   function arreterEnregistrement() {
     if (!etat.enregistrement) return;
-    etat.enregistrement = false; clearInterval(etat.minuteur); arreterSuivi();
+    etat.totalEnreg = tempsEnreg(); etat.enregistrement = false; clearInterval(etat.minuteur); arreterSuivi();
+    const gardes = reglages.paragraphes && etat.para.ecartes.length ? calculerGardes(etat.para.ecartes, etat.totalEnreg) : [];
+    etat.coupes = gardes.length ? gardes : null; $("para-suivant").disabled = $("para-refaire").disabled = true;
     if (etat.verrou) { try { etat.verrou.release(); } catch (e) { /* deja libere */ } etat.verrou = null; }
     $("bouton-rec").classList.remove("actif");
     try { etat.enregistreur.stop(); } catch (e) { /* deja arrete */ }
@@ -589,8 +712,41 @@
     const mo = (etat.blob.size / 1048576).toFixed(1), duree = Math.round((Date.now() - etat.debut) / 1000);
     etat.duree = duree;
     $("info-video").textContent = "Durée : " + Math.floor(duree / 60) + " min " + String(duree % 60).padStart(2, "0") + " s · " + mo + " Mo · format " + (type.includes("mp4") ? "MP4" : "WebM") + ".";
+    $("info-coupes").hidden = !etat.coupes;
+    if (etat.coupes) $("info-coupes").textContent = "✂️ " + etat.para.ecartes.length + " passage" + (etat.para.ecartes.length > 1 ? "s" : "") + " refait" + (etat.para.ecartes.length > 1 ? "s" : "") + " retiré" + (etat.para.ecartes.length > 1 ? "s" : "") + " de la version gardée dans ta bibliothèque. La vidéo ci-dessus est la prise complète.";
     arreterFlux(); afficherEcran("resultat"); envoyerEnregistrement();
   }
+
+  // ------------------------------------------------------------------ prises par paragraphe
+  // Pendant l'enregistrement : « ✓ Suivant » valide le paragraphe, « ↩ Refaire » le recommence. Les passages ecartes (du dernier point de validation
+  // jusqu'au moment de « Refaire ») sont retires de la video gardee ; la prise complete reste telechargeable ici.
+  const DUREE_MIN_GARDEE = 0.3;
+  function calculerGardes(ecartes, total) {
+    const tries = ecartes.filter((e) => e[1] > e[0]).sort((a, b) => a[0] - b[0]), gardes = []; let curseur = 0;
+    tries.forEach((e) => { if (e[0] > curseur) gardes.push([curseur, e[0]]); curseur = Math.max(curseur, e[1]); });
+    if (total > curseur) gardes.push([curseur, total]);
+    return gardes.filter((g) => g[1] - g[0] >= DUREE_MIN_GARDEE).map((g) => [Math.round(g[0] * 100) / 100, Math.round(g[1] * 100) / 100]);
+  }
+  const tempsEnreg = () => (Date.now() - etat.debut) / 1000;
+  function majInfoPara() {
+    const n = etat.para.ecartes.length;
+    $("para-info").textContent = "Paragraphe " + (etat.para.k + 1) + "/" + Math.max(1, etat.debutsPara.length) + (n ? " · " + n + " refait" + (n > 1 ? "s" : "") : "");
+  }
+  function paraSuivant() {
+    if (!etat.enregistrement) return;
+    etat.para.limite = tempsEnreg();
+    if (etat.para.k < etat.debutsPara.length - 1) { etat.para.k++; placer(Math.max(etat.position, etat.debutsPara[etat.para.k])); }
+    majInfoPara();
+  }
+  function paraRefaire() {
+    if (!etat.enregistrement) return;
+    const t = tempsEnreg();
+    etat.para.ecartes.push([etat.para.limite, t]); etat.para.limite = t;
+    placer(etat.debutsPara[etat.para.k] || 0);
+    majInfoPara();
+  }
+  $("para-suivant").addEventListener("click", paraSuivant);
+  $("para-refaire").addEventListener("click", paraRefaire);
 
   // ------------------------------------------------------------------ suivi de la voix
   function demarrerSuivi() {
@@ -706,57 +862,215 @@
   $("refaire").addEventListener("click", () => { $("lecteur").removeAttribute("src"); ouvrirCamera(); });
   $("retour-texte").addEventListener("click", () => { $("lecteur").removeAttribute("src"); afficherEcran("texte"); });
 
-  // ------------------------------------------------------------------ garde automatique, sous-titres, liste des videos
-  function echecEnvoi(message) {
-    $("envoi-texte").textContent = "⚠️ " + message; $("envoi-barre").hidden = true; $("envoi-reessayer").hidden = false;
+  // ------------------------------------------------------------------ garde automatique : file locale, envoi par morceaux, sous-titres, liste des videos
+  // Une video reste dans la memoire du telephone (IndexedDB) tant qu'elle n'est pas arrivee sur la plateforme : si l'envoi echoue ou si la page est fermee,
+  // elle repart toute seule (ou d'un clic) au prochain passage, en reprenant au dernier morceau recu.
+  function ouvrirBase() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) { reject(new Error("stockage local indisponible")); return; }
+      const demande = indexedDB.open("prompteur-envois-v1", 1);
+      demande.onupgradeneeded = () => demande.result.createObjectStore("videos", { keyPath: "uid" });
+      demande.onsuccess = () => resolve(demande.result);
+      demande.onerror = () => reject(demande.error || new Error("stockage local indisponible"));
+    });
   }
-  function envoyerEnregistrement() {
+  async function operationBase(mode, action) {
+    const base = await ouvrirBase();
+    return new Promise((resolve, reject) => {
+      let requete;
+      const transaction = base.transaction("videos", mode);
+      try { requete = action(transaction.objectStore("videos")); } catch (e) { base.close(); reject(e); return; }
+      transaction.oncomplete = () => { base.close(); resolve(requete ? requete.result : undefined); };
+      transaction.onerror = transaction.onabort = () => { base.close(); reject(transaction.error || new Error("stockage local refuse")); };
+    });
+  }
+  // Le stockage local peut rester muet (navigation privee, site bloque) : au bout de 4 s on abandonne, l'envoi se fait sans lui.
+  const avecDelaiLocal = (promesse) => Promise.race([promesse, new Promise((resolve, reject) => setTimeout(() => reject(new Error("stockage local sans reponse")), 4000))]);
+  const fileLocale = {
+    ajouter: (element) => avecDelaiLocal(operationBase("readwrite", (s) => s.put(element))),
+    lister: () => avecDelaiLocal(operationBase("readonly", (s) => s.getAll())).then((x) => x || []),
+    retirer: (uid) => avecDelaiLocal(operationBase("readwrite", (s) => s.delete(uid))),
+  };
+  function nouvelUid() {
+    const octets = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(octets); else for (let i = 0; i < 16; i++) octets[i] = Math.floor(Math.random() * 256);
+    return Array.from(octets).map((o) => o.toString(16).padStart(2, "0")).join("");
+  }
+  function appelXHR(methode, url, corps, surProgres, delai) {
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open(methode, url);
+      if (typeof corps === "string") x.setRequestHeader("Content-Type", "application/json");
+      if (delai) x.timeout = delai;
+      if (surProgres && x.upload) x.upload.onprogress = (e) => { if (e.lengthComputable) surProgres(e.loaded); };
+      x.onload = () => { let json = {}; try { json = JSON.parse(x.responseText); } catch (e) { /* reponse illisible */ } resolve({ status: x.status, json: json }); };
+      x.onerror = () => reject(new Error("Pas de connexion : la vidéo reste sur ce téléphone."));
+      x.ontimeout = () => reject(new Error("Le serveur met trop de temps à répondre : la vidéo reste sur ce téléphone."));
+      x.send(corps === undefined ? null : corps);
+    });
+  }
+  async function avecReessais(fonction, essais, pas) {
+    let derniere;
+    for (let i = 0; i < essais; i++) {
+      try { return await fonction(); } catch (e) { derniere = e; if (e && e.fatal) throw e; if (i < essais - 1) await attendre((pas === undefined ? etat.delaiReessai : pas) * (i + 1)); }
+    }
+    throw derniere;
+  }
+  const TAILLE_MORCEAU = 4 * 1024 * 1024;
+  function erreurHttp(reponse, defaut) {
+    const e = new Error(reponse.json.erreur || (reponse.status === 401 ? "Session expirée : reconnecte-toi (la vidéo reste sur ce téléphone)." : defaut + " (code " + reponse.status + ")."));
+    if (reponse.status === 401 || (reponse.status >= 400 && reponse.status < 500 && reponse.status !== 409 && reponse.status !== 404 && reponse.status !== 408)) e.fatal = true;
+    return e;
+  }
+  // Envoie une video de la file locale : morceaux de 4 Mo (ceux deja recus par le serveur sont sautes), puis assemblage. progres(0..1).
+  async function televerser(element, progres) {
+    const taille = element.blob.size, total = Math.max(1, Math.ceil(taille / TAILLE_MORCEAU));
+    for (let passe = 0; passe < 3; passe++) {
+      let recus = {};
+      const etatServeur = await avecReessais(() => appelXHR("GET", "/prompteur/envois/" + element.uid), 3);
+      if (etatServeur.status === 401) throw erreurHttp(etatServeur, "");
+      if (etatServeur.status === 200) recus = etatServeur.json.recus || {};
+      let envoye = 0;
+      for (let i = 0; i < total; i++) {
+        const debut = i * TAILLE_MORCEAU, fin = Math.min(taille, debut + TAILLE_MORCEAU);
+        if (recus[String(i)] === fin - debut) { envoye += fin - debut; progres(envoye / taille); continue; }
+        await avecReessais(async () => {
+          const r = await appelXHR("POST", "/prompteur/envois/" + element.uid + "/" + i, element.blob.slice(debut, fin), (charge) => progres((envoye + charge) / taille), 120000);
+          if (r.status !== 200) throw erreurHttp(r, "Envoi interrompu");
+          return r;
+        }, 4);
+        envoye += fin - debut; progres(envoye / taille);
+      }
+      const corps = JSON.stringify(Object.assign({ total: total, extension: element.extension }, element.meta));
+      const reponse = await avecReessais(async () => {
+        const r = await appelXHR("POST", "/prompteur/envois/" + element.uid + "/terminer", corps, null, 600000);
+        if (r.status === 409 && !r.json.manquants) throw new Error(r.json.erreur || "Traitement en cours.");      // deja en traitement : on patiente
+        return r;
+      }, 8, etat.delaiReessai * 2);
+      if (reponse.status === 200 && reponse.json.id) return reponse.json;
+      if ((reponse.status === 409 && reponse.json.manquants) || reponse.status === 404) continue;     // morceaux disparus du serveur : on recommence la passe
+      throw erreurHttp(reponse, "Échec de l'envoi");
+    }
+    throw new Error("L'envoi n'a pas abouti : la vidéo reste sur ce téléphone, réessaie dans un moment.");
+  }
+
+  function echecEnvoi(message) {
+    $("envoi-texte").textContent = "⚠️ " + message + " La vidéo reste sur ce téléphone."; $("envoi-barre").hidden = true; $("envoi-reessayer").hidden = false;
+  }
+  function boutonsMontage(actif) { $("sous-titrer").disabled = !actif; $("preparer").disabled = !actif; }
+  async function envoyerEnregistrement() {
     const blob = etat.blob, jeton = ++etat.jetonEnvoi;
     if (!blob) return;
-    etat.idGarde = null; $("sous-titrer").disabled = true; $("envoi-reessayer").hidden = true; $("erreur-sous-titres").hidden = true;
+    etat.idGarde = null; boutonsMontage(false); $("envoi-reessayer").hidden = true; $("erreur-sous-titres").hidden = true;
+    if (!etat.element || etat.element.blob !== blob) {
+      etat.element = { uid: nouvelUid(), blob: blob, extension: blob.type.includes("mp4") ? "mp4" : "webm", cree: Date.now(),
+        meta: { texte: reglages.texte, duree: etat.duree, orientation: reglages.format, client_id: CLIENT_MARQUE, coupes: etat.coupes || undefined } };
+      try { await fileLocale.ajouter(etat.element); } catch (e) { /* stockage local indisponible (navigation privee) : l'envoi se fait quand meme */ }
+    }
+    const element = etat.element;
     $("envoi-texte").textContent = "☁️ Envoi dans ta bibliothèque… 0 %"; $("envoi-barre").value = 0; $("envoi-barre").hidden = false;
-    const formulaire = new FormData();
-    formulaire.append("fichier", blob, nomFichier()); formulaire.append("texte", reglages.texte); formulaire.append("duree", String(etat.duree));
-    formulaire.append("orientation", reglages.format); formulaire.append("client_id", CLIENT_MARQUE);
-    const x = new XMLHttpRequest();
-    x.open("POST", "/prompteur/enregistrements");
-    x.upload.onprogress = (e) => { if (jeton === etat.jetonEnvoi && e.lengthComputable) { const p = Math.round(e.loaded / e.total * 100); $("envoi-barre").value = p; $("envoi-texte").textContent = "☁️ Envoi dans ta bibliothèque… " + p + " %"; } };
-    x.onload = () => {
+    etat.envoiActif = true;
+    try {
+      const donnees = await televerser(element, (p) => {
+        if (jeton !== etat.jetonEnvoi) return;
+        const pourcent = Math.min(100, Math.round(p * 100)); $("envoi-barre").value = pourcent; $("envoi-texte").textContent = "☁️ Envoi dans ta bibliothèque… " + pourcent + " %";
+      });
       if (jeton !== etat.jetonEnvoi) return;
-      let donnees = {}; try { donnees = JSON.parse(x.responseText); } catch (e) { /* reponse illisible */ }
-      if (x.status === 200 && donnees.id) {
-        etat.idGarde = donnees.id; $("envoi-texte").textContent = "✅ Vidéo gardée dans ta bibliothèque (« Mes vidéos »)."; $("envoi-barre").hidden = true; $("sous-titrer").disabled = false;
-      } else echecEnvoi(donnees.erreur || (x.status === 401 ? "Session expirée : télécharge la vidéo avant de recharger la page." : "Échec de l'envoi (code " + x.status + ")."));
-    };
-    x.onerror = () => { if (jeton === etat.jetonEnvoi) echecEnvoi("Pas de connexion : la vidéo n'a pas été envoyée."); };
-    x.send(formulaire);
+      etat.idGarde = donnees.id;
+      $("envoi-texte").textContent = "✅ Vidéo gardée dans ta bibliothèque (« Mes vidéos »)." + (donnees.avertissement ? " " + donnees.avertissement : "") + (etat.coupes && !donnees.avertissement ? " Les paragraphes refaits ont été retirés de cette version." : "");
+      $("envoi-barre").hidden = true; boutonsMontage(true);
+      try { await fileLocale.retirer(element.uid); } catch (e) { /* deja retire */ }
+    } catch (e) {
+      if (jeton === etat.jetonEnvoi) echecEnvoi((e && e.message) || "Échec de l'envoi.");
+    } finally { etat.envoiActif = false; verifierEnAttente(); }
   }
   $("envoi-reessayer").addEventListener("click", envoyerEnregistrement);
 
+  // Videos filmees dont l'envoi n'a pas abouti (page fermee, reseau coupe) : proposees a l'ouverture, et reparties toutes seules quand la connexion revient.
+  function dateCourte(ms) { const d = new Date(ms), p = (n) => String(n).padStart(2, "0"); return p(d.getDate()) + "/" + p(d.getMonth() + 1) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+  async function verifierEnAttente() {
+    let elements = [];
+    try { elements = await fileLocale.lister(); } catch (e) { return elements; }
+    elements = elements.filter((e) => !(etat.envoiActif && etat.element && etat.element.uid === e.uid));
+    etat.enAttente = elements;
+    $("en-attente").hidden = !elements.length;
+    if (elements.length && !etat.reprise) {
+      const mo = elements.reduce((t, e) => t + e.blob.size, 0) / 1048576;
+      $("en-attente-texte").textContent = "⏳ " + (elements.length > 1 ? elements.length + " vidéos n'ont" : "Une vidéo n'a") + " pas fini de s'envoyer (" + dateCourte(elements[0].cree) + ", " + mo.toFixed(1) + " Mo). Elle est en sécurité sur ce téléphone.";
+      $("en-attente-barre").hidden = true;
+    }
+    return elements;
+  }
+  async function reprendreEnAttente() {
+    if (etat.reprise) return;
+    const elements = await verifierEnAttente();
+    if (!elements.length) return;
+    etat.reprise = true; $("en-attente-envoyer").disabled = true; $("en-attente-barre").hidden = false; let echec = "";
+    for (const element of elements) {
+      try {
+        await televerser(element, (p) => { $("en-attente-barre").value = Math.round(p * 100); $("en-attente-texte").textContent = "☁️ Envoi d'une vidéo restée sur le téléphone… " + Math.round(p * 100) + " %"; });
+        try { await fileLocale.retirer(element.uid); } catch (e) { /* deja retire */ }
+      } catch (e) { echec = (e && e.message) || "Échec de l'envoi."; break; }
+    }
+    etat.reprise = false; $("en-attente-envoyer").disabled = false;
+    const restantes = await verifierEnAttente();
+    if (echec) { $("en-attente-texte").textContent = "⚠️ " + echec; $("en-attente").hidden = false; $("en-attente-barre").hidden = true; }
+    else if (!restantes.length) { $("en-attente").hidden = false; $("en-attente-texte").textContent = "✅ Tout est envoyé : retrouve tes vidéos dans « Mes vidéos »."; $("en-attente-barre").hidden = true; $("en-attente-envoyer").hidden = true; $("en-attente-supprimer").hidden = true; }
+  }
+  $("en-attente-envoyer").addEventListener("click", reprendreEnAttente);
+  $("en-attente-supprimer").addEventListener("click", async () => {
+    if (!confirm("Abandonner ces vidéos ? Elles seront définitivement effacées de ce téléphone.")) return;
+    try { for (const e of await fileLocale.lister()) await fileLocale.retirer(e.uid); } catch (e) { /* rien a retirer */ }
+    verifierEnAttente();
+  });
+  window.addEventListener("online", () => { if (!etat.enregistrement) reprendreEnAttente(); });
+
   etat.aller = (adresse) => { window.location.href = adresse; };      // remplace dans les tests : pas de changement de page
-  async function demanderSousTitres(identifiant, bouton, zoneErreur) {
+  // action : « sous-titres » (sous-titres seulement) ou « preparer » (montage complet pret a publier)
+  async function demanderMontage(identifiant, bouton, zoneErreur, action) {
     const libelle = bouton.textContent; bouton.disabled = true; bouton.textContent = "⏳ Préparation…"; zoneErreur.hidden = true;
     try {
-      const reponse = await fetch("/prompteur/enregistrements/" + identifiant + "/sous-titres", { method: "POST" });
+      const reponse = await fetch("/prompteur/enregistrements/" + identifiant + "/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ caler: !!reglages.caler, musique: true }) });
       const donnees = await reponse.json().catch(() => ({}));
       if (!reponse.ok) throw new Error(donnees.erreur || (reponse.status === 401 ? "Session expirée : reconnecte-toi." : "Échec (code " + reponse.status + ")."));
       etat.aller(donnees.adresse);
-    } catch (e) { zoneErreur.textContent = e.message || "Impossible de lancer les sous-titres."; zoneErreur.hidden = false; bouton.disabled = false; bouton.textContent = libelle; }
+    } catch (e) { zoneErreur.textContent = e.message || "Impossible de lancer le montage."; zoneErreur.hidden = false; bouton.disabled = false; bouton.textContent = libelle; }
   }
-  $("sous-titrer").addEventListener("click", () => { if (etat.idGarde) demanderSousTitres(etat.idGarde, $("sous-titrer"), $("erreur-sous-titres")); });
+  $("sous-titrer").addEventListener("click", () => { if (etat.idGarde) demanderMontage(etat.idGarde, $("sous-titrer"), $("erreur-sous-titres"), "sous-titres"); });
+  $("preparer").addEventListener("click", () => { if (etat.idGarde) demanderMontage(etat.idGarde, $("preparer"), $("erreur-sous-titres"), "preparer"); });
+  [$("caler"), $("caler-videos")].forEach((c) => c.addEventListener("change", () => { reglages.caler = c.checked; $("caler").checked = $("caler-videos").checked = c.checked; sauver(); }));
 
   const el = (balise, proprietes, enfants) => { const n = document.createElement(balise); Object.assign(n, proprietes || {}); (enfants || []).forEach((c) => n.appendChild(c)); return n; };
   function carteVideo(v) {
     const erreur = el("p", { className: "erreur", hidden: true });
     const duree = v.duree ? Math.floor(v.duree / 60) + " min " + String(v.duree % 60).padStart(2, "0") + " s · " : "";
-    const lecteur = el("video", { controls: true, preload: "metadata", playsInline: true, src: v.url });
+    const lecteur = el("video", { controls: true, preload: "metadata", playsInline: true, src: v.url + "#t=0.4" });      // la premiere image sert de miniature
+    const titre = el("h3", { textContent: v.titre });
     const ouvrir = el("a", { className: "bouton", href: v.url, target: "_blank", rel: "noopener", textContent: "⬇ Ouvrir" });
+    const preparer = el("button", { className: "bouton principal", type: "button", textContent: "🚀 Préparer pour publier" });
+    preparer.addEventListener("click", () => demanderMontage(v.id, preparer, erreur, "preparer"));
     const sous = el("button", { className: "bouton", type: "button", textContent: "💬 Sous-titres" });
-    sous.addEventListener("click", () => demanderSousTitres(v.id, sous, erreur));
+    sous.addEventListener("click", () => demanderMontage(v.id, sous, erreur, "sous-titres"));
+    const renommer = el("button", { className: "bouton", type: "button", textContent: "✏️ Renommer" });
+    renommer.addEventListener("click", async () => {
+      const nouveau = prompt("Nouveau titre de la vidéo :", titre.textContent); if (nouveau === null || !nouveau.trim()) return;
+      try {
+        const reponse = await fetch("/prompteur/enregistrements/" + v.id + "/renommer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ titre: nouveau }) });
+        const donnees = await reponse.json().catch(() => ({}));
+        if (!reponse.ok) throw new Error(donnees.erreur || "Renommage impossible (code " + reponse.status + ").");
+        titre.textContent = donnees.titre; erreur.hidden = true;
+      } catch (e) { erreur.textContent = e.message; erreur.hidden = false; }
+    });
+    const reprendre = el("button", { className: "bouton", type: "button", textContent: "📝 Reprendre le texte", hidden: !v.texte });
+    reprendre.addEventListener("click", () => { $("texte").value = v.texte; reglages.texte = v.texte; sauver(); majCompteur(); afficherEcran("texte"); $("texte").scrollIntoView({ block: "center" }); });
     const suppr = el("button", { className: "bouton", type: "button", textContent: "🗑 Supprimer" });
+    const notes = [];
+    if (v.coupe) notes.push(el("p", { className: "discret", textContent: "✂️ Les paragraphes refaits ont été retirés de cette version." }));
+    if (v.avertissement) notes.push(el("p", { className: "discret", textContent: "ℹ️ " + v.avertissement }));
+    if (v.texte) notes.push(el("details", {}, [el("summary", { textContent: "Texte lu" }), el("p", { className: "discret", style: "white-space:pre-wrap", textContent: v.texte })]));
     const carte = el("div", { className: "video-carte" }, [
-      el("h3", { textContent: v.titre }), el("p", { className: "discret", textContent: duree + v.date + (v.taille ? " · " + Math.round(v.taille / 1048576) + " Mo" : "") }),
-      lecteur, el("div", { className: "ligne" }, [ouvrir, sous, suppr]), erreur]);
+      titre, el("p", { className: "discret", textContent: duree + v.date + (v.taille ? " · " + Math.round(v.taille / 1048576) + " Mo" : "") }),
+      lecteur].concat(notes, [el("div", { className: "ligne" }, [preparer, sous]), el("div", { className: "ligne" }, [ouvrir, renommer, reprendre, suppr]), erreur]));
     suppr.addEventListener("click", async () => {
       if (!confirm("Supprimer cette vidéo définitivement ?")) return;
       try {
@@ -767,6 +1081,32 @@
     });
     return carte;
   }
+
+  // ------------------------------------------------------------------ accroches proposees par l'IA
+  function remplacerPremierePhrase(texte, accroche) {
+    const m = /^\s*[^.!?…\n]*[.!?…]+(?=\s|$)/.exec(texte);
+    const retour = texte.indexOf("\n"), fin = m ? m[0].length : (retour >= 0 ? retour : texte.length);
+    return accroche.trim() + texte.slice(fin);
+  }
+  $("accroches").addEventListener("click", async () => {
+    const panneau = $("panneau-accroches"), etatA = $("accroches-etat"), liste = $("liste-accroches");
+    liste.textContent = ""; panneau.hidden = false;
+    if (!$("texte").value.trim()) { etatA.textContent = "Écris ou colle d'abord le texte : l'IA proposera d'autres façons de le commencer."; return; }
+    const bouton = $("accroches"); bouton.disabled = true; etatA.textContent = "⏳ L'IA cherche trois accroches…";
+    try {
+      const reponse = await fetch("/prompteur/accroches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte: $("texte").value, client_id: $("ia-client").value }) });
+      const donnees = await reponse.json().catch(() => ({}));
+      if (!reponse.ok) throw new Error(donnees.erreur || (reponse.status === 401 ? "Session expirée : reconnecte-toi." : "Échec (code " + reponse.status + ")."));
+      etatA.textContent = "Touche une accroche pour remplacer la première phrase de ton texte :";
+      donnees.accroches.forEach((a) => {
+        const b = el("button", { className: "bouton", type: "button", textContent: a, style: "width:100%;text-align:left;margin-top:8px" });
+        b.addEventListener("click", () => { const nouveau = remplacerPremierePhrase($("texte").value, a); $("texte").value = nouveau; reglages.texte = nouveau; sauver(); majCompteur(); panneau.hidden = true; });
+        liste.appendChild(b);
+      });
+    } catch (e) { etatA.textContent = e.message || "Impossible de proposer des accroches."; }
+    finally { bouton.disabled = false; }
+  });
+
   async function chargerVideos() {
     const info = $("videos-etat"), liste = $("liste-videos"); liste.textContent = ""; info.hidden = false; info.textContent = "Chargement…";
     try {
@@ -786,10 +1126,13 @@
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/prompteur/sw.js", { scope: "/prompteur/" }).catch(() => { /* installation en application indisponible : la page marche quand meme */ });
   chargerReglagesDansLaPage();
   requestAnimationFrame(animer);
+  setTimeout(() => { verifierEnAttente().then((restantes) => { if (restantes && restantes.length && navigator.onLine !== false) reprendreEnAttente(); }); }, 800);
 
   // Points d'entree pour les tests automatiques (tests_plateforme/test_prompteur_page.py) : sans effet pour l'utilisateur.
   window.__prompteur = { etat: etat, construireTexte: construireTexte, placer: placer, appliquerTranscription: appliquerTranscription, encoderWav: encoderWav, reechantillonner: reechantillonner, choisirMime: choisirMime, reglages: reglages,
-    outils: outils, ouvrirFlux: ouvrirFlux, dimensionsSortie: dimensionsSortie, ecartFormat: ecartFormat, avancerPredit: avancerPredit, afficher: afficher, ajusterCadre: ajusterCadre, envoyerEnregistrement: envoyerEnregistrement };
+    fileLocale: fileLocale, televerser: televerser, calculerGardes: calculerGardes, paraSuivant: paraSuivant, paraRefaire: paraRefaire, majInfoPara: majInfoPara, motsTexte: motsTexte,
+    analyserLumiere: analyserLumiere, conseilsLumiere: conseilsLumiere, remplacerPremierePhrase: remplacerPremierePhrase, envoyerDiagnostic: envoyerDiagnostic, demanderMontage: demanderMontage,
+    carteVideo: carteVideo, verifierEnAttente: verifierEnAttente, reprendreEnAttente: reprendreEnAttente, controlerPrise: controlerPrise, outils: outils, ouvrirFlux: ouvrirFlux, dimensionsSortie: dimensionsSortie, ecartFormat: ecartFormat, avancerPredit: avancerPredit, afficher: afficher, ajusterCadre: ajusterCadre, envoyerEnregistrement: envoyerEnregistrement };
 })();
 </script>
 </body>
