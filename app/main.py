@@ -3282,9 +3282,10 @@ def creer_client(
     db.commit()
 
     # Adresse du site renseignee : son texte est importe tout de suite (le client est cree meme si le site est illisible : l'erreur est affichee sur sa fiche).
+    import_site_fait = None
     if adresse_site.strip():
         try:
-            _importer_site_dans_base(db, client, adresse_site.strip())
+            import_site_fait = _importer_site_dans_base(db, client, adresse_site.strip())
         except Exception as erreur:
             erreurs_documents.append(f"Site web : {erreur}")
 
@@ -3292,6 +3293,8 @@ def creer_client(
         client = db.get(models.Client, client.id)
         return _reponse_detail_client(request, db, client, erreur_document=" ; ".join(erreurs_documents), code=200)
 
+    if import_site_fait:       # le site vient d'etre lu : on montre tout de suite ce qui a ete retenu
+        return RedirectResponse(f"/clients/{client.id}/documents/{import_site_fait['document_id']}?import_fait=1&vides={import_site_fait['vides']}", status_code=303)
     return RedirectResponse(f"/clients/{client.id}", status_code=303)
 
 
@@ -4550,7 +4553,47 @@ def _importer_site_dans_base(db: Session, client, adresse: str) -> dict:
     if not (client.site_web or "").strip():
         client.site_web = analyse_site._url(adresse) or ""
     db.commit()
+    resultat["document_id"] = (ancien or db.query(models.DocumentConnaissance).filter_by(client_id=client.id, nom_fichier=nom).order_by(models.DocumentConnaissance.id.desc()).first()).id
     return resultat
+
+
+def _pages_du_document(texte: str) -> list:
+    """Pages d'un document importe depuis un site : [{"titre", "url", "caracteres"}] d'apres les lignes « === Page : titre (adresse) === »."""
+    reperes = list(re.finditer(r"^=== Page : (.*) \((https?://[^\s)]+)\) ===$", texte or "", re.MULTILINE))
+    pages = []
+    for i, m in enumerate(reperes):
+        fin = reperes[i + 1].start() if i + 1 < len(reperes) else len(texte)
+        pages.append({"titre": m.group(1), "url": m.group(2), "caracteres": max(0, fin - m.end()) })
+    return pages
+
+
+@app.get("/clients/{client_id}/documents/{document_id}", response_class=HTMLResponse)
+def voir_document_client(client_id: int, document_id: int, request: Request, import_fait: int = 0, vides: int = 0, db: Session = Depends(obtenir_session)):
+    """Ce que l'IA lit d'un document de la base de connaissances : texte complet et, pour un site importe, la liste des pages lues."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    document = db.get(models.DocumentConnaissance, document_id)
+    client = db.get(models.Client, client_id)
+    if not client or not document or document.client_id != client_id:
+        return HTMLResponse("Document introuvable.", status_code=404)
+    texte = document.texte_extrait or ""
+    return templates.TemplateResponse(request, "document_connaissance.html", {
+        "client": client, "document": document, "pages": _pages_du_document(texte), "nb_caracteres": len(texte), "import_fait": bool(import_fait), "vides": max(0, vides),
+        "date": document.cree_le.strftime("%d/%m/%Y à %H:%M") if document.cree_le else "",
+    })
+
+
+@app.get("/clients/{client_id}/documents/{document_id}/texte.txt")
+def telecharger_document_client(client_id: int, document_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    document = db.get(models.DocumentConnaissance, document_id)
+    if not document or document.client_id != client_id:
+        return HTMLResponse("Document introuvable.", status_code=404)
+    nom = re.sub(r"[^A-Za-z0-9._-]+", "_", (document.nom_fichier or "document")).strip("_")[:80] or "document"
+    return PlainTextResponse(document.texte_extrait or "", headers={"Content-Disposition": f'attachment; filename="{nom}.txt"'})
 
 
 @app.post("/clients/{client_id}/documents/importer-site")
@@ -4563,10 +4606,10 @@ async def importer_site_client(client_id: int, request: Request, adresse: str = 
     if not client:
         return HTMLResponse("Client introuvable.", status_code=404)
     try:
-        await run_in_threadpool(_importer_site_dans_base, db, client, adresse.strip() or client.site_web or client.wordpress_url or "")
+        resultat = await run_in_threadpool(_importer_site_dans_base, db, client, adresse.strip() or client.site_web or client.wordpress_url or "")
     except Exception as erreur:
         return _reponse_detail_client(request, db, client, erreur_document=str(erreur), code=400)
-    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+    return RedirectResponse(f"/clients/{client_id}/documents/{resultat['document_id']}?import_fait=1&vides={resultat['vides']}", status_code=303)
 
 
 NB_MAX_PHOTOS_REFERENCE = 5

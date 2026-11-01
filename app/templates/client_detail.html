@@ -230,7 +230,7 @@
     <div class="liste-etiquettes">
       {% for document in client.documents_connaissance %}
       <div class="etiquette-supprimable">
-        <span class="etiquette-chip">{{ document.nom_fichier }}</span>
+        <a class="etiquette-chip" href="/clients/{{ client.id }}/documents/{{ document.id }}" title="Voir ce que l'IA lit dans ce document">{{ document.nom_fichier }}</a>
         <form method="post" action="/clients/{{ client.id }}/documents/{{ document.id }}/supprimer" onsubmit="return confirm('Retirer ce document de la base de connaissances ?');">
           <button type="submit" class="lien-retirer-geotag" title="Retirer">×</button>
         </form>

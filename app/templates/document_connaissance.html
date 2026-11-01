@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set page_actuelle = "clients" %}
+{% block titre %}{{ document.nom_fichier }} — {{ client.nom }}{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/clients/{{ client.id }}">&larr; Retour à la fiche de {{ client.nom }}</a></p>
+<div class="barre-titre">
+  <h1>{{ document.nom_fichier }}</h1>
+  <div class="actions-avis">
+    <a class="bouton bouton-fantome" href="/clients/{{ client.id }}/documents/{{ document.id }}/texte.txt" download>Télécharger en .txt</a>
+  </div>
+</div>
+
+{% if import_fait %}
+<p class="message-succes" id="resume-import">
+  Import terminé : {{ pages|length }} page{{ "s" if pages|length > 1 }} lue{{ "s" if pages|length > 1 }}, {{ nb_caracteres }} caractères.
+  {% if vides %}{{ vides }} page{{ "s" if vides > 1 }} sans texte lisible {{ "ont" if vides > 1 else "a" }} été ignorée{{ "s" if vides > 1 }} (site en partie construit en JavaScript ?).{% endif %}
+  Vérifie ci-dessous que l'essentiel du site est bien là.
+</p>
+{% endif %}
+
+<p class="texte-discret">
+  Voici exactement ce que l'IA lit pour ce client : {{ nb_caracteres }} caractères, ajoutés ou mis à jour le {{ date }}.
+  {% if pages %}Chaque page du site commence par une ligne « === Page : … ===».{% endif %}
+  Pour corriger, retire ce document puis importe-le à nouveau, ou ajoute un document complémentaire.
+</p>
+
+{% if pages %}
+<h2>Pages lues</h2>
+<table class="tableau" id="pages-lues">
+  <thead><tr><th>Page</th><th>Adresse</th><th>Caractères</th></tr></thead>
+  <tbody>
+    {% for page in pages %}
+    <tr><td>{{ page.titre }}</td><td><a href="{{ page.url }}" target="_blank" rel="noopener">{{ page.url }}</a></td><td>{{ page.caracteres }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Texte complet</h2>
+<pre id="texte-document" style="white-space: pre-wrap; word-break: break-word; font-family: inherit; line-height: 1.5; background: var(--fond-carte, rgba(127,127,127,.08)); padding: 14px; border-radius: 10px; max-height: 70vh; overflow: auto;">{{ document.texte_extrait }}</pre>
+{% endblock %}
