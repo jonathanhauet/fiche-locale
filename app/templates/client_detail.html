@@ -240,6 +240,11 @@
     {% else %}
     <p class="texte-vide">Aucun document ajouté pour l'instant.</p>
     {% endif %}
+    <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/documents/importer-site" onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Lecture du site en cours, patiente un moment…';">
+      <input type="text" name="adresse" value="{{ client.site_web or client.wordpress_url or '' }}" placeholder="https://www.site-du-client.fr" aria-label="Adresse du site">
+      <button type="submit" class="bouton-secondaire">Importer le texte du site</button>
+    </form>
+    <p class="texte-discret">Lit automatiquement les pages du site (40 au maximum, menus et pieds de page exclus) et en fait un document « Site web : … ». Relancer l'import met ce document à jour. Un site construit en JavaScript peut donner peu de texte.</p>
     <form class="formulaire-ligne" method="post" action="/clients/{{ client.id }}/documents" enctype="multipart/form-data">
       <input type="file" name="fichier" accept=".pdf,.docx,.txt" required>
       <button type="submit" class="bouton-secondaire">Ajouter</button>

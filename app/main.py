@@ -108,6 +108,7 @@ from . import (
     montage_video,
     musique_ia,
     analyse_site,
+    import_site,
     polices_client,
     notifications,
     ovh_upload,
@@ -3238,6 +3239,7 @@ def creer_client(
     contenu_site: str = Form(""),
     consignes_avis: str = Form(""),
     fiche_google: str = Form(""),
+    adresse_site: str = Form(""),
     etiquettes: list[str] = Form(default=[]),
     fichiers: list[UploadFile] = File(default=[]),
     db: Session = Depends(obtenir_session),
@@ -3278,6 +3280,13 @@ def creer_client(
             client_id=client.id, nom_fichier=fichier.filename, texte_extrait=texte_extrait,
         ))
     db.commit()
+
+    # Adresse du site renseignee : son texte est importe tout de suite (le client est cree meme si le site est illisible : l'erreur est affichee sur sa fiche).
+    if adresse_site.strip():
+        try:
+            _importer_site_dans_base(db, client, adresse_site.strip())
+        except Exception as erreur:
+            erreurs_documents.append(f"Site web : {erreur}")
 
     if erreurs_documents:
         client = db.get(models.Client, client.id)
@@ -4521,6 +4530,42 @@ def supprimer_document_client(client_id: int, document_id: int, request: Request
         db.delete(document)
         db.commit()
 
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
+def _importer_site_dans_base(db: Session, client, adresse: str) -> dict:
+    """
+    Lit le site (voir import_site) et en fait UN document de la base de connaissances, nomme « Site web : domaine » ; un import precedent du meme site est remplace.
+    RuntimeError (message clair) si le site est illisible : rien n'est alors modifie.
+    """
+    resultat = import_site.importer(adresse)
+    accueil = resultat["pages"][0]["url"] if resultat["pages"] else adresse
+    nom = "Site web : " + (urlparse(accueil).hostname or adresse)
+    ancien = db.query(models.DocumentConnaissance).filter(models.DocumentConnaissance.client_id == client.id, models.DocumentConnaissance.nom_fichier == nom).first()
+    if ancien:
+        ancien.texte_extrait = resultat["texte"]
+        ancien.cree_le = datetime.utcnow()
+    else:
+        db.add(models.DocumentConnaissance(client_id=client.id, nom_fichier=nom, texte_extrait=resultat["texte"]))
+    if not (client.site_web or "").strip():
+        client.site_web = analyse_site._url(adresse) or ""
+    db.commit()
+    return resultat
+
+
+@app.post("/clients/{client_id}/documents/importer-site")
+async def importer_site_client(client_id: int, request: Request, adresse: str = Form(""), db: Session = Depends(obtenir_session)):
+    """Importe le texte du site du client dans sa base de connaissances (adresse saisie, sinon celle de sa fiche)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+    try:
+        await run_in_threadpool(_importer_site_dans_base, db, client, adresse.strip() or client.site_web or client.wordpress_url or "")
+    except Exception as erreur:
+        return _reponse_detail_client(request, db, client, erreur_document=str(erreur), code=400)
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
