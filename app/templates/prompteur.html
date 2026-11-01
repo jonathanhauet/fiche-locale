@@ -39,16 +39,17 @@
   /* camera et prompteur */
   #ecran-camera { position: fixed; inset: 0; max-width: none; padding: 0; background: #000; overflow: hidden; }
   #apercu { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
-  #prompteur { position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top) + var(--haut, 4vh)); height: var(--hauteur, 42vh); background: rgba(0, 0, 0, var(--opacite, .55)); border-radius: 0 0 16px 16px; }
+  #prompteur { position: absolute; left: 0; right: 0; top: env(safe-area-inset-top); height: var(--hauteur, 30vh); background: rgba(0, 0, 0, var(--opacite, .55)); border-radius: 0 0 16px 16px; }
   #fenetre { position: absolute; inset: 0; overflow: hidden; padding: 0 16px; }
   #fenetre.manuel { overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  #defilant { padding: 34% 0 60% 0; font-size: var(--taille, 44px); line-height: 1.32; font-weight: 700; text-shadow: 0 1px 6px rgba(0,0,0,.9); text-align: center; }
+  #defilant { padding: calc(var(--hauteur, 30vh) * .14) 0 60% 0; font-size: var(--taille, 44px); line-height: 1.32; font-weight: 700; text-shadow: 0 1px 6px rgba(0,0,0,.9); text-align: center; }
   #defilant p { margin: 0 0 .7em; }
   .mot { color: #fff; transition: color .25s; }
   .mot.lu { color: rgba(255,255,255,.34); }
   .mot.courant { color: #000; background: var(--accent2); border-radius: 6px; padding: 0 4px; text-shadow: none; }
-  #repere { position: absolute; left: 0; top: 34%; width: 10px; height: 10px; margin-top: 10px; border-left: 12px solid var(--accent2); border-top: 8px solid transparent; border-bottom: 8px solid transparent; pointer-events: none; }
-  #barre-haut { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 0 12px; pointer-events: none; }
+  #repere { position: absolute; left: 0; top: calc(var(--hauteur, 30vh) * .14); width: 10px; height: 10px; margin-top: 10px; border-left: 12px solid var(--accent2); border-top: 8px solid transparent; border-bottom: 8px solid transparent; pointer-events: none; }
+  #barre-haut { position: absolute; left: 0; right: 0; top: calc(100% + 8px); display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 0 12px; pointer-events: none; }
+  #diag { font-size: .62rem; color: rgba(255,255,255,.7); text-shadow: 0 1px 3px #000; flex: 1; text-align: center; }
   #etat { background: rgba(0,0,0,.55); border-radius: 999px; padding: 6px 12px; font-size: .85rem; }
   #etat.rec { background: rgba(220, 40, 30, .85); }
   #niveau { width: 70px; height: 8px; background: rgba(255,255,255,.25); border-radius: 4px; overflow: hidden; }
@@ -128,8 +129,8 @@
     <summary>Affichage et caméra</summary>
     <label for="taille">Taille du texte : <span id="taille-val">44</span> px</label>
     <input type="range" id="taille" min="26" max="84" step="2" value="44">
-    <label for="hauteur">Hauteur du prompteur : <span id="hauteur-val">42</span> % de l'écran</label>
-    <input type="range" id="hauteur" min="25" max="65" step="1" value="42">
+    <label for="hauteur">Hauteur du prompteur : <span id="hauteur-val">30</span> % de l'écran</label>
+    <input type="range" id="hauteur" min="18" max="65" step="1" value="30">
     <label for="opacite">Fond sombre derrière le texte : <span id="opacite-val">55</span> %</label>
     <input type="range" id="opacite" min="15" max="90" step="5" value="55">
     <div class="ligne">
@@ -155,7 +156,7 @@
 <main id="ecran-camera" class="ecran" hidden>
   <div id="cadre"><video id="apercu" playsinline muted autoplay></video></div>
   <div id="prompteur">
-    <div id="barre-haut"><span id="etat">Prêt</span><span id="niveau" title="Niveau du micro"><i></i></span></div>
+    <div id="barre-haut"><span id="etat">Prêt</span><span id="diag"></span><span id="niveau" title="Niveau du micro"><i></i></span></div>
     <div id="fenetre"><div id="defilant"></div></div>
     <div id="repere"></div>
   </div>
@@ -221,8 +222,8 @@
     confirmee: 0, parle: false, derniereParole: 0, vitesseMots: 2.2, derniereConf: 0, canvas: null, jetonEnvoi: 0, idGarde: null, duree: 0,
   };
   const CLIENT_MARQUE = "{{ client_marque_id or '' }}";
-  const reglages = { texte: "", taille: 44, hauteur: 42, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait" };
-  try { Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}")); } catch (e) { /* stockage indisponible : reglages par defaut */ }
+  const reglages = { texte: "", taille: 44, hauteur: 30, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait" };
+  try { Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}")); if (reglages.disposition !== 2) { reglages.disposition = 2; reglages.hauteur = 30; } } catch (e) { /* stockage indisponible : reglages par defaut */ }
   const sauver = () => { try { localStorage.setItem(CLE, JSON.stringify(reglages)); } catch (e) { /* stockage indisponible */ } };
 
   // ------------------------------------------------------------------ ecran 1 : texte et reglages
@@ -318,12 +319,12 @@
     const p = Math.max(0, Math.min(position, etat.mots.length));
     etat.confirmee = p; etat.positionFlottante = p; afficher(p);
   }
-  // Le mot a lire se place sur le repere (un tiers de la hauteur).
+  // Le mot a lire se place sur le repere, tout en haut de la fenetre (au plus pres de l'objectif).
   function repositionner() {
     if (!etat.spans.length) return;
     const span = etat.spans[Math.min(etat.position + (reglages.mode === "voix" ? 1 : 0), etat.spans.length - 1)];
     const fenetre = $("fenetre");
-    etat.cible = Math.max(0, span.offsetTop + $("defilant").offsetTop - fenetre.clientHeight * 0.34);
+    etat.cible = Math.max(0, span.offsetTop + $("defilant").offsetTop - fenetre.clientHeight * 0.14);
   }
   // Entre deux transcriptions (1 a 2 s), le texte continue sur le rythme de la lecture tant que la voix est la, sans depasser de quelques mots
   // le dernier mot reconnu ; si la voix s'arrete, il revient sur le dernier mot reconnu.
@@ -387,29 +388,56 @@
 
   // Ouvre la camera dans le bon sens. Sur beaucoup de telephones Android, le navigateur interprete largeur et hauteur « a l'envers » quand le telephone
   // est tenu droit : on essaie plusieurs demandes et on garde celle dont l'image a le format voulu (sinon la video sortait en paysage, tres zoomee).
+  // Taille reelle de l'image envoyee par une piste : on la mesure sur une video cachee (sur iPhone, getSettings() peut annoncer un autre sens).
+  const outils = { mesurer: mesurerPiste };
+  function mesurerPiste(piste) {
+    return new Promise((resolve) => {
+      const v = document.createElement("video");
+      v.muted = true; v.setAttribute("playsinline", ""); v.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
+      document.body.appendChild(v);
+      let fini = false;
+      const fin = () => {
+        if (fini) return; fini = true;
+        const r = { w: v.videoWidth, h: v.videoHeight };
+        v.srcObject = null; v.remove();
+        if (!r.w) { const p = piste.getSettings ? piste.getSettings() : {}; r.w = p.width || 0; r.h = p.height || 0; }
+        resolve(r);
+      };
+      v.addEventListener("loadeddata", () => setTimeout(fin, 120));
+      setTimeout(fin, 2500);
+      v.srcObject = new MediaStream([piste]);
+      const lecture = v.play(); if (lecture && lecture.catch) lecture.catch(() => { /* mesure sur les reglages si la lecture est refusee */ });
+    });
+  }
   async function ouvrirFlux() {
-    const d = dimensionsSortie(), w = d[0], h = d[1];
+    const d = dimensionsSortie(), w = d[0], h = d[1], portrait = h >= w;
     const base = { facingMode: reglages.camera === "avant" ? "user" : "environment", frameRate: { ideal: 30 } };
+    // Les telephones n'interpretent pas tous largeur et hauteur de la meme facon : on essaie plusieurs demandes (dont la plus simple, sans taille)
+    // et on garde la premiere dont l'image mesuree a le sens voulu.
     const essais = [
       Object.assign({}, base, { width: { ideal: Math.max(w, h) }, height: { ideal: Math.min(w, h) } }),
       Object.assign({}, base, { width: { ideal: w }, height: { ideal: h }, aspectRatio: { ideal: w / h } }),
-      Object.assign({}, base, { aspectRatio: { ideal: w / h } }),
+      Object.assign({}, base, portrait ? { width: { ideal: 960 }, height: { ideal: 1280 } } : { width: { ideal: 1280 }, height: { ideal: 960 } }),
+      { facingMode: base.facingMode },
     ];
     const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
     const premier = await navigator.mediaDevices.getUserMedia({ video: essais[0], audio: audio });
     const pistesAudio = premier.getAudioTracks();
-    let video = premier.getVideoTracks()[0], meilleur = 0, meilleurEcart = ecartPiste(video), derniere = 0;
+    let video = premier.getVideoTracks()[0], mesure = await outils.mesurer(video);
+    let meilleur = 0, meilleurEcart = ecartFormat(mesure.w, mesure.h), derniere = 0, mesures = [mesure.w + "x" + mesure.h];
     for (let i = 1; i < essais.length && meilleurEcart > 0.35; i++) {
       video.stop(); video = null;
-      try { video = (await navigator.mediaDevices.getUserMedia({ video: essais[i] })).getVideoTracks()[0]; } catch (e) { break; }
+      try { video = (await navigator.mediaDevices.getUserMedia({ video: essais[i] })).getVideoTracks()[0]; } catch (e) { mesures.push("refus"); continue; }
       derniere = i;
-      const ecart = ecartPiste(video);
+      mesure = await outils.mesurer(video); mesures.push(mesure.w + "x" + mesure.h);
+      const ecart = ecartFormat(mesure.w, mesure.h);
       if (ecart < meilleurEcart - 0.05) { meilleurEcart = ecart; meilleur = i; }
     }
     if (!video || derniere !== meilleur) {
       if (video) video.stop();
       video = (await navigator.mediaDevices.getUserMedia({ video: essais[meilleur] })).getVideoTracks()[0];
     }
+    etat.essaisCamera = mesures.join(" > ");
     return new MediaStream(pistesAudio.concat([video]));
   }
   // Zoom au minimum (le plus large possible) quand le telephone permet de le regler.
@@ -427,7 +455,9 @@
   // Indice si l'image recue n'est pas dans le sens du format choisi.
   function indiceFormat() {
     const v = $("apercu");
-    if (!v.videoWidth || etat.enregistrement || $("ecran-camera").hidden) return;
+    if (!v.videoWidth || $("ecran-camera").hidden) return;
+    $("diag").textContent = "image " + v.videoWidth + "×" + v.videoHeight + (etat.essaisCamera ? " (essais " + etat.essaisCamera + ")" : "");
+    if (etat.enregistrement) return;
     messageCamera(ecartFormat(v.videoWidth, v.videoHeight) > 0.6
       ? (reglages.format === "paysage" ? "Tourne le téléphone à l'horizontale pour filmer en paysage." : "L'image n'est pas en portrait : tiens le téléphone droit, sinon la vidéo sera très recadrée.") : "");
   }
@@ -759,7 +789,7 @@
 
   // Points d'entree pour les tests automatiques (tests_plateforme/test_prompteur_page.py) : sans effet pour l'utilisateur.
   window.__prompteur = { etat: etat, construireTexte: construireTexte, placer: placer, appliquerTranscription: appliquerTranscription, encoderWav: encoderWav, reechantillonner: reechantillonner, choisirMime: choisirMime, reglages: reglages,
-    dimensionsSortie: dimensionsSortie, ecartFormat: ecartFormat, avancerPredit: avancerPredit, afficher: afficher, ajusterCadre: ajusterCadre, envoyerEnregistrement: envoyerEnregistrement };
+    outils: outils, ouvrirFlux: ouvrirFlux, dimensionsSortie: dimensionsSortie, ecartFormat: ecartFormat, avancerPredit: avancerPredit, afficher: afficher, ajusterCadre: ajusterCadre, envoyerEnregistrement: envoyerEnregistrement };
 })();
 </script>
 </body>
