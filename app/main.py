@@ -4548,6 +4548,110 @@ def _references_ambiance(client, maximum: int = NB_MAX_REFERENCES_IMAGE) -> list
     return images
 
 
+# --- Prompteur pour telephone -------------------------------------------------------------------------------------------------------------
+# Page web installable (« Ajouter a l'ecran d'accueil ») : camera selfie, texte en surimpression en haut de l'ecran, defilement qui suit la voix.
+# Le suivi de la voix passe par Whisper (petits extraits du meme micro, voir static/prompteur_suivi.js) : la reconnaissance vocale du navigateur,
+# elle, entre souvent en conflit avec l'enregistrement du son sur telephone.
+
+DUREES_PROMPTEUR = (30, 60, 90, 120, 180)
+HALLUCINATIONS_WHISPER = re.compile(r"sous-?titr|amara\.org|merci d.avoir (?:regard|suivi|[ée]cout)|abonnez-vous|n.oubliez pas de vous abonner|a bient[oô]t pour de nouvelles", re.IGNORECASE)
+
+
+def _page_prompteur(request: Request, db: Session):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    marque = _client_marque_personnelle(db)
+    return templates.TemplateResponse(request, "prompteur.html", {
+        "scripts": db.query(models.ScriptVideo).order_by(models.ScriptVideo.cree_le.desc()).limit(40).all(),
+        "clients": db.query(models.Client).order_by(models.Client.nom).all(), "client_marque_id": marque.id if marque else None,
+        "durees": DUREES_PROMPTEUR, "transcription_disponible": bool(whatsapp_business.CLE_OPENAI),
+        "version_js": int(os.path.getmtime(os.path.join(DOSSIER_APP, "static", "prompteur_suivi.js"))),
+    })
+
+
+@app.get("/prompteur", response_class=HTMLResponse)
+def page_prompteur(request: Request, db: Session = Depends(obtenir_session)):
+    return _page_prompteur(request, db)
+
+
+@app.get("/prompteur/", response_class=HTMLResponse)
+def page_prompteur_barre(request: Request, db: Session = Depends(obtenir_session)):
+    return _page_prompteur(request, db)
+
+
+@app.get("/prompteur/manifest.webmanifest")
+def prompteur_manifest():
+    """Manifeste de l'application installable (public : le navigateur le lit avant toute connexion)."""
+    return JSONResponse({
+        "name": "Prompteur", "short_name": "Prompteur", "description": "Prompteur vocal pour se filmer en selfie.",
+        "start_url": "/prompteur/", "scope": "/prompteur/", "display": "standalone", "orientation": "portrait",
+        "background_color": "#000000", "theme_color": "#000000", "lang": "fr",
+        "icons": [
+            {"src": "/static/prompteur-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/static/prompteur-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/static/prompteur-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+    }, media_type="application/manifest+json")
+
+
+@app.get("/prompteur/sw.js")
+def prompteur_service_worker():
+    """Service worker minimal (aucune mise en cache) : sa presence rend la page installable sur Android."""
+    return Response("self.addEventListener('fetch', () => {});\n", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/prompteur/generer")
+async def prompteur_generer(request: Request, db: Session = Depends(obtenir_session)):
+    """Texte a lire face camera, ecrit par l'IA. Corps : sujet, secondes (30, 60, 90, 120 ou 180), ton (naturel, dynamique, pose), client_id (facultatif : contexte de l'entreprise)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    try:
+        recu = await request.json()
+    except Exception:
+        recu = None
+    if not isinstance(recu, dict):
+        return JSONResponse({"erreur": "Requete invalide."}, status_code=400)
+    sujet = " ".join(str(recu.get("sujet") or "").split())[:600]
+    if not sujet:
+        return JSONResponse({"erreur": "Indiquez le sujet de la video."}, status_code=400)
+    try:
+        secondes = int(recu.get("secondes") or 60)
+    except (TypeError, ValueError):
+        secondes = 60
+    secondes = secondes if secondes in DUREES_PROMPTEUR else 60
+    ton = recu.get("ton") if recu.get("ton") in ("naturel", "dynamique", "pose") else "naturel"
+    client = None
+    if str(recu.get("client_id") or "").isdigit():
+        client = db.get(models.Client, int(recu["client_id"]))
+    try:
+        texte = await run_in_threadpool(claude_generation.generer_texte_prompteur, sujet, secondes, ton, _contexte_ia_client(client) if client else "")
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Impossible d'ecrire le texte : {erreur}"}, status_code=500)
+    return JSONResponse({"texte": texte, "mots": len(texte.split())})
+
+
+@app.post("/prompteur/transcrire")
+async def prompteur_transcrire(request: Request, fichier: UploadFile = File(...), vocabulaire: str = Form("")):
+    """
+    Transcrit un court extrait (WAV mono 16 kHz, quelques secondes) pour que le texte suive la lecture. vocabulaire : mots du texte difficiles a reconnaitre
+    (noms propres, termes du metier), jamais une phrase entiere. Reponse : {"texte"} ; vide si l'extrait ne contient que du silence ou une hallucination connue de Whisper.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    if not whatsapp_business.CLE_OPENAI:
+        return JSONResponse({"erreur": "Transcription indisponible : cle OpenAI manquante."}, status_code=503)
+    octets = await fichier.read(3 * 1024 * 1024 + 1)
+    if not octets or len(octets) > 3 * 1024 * 1024:
+        return JSONResponse({"erreur": "Extrait audio vide ou trop long."}, status_code=400)
+    try:
+        texte = await run_in_threadpool(whatsapp_business.transcrire_audio, octets, "audio/wav", vocabulaire)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Transcription impossible : {erreur}"}, status_code=502)
+    texte = " ".join((texte or "").split())
+    return JSONResponse({"texte": "" if HALLUCINATIONS_WHISPER.search(texte) else texte})
+
+
 FORMATS_IMAGE_IA = {"4:3": "Google (4:3)", "1:1": "Carré (1:1)", "4:5": "Portrait (4:5)", "9:16": "Vertical (9:16)", "16:9": "Paysage (16:9)"}
 
 

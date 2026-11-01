@@ -2684,6 +2684,45 @@ def prompt_image_avec_options(
     return _nettoyer_texte_genere(texte)
 
 
+def generer_texte_prompteur(sujet: str, secondes: int = 60, ton: str = "naturel", contexte: str = "") -> str:
+    """
+    Texte a lire face camera (prompteur), en francais parle : phrases courtes, une idee par phrase, sans titre ni didascalie. Environ 150 mots par minute.
+    contexte : ce que l'on sait de l'entreprise (facultatif) ; l'IA n'invente aucun fait ni chiffre absent de ce contexte.
+    """
+    if not CLE_API:
+        raise RuntimeError("ANTHROPIC_API_KEY manquant dans plateforme_web/.env.")
+    sujet = (sujet or "").strip()[:600]
+    if not sujet:
+        raise ValueError("Indiquez le sujet de la vidéo.")
+    secondes = max(15, min(int(secondes or 60), 300))
+    mots = round(secondes * 2.5)
+    tons = {
+        "naturel": "naturel et chaleureux, comme si tu parlais à un client en face de toi",
+        "dynamique": "dynamique et énergique, avec des phrases qui claquent",
+        "pose": "posé et rassurant, avec un rythme calme",
+    }
+    prompt = (
+        f"Tu écris le texte qu'une personne va lire face caméra, avec un prompteur, pour une courte vidéo.\n\nSujet : {sujet}\n"
+        + (f"\nCe que l'on sait de l'entreprise (n'invente rien en dehors) :\n{contexte.strip()[:6000]}\n" if (contexte or "").strip() else "")
+        + f"\nDurée visée : environ {secondes} secondes, soit environ {mots} mots. Ton : {tons.get(ton, tons['naturel'])}.\n\n"
+        "Règles : français parlé, phrases courtes (15 mots au plus), une idée par phrase. Commence par une accroche qui retient l'attention en quelques secondes, "
+        "termine par une phrase d'appel à l'action simple. Écris les nombres en toutes lettres comme on les dit (« vingt-quatre heures »). Aucun titre, aucune "
+        "indication scénique entre parenthèses, aucun émoji, aucun hashtag, aucune liste à puces. N'invente aucun chiffre, prix ni fait absent du contexte. "
+        f"{CONSIGNE_STYLE_NATUREL}\n\nRéponds uniquement avec le texte à lire, rien d'autre."
+    )
+    client = Anthropic(api_key=CLE_API)
+    reponse = client.messages.create(
+        model=MODELE_CLAUDE, max_tokens=int(mots * 3) + 400, thinking={"type": "disabled"}, messages=[{"role": "user", "content": prompt}],
+    )
+    texte = next((b.text for b in reponse.content if b.type == "text"), "").strip()
+    texte = re.sub(r"[*#_`>]+", "", texte)                                        # aucune mise en forme : le texte est lu tel quel
+    texte = re.sub(r"\([^)\n]{0,80}\)", "", texte)                               # (pause), (sourire)... : jamais lisibles a voix haute
+    texte = re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", texte)).strip().strip('"«» ')
+    if not texte:
+        raise RuntimeError("L'IA n'a renvoyé aucun texte exploitable.")
+    return _nettoyer_texte_genere(texte)
+
+
 SCHEMA_CONTROLE_IMAGE = {
     "type": "object",
     "properties": {"probleme": {"type": "boolean"}, "elements": {"type": "array", "items": {"type": "string"}}},

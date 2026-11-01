@@ -190,14 +190,15 @@ def marquer_lu(message_id: str) -> None:
         pass
 
 
-def transcrire_audio(octets: bytes, mime_type: str) -> str:
+def transcrire_audio(octets: bytes, mime_type: str, vocabulaire: str = "") -> str:
     """
     Transcrit un vocal en texte via l'API Whisper d'OpenAI (cle deja
     configuree sur la plateforme pour une autre fonctionnalite, voir
     ia_visibilite.py) - contrairement a la dictee dans le navigateur (API
     du navigateur, gratuite), un vocal recu par WhatsApp est un fichier
     audio qui doit etre transcrit cote serveur, seule vraie depense de
-    cette integration (quelques centimes par minute).
+    cette integration (quelques centimes par minute). vocabulaire : mots a reconnaitre en priorite (noms propres, termes du metier), transmis a Whisper
+    comme amorce ; ce ne doit JAMAIS etre une phrase du texte attendu (sur un silence, Whisper peut recopier son amorce).
     """
     if not CLE_OPENAI:
         raise RuntimeError("OPENAI_API_KEY manquant dans plateforme_web/.env.")
@@ -215,7 +216,7 @@ def transcrire_audio(octets: bytes, mime_type: str) -> str:
         "https://api.openai.com/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {CLE_OPENAI}"},
         files={"file": (f"audio.{extension}", octets, mime_type)},
-        data={"model": "whisper-1", "language": "fr"},
+        data={"model": "whisper-1", "language": "fr", **({"prompt": vocabulaire[:400]} if vocabulaire else {})},
         timeout=60,
     )
     if reponse.status_code != 200:
