@@ -23,7 +23,7 @@
   label { display: block; font-size: .9rem; color: var(--discret); margin: 14px 0 6px; }
   textarea, input[type="text"], select { width: 100%; background: var(--carte); color: var(--texte); border: 1px solid var(--bord); border-radius: 12px; padding: 12px; font: inherit; font-size: 1rem; }
   textarea { min-height: 34vh; line-height: 1.5; resize: vertical; }
-  .bouton { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 48px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--bord); background: var(--carte); color: var(--texte); font: inherit; font-weight: 600; cursor: pointer; }
+  .bouton { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 48px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--bord); background: var(--carte); color: var(--texte); font: inherit; font-weight: 600; cursor: pointer; }
   .bouton.principal { background: var(--accent); border-color: var(--accent); width: 100%; min-height: 56px; font-size: 1.1rem; margin-top: 18px; }
   .bouton:disabled { opacity: .5; }
   .ligne { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
@@ -62,6 +62,16 @@
   #message-camera { position: absolute; left: 16px; right: 16px; top: 52%; background: rgba(0,0,0,.75); border-radius: 12px; padding: 12px; text-align: center; font-size: .95rem; }
   #fermer { position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 130px); }
 
+  .formats { display: grid; gap: 8px; margin: 8px 0 4px; }
+  .format { display: flex; gap: 10px; align-items: flex-start; background: var(--carte); border: 1px solid var(--bord); border-radius: 12px; padding: 10px 12px; margin: 0; color: var(--texte); font-size: .95rem; cursor: pointer; }
+  .format:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .format input { margin-top: 3px; width: 20px; height: 20px; flex: none; }
+  .format small { color: var(--discret); }
+  #cadre { position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 100%; height: 100%; overflow: hidden; background: #000; }
+  #zoom-ligne { position: absolute; left: 16px; right: 84px; bottom: calc(env(safe-area-inset-bottom) + 118px); display: flex; align-items: center; gap: 10px; font-size: .8rem; background: rgba(0,0,0,.45); border-radius: 999px; padding: 4px 12px; }
+  .video-carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 14px; padding: 12px; margin: 12px 0; }
+  .video-carte video { width: 100%; max-height: 50vh; background: #000; border-radius: 10px; }
+  .video-carte h3 { font-size: 1rem; margin: 0 0 4px; }
   video.resultat { width: 100%; max-height: 66vh; background: #000; border-radius: 14px; margin: 10px 0; }
 </style>
 </head>
@@ -72,6 +82,7 @@
   <a class="retour" href="/">&larr; Plateforme</a>
   <h1>Prompteur</h1>
   <p class="discret">Écris ou colle ton texte, ouvre la caméra, appuie sur le bouton rouge : le texte défile en haut de l'écran et suit ta voix.</p>
+  <button class="bouton" id="voir-videos" type="button" style="width:100%">📁 Mes vidéos filmées</button>
 
   <label for="texte">Ton texte</label>
   <textarea id="texte" placeholder="Colle ou écris ici ce que tu vas dire face caméra…"></textarea>
@@ -128,6 +139,13 @@
     <label class="choix"><input type="checkbox" id="decompte-actif" checked><span>Compte à rebours de 3 secondes avant de filmer</span></label>
   </details>
 
+  <label>Format de la vidéo</label>
+  <div class="formats" id="formats">
+    <label class="format"><input type="radio" name="format" value="portrait"><span><strong>Portrait 9:16</strong> : Reels, Shorts, TikTok<br><small>Tiens le téléphone droit. Image un peu resserrée.</small></span></label>
+    <label class="format"><input type="radio" name="format" value="large"><span><strong>Portrait large 3:4</strong> : plus de champ<br><small>Tiens le téléphone droit. Pas de zoom : tout ce que voit la caméra est gardé.</small></span></label>
+    <label class="format"><input type="radio" name="format" value="paysage"><span><strong>Paysage 16:9</strong> : YouTube, site web<br><small>Tourne le téléphone à l'horizontale avant d'ouvrir la caméra.</small></span></label>
+  </div>
+
   <p class="erreur" id="erreur-ouverture" role="alert" hidden></p>
   <button class="bouton principal" id="ouvrir-camera" type="button">🎥 Ouvrir la caméra</button>
   <p class="discret" style="margin-top:14px">Astuce : sur iPhone, « Partager » puis « Sur l'écran d'accueil » ; sur Android, menu ⋮ puis « Installer l'application ». Le prompteur s'ouvre alors comme une vraie application.</p>
@@ -135,7 +153,7 @@
 
 <!-- ECRAN 2 : camera + texte en surimpression -->
 <main id="ecran-camera" class="ecran" hidden>
-  <video id="apercu" playsinline muted autoplay></video>
+  <div id="cadre"><video id="apercu" playsinline muted autoplay></video></div>
   <div id="prompteur">
     <div id="barre-haut"><span id="etat">Prêt</span><span id="niveau" title="Niveau du micro"><i></i></span></div>
     <div id="fenetre"><div id="defilant"></div></div>
@@ -143,6 +161,7 @@
   </div>
   <div id="decompte" hidden></div>
   <div id="message-camera" hidden></div>
+  <div id="zoom-ligne" hidden><span>Zoom</span><input type="range" id="zoom" min="1" max="2" step="0.1" value="1" aria-label="Zoom de la caméra"></div>
   <div id="commandes">
     <button class="rond" id="moins" type="button" aria-label="Texte plus petit">A−</button>
     <button class="rond" id="plus" type="button" aria-label="Texte plus grand">A+</button>
@@ -158,15 +177,34 @@
   <h1>Ta vidéo</h1>
   <video id="lecteur" class="resultat" controls playsinline></video>
   <p class="discret" id="info-video"></p>
+  <div class="panneau" id="envoi" style="padding-top:12px">
+    <div id="envoi-texte">☁️ Envoi dans ta bibliothèque…</div>
+    <progress id="envoi-barre" max="100" value="0" style="width:100%;margin-top:8px"></progress>
+    <button class="bouton" id="envoi-reessayer" type="button" hidden style="margin-top:8px">🔁 Réessayer l'envoi</button>
+    <p class="discret" style="margin:8px 0 0">Ne ferme pas cette page avant la fin de l'envoi : ensuite tu retrouves la vidéo dans « Mes vidéos » et sur la plateforme (Créations).</p>
+  </div>
+  <button class="bouton principal" id="sous-titrer" type="button" disabled style="margin-top:0">💬 Ajouter des sous-titres</button>
+  <p class="erreur" id="erreur-sous-titres" role="alert" hidden></p>
+  <p class="discret" id="info-sous-titres">Les sous-titres se corrigent ensuite dans l'éditeur de montage de la plateforme (plus confortable sur ordinateur).</p>
   <div class="ligne">
-    <button class="bouton principal" id="partager" type="button" style="margin-top:0">📤 Enregistrer / Partager</button>
+    <button class="bouton" id="partager" type="button" style="margin-top:0">📤 Enregistrer / Partager</button>
   </div>
   <div class="ligne">
     <button class="bouton" id="telecharger" type="button">⬇ Télécharger</button>
     <button class="bouton" id="refaire" type="button">🔁 Refaire une prise</button>
     <button class="bouton" id="retour-texte" type="button">✏️ Modifier le texte</button>
+    <button class="bouton" id="voir-videos-2" type="button">📁 Mes vidéos</button>
   </div>
   <p class="erreur" id="erreur-partage" role="alert" hidden></p>
+</main>
+
+<!-- ECRAN 4 : les videos deja filmees -->
+<main id="ecran-videos" class="ecran" hidden>
+  <button class="bouton" id="retour-videos" type="button">&larr; Retour</button>
+  <h1 style="margin-top:14px">Mes vidéos</h1>
+  <p class="discret">Chaque vidéo filmée ici est gardée automatiquement. Tu peux la revoir, la télécharger, ajouter des sous-titres ou la supprimer. Elles sont aussi dans « Créations » sur la plateforme.</p>
+  <p class="discret" id="videos-etat">Chargement…</p>
+  <div id="liste-videos"></div>
 </main>
 
 <script src="/static/prompteur_suivi.js?v={{ version_js }}"></script>
@@ -180,12 +218,15 @@
     mots: [], normes: [], spans: [], position: 0, positionFlottante: 0, enregistrement: false, pause: false, flux: null, contexteAudio: null,
     enregistreur: null, morceaux: [], mime: "", blob: null, debut: 0, minuteur: null, capture: null, envoiEnCours: false, erreursSuivi: 0,
     reconnaissance: null, verrou: null, bruit: 0.01, dernierImage: 0, cible: 0,
+    confirmee: 0, parle: false, derniereParole: 0, vitesseMots: 2.2, derniereConf: 0, canvas: null, jetonEnvoi: 0, idGarde: null, duree: 0,
   };
-  const reglages = { texte: "", taille: 44, hauteur: 42, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true };
+  const CLIENT_MARQUE = "{{ client_marque_id or '' }}";
+  const reglages = { texte: "", taille: 44, hauteur: 42, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait" };
   try { Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}")); } catch (e) { /* stockage indisponible : reglages par defaut */ }
   const sauver = () => { try { localStorage.setItem(CLE, JSON.stringify(reglages)); } catch (e) { /* stockage indisponible */ } };
 
   // ------------------------------------------------------------------ ecran 1 : texte et reglages
+  const FORMATS = { portrait: { grand: [1080, 1920], petit: [720, 1280] }, large: { grand: [1080, 1440], petit: [720, 960] }, paysage: { grand: [1920, 1080], petit: [1280, 720] } };
   function majCompteur() {
     const n = Suivi.decouper($("texte").value).length;
     $("compteur").textContent = n ? n + " mot" + (n > 1 ? "s" : "") + " · environ " + Suivi.dureeEstimee(n, reglages.vitesse) + " s à voix posée" : "0 mot";
@@ -204,8 +245,11 @@
     let radio = document.querySelector('input[name="mode"][value="' + reglages.mode + '"]');
     if (!radio || radio.disabled) radio = document.querySelector('input[name="mode"][value="fixe"]');
     radio.checked = true; reglages.mode = radio.value;
+    if (!FORMATS[reglages.format]) reglages.format = "portrait";
+    document.querySelector('input[name="format"][value="' + reglages.format + '"]').checked = true;
     appliquerReglagesAffichage(); majCompteur();
   }
+  document.querySelectorAll('input[name="format"]').forEach((r) => r.addEventListener("change", () => { reglages.format = r.value; sauver(); }));
   $("texte").addEventListener("input", () => { reglages.texte = $("texte").value; sauver(); majCompteur(); });
   [["taille", "taille"], ["hauteur", "hauteur"], ["opacite", "opacite"], ["vitesse", "vitesse"]].forEach(([id, cle]) => {
     $(id).addEventListener("input", () => { reglages[cle] = parseInt($(id).value, 10); appliquerReglagesAffichage(); sauver(); majCompteur(); if (id === "taille" || id === "hauteur") repositionner(); });
@@ -262,45 +306,133 @@
     etat.normes = etat.mots.map(Suivi.normaliser);
     placer(0);
   }
-  function placer(position) {
+  // afficher : surligne le mot en cours et amene le texte a sa place, sans toucher a la position confirmee par la voix.
+  function afficher(position) {
     etat.position = Math.max(0, Math.min(position, etat.mots.length));
     const courant = Math.min(etat.position, etat.spans.length - 1);
     etat.spans.forEach((s, i) => { s.classList.toggle("lu", i < etat.position); s.classList.toggle("courant", i === courant && etat.position < etat.mots.length); });
     repositionner();
   }
-  // Le mot a lire se place sur le repere (un tiers de la hauteur) ; quelques mots d'avance compensent le retard de la transcription.
+  // placer : position decidee (debut, mot touche, mot reconnu) ; elle devient aussi le point de depart du suivi de la voix.
+  function placer(position) {
+    const p = Math.max(0, Math.min(position, etat.mots.length));
+    etat.confirmee = p; etat.positionFlottante = p; afficher(p);
+  }
+  // Le mot a lire se place sur le repere (un tiers de la hauteur).
   function repositionner() {
     if (!etat.spans.length) return;
-    const span = etat.spans[Math.min(etat.position + (reglages.mode === "voix" ? 3 : 0), etat.spans.length - 1)];
+    const span = etat.spans[Math.min(etat.position + (reglages.mode === "voix" ? 1 : 0), etat.spans.length - 1)];
     const fenetre = $("fenetre");
     etat.cible = Math.max(0, span.offsetTop + $("defilant").offsetTop - fenetre.clientHeight * 0.34);
   }
+  // Entre deux transcriptions (1 a 2 s), le texte continue sur le rythme de la lecture tant que la voix est la, sans depasser de quelques mots
+  // le dernier mot reconnu ; si la voix s'arrete, il revient sur le dernier mot reconnu.
+  const AVANCE_MAX = 3;
+  function avancerPredit(dt) {
+    if (!etat.mots.length) return;
+    if (!etat.parle) {
+      if (performance.now() - etat.derniereParole > 2500 && etat.positionFlottante > etat.confirmee) { etat.positionFlottante = etat.confirmee; afficher(etat.confirmee); }
+      return;
+    }
+    const limite = Math.min(etat.confirmee + AVANCE_MAX, etat.mots.length);
+    etat.positionFlottante = Math.min(Math.max(etat.positionFlottante, etat.confirmee) + etat.vitesseMots * dt, limite);
+    const n = Math.floor(etat.positionFlottante);
+    if (n !== etat.position) afficher(n);
+  }
   function animer(maintenant) {
-    const fenetre = $("fenetre");
+    const fenetre = $("fenetre"), dt = Math.min(0.1, (maintenant - (etat.dernierImage || maintenant)) / 1000);
     if (reglages.mode !== "manuel" && !$("ecran-camera").hidden) {
       const ecart = etat.cible - fenetre.scrollTop;
-      fenetre.scrollTop += Math.abs(ecart) < 0.5 ? ecart : ecart * 0.14;
-      if (etat.enregistrement && !etat.pause && reglages.mode === "fixe") {
-        const dt = Math.min(0.1, (maintenant - (etat.dernierImage || maintenant)) / 1000);
-        etat.positionFlottante += reglages.vitesse / 60 * dt;
-        if (Math.floor(etat.positionFlottante) !== etat.position) placer(Math.floor(etat.positionFlottante));
+      fenetre.scrollTop += Math.abs(ecart) < 0.5 ? ecart : ecart * 0.18;
+      if (etat.enregistrement && !etat.pause) {
+        if (reglages.mode === "fixe") {
+          etat.positionFlottante = Math.min(etat.positionFlottante + reglages.vitesse / 60 * dt, etat.mots.length);
+          if (Math.floor(etat.positionFlottante) !== etat.position) afficher(Math.floor(etat.positionFlottante));
+        } else if (reglages.mode === "voix" && etat.capture) avancerPredit(dt);
       }
     }
     etat.dernierImage = maintenant;
     requestAnimationFrame(animer);
   }
 
-  // Applique ce que la voix vient de dire : le texte avance (ou non) jusqu'a l'endroit reconnu.
+  // Applique ce que la voix vient de dire : le mot reconnu devient la position de reference, et le rythme de lecture est mis a jour.
   function appliquerTranscription(texte) {
     const dits = Suivi.decouper(texte).map(Suivi.normaliser).filter(Boolean);
-    const resultat = Suivi.avancer(etat.normes, etat.position, dits);
-    if (resultat.bouge) { etat.positionFlottante = resultat.position; placer(resultat.position); }
+    const resultat = Suivi.avancer(etat.normes, etat.confirmee, dits);
+    if (resultat.bouge) {
+      const maintenant = performance.now(), dt = (maintenant - etat.derniereConf) / 1000, gain = resultat.position - etat.confirmee;
+      if (etat.derniereConf && dt > 0.5 && dt < 8 && gain > 0 && gain / dt > 0.7 && gain / dt < 5) etat.vitesseMots = etat.vitesseMots * 0.6 + (gain / dt) * 0.4;
+      etat.derniereConf = maintenant; etat.confirmee = resultat.position;
+      etat.positionFlottante = Math.max(resultat.position, Math.min(etat.positionFlottante, resultat.position + AVANCE_MAX));
+      afficher(Math.floor(etat.positionFlottante));
+    }
     return resultat;
   }
 
   // ------------------------------------------------------------------ camera
   function messageCamera(texte) { const m = $("message-camera"); m.hidden = !texte; m.textContent = texte || ""; }
-  function afficherEcran(nom) { ["texte", "camera", "resultat"].forEach((n) => { $("ecran-" + n).hidden = n !== nom; }); window.scrollTo(0, 0); }
+  function afficherEcran(nom) { ["texte", "camera", "resultat", "videos"].forEach((n) => { $("ecran-" + n).hidden = n !== nom; }); window.scrollTo(0, 0); }
+
+  // Taille de la video enregistree selon le format choisi et la qualite.
+  function dimensionsSortie() { const f = FORMATS[reglages.format] || FORMATS.portrait; return reglages.qualite === "1080" ? f.grand : f.petit; }
+  // Ecart entre le format de l'image recue et celui voulu (0 = identique ; > 0,6 = orientation inverse).
+  function ecartFormat(largeur, hauteur) { const d = dimensionsSortie(); return largeur && hauteur ? Math.abs(Math.log((largeur / hauteur) / (d[0] / d[1]))) : 9; }
+  function ecartPiste(piste) { const p = piste && piste.getSettings ? piste.getSettings() : {}; return ecartFormat(p.width, p.height); }
+  // Le cadre de l'apercu a exactement le format de la video : ce que tu vois est ce qui est enregistre.
+  function ajusterCadre() {
+    const d = dimensionsSortie(), e = Math.min(window.innerWidth / d[0], window.innerHeight / d[1]), cadre = $("cadre");
+    cadre.style.width = Math.round(d[0] * e) + "px"; cadre.style.height = Math.round(d[1] * e) + "px";
+  }
+  window.addEventListener("resize", ajusterCadre);
+
+  // Ouvre la camera dans le bon sens. Sur beaucoup de telephones Android, le navigateur interprete largeur et hauteur « a l'envers » quand le telephone
+  // est tenu droit : on essaie plusieurs demandes et on garde celle dont l'image a le format voulu (sinon la video sortait en paysage, tres zoomee).
+  async function ouvrirFlux() {
+    const d = dimensionsSortie(), w = d[0], h = d[1];
+    const base = { facingMode: reglages.camera === "avant" ? "user" : "environment", frameRate: { ideal: 30 } };
+    const essais = [
+      Object.assign({}, base, { width: { ideal: Math.max(w, h) }, height: { ideal: Math.min(w, h) } }),
+      Object.assign({}, base, { width: { ideal: w }, height: { ideal: h }, aspectRatio: { ideal: w / h } }),
+      Object.assign({}, base, { aspectRatio: { ideal: w / h } }),
+    ];
+    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    const premier = await navigator.mediaDevices.getUserMedia({ video: essais[0], audio: audio });
+    const pistesAudio = premier.getAudioTracks();
+    let video = premier.getVideoTracks()[0], meilleur = 0, meilleurEcart = ecartPiste(video), derniere = 0;
+    for (let i = 1; i < essais.length && meilleurEcart > 0.35; i++) {
+      video.stop(); video = null;
+      try { video = (await navigator.mediaDevices.getUserMedia({ video: essais[i] })).getVideoTracks()[0]; } catch (e) { break; }
+      derniere = i;
+      const ecart = ecartPiste(video);
+      if (ecart < meilleurEcart - 0.05) { meilleurEcart = ecart; meilleur = i; }
+    }
+    if (!video || derniere !== meilleur) {
+      if (video) video.stop();
+      video = (await navigator.mediaDevices.getUserMedia({ video: essais[meilleur] })).getVideoTracks()[0];
+    }
+    return new MediaStream(pistesAudio.concat([video]));
+  }
+  // Zoom au minimum (le plus large possible) quand le telephone permet de le regler.
+  async function preparerZoom(piste) {
+    const ligne = $("zoom-ligne"); ligne.hidden = true;
+    const cap = piste && piste.getCapabilities ? piste.getCapabilities() : {};
+    if (!cap.zoom || !(cap.zoom.max > cap.zoom.min)) return;
+    try { await piste.applyConstraints({ advanced: [{ zoom: cap.zoom.min }] }); } catch (e) { /* zoom non reglable */ }
+    const z = $("zoom"); z.min = cap.zoom.min; z.max = cap.zoom.max; z.step = cap.zoom.step || 0.1; z.value = cap.zoom.min; ligne.hidden = false;
+  }
+  $("zoom").addEventListener("input", () => {
+    const piste = etat.flux && etat.flux.getVideoTracks()[0];
+    if (piste) piste.applyConstraints({ advanced: [{ zoom: parseFloat($("zoom").value) }] }).catch(() => { /* zoom refuse */ });
+  });
+  // Indice si l'image recue n'est pas dans le sens du format choisi.
+  function indiceFormat() {
+    const v = $("apercu");
+    if (!v.videoWidth || etat.enregistrement || $("ecran-camera").hidden) return;
+    messageCamera(ecartFormat(v.videoWidth, v.videoHeight) > 0.6
+      ? (reglages.format === "paysage" ? "Tourne le téléphone à l'horizontale pour filmer en paysage." : "L'image n'est pas en portrait : tiens le téléphone droit, sinon la vidéo sera très recadrée.") : "");
+  }
+  $("apercu").addEventListener("loadedmetadata", indiceFormat);
+  $("apercu").addEventListener("resize", indiceFormat);
 
   async function ouvrirCamera() {
     $("erreur-ouverture").hidden = true;
@@ -308,23 +440,19 @@
     if (!window.MediaRecorder) { $("erreur-ouverture").textContent = "Ce navigateur ne sait pas enregistrer de vidéo : mets-le à jour, ou utilise Chrome (Android) ou Safari (iPhone)."; $("erreur-ouverture").hidden = false; return; }
     if (!Suivi.decouper($("texte").value).length) { $("erreur-ouverture").textContent = "Écris ou colle d'abord le texte à lire."; $("erreur-ouverture").hidden = false; return; }
     arreterFlux();
-    const grand = reglages.qualite === "1080";
-    try {
-      etat.flux = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: reglages.camera === "avant" ? "user" : "environment", width: { ideal: grand ? 1080 : 720 }, height: { ideal: grand ? 1920 : 1280 }, frameRate: { ideal: 30 } },
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-    } catch (e) {
+    try { etat.flux = await ouvrirFlux(); }
+    catch (e) {
       const refus = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
       $("erreur-ouverture").textContent = refus ? "Caméra ou micro refusés : autorise-les dans les réglages du navigateur pour ce site, puis recommence." : "Impossible d'ouvrir la caméra (" + (e && e.name ? e.name : "erreur") + ").";
       $("erreur-ouverture").hidden = false; return;
     }
     const video = $("apercu"); video.srcObject = etat.flux; video.style.transform = reglages.camera === "avant" ? "scaleX(-1)" : "none";
     try { await video.play(); } catch (e) { /* lecture automatique refusee : l'apercu demarre au premier toucher */ }
-    afficherEcran("camera"); construireTexte(); etat.positionFlottante = 0; $("fenetre").classList.toggle("manuel", reglages.mode === "manuel");
-    appliquerReglagesAffichage(); messageCamera(""); majEtat("Prêt"); demarrerNiveau();
+    afficherEcran("camera"); ajusterCadre(); construireTexte(); etat.positionFlottante = 0; $("fenetre").classList.toggle("manuel", reglages.mode === "manuel");
+    appliquerReglagesAffichage(); messageCamera(""); majEtat("Prêt"); demarrerNiveau(); preparerZoom(etat.flux.getVideoTracks()[0]); indiceFormat();
   }
   function arreterFlux() {
+    arreterCanvas();
     if (etat.flux) { etat.flux.getTracks().forEach((t) => t.stop()); etat.flux = null; }
     if (etat.contexteAudio) { try { etat.contexteAudio.close(); } catch (e) { /* deja ferme */ } etat.contexteAudio = null; }
     etat.capture = null;
@@ -348,6 +476,9 @@
       const rms = Math.sqrt(somme / donnees.length);
       $("niveau").firstElementChild.style.width = Math.min(100, rms * 600) + "%";
       if (!etat.enregistrement) etat.bruit = etat.bruit * 0.97 + rms * 0.03;
+      const maintenant = performance.now();
+      if (rms > Math.max(0.012, etat.bruit * 3)) { etat.parle = true; etat.derniereParole = maintenant; }
+      else if (maintenant - etat.derniereParole > 350) etat.parle = false;
       setTimeout(boucle, 80);
     })();
   }
@@ -362,6 +493,27 @@
   }
   function attendre(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+  // La video est dessinee image par image sur un canevas au format choisi, puis enregistree : le resultat est toujours dans le bon sens et au bon
+  // format, quel que soit ce que la camera envoie (le telephone peut renvoyer l'image en paysage ou la zoomer). Sans canevas : enregistrement direct.
+  function arreterCanvas() { if (etat.canvas) { etat.canvas.actif = false; etat.canvas = null; } }
+  function fluxPourEnregistrer() {
+    if (etat.sansCanvas || !window.HTMLCanvasElement || !HTMLCanvasElement.prototype.captureStream) return etat.flux;
+    const d = dimensionsSortie(), w = d[0], h = d[1], c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d", { alpha: false }), v = $("apercu"), suivi = { actif: true };
+    etat.canvas = suivi;
+    const dessiner = () => {
+      if (!suivi.actif) return;
+      const vw = v.videoWidth, vh = v.videoHeight;
+      if (vw && vh) { const e = Math.max(w / vw, h / vh), sw = w / e, sh = h / e; g.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h); }
+      if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(dessiner); else requestAnimationFrame(dessiner);
+    };
+    dessiner();
+    const sortie = c.captureStream(30);
+    etat.flux.getAudioTracks().forEach((t) => sortie.addTrack(t));
+    return sortie;
+  }
+
   async function lancerEnregistrement() {
     if (etat.enregistrement || !etat.flux) return;
     $("bouton-rec").disabled = true;
@@ -370,10 +522,16 @@
       for (let n = 3; n >= 1; n--) { $("decompte").textContent = n; await attendre(1000); }
       $("decompte").hidden = true;
     }
-    placer(0); etat.positionFlottante = 0; etat.pause = false; $("pause").textContent = "⏸";
+    placer(0); etat.pause = false; $("pause").textContent = "⏸"; etat.derniereConf = 0;
     etat.mime = choisirMime(); etat.morceaux = [];
-    try { etat.enregistreur = new MediaRecorder(etat.flux, Object.assign({ videoBitsPerSecond: 6000000 }, etat.mime ? { mimeType: etat.mime } : {})); }
-    catch (e) { messageCamera("Enregistrement impossible sur ce téléphone (" + (e && e.name ? e.name : "erreur") + ")."); $("bouton-rec").disabled = false; return; }
+    const options = Object.assign({ videoBitsPerSecond: reglages.qualite === "1080" ? 6000000 : 4000000 }, etat.mime ? { mimeType: etat.mime } : {});
+    const source = fluxPourEnregistrer();
+    try { etat.enregistreur = new MediaRecorder(source, options); }
+    catch (e) {
+      arreterCanvas();
+      try { etat.enregistreur = new MediaRecorder(etat.flux, options); }
+      catch (e2) { messageCamera("Enregistrement impossible sur ce téléphone (" + (e2 && e2.name ? e2.name : "erreur") + ")."); $("bouton-rec").disabled = false; return; }
+    }
     etat.enregistreur.ondataavailable = (e) => { if (e.data && e.data.size) etat.morceaux.push(e.data); };
     etat.enregistreur.onstop = terminerEnregistrement;
     etat.enregistreur.start(1000);
@@ -390,13 +548,18 @@
     try { etat.enregistreur.stop(); } catch (e) { /* deja arrete */ }
   }
   function terminerEnregistrement() {
-    const type = etat.enregistreur.mimeType || etat.mime || "video/webm";
+    const type = etat.enregistreur.mimeType || etat.mime || "video/webm", avecCanvas = !!etat.canvas;
+    arreterCanvas();
     etat.blob = new Blob(etat.morceaux, { type: type });
-    if (!etat.blob.size) { messageCamera("La vidéo est vide : recommence l'enregistrement."); majEtat("Prêt"); return; }
+    if (!etat.blob.size) {
+      if (avecCanvas) etat.sansCanvas = true;      // ce navigateur n'enregistre pas le canevas : la prochaine prise se fera directement depuis la camera
+      messageCamera("La vidéo est vide : recommence l'enregistrement."); majEtat("Prêt"); return;
+    }
     $("lecteur").src = URL.createObjectURL(etat.blob);
     const mo = (etat.blob.size / 1048576).toFixed(1), duree = Math.round((Date.now() - etat.debut) / 1000);
+    etat.duree = duree;
     $("info-video").textContent = "Durée : " + Math.floor(duree / 60) + " min " + String(duree % 60).padStart(2, "0") + " s · " + mo + " Mo · format " + (type.includes("mp4") ? "MP4" : "WebM") + ".";
-    arreterFlux(); afficherEcran("resultat");
+    arreterFlux(); afficherEcran("resultat"); envoyerEnregistrement();
   }
 
   // ------------------------------------------------------------------ suivi de la voix
@@ -451,14 +614,14 @@
     etat.capture = capture; majEtat($("etat").textContent, true);
     const vocabulaire = Suivi.vocabulaire(etat.mots, 30);
     etat.minuteurEnvoi = setInterval(async () => {
-      if (!etat.capture || etat.envoiEnCours || etat.pause || capture.total < taux * 1.5) return;
+      if (!etat.capture || etat.envoiEnCours || etat.pause || capture.total < taux * 1.2) return;
       const tout = new Float32Array(capture.total); let o = 0; capture.morceaux.forEach((m) => { tout.set(m, o); o += m.length; });
-      const recent = tout.subarray(Math.max(0, tout.length - Math.floor(taux * 1.2)));       // il faut de la voix dans la derniere seconde, sinon rien a envoyer (silence = hallucinations)
+      const recent = tout.subarray(Math.max(0, tout.length - Math.floor(taux * 0.8)));       // il faut de la voix dans la derniere seconde, sinon rien a envoyer (silence = hallucinations)
       if (rms(recent) < Math.max(0.012, etat.bruit * 3)) return;
-      const wav = encoderWav(reechantillonner(tout, taux, 16000), 16000);
+      const wav = encoderWav(reechantillonner(tout.subarray(Math.max(0, tout.length - Math.floor(taux * 3.6))), taux, 16000), 16000);      // les 3,6 dernieres secondes : assez de mots pour se reperer, assez court pour repondre vite
       const formulaire = new FormData(); formulaire.append("fichier", wav, "extrait.wav"); formulaire.append("vocabulaire", vocabulaire);
       etat.envoiEnCours = true;
-      const controle = new AbortController(), delai = setTimeout(() => controle.abort(), 12000);
+      const controle = new AbortController(), delai = setTimeout(() => controle.abort(), 8000);
       try {
         const reponse = await fetch("/prompteur/transcrire", { method: "POST", body: formulaire, signal: controle.signal });
         const donnees = await reponse.json().catch(() => ({}));
@@ -469,7 +632,7 @@
         etat.erreursSuivi++;
         if (etat.erreursSuivi >= 4 && etat.enregistrement) passerEnVitesseFixe("Le suivi de la voix ne répond plus (" + (e && e.message ? e.message : "erreur") + ").");
       } finally { clearTimeout(delai); etat.envoiEnCours = false; }
-    }, 2000);
+    }, 1000);
   }
 
   // --- mode « reconnaissance du navigateur » (experimental)
@@ -512,6 +675,81 @@
   $("telecharger").addEventListener("click", telecharger);
   $("refaire").addEventListener("click", () => { $("lecteur").removeAttribute("src"); ouvrirCamera(); });
   $("retour-texte").addEventListener("click", () => { $("lecteur").removeAttribute("src"); afficherEcran("texte"); });
+
+  // ------------------------------------------------------------------ garde automatique, sous-titres, liste des videos
+  function echecEnvoi(message) {
+    $("envoi-texte").textContent = "⚠️ " + message; $("envoi-barre").hidden = true; $("envoi-reessayer").hidden = false;
+  }
+  function envoyerEnregistrement() {
+    const blob = etat.blob, jeton = ++etat.jetonEnvoi;
+    if (!blob) return;
+    etat.idGarde = null; $("sous-titrer").disabled = true; $("envoi-reessayer").hidden = true; $("erreur-sous-titres").hidden = true;
+    $("envoi-texte").textContent = "☁️ Envoi dans ta bibliothèque… 0 %"; $("envoi-barre").value = 0; $("envoi-barre").hidden = false;
+    const formulaire = new FormData();
+    formulaire.append("fichier", blob, nomFichier()); formulaire.append("texte", reglages.texte); formulaire.append("duree", String(etat.duree));
+    formulaire.append("orientation", reglages.format); formulaire.append("client_id", CLIENT_MARQUE);
+    const x = new XMLHttpRequest();
+    x.open("POST", "/prompteur/enregistrements");
+    x.upload.onprogress = (e) => { if (jeton === etat.jetonEnvoi && e.lengthComputable) { const p = Math.round(e.loaded / e.total * 100); $("envoi-barre").value = p; $("envoi-texte").textContent = "☁️ Envoi dans ta bibliothèque… " + p + " %"; } };
+    x.onload = () => {
+      if (jeton !== etat.jetonEnvoi) return;
+      let donnees = {}; try { donnees = JSON.parse(x.responseText); } catch (e) { /* reponse illisible */ }
+      if (x.status === 200 && donnees.id) {
+        etat.idGarde = donnees.id; $("envoi-texte").textContent = "✅ Vidéo gardée dans ta bibliothèque (« Mes vidéos »)."; $("envoi-barre").hidden = true; $("sous-titrer").disabled = false;
+      } else echecEnvoi(donnees.erreur || (x.status === 401 ? "Session expirée : télécharge la vidéo avant de recharger la page." : "Échec de l'envoi (code " + x.status + ")."));
+    };
+    x.onerror = () => { if (jeton === etat.jetonEnvoi) echecEnvoi("Pas de connexion : la vidéo n'a pas été envoyée."); };
+    x.send(formulaire);
+  }
+  $("envoi-reessayer").addEventListener("click", envoyerEnregistrement);
+
+  etat.aller = (adresse) => { window.location.href = adresse; };      // remplace dans les tests : pas de changement de page
+  async function demanderSousTitres(identifiant, bouton, zoneErreur) {
+    const libelle = bouton.textContent; bouton.disabled = true; bouton.textContent = "⏳ Préparation…"; zoneErreur.hidden = true;
+    try {
+      const reponse = await fetch("/prompteur/enregistrements/" + identifiant + "/sous-titres", { method: "POST" });
+      const donnees = await reponse.json().catch(() => ({}));
+      if (!reponse.ok) throw new Error(donnees.erreur || (reponse.status === 401 ? "Session expirée : reconnecte-toi." : "Échec (code " + reponse.status + ")."));
+      etat.aller(donnees.adresse);
+    } catch (e) { zoneErreur.textContent = e.message || "Impossible de lancer les sous-titres."; zoneErreur.hidden = false; bouton.disabled = false; bouton.textContent = libelle; }
+  }
+  $("sous-titrer").addEventListener("click", () => { if (etat.idGarde) demanderSousTitres(etat.idGarde, $("sous-titrer"), $("erreur-sous-titres")); });
+
+  const el = (balise, proprietes, enfants) => { const n = document.createElement(balise); Object.assign(n, proprietes || {}); (enfants || []).forEach((c) => n.appendChild(c)); return n; };
+  function carteVideo(v) {
+    const erreur = el("p", { className: "erreur", hidden: true });
+    const duree = v.duree ? Math.floor(v.duree / 60) + " min " + String(v.duree % 60).padStart(2, "0") + " s · " : "";
+    const lecteur = el("video", { controls: true, preload: "metadata", playsInline: true, src: v.url });
+    const ouvrir = el("a", { className: "bouton", href: v.url, target: "_blank", rel: "noopener", textContent: "⬇ Ouvrir" });
+    const sous = el("button", { className: "bouton", type: "button", textContent: "💬 Sous-titres" });
+    sous.addEventListener("click", () => demanderSousTitres(v.id, sous, erreur));
+    const suppr = el("button", { className: "bouton", type: "button", textContent: "🗑 Supprimer" });
+    const carte = el("div", { className: "video-carte" }, [
+      el("h3", { textContent: v.titre }), el("p", { className: "discret", textContent: duree + v.date + (v.taille ? " · " + Math.round(v.taille / 1048576) + " Mo" : "") }),
+      lecteur, el("div", { className: "ligne" }, [ouvrir, sous, suppr]), erreur]);
+    suppr.addEventListener("click", async () => {
+      if (!confirm("Supprimer cette vidéo définitivement ?")) return;
+      try {
+        const reponse = await fetch("/prompteur/enregistrements/" + v.id + "/supprimer", { method: "POST" });
+        if (!reponse.ok) throw new Error("Suppression impossible (code " + reponse.status + ").");
+        carte.remove();
+      } catch (e) { erreur.textContent = e.message; erreur.hidden = false; }
+    });
+    return carte;
+  }
+  async function chargerVideos() {
+    const info = $("videos-etat"), liste = $("liste-videos"); liste.textContent = ""; info.hidden = false; info.textContent = "Chargement…";
+    try {
+      const reponse = await fetch("/prompteur/enregistrements"), donnees = await reponse.json().catch(() => ({}));
+      if (!reponse.ok) throw new Error(donnees.erreur || (reponse.status === 401 ? "Session expirée : reconnecte-toi." : "Chargement impossible."));
+      if (!donnees.videos.length) { info.textContent = "Aucune vidéo pour l'instant : filme-toi, elle apparaîtra ici toute seule."; return; }
+      info.hidden = true; donnees.videos.forEach((v) => liste.appendChild(carteVideo(v)));
+    } catch (e) { info.textContent = e.message || "Chargement impossible."; }
+  }
+  const ouvrirVideos = () => { if (etat.flux) arreterFlux(); afficherEcran("videos"); chargerVideos(); };
+  $("voir-videos").addEventListener("click", ouvrirVideos);
+  $("voir-videos-2").addEventListener("click", ouvrirVideos);
+  $("retour-videos").addEventListener("click", () => afficherEcran("texte"));
   window.addEventListener("beforeunload", (e) => { if (etat.enregistrement) { e.preventDefault(); e.returnValue = ""; } });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && etat.enregistrement) demanderVerrou(); });
 
@@ -520,7 +758,8 @@
   requestAnimationFrame(animer);
 
   // Points d'entree pour les tests automatiques (tests_plateforme/test_prompteur_page.py) : sans effet pour l'utilisateur.
-  window.__prompteur = { etat: etat, construireTexte: construireTexte, placer: placer, appliquerTranscription: appliquerTranscription, encoderWav: encoderWav, reechantillonner: reechantillonner, choisirMime: choisirMime, reglages: reglages };
+  window.__prompteur = { etat: etat, construireTexte: construireTexte, placer: placer, appliquerTranscription: appliquerTranscription, encoderWav: encoderWav, reechantillonner: reechantillonner, choisirMime: choisirMime, reglages: reglages,
+    dimensionsSortie: dimensionsSortie, ecartFormat: ecartFormat, avancerPredit: avancerPredit, afficher: afficher, ajusterCadre: ajusterCadre, envoyerEnregistrement: envoyerEnregistrement };
 })();
 </script>
 </body>

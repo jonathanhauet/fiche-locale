@@ -18,7 +18,7 @@ URL_PUBLIQUE_BASE = os.getenv("OVH_URL_PUBLIQUE_BASE", "").rstrip("/")
 
 
 def envoyer_octets(octets: bytes, nom_fichier_distant: str) -> str:
-    """Envoie des octets (image) vers le dossier OVH configure, renvoie l'URL publique."""
+    """Envoie des octets (image) ou un fichier ouvert en lecture binaire (video lourde) vers le dossier OVH configure, renvoie l'URL publique."""
     manquants = [
         nom for nom, valeur in [
             ("OVH_FTP_HOTE", FTP_HOTE),
@@ -53,7 +53,7 @@ def envoyer_octets(octets: bytes, nom_fichier_distant: str) -> str:
                     f"Impossible de creer ou d'acceder au dossier distant '{FTP_DOSSIER}'. Detail : {erreur}"
                 )
 
-    ftp.storbinary(f"STOR {nom_fichier_distant}", io.BytesIO(octets))
+    ftp.storbinary(f"STOR {nom_fichier_distant}", octets if hasattr(octets, "read") else io.BytesIO(octets))
     ftp.quit()
 
     return f"{URL_PUBLIQUE_BASE}/{nom_fichier_distant}"
