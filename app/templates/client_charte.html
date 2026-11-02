@@ -169,7 +169,7 @@
 
 <style>
   .charte-grille { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr); gap: 1.4rem; align-items: start; }
-  @media (max-width: 860px) { .charte-grille { grid-template-columns: 1fr; } }
+  @media (max-width: 860px) { .charte-grille { grid-template-columns: minmax(0, 1fr); } .charte-grille > * { min-width: 0; } }
   .charte-formulaire h2 { margin: 1.2rem 0 .3rem; font-size: 1.05rem; }
   .charte-formulaire h2:first-child { margin-top: 0; }
   .charte-couleur { margin: .5rem 0; }

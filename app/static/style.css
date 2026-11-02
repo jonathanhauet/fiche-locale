@@ -1879,6 +1879,7 @@ button.etiquette-avertissement:hover { filter: brightness(0.95); text-decoration
 
 .etiquette-chip-case {
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
   gap: 0.3rem;
   font-size: 0.8rem;
@@ -1890,7 +1891,7 @@ button.etiquette-avertissement:hover { filter: brightness(0.95); text-decoration
   cursor: pointer;
 }
 
-.etiquette-chip-case input { width: auto; margin: 0; }
+.etiquette-chip-case input { width: auto; margin: 0; flex-shrink: 0; }
 
 .liste-clients-cibles {
   display: flex;
@@ -3160,7 +3161,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   .nav-laterale { flex-direction: column; }
   .lien-deconnexion-barre { margin-left: 0; margin-top: 0.6rem; }
   .zone-contenu { padding: 1.5rem 1.2rem 3rem; max-width: 100%; }
-  .ligne-champs { grid-template-columns: 1fr; }
+  .ligne-champs { grid-template-columns: minmax(0, 1fr); }
 }
 
 .options-visuel { margin: 8px 0 12px; border: 1px solid var(--carte-bordure); border-radius: 8px; padding: 8px 12px; background: var(--fond); }
@@ -3329,3 +3330,47 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .historique-date { opacity: 0.6; margin-right: 0.5rem; font-size: 0.85em; }
 
 .raison-echec { margin-top: 0.35rem; max-width: 22rem; font-size: 0.8rem; line-height: 1.3; color: #c0392b; cursor: help; }
+
+/* ---------- Telephone (iPhone 13 Pro : 390 px de large) ---------- */
+
+html { -webkit-text-size-adjust: 100%; }
+
+@media (max-width: 800px) {
+  body { overflow-x: clip; }
+  /* 16 px : en dessous, Safari sur iPhone agrandit toute la page des qu'on touche un champ */
+  input, select, textarea { font-size: 16px; max-width: 100%; min-width: 0; }
+  select { text-overflow: ellipsis; }
+  .formulaire > *, .ligne-champs > * { min-width: 0; }
+  .zone-contenu { padding-bottom: calc(3rem + env(safe-area-inset-bottom)); }
+  .barre-titre { flex-wrap: wrap; }
+  .barre-titre h1 { font-size: 1.45rem; }
+  .barre-outils-import-masse input[type="text"] { width: 100%; flex: 1 1 100%; }
+  .actions-avis > button:not(.etiquette-avertissement), .actions-avis > .bouton, .actions-avis > a.bouton-secondaire { flex: 1 1 auto; }
+  .barre-titre { flex-direction: column; align-items: stretch; gap: 0.7rem; }
+  .barre-titre .barre-outils-import-masse > * { flex: 1 1 auto; text-align: center; }
+}
+
+@media (max-width: 600px) {
+  /* Liste des clients : une carte en trois lignes (case, favori, nom / reseaux / alertes) au lieu d'une ligne qui deborde */
+  .liste-clients li.ligne-client-avec-favori { flex-wrap: wrap; padding: 0.7rem 0.8rem; gap: 0.45rem 0.6rem; align-items: center; }
+  .liste-clients li.ligne-client-avec-favori > a { flex: 1 1 0; min-width: 0; }
+  .liste-clients li.ligne-client-avec-favori > a > span:not(.avatar-client) { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+  .liste-clients li.ligne-client-avec-favori .case-client-suppression { width: 22px; height: 22px; margin: 0; flex-shrink: 0; padding: 0; }
+  .liste-clients li.ligne-client-avec-favori .bouton-favori-client { font-size: 1.5rem; min-width: 2.2rem; min-height: 2.2rem; padding: 0; flex-shrink: 0; }
+  .liste-clients li.ligne-client-avec-favori .reseaux-connectes-client { flex: 1 0 100%; padding-left: 0.1rem; }
+  .liste-clients li.ligne-client-avec-favori .actions-avis { flex: 1 0 100%; gap: 0.35rem; }
+  .liste-clients li.ligne-client-avec-favori .actions-avis:not(:has(*)) { display: none; }
+  .actions-avis .etiquette-avertissement { white-space: normal; }
+  .grille-resume { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .formulaire { padding: 1rem; }
+  .bloc-repliable { padding: 0.2rem 1rem 1rem; }
+  /* champs a la largeur de leur carte (sinon ils s'arretent a une largeur par defaut, differente d'un champ a l'autre) */
+  label > input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]), label > select, label > textarea { width: 100%; }
+  #filtre-choix-client, #filtre-fiches-masse, #filtre-liste-clients, #amf-filtre { width: 100%; }
+  .popup-calendrier-champ { width: min(320px, calc(100vw - 3rem)); }
+  .popup-calendrier-nav { min-width: 2.6rem; min-height: 2.6rem; font-size: 1.3rem; }
+  .popup-calendrier-jour { font-size: 0.9rem; }
+  .bouton, .bouton-secondaire, .bouton-danger { min-height: 2.6rem; }
+  .bouton-mini { min-height: 2.2rem; padding: 0.35rem 0.7rem; }
+  .etiquette-chip-case { border-radius: 1.1rem; }
+}
