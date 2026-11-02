@@ -99,7 +99,7 @@ def normaliser_enregistrement(source: str) -> str:
     30 images/s, que le reste du montage sait decouper precisement. Renvoie le chemin du nouveau fichier.
     """
     sortie = os.path.splitext(source)[0] + "-norm.mp4"
-    resultat = _lancer([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", source, "-vf", "fps=30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+    resultat = _lancer([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", source, "-vf", "fps=30:start_time=0", "-af", "aresample=async=1:first_pts=0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", sortie], 1800)
     if resultat.returncode != 0 or not os.path.exists(sortie):
         raise ErreurMontage("L'enregistrement n'a pas pu être converti : " + (resultat.stderr or "")[-200:].strip())
@@ -108,7 +108,7 @@ def normaliser_enregistrement(source: str) -> str:
 
 def extraire_audio(video: str, sortie_wav: str) -> None:
     """WAV mono 16 kHz : sans dependance a un codec particulier, et lisible directement par Gemini."""
-    resultat = _lancer([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", video, "-vn", "-ac", "1", "-ar", "16000",
+    resultat = _lancer([FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", video, "-vn", "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "16000",
                         "-c:a", "pcm_s16le", sortie_wav], 900)
     if resultat.returncode != 0:
         raise ErreurMontage("Impossible d'extraire le son de la vidéo.")
@@ -926,6 +926,37 @@ def _chemin_filtre(chemin: str) -> str:
     return chemin.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
 
+def sur_grille(segments: list) -> list:
+    """
+    Segments recales sur la grille des images de la video montee (une image tous les 1/FPS s) : image et son sont alors coupes
+    exactement aux memes instants (un nombre entier d'images, un nombre entier d'echantillons), donc ne se decalent jamais l'un
+    de l'autre, meme apres des dizaines de coupes.
+    """
+    recales = []
+    for debut, fin in segments:
+        a, b = round(debut * FPS) / FPS, round(fin * FPS) / FPS
+        if b > a:
+            recales.append((a, b))
+    return recales
+
+
+def calques_zoom(zooms: list, secousses: list) -> list:
+    """
+    Zooms en SAUT NET (aucune transition : on passe d'un coup de 100 % a 100 % + amplitude, puis on revient d'un coup), toujours centres.
+    Renvoie [(amplitude, [(debut, fin)...], secousse)] : un calque par amplitude (du plus faible au plus fort : le plus fort l'emporte
+    quand deux fenetres se chevauchent), puis le calque des secousses (cadre un peu agrandi qui tremble sur les coupes concernees).
+    """
+    par_amplitude = {}
+    for fenetre in zooms or []:
+        debut, fin, amplitude = fenetre[:3]
+        if fin - debut > 0.05 and amplitude > 0.005:
+            par_amplitude.setdefault(round(amplitude, 3), []).append((debut, fin))
+    calques = [(amplitude, sorted(par_amplitude[amplitude]), False) for amplitude in sorted(par_amplitude)]
+    if secousses:
+        calques.append((0.06, sorted(secousses), True))      # une secousse a besoin d'un peu de marge d'image
+    return calques
+
+
 def expression_zoom(zooms: list) -> str:
     """
     Facteur de zoom (expression ffmpeg en fonction du temps t) : 1, plus une bosse douce par fenetre (debut, fin, amplitude), ou un
@@ -954,14 +985,27 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     panneau uni de couleur `panneau` en haut (la ou s'affiche l'illustration), vous en bas, recadre sur le haut du corps. transitions : {"flash": [(debut, fin)], "glitch": [...], "secousse": [...]}
     (temps du montage) appliquees sur les coupes ; bruitages : [{"t", "fichier", "volume"}] mixes par-dessus la voix.
     """
+    segments = sur_grille(segments)
     if not segments:
         raise ErreurMontage("Il ne reste rien à monter (tout a été coupé).")
     dossier = os.path.dirname(sortie)
-    liste = os.path.join(dossier, f"segments-{uuid.uuid4().hex[:6]}.txt")
-    chemin_source = source.replace("\\", "/").replace("'", "'\\''")
-    with open(liste, "w", encoding="utf-8") as fichier:
-        for debut, fin in segments:
-            fichier.write(f"file '{chemin_source}'\ninpoint {debut:.3f}\noutpoint {fin:.3f}\n")
+    # Coupes faites par filtres (image ET son sur la meme source, aux memes instants, a l'image et a l'echantillon pres) : l'ancienne
+    # lecture par morceaux demarrait l'image a l'image-cle precedente et le son a l'instant exact, ce qui les decalait.
+    n = len(segments)
+    decoupe = []
+    if n == 1:
+        decoupe.append(f"[0:v]fps={FPS}:start_time=0,trim=start={segments[0][0]:.2f}:end={segments[0][1]:.2f},setpts=PTS-STARTPTS[vc]")
+    else:
+        decoupe.append(f"[0:v]fps={FPS}:start_time=0,split={n}" + "".join(f"[c{i}]" for i in range(n)))
+        decoupe += [f"[c{i}]trim=start={a:.2f}:end={b:.2f},setpts=PTS-STARTPTS[d{i}]" for i, (a, b) in enumerate(segments)]
+        decoupe.append("".join(f"[d{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[vc]")
+    if infos["audio"]:
+        if n == 1:
+            decoupe.append(f"[0:a]aresample=48000:async=1:first_pts=0,atrim=start={segments[0][0]:.2f}:end={segments[0][1]:.2f},asetpts=PTS-STARTPTS[ac]")
+        else:
+            decoupe.append("[0:a]aresample=48000:async=1:first_pts=0,asplit=" + str(n) + "".join(f"[e{i}]" for i in range(n)))
+            decoupe += [f"[e{i}]atrim=start={a:.2f}:end={b:.2f},asetpts=PTS-STARTPTS[f{i}]" for i, (a, b) in enumerate(segments)]
+            decoupe.append("".join(f"[f{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[ac]")
 
     vertical = format_sortie == "vertical"
     largeur, hauteur = (1080, 1920) if vertical else (1920, 1080)
@@ -975,18 +1019,26 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
             recadrage = f"crop=ih*9/16:ih,scale={largeur}:{hauteur}"
     else:
         recadrage = f"scale={largeur}:{hauteur}:force_original_aspect_ratio=decrease,pad={largeur}:{hauteur}:(ow-iw)/2:(oh-ih)/2:black"
-    filtre_video = f"[0:v]{recadrage},setsar=1,fps={FPS}"
+    filtre_video = f"[vc]{recadrage},setsar=1"
     transitions = transitions or {}
     secousses = transitions.get("secousse") or []
-    zooms_effectifs = list(zooms or []) + [(a, b, 0.06, "sec") for a, b in secousses]      # une secousse a besoin d'un peu de marge d'image
-    if zooms_effectifs:
-        facteur = expression_zoom(zooms_effectifs)
-        decalage_x = decalage_y = ""
-        if secousses:
-            decalage_x = "+" + "+".join(f"between(t,{a:.2f},{b:.2f})*{24 if vertical else 30}*sin(70*(t-{a:.2f}))*(1-(t-{a:.2f})/{max(0.05, b - a):.2f})" for a, b in secousses)
-            decalage_y = "+" + "+".join(f"between(t,{a:.2f},{b:.2f})*{18 if vertical else 20}*cos(85*(t-{a:.2f}))*(1-(t-{a:.2f})/{max(0.05, b - a):.2f})" for a, b in secousses)
-        filtre_video += (f",scale=w='trunc({largeur}*({facteur})/2)*2':h='trunc({hauteur}*({facteur})/2)*2':eval=frame:flags=bilinear,"
-                         f"crop={largeur}:{hauteur}:x='(iw-ow)/2{decalage_x}':y='(ih-oh)/2{decalage_y}'")
+    calques = calques_zoom(zooms, secousses)
+    if calques:
+        # Le cadre est copie une fois par niveau de zoom ; chaque copie agrandie et recadree au centre prend la place du cadre normal dans ses fenetres.
+        filtre_video += f",split={len(calques) + 1}[zb]" + "".join(f"[zs{k}]" for k in range(len(calques)))
+        parties_zoom, courant = [], "zb"
+        for k, (amplitude, fenetres, secousse) in enumerate(calques):
+            activation = "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in fenetres)
+            parties_zoom.append(f"[zs{k}]scale=w=trunc({largeur}*{1 + amplitude:.3f}/2)*2:h=trunc({hauteur}*{1 + amplitude:.3f}/2)*2,crop={largeur}:{hauteur}[zc{k}]")
+            if secousse:
+                decalage_x = "+".join(f"between(t,{a:.2f},{b:.2f})*{24 if vertical else 30}*sin(70*(t-{a:.2f}))*(1-(t-{a:.2f})/{max(0.05, b - a):.2f})" for a, b in fenetres)
+                decalage_y = "+".join(f"between(t,{a:.2f},{b:.2f})*{18 if vertical else 20}*cos(85*(t-{a:.2f}))*(1-(t-{a:.2f})/{max(0.05, b - a):.2f})" for a, b in fenetres)
+                parties_zoom[-1] = (f"[zs{k}]scale=w=trunc({largeur}*{1 + amplitude:.3f}/2)*2:h=trunc({hauteur}*{1 + amplitude:.3f}/2)*2[zc{k}]")
+                parties_zoom.append(f"[{courant}][zc{k}]overlay=x='(W-w)/2+{decalage_x}':y='(H-h)/2+{decalage_y}':enable='{activation}'[zo{k}]")
+            else:
+                parties_zoom.append(f"[{courant}][zc{k}]overlay=x=0:y=0:enable='{activation}'[zo{k}]")
+            courant = f"zo{k}"
+        filtre_video += ";" + ";".join(parties_zoom) + f";[{courant}]null"
     if transitions.get("flash"):
         filtre_video += ",drawbox=x=0:y=0:w=iw:h=ih:color=white@0.55:t=fill:enable='" + "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in transitions["flash"]) + "'"
     if transitions.get("glitch"):
@@ -1063,7 +1115,7 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     filtre_video = ";".join(parties)
 
     commande = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats",
-                "-f", "concat", "-safe", "0", "-i", liste]
+                "-i", source]
     if musique:
         commande += ["-stream_loop", "-1", "-i", musique]
     for chemin_image, duree_image, genre_entree in images:
@@ -1082,11 +1134,11 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
     # Avec des bruitages (stereo), la voix passe aussi en stereo AVANT la normalisation : sinon un son source mono perdrait 3 dB au mixage.
     stereo = ",aformat=channel_layouts=stereo" if bruitages else ""
     if infos["audio"] and musique:
-        filtre_audio = (f"[0:a]aresample=48000{stereo},asplit=2[v1][v2];[1:a]aresample=48000,volume=0.30[m];"
+        filtre_audio = (f"[ac]aresample=48000{stereo},asplit=2[v1][v2];[1:a]aresample=48000,volume=0.30[m];"
                         "[m][v1]sidechaincompress=threshold=0.04:ratio=9:attack=30:release=600[md];"
                         f"[v2][md]amix=inputs=2:duration=first:dropout_transition=0,loudnorm=I=-16:TP=-1.5:LRA=11[{etiquette_audio}]")
     elif infos["audio"]:
-        filtre_audio = f"[0:a]aresample=48000{stereo},loudnorm=I=-16:TP=-1.5:LRA=11[{etiquette_audio}]"
+        filtre_audio = f"[ac]aresample=48000{stereo},loudnorm=I=-16:TP=-1.5:LRA=11[{etiquette_audio}]"
     elif musique:
         filtre_audio = f"[1:a]aresample=48000,volume=0.5[{etiquette_audio}]"
     else:
@@ -1111,8 +1163,15 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
         parties_audio.append(f"{base}{''.join(etiquettes)}amix=inputs={len(etiquettes) + (1 if filtre_audio else 0)}:duration={'first' if filtre_audio else 'longest'}:"
                              "dropout_transition=0:normalize=0[a]")
         filtre_audio = ";".join(parties_audio)
-    graphe = filtre_video + (";" + filtre_audio if filtre_audio else "")
-    commande += ["-filter_complex", graphe, "-map", "[v]"]
+    graphe = ";".join(decoupe) + ";" + filtre_video + (";" + filtre_audio if filtre_audio else "")
+    fichier_graphe = None
+    if len(graphe) > 24000:      # beaucoup de coupes : le graphe est trop long pour la ligne de commande (Windows : 32 000 caracteres)
+        fichier_graphe = os.path.join(dossier, f"graphe-{uuid.uuid4().hex[:6]}.txt")
+        with open(fichier_graphe, "w", encoding="utf-8") as f:
+            f.write(graphe)
+        commande += ["-filter_complex_script", fichier_graphe, "-map", "[v]"]
+    else:
+        commande += ["-filter_complex", graphe, "-map", "[v]"]
     if filtre_audio:
         commande += ["-map", "[a]", "-c:a", "aac", "-b:a", "160k", "-ar", "48000"]
     commande += ["-c:v", "libx264", "-preset", "ultrafast" if rapide else "veryfast", "-crf", "30" if rapide else "23", "-pix_fmt", "yuv420p", "-r", str(FPS),
@@ -1131,10 +1190,11 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
                 pass
     processus.wait()
     lecteur.join(timeout=5)
-    try:
-        os.remove(liste)
-    except OSError:
-        pass
+    if fichier_graphe:
+        try:
+            os.remove(fichier_graphe)
+        except OSError:
+            pass
     if processus.returncode != 0 or not os.path.exists(sortie):
         detail = (erreurs[0] if erreurs else "")[-400:]
         raise ErreurMontage(f"Le rendu de la vidéo a échoué. {detail}".strip())
@@ -1145,7 +1205,7 @@ def rendre(source: str, infos: dict, segments: list, sortie: str, format_sortie:
 MAX_ZOOMS = 40
 ECART_MINI_ZOOM = 3.2           # secondes entre deux zooms automatiques
 DUREE_ZOOM = 2.4
-AMPLITUDES_ZOOM = (0.10, 0.17)  # alternance : zoom leger, puis plus marque
+AMPLITUDES_ZOOM = (0.10, 0.10)  # saut net de 100 % a 110 %
 FORCE_ZOOM = {"leger": 0.10, "fort": 0.20}
 EFFETS_DEFAUT = {"zooms": True, "mots": True, "accroche": True, "barre": True, "visage": True}
 PART_HAUT_PARTAGE = 0.13        # en ecran coupe, la moitie basse montre le cadre vertical a partir de 13 % de sa hauteur (visage et epaules)
@@ -1329,7 +1389,7 @@ ECART_MINI_TRANSITION = 1.5
 MAX_TRANSITIONS = 60
 VOLUMES_SONS = {"whoosh": 0.50, "swoosh": 0.42, "pop": 0.70, "impact": 0.65, "clic": 0.60}
 SONS_ZOOM = {"aucun": "Aucun", "discret": "Discret (zooms marqués seulement)", "marque": "Sur tous les zooms"}
-AMPLITUDE_ZOOM_MARQUE = 0.15       # un zoom de cette amplitude ou plus est « marque » (les zooms doux automatiques sont a 0,10 puis 0,17)
+AMPLITUDE_ZOOM_MARQUE = 0.15       # un zoom de cette amplitude ou plus est « marque » (les zooms automatiques sont tous a 0,10 : seuls les zooms « fort » demandes a la main sont marques)
 
 
 def fenetres_transitions(segments: list, mode: str, duree: float) -> dict:
@@ -1392,7 +1452,7 @@ def zooms_du_rendu(sortie: dict, phrases_montage: list, duree: float) -> list:
         zooms, cumul = [], 0.0
         for rang, (debut, fin) in enumerate(segments):
             if rang % 2 == 1:
-                zooms.append((cumul, cumul + fin - debut, 0.12, "sec"))
+                zooms.append((cumul, cumul + fin - debut, 0.10, "sec"))
             cumul += fin - debut
         for debut, fin, amplitude in effets["zoom_manuel"]:
             a, b = _remapper(debut, segments, True), _remapper(fin, segments, False)
@@ -1483,6 +1543,7 @@ def _rendre_sortie(montage: dict, sortie: dict, suivi, limite: float = None) -> 
     Rend (ou re-rend) une sortie depuis la video d'origine et son etat (segments, effets, phrases) : (chemin du fichier, duree).
     Avec `limite` (secondes), apercu rapide : seul le debut du montage est rendu, avec le meme style mais un encodage plus leger.
     """
+    sortie = dict(sortie, segments=sur_grille(sortie["segments"]))
     if limite:
         sortie = dict(sortie, segments=segments_jusqua(sortie["segments"], limite))
     infos, segments = montage["infos"], sortie["segments"]
