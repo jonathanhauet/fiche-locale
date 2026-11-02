@@ -163,6 +163,13 @@
       <div><label for="qualite">Qualité</label><select id="qualite"><option value="720">HD 720p</option><option value="1080">Full HD 1080p</option></select></div>
     </div>
     <label class="choix"><input type="checkbox" id="decompte-actif" checked><span>Compte à rebours de 3 secondes avant de filmer</span></label>
+    <div id="micro-ligne">
+      <label for="micro">Micro</label>
+      <select id="micro"><option value="">Automatique (micro du téléphone ou micro branché)</option></select>
+      <label for="son">Traitement du son</label>
+      <select id="son"><option value="auto">Automatique (réduit le bruit, règle le volume)</option><option value="brut">Brut (conseillé avec un micro externe : Rode, Hollyland, cravate...)</option></select>
+      <p class="discret" id="micro-info">La liste des micros apparaît après la première ouverture de la caméra (le téléphone ne la donne qu'une fois le micro autorisé). Avec un micro sans fil, branche le récepteur AVANT d'ouvrir la caméra, puis vérifie que le nom du micro s'affiche en haut de l'écran de la caméra.</p>
+    </div>
     <div id="retouche-ligne">
       <label for="retouche">Retouche légère de l'image</label>
       <select id="retouche"><option value="aucune">Aucune</option><option value="eclat">Éclaircir (lumière et couleurs)</option><option value="doux">Éclaircir et adoucir la peau</option></select>
@@ -230,6 +237,7 @@
     <p class="discret" style="margin:8px 0 0">Ne ferme pas cette page avant la fin de l'envoi : ensuite tu retrouves la vidéo dans « Mes vidéos » et sur la plateforme (Créations).</p>
   </div>
   <p class="discret" id="info-coupes" hidden></p>
+  <p class="erreur" id="alerte-son" role="alert" hidden>⚠️ Aucun son n'a été détecté pendant cette prise. Écoute la vidéo ci-dessus : si elle est muette, vérifie que le micro est allumé et bien branché, choisis-le dans « Affichage et caméra » (Micro), essaie le traitement du son « Brut », puis refais une prise.</p>
   <p class="discret" id="info-regard" hidden>👁 Correction du regard appliquée (bêta). Regarde la vidéo : si le rendu n'est pas naturel, choisis « Légère » ou « Désactivée » dans « Affichage et caméra », puis refais une prise.</p>
   <label class="choix"><input type="checkbox" id="caler" checked><span>Caler les sous-titres sur mon texte : corrige les noms et les mots mal compris, et retire les prises ratées.</span></label>
   <button class="bouton principal" id="preparer" type="button" disabled style="margin-top:0">🚀 Préparer pour publier</button>
@@ -274,11 +282,11 @@
     enregistreur: null, morceaux: [], mime: "", blob: null, debut: 0, minuteur: null, capture: null, envoiEnCours: false, erreursSuivi: 0,
     reconnaissance: null, verrou: null, bruit: 0.01, dernierImage: 0, cible: 0,
     confirmee: 0, parle: false, derniereParole: 0, vitesseMots: 2.2, derniereConf: 0, canvas: null, jetonEnvoi: 0, idGarde: null, duree: 0,
-    debutsPara: [], para: { k: 0, limite: 0, ecartes: [] }, coupes: null, totalEnreg: 0, conseils: [], msgFormat: "", maxNiveau: 0, diagEnvoye: false, jetonCamera: 0,
+    debutsPara: [], para: { k: 0, limite: 0, ecartes: [] }, coupes: null, totalEnreg: 0, conseils: [], msgFormat: "", maxNiveau: 0, maxRec: 0, nomMicro: "", msgMicro: "", diagEnvoye: false, jetonCamera: 0,
     regard: null, detecteurRegard: null, msgRegard: "", regardCorrige: 0, delaiReessai: 1500, element: null, envoiActif: false, reprise: false, enAttente: [],
   };
   const CLIENT_MARQUE = "{{ client_marque_id or '' }}";
-  const reglages = { texte: "", taille: 44, hauteur: 30, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait", largeur: 78, miroir: false, paragraphes: false, cible: 0, caler: true, cta: "defaut", retouche: "aucune", regard: "aucun" };
+  const reglages = { texte: "", taille: 44, hauteur: 30, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait", largeur: 78, miroir: false, paragraphes: false, cible: 0, caler: true, cta: "defaut", retouche: "aucune", regard: "aucun", micro: "", son: "auto" };
   try { Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}")); if (reglages.disposition !== 3) { if (!reglages.disposition) reglages.hauteur = 30; reglages.largeur = 78; reglages.disposition = 3; } } catch (e) { /* stockage indisponible : reglages par defaut */ }
   const sauver = () => { try { localStorage.setItem(CLE, JSON.stringify(reglages)); } catch (e) { /* stockage indisponible */ } };
 
@@ -308,6 +316,8 @@
     $("camera").value = reglages.camera; $("qualite").value = reglages.qualite; $("decompte-actif").checked = !!reglages.decompte;
     $("largeur").value = reglages.largeur; $("miroir-actif").checked = !!reglages.miroir; $("para-actif").checked = !!reglages.paragraphes; $("cible").value = reglages.cible || "";
     $("caler").checked = $("caler-videos").checked = !!reglages.caler; $("ia-cta").value = reglages.cta;
+    if (reglages.son !== "brut") reglages.son = "auto";
+    $("son").value = reglages.son;
     if (!RETOUCHES[reglages.retouche]) reglages.retouche = "aucune";
     $("retouche").value = reglages.retouche; $("retouche-ligne").hidden = !canevasFiltre();
     if (!(Regard && Regard.FORCES[reglages.regard] !== undefined)) reglages.regard = "aucun";
@@ -331,6 +341,8 @@
   $("ia-cta").addEventListener("change", () => { reglages.cta = $("ia-cta").value; sauver(); });
   $("retouche").addEventListener("change", () => { reglages.retouche = $("retouche").value; sauver(); appliquerRetouche(); });
   $("regard").addEventListener("change", () => { reglages.regard = $("regard").value; sauver(); });
+  $("micro").addEventListener("change", () => { reglages.micro = $("micro").value; sauver(); });
+  $("son").addEventListener("change", () => { reglages.son = $("son").value; sauver(); });
   // Vitesse reglable pendant le tournage (modes « il avance quand je parle » et « vitesse fixe »).
   function changerVitesse(delta) { reglages.vitesse = Math.max(80, Math.min(220, reglages.vitesse + delta)); $("vitesse").value = reglages.vitesse; appliquerReglagesAffichage(); sauver(); majCompteur(); }
   $("vitesse-moins").addEventListener("click", () => changerVitesse(-5));
@@ -505,6 +517,25 @@
       const lecture = v.play(); if (lecture && lecture.catch) lecture.catch(() => { /* mesure sur les reglages si la lecture est refusee */ });
     });
   }
+  // Micro demandé : celui choisi dans les réglages (sinon celui du système) ; « brut » coupe l'annulation d'écho, la réduction de bruit et le réglage
+  // automatique du volume, qui dégradent ou coupent le signal d'un micro externe (Rode, Hollyland...).
+  function contraintesAudio() {
+    const brut = reglages.son === "brut", a = { echoCancellation: !brut, noiseSuppression: !brut, autoGainControl: !brut };
+    if (reglages.micro) a.deviceId = { exact: reglages.micro };
+    return a;
+  }
+  // Liste des micros connus du téléphone (les noms ne sont donnés qu'une fois le micro autorisé) ; le micro utilisé est marqué.
+  async function listerMicros() {
+    const choix = $("micro");
+    let micros = [];
+    try { micros = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput" && d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications"); } catch (e) { return; }
+    const piste = etat.flux && etat.flux.getAudioTracks()[0], actif = piste && piste.getSettings ? piste.getSettings().deviceId : "";
+    choix.textContent = "";
+    choix.add(new Option("Automatique (micro du téléphone ou micro branché)", ""));
+    micros.forEach((d, i) => choix.add(new Option((d.label || "Micro " + (i + 1)) + (actif && d.deviceId === actif ? " (utilisé)" : ""), d.deviceId)));
+    choix.value = micros.some((d) => d.deviceId === reglages.micro) ? reglages.micro : "";
+  }
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener("devicechange", () => { listerMicros(); });
   async function ouvrirFlux() {
     const d = dimensionsSortie(), w = d[0], h = d[1], portrait = h >= w;
     const base = { facingMode: reglages.camera === "avant" ? "user" : "environment", frameRate: { ideal: 30 } };
@@ -516,8 +547,14 @@
       Object.assign({}, base, portrait ? { width: { ideal: 960 }, height: { ideal: 1280 } } : { width: { ideal: 1280 }, height: { ideal: 960 } }),
       { facingMode: base.facingMode },
     ];
-    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-    const premier = await navigator.mediaDevices.getUserMedia({ video: essais[0], audio: audio });
+    let premier;
+    try { premier = await navigator.mediaDevices.getUserMedia({ video: essais[0], audio: contraintesAudio() }); }
+    catch (e) {
+      // le micro choisi n'est plus la (récepteur débranché, autre téléphone) : on revient au micro par défaut et on le dit
+      if (!reglages.micro || !e || (e.name !== "OverconstrainedError" && e.name !== "NotFoundError")) throw e;
+      reglages.micro = ""; sauver(); etat.msgMicro = "Le micro choisi n'est pas branché : le micro par défaut est utilisé.";
+      premier = await navigator.mediaDevices.getUserMedia({ video: essais[0], audio: contraintesAudio() });
+    }
     const pistesAudio = premier.getAudioTracks();
     let video = premier.getVideoTracks()[0], mesure = await outils.mesurer(video);
     let meilleur = 0, meilleurEcart = ecartFormat(mesure.w, mesure.h), derniere = 0, mesures = [mesure.w + "x" + mesure.h];
@@ -552,7 +589,7 @@
   function indiceFormat() {
     const v = $("apercu");
     if (!v.videoWidth || $("ecran-camera").hidden) return;
-    $("diag").textContent = "image " + v.videoWidth + "×" + v.videoHeight + (etat.essaisCamera ? " (essais " + etat.essaisCamera + ")" : "");
+    $("diag").textContent = "image " + v.videoWidth + "×" + v.videoHeight + (etat.essaisCamera ? " (essais " + etat.essaisCamera + ")" : "") + (etat.nomMicro ? " · 🎙 " + etat.nomMicro : "");
     if (etat.enregistrement) return;
     etat.msgFormat = ecartFormat(v.videoWidth, v.videoHeight) > 0.6
       ? (reglages.format === "paysage" ? "Tourne le téléphone à l'horizontale pour filmer en paysage." : "L'image n'est pas en portrait : tiens le téléphone droit, sinon la vidéo sera très recadrée.") : "";
@@ -591,8 +628,9 @@
     } catch (e) { /* mesure de la lumiere impossible : pas de conseil */ }
     await attendre(1500);
     if (jeton !== etat.jetonCamera || etat.enregistrement || $("ecran-camera").hidden) return;
+    if (etat.msgMicro) { conseils.push(etat.msgMicro); etat.msgMicro = ""; }
     if (etat.flux && !etat.flux.getAudioTracks().length) conseils.push("Aucun micro n'est branché : autorise le micro pour ce site.");
-    else if (etat.contexteAudio && etat.maxNiveau === 0) conseils.push("Le micro ne capte rien : vérifie qu'il n'est pas bloqué ou couvert.");
+    else if (etat.contexteAudio && etat.maxNiveau < 0.002) conseils.push("Le micro ne capte rien : vérifie qu'il est allumé, bien branché et non couvert" + (reglages.son === "auto" ? ", ou essaie le traitement du son « Brut » dans « Affichage et caméra »." : "."));
     etat.conseils = conseils; majMessages();
     if (conseils.length) setTimeout(() => { if (jeton === etat.jetonCamera) { etat.conseils = []; majMessages(); } }, 9000);
   }
@@ -606,7 +644,7 @@
       agent: navigator.userAgent, format: reglages.format, qualite: reglages.qualite, camera: reglages.camera, essais: etat.essaisCamera || "", image: v.videoWidth + "x" + v.videoHeight,
       ecran: window.innerWidth + "x" + window.innerHeight + "@" + (window.devicePixelRatio || 1),
       installee: String(!!(window.navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches))),
-      note: "piste " + (reglagesPiste.width || "?") + "x" + (reglagesPiste.height || "?") + (reglagesPiste.zoom ? " zoom " + reglagesPiste.zoom : ""),
+      note: "piste " + (reglagesPiste.width || "?") + "x" + (reglagesPiste.height || "?") + (reglagesPiste.zoom ? " zoom " + reglagesPiste.zoom : "") + " | micro " + (etat.nomMicro || "aucun") + " son " + reglages.son,
     };
     try { fetch("/prompteur/diagnostic", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(charge) }).catch(() => { /* rapport facultatif */ }); } catch (e) { /* rapport facultatif */ }
   }
@@ -623,6 +661,7 @@
       $("erreur-ouverture").textContent = refus ? "Caméra ou micro refusés : autorise-les dans les réglages du navigateur pour ce site, puis recommence." : "Impossible d'ouvrir la caméra (" + (e && e.name ? e.name : "erreur") + ").";
       $("erreur-ouverture").hidden = false; return;
     }
+    const pisteSon = etat.flux.getAudioTracks()[0]; etat.nomMicro = pisteSon ? (pisteSon.label || "micro") : ""; listerMicros();
     const video = $("apercu"); video.srcObject = etat.flux; video.style.transform = reglages.camera === "avant" ? "scaleX(-1)" : "none"; appliquerRetouche();
     try { await video.play(); } catch (e) { /* lecture automatique refusee : l'apercu demarre au premier toucher */ }
     afficherEcran("camera"); ajusterCadre(); construireTexte(); etat.positionFlottante = 0; $("fenetre").classList.toggle("manuel", reglages.mode === "manuel");
@@ -655,6 +694,7 @@
       const rms = Math.sqrt(somme / donnees.length);
       $("niveau").firstElementChild.style.width = Math.min(100, rms * 600) + "%";
       if (rms > etat.maxNiveau) etat.maxNiveau = rms;
+      if (etat.enregistrement && rms > etat.maxRec) etat.maxRec = rms;
       if (!etat.enregistrement) etat.bruit = etat.bruit * 0.97 + rms * 0.03;
       const maintenant = performance.now();
       if (rms > Math.max(0.012, etat.bruit * 3)) { etat.parle = true; etat.derniereParole = maintenant; }
@@ -762,7 +802,7 @@
     }
     placer(0); etat.pause = false; $("pause").textContent = "⏸"; etat.derniereConf = 0;
     etat.coupes = null; etat.para = { k: 0, limite: 0, ecartes: [] }; etat.conseils = []; etat.msgFormat = "";
-    etat.mime = choisirMime(); etat.morceaux = [];
+    etat.mime = choisirMime(); etat.morceaux = []; etat.maxRec = 0;
     const options = Object.assign({ videoBitsPerSecond: reglages.qualite === "1080" ? 6000000 : 4000000 }, etat.mime ? { mimeType: etat.mime } : {});
     const source = fluxPourEnregistrer();
     try { etat.enregistreur = new MediaRecorder(source, options); }
@@ -808,6 +848,7 @@
     $("info-video").textContent = "Durée : " + Math.floor(duree / 60) + " min " + String(duree % 60).padStart(2, "0") + " s · " + mo + " Mo · format " + (type.includes("mp4") ? "MP4" : "WebM") + ".";
     $("info-regard").hidden = !etat.regardCorrige; $("info-coupes").hidden = !etat.coupes; $("shorts").hidden = !(etat.duree >= 90);
     if (etat.coupes) $("info-coupes").textContent = "✂️ " + etat.para.ecartes.length + " passage" + (etat.para.ecartes.length > 1 ? "s" : "") + " refait" + (etat.para.ecartes.length > 1 ? "s" : "") + " retiré" + (etat.para.ecartes.length > 1 ? "s" : "") + " de la version gardée dans ta bibliothèque. La vidéo ci-dessus est la prise complète.";
+    $("alerte-son").hidden = !(etat.flux && (!etat.flux.getAudioTracks().length || (etat.contexteAudio && etat.maxRec < 0.003)));
     arreterFlux(); afficherEcran("resultat"); envoyerEnregistrement();
   }
 
@@ -1227,7 +1268,7 @@
   setTimeout(() => { verifierEnAttente().then((restantes) => { if (restantes && restantes.length && navigator.onLine !== false) reprendreEnAttente(); }); }, 800);
 
   // Points d'entree pour les tests automatiques (tests_plateforme/test_prompteur_page.py) : sans effet pour l'utilisateur.
-  window.__prompteur = { etat: etat, construireTexte: construireTexte, placer: placer, appliquerTranscription: appliquerTranscription, encoderWav: encoderWav, reechantillonner: reechantillonner, choisirMime: choisirMime, reglages: reglages,
+  window.__prompteur = { contraintesAudio: contraintesAudio, listerMicros: listerMicros, etat: etat, construireTexte: construireTexte, placer: placer, appliquerTranscription: appliquerTranscription, encoderWav: encoderWav, reechantillonner: reechantillonner, choisirMime: choisirMime, reglages: reglages,
     fileLocale: fileLocale, corrigerRegard: corrigerRegard, desactiverRegard: desactiverRegard, preparerRegard: preparerRegard, avancerRythme: avancerRythme, changerVitesse: changerVitesse, fluxPourEnregistrer: fluxPourEnregistrer, filtreRetouche: filtreRetouche, appliquerRetouche: appliquerRetouche, canevasFiltre: canevasFiltre, arreterCanvas: arreterCanvas, televerser: televerser, calculerGardes: calculerGardes, paraSuivant: paraSuivant, paraRefaire: paraRefaire, majInfoPara: majInfoPara, motsTexte: motsTexte,
     analyserLumiere: analyserLumiere, conseilsLumiere: conseilsLumiere, remplacerPremierePhrase: remplacerPremierePhrase, envoyerDiagnostic: envoyerDiagnostic, demanderMontage: demanderMontage,
     carteVideo: carteVideo, verifierEnAttente: verifierEnAttente, reprendreEnAttente: reprendreEnAttente, controlerPrise: controlerPrise, outils: outils, ouvrirFlux: ouvrirFlux, dimensionsSortie: dimensionsSortie, ecartFormat: ecartFormat, avancerPredit: avancerPredit, afficher: afficher, ajusterCadre: ajusterCadre, envoyerEnregistrement: envoyerEnregistrement };
