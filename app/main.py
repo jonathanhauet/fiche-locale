@@ -4657,6 +4657,7 @@ def _page_prompteur(request: Request, db: Session):
         "clients": db.query(models.Client).order_by(models.Client.nom).all(), "client_marque_id": marque.id if marque else None,
         "durees": DUREES_PROMPTEUR, "transcription_disponible": bool(whatsapp_business.CLE_OPENAI),
         "version_js": int(os.path.getmtime(os.path.join(DOSSIER_APP, "static", "prompteur_suivi.js"))),
+        "version_regard": int(os.path.getmtime(os.path.join(DOSSIER_APP, "static", "prompteur_regard.js"))),
     })
 
 
@@ -5121,11 +5122,12 @@ def _telecharger_video(url: str, chemin: str, taille_max: int) -> None:
                 sortie.write(morceau)
 
 
-async def _montage_depuis_enregistrement(db: Session, identifiant: int, request: Request, preparer: bool):
+async def _montage_depuis_enregistrement(db: Session, identifiant: int, request: Request, genre: str):
     """
-    Ouvre la video filmee dans le montage video. preparer=False : sous-titres seulement (aucun effet) ; preparer=True : montage complet pret a publier (silences et
-    « euh » retires, sous-titres, style par defaut de la plateforme, musique). Corps facultatif : caler (sous-titres calques sur le texte lu : noms et mots mal
-    compris corriges, prises ratees retirees), musique (preparer seulement). Reponse : {"id", "adresse"} ; le montage reste modifiable quelques heures.
+    Ouvre la video filmee dans le montage video. genre « sous-titres » : sous-titres seulement (aucun effet) ; « preparer » : montage complet pret a publier (silences et
+    « euh » retires, sous-titres, style par defaut de la plateforme, musique) ; « shorts » : plusieurs extraits courts verticaux choisis par l'IA. Corps facultatif :
+    caler (sous-titres calques sur le texte lu : noms et mots mal compris corriges, prises ratees retirees), musique (preparer seulement). Reponse : {"id", "adresse"} ;
+    le montage reste modifiable quelques heures.
     """
     ligne = _enregistrement_prompteur(db, identifiant)
     urls = json.loads(ligne.urls_json or "[]") if ligne else []
@@ -5149,13 +5151,16 @@ async def _montage_depuis_enregistrement(db: Session, identifiant: int, request:
     brut = {"libelle": ligne.titre, "mode": "montage", "format": FORMATS_PROMPTEUR.get(meta.get("orientation", "portrait"), "vertical"), "sous_titres": True}
     if recu.get("caler") and (meta.get("texte") or "").strip():
         brut["script"] = meta["texte"]
-    if preparer:
+    if genre in ("preparer", "shorts"):
         brut.update({"silences": True, "hesitations": True})
         modele = regles_montage.style_par_defaut(db)
         if modele:
             brut["modele"] = modele
         else:
             brut["style"] = "tendance"
+    if genre == "shorts":
+        brut.update({"mode": "shorts", "format": "vertical", "nb_shorts": max(2, min(6, round((ligne.duree or 0) / 90))), "duree_max_short": 60})
+    elif genre == "preparer":
         if recu.get("musique", True):
             pistes = (db.query(models.PisteMusicale).filter(models.PisteMusicale.fichier_url != "").order_by(models.PisteMusicale.cree_le.desc()).limit(10).all())
             if pistes:
@@ -5173,7 +5178,7 @@ async def prompteur_sous_titrer(identifiant: int, request: Request, db: Session 
     """Ouvre la video filmee dans le montage video avec les seuls sous-titres (corps facultatif : caler). Voir _montage_depuis_enregistrement."""
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
-    return await _montage_depuis_enregistrement(db, identifiant, request, False)
+    return await _montage_depuis_enregistrement(db, identifiant, request, "sous-titres")
 
 
 @app.post("/prompteur/enregistrements/{identifiant}/preparer")
@@ -5181,7 +5186,15 @@ async def prompteur_preparer_publication(identifiant: int, request: Request, db:
     """Ouvre la video filmee dans le montage video, deja montee pour etre publiee (corps facultatif : caler, musique). Voir _montage_depuis_enregistrement."""
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
-    return await _montage_depuis_enregistrement(db, identifiant, request, True)
+    return await _montage_depuis_enregistrement(db, identifiant, request, "preparer")
+
+
+@app.post("/prompteur/enregistrements/{identifiant}/shorts")
+async def prompteur_decouper_en_shorts(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Decoupe une longue video filmee en plusieurs shorts verticaux (2 a 6 extraits de 60 s au plus, choisis par l'IA). Voir _montage_depuis_enregistrement."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expiree, merci de recharger la page."}, status_code=401)
+    return await _montage_depuis_enregistrement(db, identifiant, request, "shorts")
 
 
 # Rapport automatique de la camera : ce que le telephone renvoie (taille de l'image, essais) pour corriger sans demander de capture d'ecran.

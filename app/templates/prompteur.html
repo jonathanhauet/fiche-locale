@@ -80,6 +80,8 @@
   #paragraphes button { flex: 1; min-height: 50px; border-radius: 14px; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.6); color: #fff; font-size: .95rem; font-weight: 600; cursor: pointer; }
   #paragraphes button:disabled { opacity: .4; }
   #paragraphes span { flex: none; font-size: .78rem; background: rgba(0,0,0,.55); border-radius: 999px; padding: 6px 10px; text-align: center; }
+  #vitesse-direct { position: absolute; right: 12px; top: calc(100% + 48px); display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.55); border-radius: 999px; padding: 4px 6px; font-size: .8rem; }
+  #vitesse-direct button { width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.4); color: #fff; font-size: 1.2rem; font-weight: 700; cursor: pointer; }
   video.resultat { width: 100%; max-height: 66vh; background: #000; border-radius: 14px; margin: 10px 0; }
 </style>
 </head>
@@ -137,10 +139,11 @@
   <details class="panneau" open>
     <summary>Comment le texte avance</summary>
     <label class="choix"><input type="radio" name="mode" value="voix" {% if not transcription_disponible %}disabled{% endif %}><span><strong>Il suit ma voix</strong> (recommandé) : ta voix est écoutée par petits extraits, le texte avance à ton rythme, avec 1 à 2 secondes de retard.{% if not transcription_disponible %} <em>(indisponible : clé OpenAI manquante)</em>{% endif %}</span></label>
+    <label class="choix"><input type="radio" name="mode" value="rythme"><span><strong>Il avance quand je parle</strong> (sans IA, aucun retard) : le texte défile à la vitesse réglée tant que tu parles, s'arrête quand tu te tais et repart quand tu reparles. Tu règles la vitesse en direct avec − et +.</span></label>
     <label class="choix"><input type="radio" name="mode" value="navigateur"><span><strong>Reconnaissance du navigateur</strong> (expérimental) : plus rapide, mais sur certains téléphones elle coupe ou fausse l'enregistrement du son. À tester d'abord.</span></label>
     <label class="choix"><input type="radio" name="mode" value="fixe"><span><strong>Vitesse fixe</strong> : le texte défile à une vitesse réglée, sans écouter.</span></label>
     <label class="choix"><input type="radio" name="mode" value="manuel"><span><strong>À la main</strong> : tu fais défiler le texte avec le doigt.</span></label>
-    <label for="vitesse">Vitesse de lecture (mode « vitesse fixe ») : <span id="vitesse-val">130</span> mots par minute</label>
+    <label for="vitesse">Vitesse de lecture (modes « il avance quand je parle » et « vitesse fixe ») : <span id="vitesse-val">130</span> mots par minute</label>
     <input type="range" id="vitesse" min="80" max="220" step="5" value="130">
   </details>
 
@@ -160,6 +163,16 @@
       <div><label for="qualite">Qualité</label><select id="qualite"><option value="720">HD 720p</option><option value="1080">Full HD 1080p</option></select></div>
     </div>
     <label class="choix"><input type="checkbox" id="decompte-actif" checked><span>Compte à rebours de 3 secondes avant de filmer</span></label>
+    <div id="retouche-ligne">
+      <label for="retouche">Retouche légère de l'image</label>
+      <select id="retouche"><option value="aucune">Aucune</option><option value="eclat">Éclaircir (lumière et couleurs)</option><option value="doux">Éclaircir et adoucir la peau</option></select>
+      <p class="discret">Appliquée à la vidéo enregistrée. L'aperçu montre l'éclaircissement ; l'adoucissement n'apparaît que dans la vidéo.</p>
+    </div>
+    <div id="regard-ligne">
+      <label for="regard">Correction du regard (bêta)</label>
+      <select id="regard"><option value="aucun">Désactivée</option><option value="leger">Légère</option><option value="normal">Normale</option><option value="fort">Forte</option></select>
+      <p class="discret">Ramène le regard vers l'objectif dans la vidéo enregistrée (l'aperçu n'est pas corrigé : regarde le résultat après la prise). Télécharge environ 13 Mo la première fois. Si le rendu n'est pas naturel, remets « Désactivée » ou choisis « Légère ».</p>
+    </div>
   </details>
 
   <details class="panneau">
@@ -188,6 +201,7 @@
   <div id="prompteur">
     <div id="barre-haut"><span id="etat">Prêt</span><span id="diag"></span><span id="niveau" title="Niveau du micro"><i></i></span></div>
     <div id="fenetre"><div id="defilant"></div></div>
+    <div id="vitesse-direct" hidden><button id="vitesse-moins" type="button" aria-label="Défiler moins vite">−</button><span id="vitesse-live">130 mots/min</span><button id="vitesse-plus" type="button" aria-label="Défiler plus vite">+</button></div>
     <div id="repere"></div>
   </div>
   <div id="decompte" hidden></div>
@@ -216,10 +230,12 @@
     <p class="discret" style="margin:8px 0 0">Ne ferme pas cette page avant la fin de l'envoi : ensuite tu retrouves la vidéo dans « Mes vidéos » et sur la plateforme (Créations).</p>
   </div>
   <p class="discret" id="info-coupes" hidden></p>
+  <p class="discret" id="info-regard" hidden>👁 Correction du regard appliquée (bêta). Regarde la vidéo : si le rendu n'est pas naturel, choisis « Légère » ou « Désactivée » dans « Affichage et caméra », puis refais une prise.</p>
   <label class="choix"><input type="checkbox" id="caler" checked><span>Caler les sous-titres sur mon texte : corrige les noms et les mots mal compris, et retire les prises ratées.</span></label>
   <button class="bouton principal" id="preparer" type="button" disabled style="margin-top:0">🚀 Préparer pour publier</button>
   <p class="discret" style="margin:6px 0 10px">Retire les silences et les « euh », ajoute les sous-titres, le style et la musique de la plateforme, puis ouvre l'éditeur pour publier.</p>
   <button class="bouton" id="sous-titrer" type="button" disabled style="width:100%">💬 Sous-titres seulement</button>
+  <button class="bouton" id="shorts" type="button" disabled hidden style="width:100%;margin-top:8px">✂️ Découper en shorts</button>
   <p class="erreur" id="erreur-sous-titres" role="alert" hidden></p>
   <p class="discret" id="info-sous-titres">Les sous-titres se corrigent ensuite dans l'éditeur de montage de la plateforme (plus confortable sur ordinateur).</p>
   <div class="ligne">
@@ -245,11 +261,13 @@
 </main>
 
 <script src="/static/prompteur_suivi.js?v={{ version_js }}"></script>
+<script src="/static/prompteur_regard.js?v={{ version_regard }}"></script>
 <script>
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
   const Suivi = window.PrompteurSuivi;
+  const Regard = window.PrompteurRegard;
   const CLE = "prompteur-reglages-v1";
   const etat = {
     mots: [], normes: [], spans: [], position: 0, positionFlottante: 0, enregistrement: false, pause: false, flux: null, contexteAudio: null,
@@ -257,10 +275,10 @@
     reconnaissance: null, verrou: null, bruit: 0.01, dernierImage: 0, cible: 0,
     confirmee: 0, parle: false, derniereParole: 0, vitesseMots: 2.2, derniereConf: 0, canvas: null, jetonEnvoi: 0, idGarde: null, duree: 0,
     debutsPara: [], para: { k: 0, limite: 0, ecartes: [] }, coupes: null, totalEnreg: 0, conseils: [], msgFormat: "", maxNiveau: 0, diagEnvoye: false, jetonCamera: 0,
-    delaiReessai: 1500, element: null, envoiActif: false, reprise: false, enAttente: [],
+    regard: null, detecteurRegard: null, msgRegard: "", regardCorrige: 0, delaiReessai: 1500, element: null, envoiActif: false, reprise: false, enAttente: [],
   };
   const CLIENT_MARQUE = "{{ client_marque_id or '' }}";
-  const reglages = { texte: "", taille: 44, hauteur: 30, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait", largeur: 78, miroir: false, paragraphes: false, cible: 0, caler: true, cta: "defaut" };
+  const reglages = { texte: "", taille: 44, hauteur: 30, opacite: 55, mode: "voix", vitesse: 130, camera: "avant", qualite: "720", decompte: true, format: "portrait", largeur: 78, miroir: false, paragraphes: false, cible: 0, caler: true, cta: "defaut", retouche: "aucune", regard: "aucun" };
   try { Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}")); if (reglages.disposition !== 3) { if (!reglages.disposition) reglages.hauteur = 30; reglages.largeur = 78; reglages.disposition = 3; } } catch (e) { /* stockage indisponible : reglages par defaut */ }
   const sauver = () => { try { localStorage.setItem(CLE, JSON.stringify(reglages)); } catch (e) { /* stockage indisponible */ } };
 
@@ -281,6 +299,7 @@
     racine.setProperty("--largeur", reglages.largeur + "%");
     $("prompteur").classList.toggle("miroir", !!reglages.miroir);
     $("largeur-val").textContent = reglages.largeur;
+    $("vitesse-live").textContent = reglages.vitesse + " mots/min"; $("vitesse-direct").hidden = !(reglages.mode === "fixe" || reglages.mode === "rythme");
     $("taille-val").textContent = reglages.taille; $("hauteur-val").textContent = reglages.hauteur; $("opacite-val").textContent = reglages.opacite; $("vitesse-val").textContent = reglages.vitesse;
   }
   function chargerReglagesDansLaPage() {
@@ -289,6 +308,10 @@
     $("camera").value = reglages.camera; $("qualite").value = reglages.qualite; $("decompte-actif").checked = !!reglages.decompte;
     $("largeur").value = reglages.largeur; $("miroir-actif").checked = !!reglages.miroir; $("para-actif").checked = !!reglages.paragraphes; $("cible").value = reglages.cible || "";
     $("caler").checked = $("caler-videos").checked = !!reglages.caler; $("ia-cta").value = reglages.cta;
+    if (!RETOUCHES[reglages.retouche]) reglages.retouche = "aucune";
+    $("retouche").value = reglages.retouche; $("retouche-ligne").hidden = !canevasFiltre();
+    if (!(Regard && Regard.FORCES[reglages.regard] !== undefined)) reglages.regard = "aucun";
+    $("regard").value = reglages.regard; $("regard-ligne").hidden = !(Regard && window.HTMLCanvasElement && HTMLCanvasElement.prototype.captureStream);
     let radio = document.querySelector('input[name="mode"][value="' + reglages.mode + '"]');
     if (!radio || radio.disabled) radio = document.querySelector('input[name="mode"][value="fixe"]');
     radio.checked = true; reglages.mode = radio.value;
@@ -306,9 +329,15 @@
   $("para-actif").addEventListener("change", () => { reglages.paragraphes = $("para-actif").checked; sauver(); });
   $("cible").addEventListener("input", () => { reglages.cible = Math.max(0, parseInt($("cible").value, 10) || 0); sauver(); });
   $("ia-cta").addEventListener("change", () => { reglages.cta = $("ia-cta").value; sauver(); });
+  $("retouche").addEventListener("change", () => { reglages.retouche = $("retouche").value; sauver(); appliquerRetouche(); });
+  $("regard").addEventListener("change", () => { reglages.regard = $("regard").value; sauver(); });
+  // Vitesse reglable pendant le tournage (modes « il avance quand je parle » et « vitesse fixe »).
+  function changerVitesse(delta) { reglages.vitesse = Math.max(80, Math.min(220, reglages.vitesse + delta)); $("vitesse").value = reglages.vitesse; appliquerReglagesAffichage(); sauver(); majCompteur(); }
+  $("vitesse-moins").addEventListener("click", () => changerVitesse(-5));
+  $("vitesse-plus").addEventListener("click", () => changerVitesse(5));
   $("qualite").addEventListener("change", () => { reglages.qualite = $("qualite").value; sauver(); });
   $("decompte-actif").addEventListener("change", () => { reglages.decompte = $("decompte-actif").checked; sauver(); });
-  document.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener("change", () => { reglages.mode = r.value; sauver(); }));
+  document.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener("change", () => { reglages.mode = r.value; sauver(); appliquerReglagesAffichage(); }));
 
   $("coller").addEventListener("click", async () => {
     try { const t = await navigator.clipboard.readText(); if (t) { $("texte").value = t; reglages.texte = t; sauver(); majCompteur(); } }
@@ -388,6 +417,12 @@
   }
   // Entre deux transcriptions (1 a 2 s), le texte continue sur le rythme de la lecture tant que la voix est la, sans depasser de quelques mots
   // le dernier mot reconnu ; si la voix s'arrete, il revient sur le dernier mot reconnu.
+  // Mode « il avance quand je parle » : le texte defile a la vitesse reglee tant que la voix est detectee (micro seul, sans IA), il s'arrete des que tu te tais.
+  function avancerRythme(dt) {
+    if (!etat.parle || !etat.mots.length) return;
+    etat.positionFlottante = Math.min(etat.positionFlottante + reglages.vitesse / 60 * dt, etat.mots.length);
+    if (Math.floor(etat.positionFlottante) !== etat.position) afficher(Math.floor(etat.positionFlottante));
+  }
   const AVANCE_MAX = 3;
   function avancerPredit(dt) {
     if (!etat.mots.length) return;
@@ -409,7 +444,8 @@
         if (reglages.mode === "fixe") {
           etat.positionFlottante = Math.min(etat.positionFlottante + reglages.vitesse / 60 * dt, etat.mots.length);
           if (Math.floor(etat.positionFlottante) !== etat.position) afficher(Math.floor(etat.positionFlottante));
-        } else if (reglages.mode === "voix" && etat.capture) avancerPredit(dt);
+        } else if (reglages.mode === "rythme") avancerRythme(dt);
+        else if (reglages.mode === "voix" && etat.capture) avancerPredit(dt);
       }
     }
     etat.dernierImage = maintenant;
@@ -540,7 +576,7 @@
     if (m.bords > 170 && m.centre < m.bords * 0.55) return ["Le fond est plus lumineux que toi : tourne-toi pour que la lumière arrive sur ton visage."];
     return [];
   }
-  function majMessages() { messageCamera([etat.msgFormat].concat(etat.conseils || []).filter(Boolean).join(" ")); }
+  function majMessages() { messageCamera([etat.msgFormat, etat.msgRegard].concat(etat.conseils || []).filter(Boolean).join(" ")); }
   async function controlerPrise() {
     const jeton = etat.jetonCamera;
     await attendre(1500);
@@ -587,12 +623,12 @@
       $("erreur-ouverture").textContent = refus ? "Caméra ou micro refusés : autorise-les dans les réglages du navigateur pour ce site, puis recommence." : "Impossible d'ouvrir la caméra (" + (e && e.name ? e.name : "erreur") + ").";
       $("erreur-ouverture").hidden = false; return;
     }
-    const video = $("apercu"); video.srcObject = etat.flux; video.style.transform = reglages.camera === "avant" ? "scaleX(-1)" : "none";
+    const video = $("apercu"); video.srcObject = etat.flux; video.style.transform = reglages.camera === "avant" ? "scaleX(-1)" : "none"; appliquerRetouche();
     try { await video.play(); } catch (e) { /* lecture automatique refusee : l'apercu demarre au premier toucher */ }
     afficherEcran("camera"); ajusterCadre(); construireTexte(); etat.positionFlottante = 0; $("fenetre").classList.toggle("manuel", reglages.mode === "manuel");
-    appliquerReglagesAffichage(); etat.msgFormat = ""; etat.conseils = []; etat.diagEnvoye = false; etat.maxNiveau = 0; etat.coupes = null; etat.jetonCamera++;
+    appliquerReglagesAffichage(); etat.msgFormat = ""; etat.msgRegard = ""; etat.conseils = []; etat.diagEnvoye = false; etat.maxNiveau = 0; etat.coupes = null; etat.jetonCamera++;
     messageCamera(""); majEtat("Prêt"); demarrerNiveau(); preparerZoom(etat.flux.getVideoTracks()[0]); indiceFormat();
-    $("paragraphes").hidden = !reglages.paragraphes; $("para-suivant").disabled = $("para-refaire").disabled = true; etat.para = { k: 0, limite: 0, ecartes: [] }; majInfoPara(); controlerPrise();
+    $("paragraphes").hidden = !reglages.paragraphes; $("para-suivant").disabled = $("para-refaire").disabled = true; etat.para = { k: 0, limite: 0, ecartes: [] }; majInfoPara(); controlerPrise(); preparerRegard();
   }
   function arreterFlux() {
     arreterCanvas();
@@ -639,17 +675,75 @@
 
   // La video est dessinee image par image sur un canevas au format choisi, puis enregistree : le resultat est toujours dans le bon sens et au bon
   // format, quel que soit ce que la camera envoie (le telephone peut renvoyer l'image en paysage ou la zoomer). Sans canevas : enregistrement direct.
+  const RETOUCHES = { aucune: "", eclat: "brightness(1.08) contrast(1.05) saturate(1.08)", doux: "brightness(1.06) saturate(1.05)" };
+  function canevasFiltre() { try { return "filter" in CanvasRenderingContext2D.prototype; } catch (e) { return false; } }
+  function filtreRetouche() { return canevasFiltre() ? (RETOUCHES[reglages.retouche] || "") : ""; }
+  function appliquerRetouche() { $("apercu").style.filter = etat.sansCanvas ? "" : filtreRetouche(); }
+  // ------------------------------------------------------------------ correction du regard (option, bêta) : voir static/prompteur_regard.js
+  async function preparerRegard() {
+    etat.regard = null; etat.regardCorrige = 0;
+    const force = Regard ? Regard.FORCES[reglages.regard] : 0;
+    if (!force) { etat.msgRegard = ""; majMessages(); return; }
+    const jeton = etat.jetonCamera;
+    etat.msgRegard = "Chargement de la correction du regard…"; majMessages();
+    try {
+      if (!etat.detecteurRegard) etat.detecteurRegard = await Regard.charger();
+      if (jeton !== etat.jetonCamera) return;
+      etat.regard = { force: force, yeux: [], dernier: 0, vu: 0, durees: [], erreurs: 0 };
+      etat.msgRegard = "";
+    } catch (e) {
+      etat.msgRegard = "Correction du regard indisponible sur ce téléphone : la vidéo sera enregistrée normalement.";
+      setTimeout(() => { if (jeton === etat.jetonCamera) { etat.msgRegard = ""; majMessages(); } }, 8000);
+    }
+    majMessages();
+  }
+  function desactiverRegard(raison) {
+    etat.regard = null;
+    if (etat.detecteurRegard) { try { etat.detecteurRegard.close(); } catch (e) { /* deja ferme */ } etat.detecteurRegard = null; }
+    etat.msgRegard = raison; majMessages();
+    const jeton = etat.jetonCamera; setTimeout(() => { if (jeton === etat.jetonCamera) { etat.msgRegard = ""; majMessages(); } }, 7000);
+  }
+  // Repere les yeux (environ dix fois par seconde, jamais plus de 45 ms en moyenne par mesure : sinon la correction s'arrete) puis retouche l'image dessinee.
+  function corrigerRegard(g, v, vw, vh, geom, filtre) {
+    const R = etat.regard;
+    if (!R || !etat.detecteurRegard) return;
+    const t = performance.now();
+    if (t - R.dernier >= 90) {
+      R.dernier = t;
+      try {
+        const debut = performance.now(), resultat = etat.detecteurRegard.detectForVideo(v, t);
+        R.durees.push(performance.now() - debut); if (R.durees.length > 12) R.durees.shift();
+        const points = resultat && resultat.faceLandmarks && resultat.faceLandmarks[0];
+        R.yeux = Regard.lisser(R.yeux, points ? Regard.calculerYeux(points, vw, vh, R.force) : [], 0.5);
+        R.vu = t; R.erreurs = 0;
+        if (R.durees.length >= 8 && R.durees.reduce((s, d) => s + d, 0) / R.durees.length > 45) { desactiverRegard("La correction du regard ralentit trop ce téléphone : elle a été arrêtée pour garder une vidéo fluide."); return; }
+      } catch (e) {
+        R.yeux = [];
+        if (++R.erreurs > 5) { desactiverRegard("La correction du regard a rencontré une erreur : elle est arrêtée, la vidéo continue normalement."); return; }
+      }
+    }
+    if (R.yeux.length && t - R.vu < 400) etat.regardCorrige += Regard.deformer(g, R.yeux, geom);
+  }
   function arreterCanvas() { if (etat.canvas) { etat.canvas.actif = false; etat.canvas = null; } }
   function fluxPourEnregistrer() {
     if (etat.sansCanvas || !window.HTMLCanvasElement || !HTMLCanvasElement.prototype.captureStream) return etat.flux;
     const d = dimensionsSortie(), w = d[0], h = d[1], c = document.createElement("canvas");
     c.width = w; c.height = h;
-    const g = c.getContext("2d", { alpha: false }), v = $("apercu"), suivi = { actif: true };
+    const g = c.getContext("2d", { alpha: false, willReadFrequently: reglages.regard !== "aucun" }), v = $("apercu"), suivi = { actif: true };
     etat.canvas = suivi;
     const dessiner = () => {
       if (!suivi.actif) return;
       const vw = v.videoWidth, vh = v.videoHeight;
-      if (vw && vh) { const e = Math.max(w / vw, h / vh), sw = w / e, sh = h / e; g.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h); }
+      if (vw && vh) {
+        const e = Math.max(w / vw, h / vh), sw = w / e, sh = h / e, f = filtreRetouche();
+        if (canevasFiltre()) g.filter = f || "none";
+        g.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h);
+        if (f && reglages.retouche === "doux") {      // adoucit la peau : une copie legerement floutee est melangee a l'image nette
+          g.globalAlpha = 0.35; g.filter = "blur(" + Math.max(1, Math.round(w / 500)) + "px) " + f;
+          g.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h); g.globalAlpha = 1;
+        }
+        if (etat.regard) corrigerRegard(g, v, vw, vh, { ox: (vw - sw) / 2, oy: (vh - sh) / 2, e: e }, f);
+      }
       if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(dessiner); else requestAnimationFrame(dessiner);
     };
     dessiner();
@@ -705,14 +799,14 @@
     arreterCanvas();
     etat.blob = new Blob(etat.morceaux, { type: type });
     if (!etat.blob.size) {
-      if (avecCanvas) etat.sansCanvas = true;      // ce navigateur n'enregistre pas le canevas : la prochaine prise se fera directement depuis la camera
+      if (avecCanvas) { etat.sansCanvas = true; appliquerRetouche(); }      // ce navigateur n'enregistre pas le canevas : la prochaine prise se fera directement depuis la camera
       messageCamera("La vidéo est vide : recommence l'enregistrement."); majEtat("Prêt"); return;
     }
     $("lecteur").src = URL.createObjectURL(etat.blob);
     const mo = (etat.blob.size / 1048576).toFixed(1), duree = Math.round((Date.now() - etat.debut) / 1000);
     etat.duree = duree;
     $("info-video").textContent = "Durée : " + Math.floor(duree / 60) + " min " + String(duree % 60).padStart(2, "0") + " s · " + mo + " Mo · format " + (type.includes("mp4") ? "MP4" : "WebM") + ".";
-    $("info-coupes").hidden = !etat.coupes;
+    $("info-regard").hidden = !etat.regardCorrige; $("info-coupes").hidden = !etat.coupes; $("shorts").hidden = !(etat.duree >= 90);
     if (etat.coupes) $("info-coupes").textContent = "✂️ " + etat.para.ecartes.length + " passage" + (etat.para.ecartes.length > 1 ? "s" : "") + " refait" + (etat.para.ecartes.length > 1 ? "s" : "") + " retiré" + (etat.para.ecartes.length > 1 ? "s" : "") + " de la version gardée dans ta bibliothèque. La vidéo ci-dessus est la prise complète.";
     arreterFlux(); afficherEcran("resultat"); envoyerEnregistrement();
   }
@@ -754,6 +848,7 @@
     if (reglages.mode === "voix") demarrerSuiviServeur();
     else if (reglages.mode === "navigateur") demarrerSuiviNavigateur();
     else if (reglages.mode === "fixe") majEtat($("etat").textContent, true);
+    else if (reglages.mode === "rythme") { if (!etat.contexteAudio) passerEnVitesseFixe("Le micro n'est pas disponible pour détecter ta voix."); else majEtat($("etat").textContent, true); }
   }
   function arreterSuivi() {
     if (etat.capture) { try { etat.capture.sourcePCM.disconnect(etat.capture.proc); etat.capture.proc.disconnect(); } catch (e) { /* deja deconnecte */ } etat.capture.actif = false; etat.capture = null; }
@@ -761,7 +856,7 @@
     if (etat.reconnaissance) { try { etat.reconnaissance.onend = null; etat.reconnaissance.stop(); } catch (e) { /* deja arretee */ } etat.reconnaissance = null; }
   }
   function passerEnVitesseFixe(raison) {
-    arreterSuivi(); reglages.mode = "fixe"; etat.positionFlottante = etat.position;
+    arreterSuivi(); reglages.mode = "fixe"; appliquerReglagesAffichage(); etat.positionFlottante = etat.position;
     messageCamera(raison + " Le texte défile maintenant à vitesse fixe (réglable dans les réglages).");
     setTimeout(() => messageCamera(""), 6000);
   }
@@ -957,7 +1052,7 @@
   function echecEnvoi(message) {
     $("envoi-texte").textContent = "⚠️ " + message + " La vidéo reste sur ce téléphone."; $("envoi-barre").hidden = true; $("envoi-reessayer").hidden = false;
   }
-  function boutonsMontage(actif) { $("sous-titrer").disabled = !actif; $("preparer").disabled = !actif; }
+  function boutonsMontage(actif) { $("sous-titrer").disabled = !actif; $("preparer").disabled = !actif; $("shorts").disabled = !actif; }
   async function envoyerEnregistrement() {
     const blob = etat.blob, jeton = ++etat.jetonEnvoi;
     if (!blob) return;
@@ -1038,6 +1133,7 @@
   }
   $("sous-titrer").addEventListener("click", () => { if (etat.idGarde) demanderMontage(etat.idGarde, $("sous-titrer"), $("erreur-sous-titres"), "sous-titres"); });
   $("preparer").addEventListener("click", () => { if (etat.idGarde) demanderMontage(etat.idGarde, $("preparer"), $("erreur-sous-titres"), "preparer"); });
+  $("shorts").addEventListener("click", () => { if (etat.idGarde) demanderMontage(etat.idGarde, $("shorts"), $("erreur-sous-titres"), "shorts"); });
   [$("caler"), $("caler-videos")].forEach((c) => c.addEventListener("change", () => { reglages.caler = c.checked; $("caler").checked = $("caler-videos").checked = c.checked; sauver(); }));
 
   const el = (balise, proprietes, enfants) => { const n = document.createElement(balise); Object.assign(n, proprietes || {}); (enfants || []).forEach((c) => n.appendChild(c)); return n; };
@@ -1049,6 +1145,8 @@
     const ouvrir = el("a", { className: "bouton", href: v.url, target: "_blank", rel: "noopener", textContent: "⬇ Ouvrir" });
     const preparer = el("button", { className: "bouton principal", type: "button", textContent: "🚀 Préparer pour publier" });
     preparer.addEventListener("click", () => demanderMontage(v.id, preparer, erreur, "preparer"));
+    const shorts = el("button", { className: "bouton", type: "button", textContent: "✂️ Découper en shorts", hidden: !(v.duree >= 90) });
+    shorts.addEventListener("click", () => demanderMontage(v.id, shorts, erreur, "shorts"));
     const sous = el("button", { className: "bouton", type: "button", textContent: "💬 Sous-titres" });
     sous.addEventListener("click", () => demanderMontage(v.id, sous, erreur, "sous-titres"));
     const renommer = el("button", { className: "bouton", type: "button", textContent: "✏️ Renommer" });
@@ -1070,7 +1168,7 @@
     if (v.texte) notes.push(el("details", {}, [el("summary", { textContent: "Texte lu" }), el("p", { className: "discret", style: "white-space:pre-wrap", textContent: v.texte })]));
     const carte = el("div", { className: "video-carte" }, [
       titre, el("p", { className: "discret", textContent: duree + v.date + (v.taille ? " · " + Math.round(v.taille / 1048576) + " Mo" : "") }),
-      lecteur].concat(notes, [el("div", { className: "ligne" }, [preparer, sous]), el("div", { className: "ligne" }, [ouvrir, renommer, reprendre, suppr]), erreur]));
+      lecteur].concat(notes, [el("div", { className: "ligne" }, [preparer, sous, shorts]), el("div", { className: "ligne" }, [ouvrir, renommer, reprendre, suppr]), erreur]));
     suppr.addEventListener("click", async () => {
       if (!confirm("Supprimer cette vidéo définitivement ?")) return;
       try {
@@ -1130,7 +1228,7 @@
 
   // Points d'entree pour les tests automatiques (tests_plateforme/test_prompteur_page.py) : sans effet pour l'utilisateur.
   window.__prompteur = { etat: etat, construireTexte: construireTexte, placer: placer, appliquerTranscription: appliquerTranscription, encoderWav: encoderWav, reechantillonner: reechantillonner, choisirMime: choisirMime, reglages: reglages,
-    fileLocale: fileLocale, televerser: televerser, calculerGardes: calculerGardes, paraSuivant: paraSuivant, paraRefaire: paraRefaire, majInfoPara: majInfoPara, motsTexte: motsTexte,
+    fileLocale: fileLocale, corrigerRegard: corrigerRegard, desactiverRegard: desactiverRegard, preparerRegard: preparerRegard, avancerRythme: avancerRythme, changerVitesse: changerVitesse, fluxPourEnregistrer: fluxPourEnregistrer, filtreRetouche: filtreRetouche, appliquerRetouche: appliquerRetouche, canevasFiltre: canevasFiltre, arreterCanvas: arreterCanvas, televerser: televerser, calculerGardes: calculerGardes, paraSuivant: paraSuivant, paraRefaire: paraRefaire, majInfoPara: majInfoPara, motsTexte: motsTexte,
     analyserLumiere: analyserLumiere, conseilsLumiere: conseilsLumiere, remplacerPremierePhrase: remplacerPremierePhrase, envoyerDiagnostic: envoyerDiagnostic, demanderMontage: demanderMontage,
     carteVideo: carteVideo, verifierEnAttente: verifierEnAttente, reprendreEnAttente: reprendreEnAttente, controlerPrise: controlerPrise, outils: outils, ouvrirFlux: ouvrirFlux, dimensionsSortie: dimensionsSortie, ecartFormat: ecartFormat, avancerPredit: avancerPredit, afficher: afficher, ajusterCadre: ajusterCadre, envoyerEnregistrement: envoyerEnregistrement };
 })();
