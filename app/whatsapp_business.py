@@ -217,7 +217,7 @@ def transcrire_audio(octets: bytes, mime_type: str, vocabulaire: str = "") -> st
         headers={"Authorization": f"Bearer {CLE_OPENAI}"},
         files={"file": (f"audio.{extension}", octets, mime_type)},
         data={"model": "whisper-1", "language": "fr", **({"prompt": vocabulaire[:400]} if vocabulaire else {})},
-        timeout=60,
+        timeout=300,
     )
     if reponse.status_code != 200:
         raise RuntimeError(f"Echec de la transcription (code {reponse.status_code}) : {reponse.text}")

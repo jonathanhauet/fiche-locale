@@ -16,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import secrets
 import threading
@@ -13229,7 +13230,25 @@ def publication_multi_vocal(client_id: int, request: Request, db: Session = Depe
 # --- Idees vocales : dictees a l'oral (telephone), gardees puis transformees en post multi-reseaux ---
 
 EXTENSIONS_VOCAL_IMPORT = {"m4a", "mp3", "wav", "ogg", "oga", "opus", "webm", "mp4", "aac", "caf", "mpeg", "mpga"}
-TAILLE_MAX_VOCAL = 24 * 1024 * 1024    # la transcription (Whisper) refuse au-dela de 25 Mo
+TAILLE_MAX_VOCAL = 100 * 1024 * 1024
+SEUIL_COMPRESSION_VOCAL = 20 * 1024 * 1024     # Whisper refuse au-dela de 25 Mo : un fichier plus lourd est converti en audio leger (mono 16 kHz) avant l'envoi
+
+
+def _compresser_vocal(octets: bytes, extension: str) -> bytes:
+    """Piste audio seule, mono 16 kHz, 32 kb/s (largement suffisant pour la parole) : une heure ne pese qu'environ 14 Mo."""
+    with tempfile.TemporaryDirectory() as dossier:
+        source, sortie = os.path.join(dossier, "source." + (extension or "bin")), os.path.join(dossier, "voix.mp3")
+        with open(source, "wb") as f:
+            f.write(octets)
+        resultat = subprocess.run([montage_video.FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", source, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", sortie],
+                                  capture_output=True, text=True, timeout=900)
+        if resultat.returncode != 0 or not os.path.exists(sortie):
+            raise RuntimeError("le fichier n'a pas pu être converti en audio : " + (resultat.stderr or "")[-150:].strip())
+        with open(sortie, "rb") as f:
+            comprime = f.read()
+    if len(comprime) > 24 * 1024 * 1024:
+        raise RuntimeError("enregistrement trop long pour la transcription (plus de 2 heures) : découpez-le en deux.")
+    return comprime
 
 
 def _normaliser_nom(texte: str) -> str:
@@ -13278,7 +13297,7 @@ async def importer_idee_vocale(request: Request, fichier: UploadFile = File(...)
     if not octets:
         return JSONResponse({"erreur": "Le fichier est vide."}, status_code=400)
     if len(octets) > TAILLE_MAX_VOCAL:
-        return JSONResponse({"erreur": f"Fichier trop volumineux ({len(octets) // (1024 * 1024)} Mo, 24 Mo maximum)."}, status_code=400)
+        return JSONResponse({"erreur": f"Fichier trop volumineux ({len(octets) // (1024 * 1024)} Mo, {TAILLE_MAX_VOCAL // (1024 * 1024)} Mo maximum)."}, status_code=400)
     extension = os.path.splitext(fichier.filename or "")[1].lstrip(".").lower()
     mime = fichier.content_type or ""
     if extension and extension not in EXTENSIONS_VOCAL_IMPORT and not mime.startswith("audio/") and not mime.startswith("video/"):
@@ -13286,6 +13305,8 @@ async def importer_idee_vocale(request: Request, fichier: UploadFile = File(...)
     if not mime or mime == "application/octet-stream":
         mime = {"m4a": "audio/m4a", "mp4": "audio/mp4", "wav": "audio/wav", "ogg": "audio/ogg", "webm": "audio/webm", "aac": "audio/aac"}.get(extension, "audio/mpeg")
     try:
+        if len(octets) > SEUIL_COMPRESSION_VOCAL:
+            octets, mime = await asyncio.to_thread(_compresser_vocal, octets, extension), "audio/mpeg"
         transcription = (await asyncio.to_thread(whatsapp_business.transcrire_audio, octets, mime)).strip()
     except Exception as erreur:
         return JSONResponse({"erreur": f"Transcription impossible : {erreur}"}, status_code=502)
@@ -13327,6 +13348,8 @@ async def transcrire_vocal_depose(request: Request, fichier: UploadFile = File(.
     if extension in ("ogg", "oga", "opus") or not mime or mime == "application/octet-stream":     # un vocal WhatsApp .opus est un ogg : Whisper ne connait que « ogg »
         mime = mime_extension.get(extension, "audio/mpeg")
     try:
+        if len(octets) > SEUIL_COMPRESSION_VOCAL:
+            octets, mime = await asyncio.to_thread(_compresser_vocal, octets, extension), "audio/mpeg"
         texte = (await asyncio.to_thread(whatsapp_business.transcrire_audio, octets, mime)).strip()
     except Exception as erreur:
         return JSONResponse({"erreur": f"Transcription impossible : {erreur}"}, status_code=502)
