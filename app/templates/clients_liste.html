@@ -32,6 +32,21 @@
 
 <p id="statut-export-excel" class="texte-discret" hidden></p>
 
+{% if clients %}
+<section class="carte-a-faire" aria-label="À faire aujourd'hui">
+  <h2>À faire</h2>
+  {% if a_faire %}
+  <ul>
+    {% for element in a_faire %}
+    <li class="a-faire-{{ element.ton }}"><a href="{{ element.lien }}"{% if element.lien == "#filtre-sans-post" %} id="lien-filtre-sans-post"{% endif %}><span class="a-faire-icone">{{ element.icone }}</span><span class="a-faire-texte">{{ element.texte }}</span><span class="a-faire-fleche">›</span></a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="texte-discret">✅ Rien d'urgent : aucune alerte à traiter.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <div class="grille-resume">
   <div class="carte-resume">
     <span class="carte-resume-chiffre">{{ clients|length }}</span>
@@ -158,6 +173,18 @@
     });
     texteAucunResultat.hidden = visibles > 0;
   });
+
+  // « À faire » : le lien « clients sans post programmé » filtre la liste sur ces clients (un second toucher retire le filtre).
+  const lienSansPost = document.getElementById("lien-filtre-sans-post");
+  if (lienSansPost) {
+    lienSansPost.addEventListener("click", (evenement) => {
+      evenement.preventDefault();
+      const actif = lienSansPost.classList.toggle("filtre-actif");
+      lignes.forEach((ligne) => { ligne.hidden = actif && !ligne.classList.contains("ligne-client-alerte"); });
+      texteAucunResultat.hidden = true;
+      document.querySelector(".liste-clients").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   // Bouton favori (voir commentaire HTML : pas un <form>, imbrique dans celui
   // de suppression en masse). Rechargement complet apres le clic : le plus

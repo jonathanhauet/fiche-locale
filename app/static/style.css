@@ -7,17 +7,19 @@
   --carte: #ffffff;
   --carte-bordure: #e4e7ec;
   --texte: #1a1d23;
-  --texte-discret: #6b7280;
+  --texte-discret: #5d6471;
 
-  --accent: #2f5eff;
+  --accent: #2a55f0;
+  --bouton-fond: var(--accent);
+  --bouton-fond-survol: var(--accent-fonce);
   --accent-fonce: #1f45d1;
   --accent-clair: #eef1ff;
 
   --succes: #16a34a;
   --succes-clair: #eafaf0;
-  --attention: #d98a06;
+  --attention: #946000;
   --attention-clair: #fff6e0;
-  --danger: #dc2626;
+  --danger: #c81e1e;
   --danger-clair: #fdecec;
 
   --barre-fond: #14161f;
@@ -38,6 +40,8 @@
     --texte-discret: #9aa1ac;
 
     --accent: #6d8bff;
+    --bouton-fond: #4a63d8;
+    --bouton-fond-survol: #3b52c0;
     --accent-fonce: #8ba0ff;
     --accent-clair: #1b2140;
 
@@ -699,15 +703,15 @@ input:focus, select:focus, textarea:focus {
 textarea { resize: vertical; font-family: inherit; width: 100%; }
 
 button {
-  background: var(--accent);
+  background: var(--bouton-fond);
   color: white;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--bouton-fond);
   cursor: pointer;
   font-weight: 600;
   transition: background 0.15s ease, transform 0.05s ease;
 }
 
-button:hover { background: var(--accent-fonce); }
+button:hover { background: var(--bouton-fond-survol); }
 button:active { transform: translateY(1px); }
 
 .message-erreur {
@@ -1349,11 +1353,11 @@ button:active { transform: translateY(1px); }
 }
 
 .bouton {
-  background: var(--accent);
+  background: var(--bouton-fond);
   color: white;
 }
 
-.bouton:hover { background: var(--accent-fonce); }
+.bouton:hover { background: var(--bouton-fond-survol); }
 
 .bouton-fantome {
   background: transparent;
@@ -3373,4 +3377,69 @@ html { -webkit-text-size-adjust: 100%; }
   .bouton, .bouton-secondaire, .bouton-danger { min-height: 2.6rem; }
   .bouton-mini { min-height: 2.2rem; padding: 0.35rem 0.7rem; }
   .etiquette-chip-case { border-radius: 1.1rem; }
+}
+
+/* ---------- Carte « A faire » (haut de la liste des clients) ---------- */
+
+.carte-a-faire { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 0.8rem 1rem; margin-bottom: 1.2rem; }
+.carte-a-faire h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+.carte-a-faire ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.carte-a-faire a { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.75rem; min-height: 2.6rem; border-radius: 10px; text-decoration: none; color: var(--texte); font-size: 0.92rem; background: var(--fond); }
+.a-faire-danger a { background: var(--danger-clair); }
+.a-faire-attention a { background: var(--attention-clair); }
+.a-faire-icone { flex-shrink: 0; }
+.a-faire-texte { flex: 1; min-width: 0; }
+.a-faire-fleche { color: var(--texte-discret); font-size: 1.2rem; line-height: 1; }
+.carte-a-faire a.filtre-actif { outline: 2px solid var(--accent); }
+
+/* ---------- Application installee, zones sures de l'iPhone, barre de raccourcis du bas ---------- */
+
+.barre-onglets-mobile { display: none; }
+
+@media (max-width: 800px) {
+  :root { --barre-bas: calc(3.7rem + env(safe-area-inset-bottom)); }
+  .barre-laterale { padding-top: calc(0.8rem + env(safe-area-inset-top)); z-index: 40; }
+  .zone-contenu { padding-left: max(1.2rem, env(safe-area-inset-left)); padding-right: max(1.2rem, env(safe-area-inset-right)); padding-bottom: calc(var(--barre-bas) + 2rem); }
+  .menu-laterale-repliable.ouvert { max-height: calc(100dvh - 5rem - env(safe-area-inset-top)); }
+
+  .barre-onglets-mobile {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: var(--barre-fond); border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.35rem max(0.4rem, env(safe-area-inset-right)) calc(0.35rem + env(safe-area-inset-bottom)) max(0.4rem, env(safe-area-inset-left));
+  }
+  .barre-onglets-mobile a, .barre-onglets-mobile button {
+    flex: 1 1 0; min-width: 0; min-height: 2.9rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem;
+    padding: 0.2rem 0; font-size: 0.68rem; font-weight: 600; color: rgba(255, 255, 255, 0.62); background: none; border: 0; border-radius: 10px; text-decoration: none; cursor: pointer;
+  }
+  .barre-onglets-mobile .onglet-icone { font-size: 1.25rem; line-height: 1; }
+  .barre-onglets-mobile .actif { color: #fff; background: rgba(255, 255, 255, 0.12); }
+  body.clavier-ouvert .barre-onglets-mobile, body:has(.menu-laterale-repliable.ouvert) .barre-onglets-mobile { display: none; }
+
+  /* Bouton de validation d'un formulaire et navigation des etapes : toujours sous le pouce, au-dessus de la barre du bas */
+  .nav-etapes { position: sticky; bottom: var(--barre-bas); z-index: 20; background: var(--carte); padding: 0.7rem 0; margin-top: 1rem; }
+  .formulaire > button[type="submit"]:last-child:not(.bouton-danger):not(.bouton-secondaire) {
+    position: sticky; bottom: calc(var(--barre-bas) + 0.5rem); z-index: 20; box-shadow: 0 0 0 6px var(--carte), 0 6px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Etapes repliables (video motion design) : toucher le titre replie ou deplie l'etape */
+  .vm-etape > h2 { cursor: pointer; display: flex; align-items: center; gap: 0.5rem; }
+  .vm-etape > h2::after { content: "▾"; margin-left: auto; color: var(--texte-discret); transition: transform 0.15s; }
+  .vm-etape.replie > h2::after { transform: rotate(-90deg); }
+  .vm-etape.replie > :not(h2) { display: none; }
+}
+
+/* Tableaux : une carte par ligne (chaque cellule garde le nom de sa colonne, voir base.html) */
+@media (max-width: 600px) {
+  table.table-cartes { display: block; width: 100%; border: 0; background: none; box-shadow: none; border-radius: 0; table-layout: auto; }
+  table.table-cartes colgroup, table.table-cartes thead { display: none; }
+  table.table-cartes tbody { display: flex; flex-direction: column; gap: 0.6rem; }
+  table.table-cartes tr { display: block; background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 0.3rem 0.85rem; }
+  table.table-cartes td, table.table-cartes tbody th {
+    display: block; width: auto !important; max-width: none !important; padding: 0.5rem 0; border: 0; border-bottom: 1px solid var(--carte-bordure);
+    white-space: normal; overflow-wrap: anywhere; text-align: left; font-size: 0.9rem;
+  }
+  table.table-cartes tr > :last-child { border-bottom: 0; }
+  table.table-cartes td::before { content: attr(data-label); display: block; margin-bottom: 0.15rem; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--texte-discret); }
+  table.table-cartes td[data-label=""]::before { display: none; }
+  .conteneur-tableau { overflow-x: visible; }
 }

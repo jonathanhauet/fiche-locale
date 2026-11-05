@@ -2,7 +2,14 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Fiche Locale">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/app-180.png">
   <title>{% block titre %}Fiche Locale{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -100,6 +107,14 @@
       {% block contenu %}{% endblock %}
     </main>
   </div>
+  {# Raccourcis en bas de l'ecran du telephone (masques sur ordinateur) : les 4 pages les plus utilisees + le menu complet. #}
+  <nav class="barre-onglets-mobile" aria-label="Raccourcis">
+    <a href="/" class="{{ 'actif' if page_actuelle in ('clients', 'espaces') else '' }}"><span class="onglet-icone">👥</span><span>Clients</span></a>
+    <a href="/publication-multi" class="{{ 'actif' if page_actuelle in ('publication_multi', 'posts', 'horaires_exceptionnelles', 'idees_vocales', 'transcription_vocale') else '' }}"><span class="onglet-icone">📣</span><span>Publier</span></a>
+    <a href="/creations" class="{{ 'actif' if page_actuelle in ('creations', 'videos', 'montage_video', 'video_motion', 'scripts_video', 'images_ia', 'musiques', 'personnage_bd') else '' }}"><span class="onglet-icone">🗂️</span><span>Créations</span></a>
+    <a href="/prompteur/" class="{{ 'actif' if page_actuelle == 'prompteur' else '' }}"><span class="onglet-icone">📱</span><span>Prompteur</span></a>
+    <button type="button" id="onglet-menu-mobile" aria-label="Ouvrir le menu complet"><span class="onglet-icone">☰</span><span>Menu</span></button>
+  </nav>
   <script src="/static/pipette.js?v={{ version_pipette_js }}" defer></script>
   <script>
     (function () {
@@ -110,6 +125,8 @@
         const ouvert = menu.classList.toggle("ouvert");
         bouton.setAttribute("aria-expanded", ouvert ? "true" : "false");
       });
+      const ongletMenu = document.getElementById("onglet-menu-mobile");
+      if (ongletMenu) ongletMenu.addEventListener("click", () => bouton.click());
     })();
   </script>
   <script>
@@ -261,6 +278,62 @@
         try { champ.showPicker(); } catch (erreur) { /* ignore (contexte non autorise, navigateur ancien...) */ }
       }
     });
+  </script>
+  <script>
+    // Telephone : tableaux en cartes, clavier adapte a chaque champ, etapes repliables, barre du bas masquee quand le clavier est ouvert.
+    (function () {
+      // --- tableaux : chaque cellule recoit le nom de sa colonne (data-label) ; en dessous de 600 px la feuille de style en fait une carte par ligne.
+      // Un tableau a plus de 8 colonnes, a plusieurs lignes d'en-tete ou a cellules fusionnees garde le defilement lateral. data-cartes="non" l'exclut.
+      function etiqueter(table) {
+        if (table.dataset.cartes === "non") return;
+        const tetes = table.querySelectorAll("thead tr");
+        if (tetes.length !== 1) return;
+        const entetes = Array.from(tetes[0].children).filter((c) => c.tagName === "TH" || c.tagName === "TD");
+        if (entetes.length < 2 || entetes.length > 8 || entetes.some((c) => c.colSpan > 1) || table.querySelector("[rowspan]")) return;
+        const libelles = entetes.map((c) => (c.textContent || "").replace(/\s+/g, " ").trim());
+        table.querySelectorAll("tbody > tr").forEach((ligne) => {
+          let colonne = 0;
+          Array.from(ligne.children).forEach((cellule) => {
+            if (cellule.colSpan > 1) { cellule.setAttribute("data-label", ""); colonne += cellule.colSpan; return; }
+            cellule.setAttribute("data-label", libelles[colonne] || "");
+            colonne++;
+          });
+        });
+        table.classList.add("table-cartes");
+      }
+      let minuterie = 0;
+      function tousLesTableaux() { document.querySelectorAll(".zone-contenu table").forEach(etiqueter); }
+      tousLesTableaux();
+      const zone = document.querySelector(".zone-contenu");
+      if (zone && window.MutationObserver) new MutationObserver(() => { clearTimeout(minuterie); minuterie = setTimeout(tousLesTableaux, 150); }).observe(zone, { childList: true, subtree: true });
+
+      // --- claviers : adresse mail, adresse de site, telephone, nombre entier (pas de majuscule ni de correction automatique sur une adresse)
+      function regler(champ) {
+        if (!champ || champ.tagName !== "INPUT" || champ.dataset.clavier) return;
+        champ.dataset.clavier = "1";
+        const type = (champ.getAttribute("type") || "text").toLowerCase(), nom = ((champ.name || "") + " " + (champ.id || "")).toLowerCase();
+        const sans = () => { champ.setAttribute("autocapitalize", "off"); champ.setAttribute("autocorrect", "off"); champ.spellcheck = false; };
+        if (type === "email" || /mail/.test(nom)) { sans(); if (!champ.getAttribute("inputmode")) champ.setAttribute("inputmode", "email"); }
+        else if (type === "url" || /(^|[^a-z])(site|url|lien|domaine)([^a-z]|$)/.test(nom) || /^https?:/i.test(champ.placeholder || "")) { sans(); if (!champ.getAttribute("inputmode")) champ.setAttribute("inputmode", "url"); }
+        else if (type === "tel" || /(^|[^a-z])(tel|telephone|phone|whatsapp)([^a-z]|$)/.test(nom)) { if (!champ.getAttribute("inputmode")) champ.setAttribute("inputmode", "tel"); }
+        else if (type === "search") { sans(); }
+        else if (type === "number" && !champ.getAttribute("inputmode") && /^\d*$/.test(champ.getAttribute("step") || "1") && parseFloat(champ.getAttribute("min") || "0") >= 0) champ.setAttribute("inputmode", "numeric");
+      }
+      document.querySelectorAll("input").forEach(regler);
+      document.addEventListener("focusin", (evenement) => {
+        regler(evenement.target);
+        if (evenement.target.matches && evenement.target.matches("input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), textarea, select")) document.body.classList.add("clavier-ouvert");
+      });
+      document.addEventListener("focusout", () => { setTimeout(() => { if (!document.activeElement || !document.activeElement.matches("input, textarea, select")) document.body.classList.remove("clavier-ouvert"); }, 120); });
+
+      // --- etapes repliables (video motion design) : toucher le titre d'une etape la replie ou la deplie
+      document.querySelectorAll(".vm-etape > h2").forEach((titre) => {
+        titre.setAttribute("role", "button"); titre.setAttribute("tabindex", "0"); titre.setAttribute("aria-expanded", "true");
+        const basculer = () => { const replie = titre.parentElement.classList.toggle("replie"); titre.setAttribute("aria-expanded", replie ? "false" : "true"); };
+        titre.addEventListener("click", basculer);
+        titre.addEventListener("keydown", (evenement) => { if (evenement.key === "Enter" || evenement.key === " ") { evenement.preventDefault(); basculer(); } });
+      });
+    })();
   </script>
   {% endblock %}
 </body>

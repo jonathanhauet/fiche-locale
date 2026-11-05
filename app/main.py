@@ -2858,6 +2858,56 @@ def _plage_mois_prochain() -> tuple[date, date]:
     return premier_jour, dernier_jour
 
 
+@app.get("/manifest.webmanifest")
+def manifeste_application():
+    """Manifeste de l'application installable sur l'ecran d'accueil du telephone (public : le navigateur le lit avant toute connexion)."""
+    return JSONResponse({
+        "name": "Fiche Locale", "short_name": "Fiche Locale", "description": "Gestion des fiches Google et de la communication de vos clients.",
+        "id": "/", "start_url": "/", "scope": "/", "display": "standalone", "orientation": "portrait",
+        "background_color": "#0b0c11", "theme_color": "#14161f", "lang": "fr",
+        "icons": [
+            {"src": "/static/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/static/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/static/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+        "shortcuts": [
+            {"name": "Publier", "url": "/publication-multi"},
+            {"name": "Prompteur", "url": "/prompteur/"},
+            {"name": "Alertes", "url": "/alertes"},
+        ],
+    }, media_type="application/manifest+json")
+
+
+def _a_faire_aujourdhui(db: Session, ids_clients: set, nb_sans_post: int) -> list:
+    """Ce qui demande une action (comptes, liens, nombre) : sert la carte « A faire » du haut de la liste des clients."""
+    aujourdhui = date.today()
+    depuis = aujourdhui - timedelta(days=14)
+    posts = db.query(models.Post).filter(models.Post.client_id.in_(ids_clients)) if ids_clients else None
+
+    def compter(statut: str, debut: date, fin: date = None) -> int:
+        if posts is None:
+            return 0
+        requete = posts.filter(models.Post.statut == statut, models.Post.date_prevue >= debut)
+        return (requete.filter(models.Post.date_prevue <= fin) if fin else requete).count()
+
+    elements = []
+    echecs = compter("ECHEC_PUBLICATION", depuis)
+    if echecs:
+        elements.append({"icone": "⚠️", "ton": "danger", "texte": f"{echecs} publication{'s' if echecs > 1 else ''} en échec (14 derniers jours)", "lien": "/historique"})
+    rejetes = compter("PUBLIE_REJECTED", depuis)
+    if rejetes:
+        elements.append({"icone": "🚫", "ton": "danger", "texte": f"{rejetes} post{'s' if rejetes > 1 else ''} refusé{'s' if rejetes > 1 else ''} par Google (14 derniers jours)", "lien": "/historique"})
+    suspects = _nb_changements_suspects()
+    if suspects:
+        elements.append({"icone": "🔔", "ton": "attention", "texte": f"{suspects} changement{'s' if suspects > 1 else ''} suspect{'s' if suspects > 1 else ''} à valider", "lien": "/alertes"})
+    if nb_sans_post:
+        elements.append({"icone": "📅", "ton": "attention", "texte": f"{nb_sans_post} client{'s' if nb_sans_post > 1 else ''} sans post programmé le mois prochain", "lien": "#filtre-sans-post"})
+    programmes = compter("A_PUBLIER", aujourdhui, aujourdhui + timedelta(days=6))
+    if programmes:
+        elements.append({"icone": "🗓️", "ton": "info", "texte": f"{programmes} post{'s' if programmes > 1 else ''} programmé{'s' if programmes > 1 else ''} dans les 7 prochains jours", "lien": "/recaps"})
+    return elements
+
+
 @app.get("/", response_class=HTMLResponse)
 def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depends(obtenir_session)):
     if not utilisateur_connecte(request):
@@ -2909,6 +2959,7 @@ def liste_clients(request: Request, etiquette_id: int = None, db: Session = Depe
             "nb_sans_connaissance": sum(1 for c in clients if c.id not in ids_avec_connaissance),
             "ids_sans_post_mois_prochain": ids_sans_post_mois_prochain,
             "nb_sans_post_mois_prochain": len(ids_sans_post_mois_prochain),
+            "a_faire": _a_faire_aujourdhui(db, {c.id for c in clients}, len(ids_sans_post_mois_prochain)),
             "espace": espace,
             "reseaux_disponibles": {c.id: _reseaux_disponibles_client(c) for c in clients},
         },
