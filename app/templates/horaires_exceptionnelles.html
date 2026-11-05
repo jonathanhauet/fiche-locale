@@ -78,15 +78,28 @@
     <input type="checkbox" name="ferme" id="case-ferme" checked> Fermé toute la journée
   </label>
 
-  <div id="bloc-horaires-reduits" class="formulaire-ligne" hidden>
-    <label>
-      Ouverture
-      <input type="time" name="ouverture">
-    </label>
-    <label>
-      Fermeture
-      <input type="time" name="fermeture">
-    </label>
+  <div id="bloc-horaires-reduits" hidden>
+    <div class="formulaire-ligne">
+      <label>
+        Matin : ouverture
+        <input type="time" name="ouverture">
+      </label>
+      <label>
+        Matin : fermeture
+        <input type="time" name="fermeture">
+      </label>
+    </div>
+    <p class="texte-discret">Ouvert toute la journée sans coupure : remplissez seulement cette première plage (ex. 09:00 – 18:00).</p>
+    <div class="formulaire-ligne">
+      <label>
+        Après-midi : ouverture <span class="texte-discret">(facultatif)</span>
+        <input type="time" name="ouverture2">
+      </label>
+      <label>
+        Après-midi : fermeture
+        <input type="time" name="fermeture2">
+      </label>
+    </div>
   </div>
 
   <div class="actions-avis">

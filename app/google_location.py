@@ -239,7 +239,17 @@ def construire_periode_exceptionnelle(date_iso: str, ferme: bool, ouverture: str
     return periode
 
 
-def fusionner_horaires_exceptionnels(special_hours_actuelles: dict, nouvelle_periode: dict) -> list[dict]:
+def construire_periodes_exceptionnelles(date_iso: str, ferme: bool, creneaux: list = None) -> list[dict]:
+    """
+    Une ou plusieurs periodes Google pour une meme date : un creneau par plage d'ouverture
+    (matin puis apres-midi pour une coupure de midi). creneaux : [(ouverture, fermeture), ...] au format "HH:MM".
+    """
+    if ferme or not creneaux:
+        return [construire_periode_exceptionnelle(date_iso, True)]
+    return [construire_periode_exceptionnelle(date_iso, False, ouverture, fermeture) for ouverture, fermeture in creneaux]
+
+
+def fusionner_horaires_exceptionnels(special_hours_actuelles: dict, nouvelle_periode) -> list[dict]:
     """
     L'API Google remplace l'integralite de specialHours.specialHourPeriods a
     chaque ecriture (pas de fusion cote serveur) : il faut donc reconstruire
@@ -247,12 +257,13 @@ def fusionner_horaires_exceptionnels(special_hours_actuelles: dict, nouvelle_per
     definie pour la meme date (ecrasement volontaire, ex. mise a jour d'un
     jour ferie deja programme) et on garde toutes les autres dates telles quelles.
     """
-    date_cible = nouvelle_periode["startDate"]
+    nouvelles = nouvelle_periode if isinstance(nouvelle_periode, list) else [nouvelle_periode]     # un creneau (dict) ou plusieurs (liste)
+    date_cible = nouvelles[0]["startDate"]
     conservees = [
         p for p in (special_hours_actuelles or {}).get("specialHourPeriods", [])
         if p.get("startDate") != date_cible
     ]
-    conservees.append(nouvelle_periode)
+    conservees.extend(nouvelles)
     return conservees
 
 

@@ -6038,6 +6038,8 @@ async def appliquer_horaires_exceptionnelles(request: Request, db: Session = Dep
     ferme = bool(formulaire.get("ferme"))
     ouverture = formulaire.get("ouverture", "").strip()
     fermeture = formulaire.get("fermeture", "").strip()
+    ouverture2 = formulaire.get("ouverture2", "").strip()
+    fermeture2 = formulaire.get("fermeture2", "").strip()
 
     if not client_ids:
         return templates.TemplateResponse(
@@ -6060,8 +6062,24 @@ async def appliquer_horaires_exceptionnelles(request: Request, db: Session = Dep
              "erreur": "Indiquez une heure d'ouverture et de fermeture, ou cochez «Fermé toute la journée»."},
             status_code=400,
         )
+    creneaux = [(ouverture, fermeture)] if not ferme else []
+    if not ferme and (ouverture2 or fermeture2):
+        erreur_creneau = None
+        if not (ouverture2 and fermeture2):
+            erreur_creneau = "Après-midi : indiquez l'heure d'ouverture et de fermeture, ou videz les deux champs."
+        elif fermeture <= ouverture or fermeture2 <= ouverture2:
+            erreur_creneau = "Chaque plage doit se terminer après son début."
+        elif ouverture2 < fermeture:
+            erreur_creneau = "L'après-midi doit commencer après la fermeture du matin."
+        if erreur_creneau:
+            return templates.TemplateResponse(
+                request, "horaires_exceptionnelles.html",
+                {"etiquettes": etiquettes, "clients_json": clients_json, "resultats": None, "erreur": erreur_creneau},
+                status_code=400,
+            )
+        creneaux.append((ouverture2, fermeture2))
 
-    nouvelle_periode = google_location.construire_periode_exceptionnelle(date_iso, ferme, ouverture, fermeture)
+    nouvelle_periode = google_location.construire_periodes_exceptionnelles(date_iso, ferme, creneaux)
 
     resultats = []
     for client_id in client_ids:
