@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% set page_actuelle = "suivi_goldunion" %}
+{% block titre %}Suivi GoldUnion — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
+<div class="barre-titre"><h1>Suivi GoldUnion</h1></div>
+<p class="texte-discret">
+  Une page en lecture seule pour les responsables GoldUnion : état de chaque fiche Google, coordonnées, horaires, fermetures prévues, page agence du site,
+  indicateurs Maps et positionnement naturel. Elle n'est accessible que par un lien secret que vous pouvez changer ou désactiver à tout moment.
+</p>
+
+{% if message %}<div class="bandeau-info">{{ message }}</div>{% endif %}
+
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Lien pour les responsables</span>
+  {% if lien %}
+  <div class="formulaire-ligne">
+    <input type="text" id="lien-goldunion" value="{{ lien }}" readonly onclick="this.select()">
+    <button type="button" class="bouton-secondaire" id="copier-lien-goldunion">Copier</button>
+    <a class="bouton-secondaire" href="{{ lien }}" target="_blank" rel="noopener">Ouvrir la page</a>
+  </div>
+  <p class="texte-discret">Toute personne qui a ce lien voit la page (agences, téléphones, adresses, statistiques Maps). Envoyez-le seulement aux responsables concernés.</p>
+  <div class="actions-avis">
+    <form method="post" action="/suivi-goldunion/lien" onsubmit="return confirm('Créer un nouveau lien ? L\'ancien cessera de fonctionner.');">
+      <input type="hidden" name="action" value="generer"><button type="submit" class="bouton-secondaire">Créer un nouveau lien</button>
+    </form>
+    <form method="post" action="/suivi-goldunion/lien" onsubmit="return confirm('Désactiver le lien ? La page ne sera plus accessible.');">
+      <input type="hidden" name="action" value="desactiver"><button type="submit" class="bouton-secondaire bouton-danger">Désactiver la page</button>
+    </form>
+  </div>
+  {% else %}
+  <p class="texte-discret">La page n'est pas active : aucun lien n'existe pour l'instant.</p>
+  <form method="post" action="/suivi-goldunion/lien"><input type="hidden" name="action" value="generer"><button type="submit">Créer le lien de la page</button></form>
+  {% endif %}
+</div>
+
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Mise à jour des données</span>
+  <p class="texte-discret" id="etat-maj-goldunion">
+    {% if etat.en_cours %}⏳ Mise à jour en cours : {{ etat.message }}
+    {% else %}
+    Fiches relues {% if etat.derniere_maj %}le {{ etat.derniere_maj }}{% else %}— jamais{% endif %}
+    · positions mesurées {% if etat.positions_maj_le %}le {{ etat.positions_maj_le }}{% else %}— jamais{% endif %}.
+    {% if etat.statut == "erreur" %}<span class="message-erreur">{{ etat.message }}</span>{% elif etat.message %}{{ etat.message }}{% endif %}
+    {% endif %}
+  </p>
+  <p class="texte-discret">Automatique : les fiches sont relues chaque nuit, les positions chaque lundi.</p>
+  <div class="actions-avis">
+    <form method="post" action="/suivi-goldunion/actualiser"><input type="hidden" name="mode" value="fiches"><button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Relire les fiches maintenant</button></form>
+    {% if dataforseo_configure %}
+    <form method="post" action="/suivi-goldunion/actualiser"><input type="hidden" name="mode" value="tout"><button type="submit" {{ 'disabled' if etat.en_cours else '' }}>Relire les fiches et mesurer les positions (≈ {{ cout_positions }} ¢)</button></form>
+    {% endif %}
+  </div>
+  {% if not dataforseo_configure %}<p class="texte-discret">Positions indisponibles : identifiants DataForSEO manquants.</p>{% endif %}
+</div>
+
+<form class="formulaire" method="post" action="/suivi-goldunion/reglages">
+  <div class="choix-image-bloc">
+    <span class="choix-image-titre">Agences suivies</span>
+    <p class="texte-discret">Cochez les étiquettes des agences à suivre. Sans rien cocher, toutes les étiquettes dont le nom commence par « GoldUnion » sont utilisées.</p>
+    <div class="filtre-entreprises">
+      {% for etiquette in etiquettes %}
+      <label class="filtre-case"><input type="checkbox" name="etiquette_ids" value="{{ etiquette.id }}" {{ 'checked' if etiquette.id in ids_etiquettes else '' }}> {{ etiquette.nom }}</label>
+      {% endfor %}
+    </div>
+  </div>
+  <label>
+    Groupe Google attendu <span class="texte-discret">(facultatif)</span>
+    <input type="text" name="groupe_attendu" value="{{ parametre.groupe_attendu }}" placeholder="Ex. GoldUnion">
+  </label>
+  <p class="texte-discret">Si renseigné, une agence dont la fiche n'est pas dans un groupe Google dont le nom contient ce texte est signalée « hors du bon groupe ».</p>
+  <label>
+    Recherches suivies pour le positionnement <span class="texte-discret">(séparées par des virgules ; la ville de l'agence est ajoutée à chacune)</span>
+    <input type="text" name="mots_cles" value="{{ mots_cles }}">
+  </label>
+  <p class="texte-discret">Environ {{ cout_positions }} ¢ par mesure complète pour {{ nb_france }} agence{{ 's' if nb_france != 1 else '' }} en France (un point de mesure par agence et par recherche).</p>
+  <div class="actions-avis"><button type="submit">Enregistrer les réglages</button></div>
+</form>
+
+<form class="formulaire" method="post" action="/suivi-goldunion/responsables">
+  <h2>Responsables des agences</h2>
+  <p class="texte-discret">Le responsable de chaque agence s'affiche sur la page. Saisissez-le ci-dessous, ou collez une liste « agence ; responsable » (une par ligne, copiée depuis un tableur).</p>
+  <label>
+    Importer une liste
+    <textarea name="import" rows="4" placeholder="GoldUnion - Agen ; Marie Dupont&#10;GoldUnion - Carpentras ; Paul Martin"></textarea>
+  </label>
+  {% if entrees %}
+  <div class="conteneur-tableau">
+    <table class="tableau-historique">
+      <thead><tr><th>Agence</th><th>Responsable</th><th>État</th></tr></thead>
+      <tbody>
+        {% for e in entrees %}
+        <tr>
+          <td><a href="/clients/{{ e.client.id }}">{{ e.client.nom }}</a></td>
+          <td><input type="text" name="resp_{{ e.client.id }}" value="{{ e.responsable }}" maxlength="120"></td>
+          <td>{% if e.problemes %}<span class="etiquette-avertissement">{{ e.problemes|join(" · ") }}</span>{% else %}<span class="etiquette-statut etiquette-publie_live">OK</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="texte-vide">Aucune agence suivie pour l'instant : créez une étiquette « GoldUnion… » sur les fiches, ou cochez-en une ci-dessus.</p>
+  {% endif %}
+  <div class="actions-avis"><button type="submit">Enregistrer les responsables</button></div>
+</form>
+
+<script>
+(function () {
+  const copier = document.getElementById("copier-lien-goldunion");
+  if (copier) copier.addEventListener("click", async () => {
+    const champ = document.getElementById("lien-goldunion");
+    try { await navigator.clipboard.writeText(champ.value); copier.textContent = "Copié ✓"; } catch (e) { champ.select(); document.execCommand("copy"); copier.textContent = "Copié ✓"; }
+    setTimeout(() => { copier.textContent = "Copier"; }, 2000);
+  });
+  {% if etat.en_cours %}
+  const texte = document.getElementById("etat-maj-goldunion");
+  const suivre = setInterval(async () => {
+    try {
+      const r = await fetch("/suivi-goldunion/etat");
+      const e = await r.json();
+      if (!e.en_cours) { clearInterval(suivre); location.reload(); }
+      else texte.textContent = "⏳ Mise à jour en cours : " + e.message;
+    } catch (err) { /* on reessaie au prochain passage */ }
+  }, 4000);
+  {% endif %}
+})();
+</script>
+{% endblock %}

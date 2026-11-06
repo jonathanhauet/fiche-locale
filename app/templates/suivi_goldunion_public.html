@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block titre %}Suivi des agences GoldUnion{% endblock %}
+{% block tete_supplementaire %}
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<style>
+  .gu { max-width: 1500px; margin: 0 auto; padding: 1.2rem max(1rem, env(safe-area-inset-left)) 3rem; }
+  .gu h1 { font-size: 1.6rem; margin: 0 0 0.2rem; }
+  .gu .intro { color: var(--texte-discret); margin: 0 0 1.2rem; line-height: 1.5; }
+  .gu-tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; margin-bottom: 1.1rem; }
+  .gu-tuile { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 0.7rem 0.9rem; }
+  .gu-tuile strong { display: block; font-size: 1.6rem; line-height: 1.1; }
+  .gu-tuile span { color: var(--texte-discret); font-size: 0.82rem; }
+  .gu-tuile.alerte strong { color: var(--danger); }
+  .gu-barre { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 0.9rem; }
+  .gu-barre input[type="search"], .gu-barre select { min-width: 0; flex: 1 1 200px; max-width: 320px; }
+  .gu-barre label { display: inline-flex; flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.9rem; width: auto; margin: 0; }
+  .gu-barre input[type="checkbox"] { width: auto; margin: 0; flex: none; }
+  .gu-barre .gu-compte { color: var(--texte-discret); font-size: 0.85rem; margin-left: auto; }
+  .gu-barre a.bouton-secondaire { text-decoration: none; }
+  .gu-tableau { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); font-size: 0.88rem; }
+  .gu-tableau th { position: sticky; top: 0; background: var(--carte); text-align: left; padding: 0.6rem 0.7rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--texte-discret); border-bottom: 1px solid var(--carte-bordure); z-index: 1; }
+  .gu-tableau td { padding: 0.65rem 0.7rem; vertical-align: top; border-bottom: 1px solid var(--carte-bordure); line-height: 1.4; }
+  .gu-tableau tr:last-child td { border-bottom: 0; }
+  .gu-nom { font-weight: 700; }
+  .gu-doux { color: var(--texte-discret); font-size: 0.82rem; }
+  .gu-puce { display: inline-block; font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.55rem; border-radius: 999px; margin: 0 0.25rem 0.25rem 0; white-space: nowrap; }
+  .gu-ok { background: rgba(34, 160, 90, 0.16); color: #1a7f45; }
+  .gu-alerte { background: rgba(220, 38, 38, 0.13); color: var(--danger); }
+  .gu-attention { background: rgba(217, 138, 6, 0.16); color: var(--attention); }
+  .gu-neutre { background: rgba(150, 150, 150, 0.2); color: var(--texte-discret); }
+  .gu-liste { margin: 0; padding: 0; list-style: none; }
+  .gu-liste li { margin-bottom: 0.15rem; }
+  .gu-pas-lue td { opacity: 0.6; }
+  .gu-tableau tr[hidden] { display: none !important; }
+  .gu-vide { text-align: center; color: var(--texte-discret); padding: 2rem; }
+  .gu-pied { margin-top: 1rem; color: var(--texte-discret); font-size: 0.82rem; line-height: 1.5; }
+  @media (max-width: 1000px) {
+    .gu-tableau, .gu-tableau tbody, .gu-tableau tr, .gu-tableau td { display: block; }
+    .gu-tableau { background: none; border: 0; box-shadow: none; }
+    .gu-tableau thead { display: none; }
+    .gu-tableau tr { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); margin-bottom: 0.7rem; padding: 0.3rem 0.85rem; }
+    .gu-tableau td { padding: 0.5rem 0; border-bottom: 1px solid var(--carte-bordure); overflow-wrap: anywhere; }
+    .gu-tableau tr > td:last-child { border-bottom: 0; }
+    .gu-tableau td::before { content: attr(data-label); display: block; margin-bottom: 0.15rem; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--texte-discret); }
+    .gu-tableau td.gu-premiere::before { display: none; }
+    .gu-barre .gu-compte { margin-left: 0; width: 100%; }
+  }
+</style>
+{% endblock %}
+{% block corps %}
+<div class="gu">
+  <h1>Suivi des agences GoldUnion</h1>
+  <p class="intro">
+    État de la fiche Google de chaque agence, coordonnées, horaires, fermetures prévues, page agence du site et positionnement sur Google.
+    {% if derniere_maj %}Fiches relues le {{ derniere_maj }}{% endif %}{% if positions_maj %} · positions mesurées le {{ positions_maj }}{% endif %}.
+  </p>
+
+  <div class="gu-tuiles">
+    <div class="gu-tuile"><strong>{{ synthese.total }}</strong><span>agences suivies</span></div>
+    <div class="gu-tuile"><strong>{{ synthese.validees }}</strong><span>fiches Google validées</span></div>
+    <div class="gu-tuile {{ 'alerte' if synthese.avec_probleme else '' }}"><strong>{{ synthese.avec_probleme }}</strong><span>agences à surveiller</span></div>
+    <div class="gu-tuile {{ 'alerte' if synthese.sites_en_erreur else '' }}"><strong>{{ synthese.sites_en_erreur }}</strong><span>pages agence à vérifier</span></div>
+    <div class="gu-tuile"><strong>{{ synthese.avec_conges }}</strong><span>avec des fermetures prévues</span></div>
+  </div>
+
+  <div class="gu-barre">
+    <input type="search" id="gu-recherche" placeholder="Rechercher une agence, une ville, un responsable…" autocomplete="off">
+    {% if pays|length > 1 %}
+    <select id="gu-pays">
+      <option value="">Tous les pays</option>
+      {% for code in pays %}<option value="{{ code }}">{{ pays_noms[code] }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <label><input type="checkbox" id="gu-surveiller"> Seulement les agences à surveiller</label>
+    <a class="bouton-secondaire" href="/goldunion/{{ jeton }}/export.xlsx">⬇ Télécharger en Excel</a>
+    <span class="gu-compte" id="gu-compte"></span>
+  </div>
+
+  <table class="gu-tableau" id="gu-tableau">
+    <thead>
+      <tr><th>Agence</th><th>Fiche Google</th><th>Coordonnées et horaires</th><th>Ouverture et fermetures</th><th>Page agence du site</th><th>Positionnement naturel</th><th>Maps · mois dernier</th><th>À surveiller</th></tr>
+    </thead>
+    <tbody>
+      {% for e in entrees %}
+      {% set d = e.donnees %}{% set fiche = d.get("fiche") or {} %}{% set site = d.get("site_etat") or {} %}{% set stats = d.get("stats") or {} %}
+      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-pays="{{ d.get('pays', '') }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
+          data-texte="{{ (e.client.nom ~ ' ' ~ d.get('ville', '') ~ ' ' ~ e.responsable ~ ' ' ~ d.get('adresse', ''))|lower }}">
+        <td class="gu-premiere" data-label="Agence">
+          <div class="gu-nom">{{ e.client.nom }}</div>
+          <div class="gu-doux">{{ d.get("ville", "") }}{% if d.get("pays") %} · {{ pays_noms.get(d.get("pays"), d.get("pays")) }}{% endif %}</div>
+          <div class="gu-doux">{% if e.responsable %}Responsable : <strong>{{ e.responsable }}</strong>{% else %}Responsable non renseigné{% endif %}</div>
+        </td>
+        <td data-label="Fiche Google">
+          {% if not d %}<span class="gu-puce gu-neutre">Pas encore lue</span>
+          {% elif not fiche.get("creee") %}<span class="gu-puce gu-alerte">Non reliée</span>
+          {% elif not d.get("adresse") %}<span class="gu-puce gu-alerte">Illisible</span>
+          {% else %}
+            <span class="gu-puce gu-ok">Créée</span>
+            {% if fiche.get("validee") %}<span class="gu-puce gu-ok">Validée</span>{% else %}<span class="gu-puce gu-alerte">Non validée</span>{% endif %}
+            {% if fiche.get("groupe") %}<div class="gu-doux">Groupe : {{ fiche.groupe }}</div>{% endif %}
+            {% if d.get("maps_uri") %}<div><a href="{{ d.maps_uri }}" target="_blank" rel="noopener noreferrer">Voir sur Google Maps</a></div>{% endif %}
+          {% endif %}
+          {% if d.get("erreur") and d.get("adresse") %}<div class="gu-doux">{{ d.erreur }}</div>{% endif %}
+        </td>
+        <td data-label="Coordonnées et horaires">
+          {% if d.get("adresse") %}<div>{{ d.adresse }}</div>{% endif %}
+          {% if d.get("telephone") %}<div>{{ d.telephone }}</div>{% elif d %}<div class="gu-doux">Pas de téléphone sur la fiche</div>{% endif %}
+          {% if d.get("horaires") %}<div class="gu-doux">{{ d.horaires }}</div>{% elif d %}<div class="gu-doux">Horaires non renseignés</div>{% endif %}
+        </td>
+        <td data-label="Ouverture et fermetures">
+          {% if d.get("statut_ouverture") %}<div>{{ d.statut_ouverture }}</div>{% endif %}
+          {% if d.get("date_ouverture") %}<div class="gu-doux">Ouverte depuis le {{ libelle_date_ouverture(d.date_ouverture) }}</div>{% elif d %}<div class="gu-doux">Date d'ouverture non renseignée</div>{% endif %}
+          {% if d.get("conges") %}
+          <ul class="gu-liste">
+            {% for c in d.conges %}<li><span class="gu-puce {{ 'gu-attention' if c.libelle == 'Fermé' else 'gu-neutre' }}">{{ c.date[8:10] }}/{{ c.date[5:7] }}{% if c.get("jusqu_au") %} → {{ c.jusqu_au[8:10] }}/{{ c.jusqu_au[5:7] }}{% endif %}</span> {{ c.libelle }}</li>{% endfor %}
+          </ul>
+          {% elif d %}<div class="gu-doux">Aucune fermeture prévue</div>{% endif %}
+        </td>
+        <td data-label="Page agence du site">
+          {% if not d %}—
+          {% elif site.get("etat") == "ok" %}<span class="gu-puce gu-ok">En ligne</span>
+          {% elif site.get("etat") == "ville_absente" %}<span class="gu-puce gu-attention">Sans la ville</span>
+          {% elif site.get("etat") == "erreur" %}<span class="gu-puce gu-alerte">En erreur</span>
+          {% else %}<span class="gu-puce gu-neutre">Aucun site</span>{% endif %}
+          {% if site.get("detail") %}<div class="gu-doux">{{ site.detail }}</div>{% endif %}
+          {% if d.get("site") %}<div class="gu-doux"><a href="{{ d.site }}" target="_blank" rel="noopener noreferrer">{{ d.site|replace("https://", "")|replace("http://", "")|truncate(38, True) }}</a></div>{% endif %}
+        </td>
+        <td data-label="Positionnement naturel">
+          {% set pos = e.positions %}
+          {% if pos.get("non_applicable") %}<span class="gu-doux">Non mesuré hors France</span>
+          {% elif pos.get("mots") %}
+            {% for mot in mots %}{% if mot in pos.mots %}{% set p = pos.mots[mot] %}
+            <div><span class="gu-puce {{ 'gu-ok' if p and p <= 3 else ('gu-attention' if p and p <= 10 else 'gu-alerte') }}">{{ p if p else '—' }}</span> <span class="gu-doux">« {{ mot }} {{ d.get("ville", "") }} »{% if not p %} : hors résultats{% endif %}</span></div>{% endif %}{% endfor %}
+          {% elif pos.get("erreur") %}<span class="gu-doux">{{ pos.erreur }}</span>
+          {% else %}<span class="gu-doux">Pas encore mesuré</span>{% endif %}
+        </td>
+        <td data-label="Maps · mois dernier">
+          {% if stats %}
+          <div><strong>{{ stats.vues }}</strong> <span class="gu-doux">vues</span></div>
+          <div><strong>{{ stats.appels }}</strong> <span class="gu-doux">appels</span></div>
+          <div><strong>{{ stats.itineraires }}</strong> <span class="gu-doux">itinéraires</span></div>
+          <div class="gu-doux">{{ stats.mois[5:7] }}/{{ stats.mois[0:4] }}</div>
+          {% else %}<span class="gu-doux">—</span>{% endif %}
+        </td>
+        <td data-label="À surveiller">
+          {% if e.problemes %}{% for p in e.problemes %}<span class="gu-puce gu-alerte">{{ p }}</span> {% endfor %}{% else %}<span class="gu-puce gu-ok">Rien à signaler</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="gu-vide">Aucune agence à afficher pour l'instant.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="gu-pied">
+    Les positions sont mesurées depuis l'adresse de l'agence, pour chaque recherche suivie, complétée par la ville de l'agence ({{ mots|join(", ") }}) : 1 = première fiche affichée dans Google Maps, « — » = la fiche n'apparaît pas dans les premiers résultats.
+    Les indicateurs Maps couvrent le dernier mois complet. Les pubs Google et Meta ne figurent pas ici.
+  </p>
+</div>
+<script>
+(function () {
+  const lignes = Array.from(document.querySelectorAll("#gu-tableau tbody tr[data-texte]"));
+  const recherche = document.getElementById("gu-recherche");
+  const pays = document.getElementById("gu-pays");
+  const surveiller = document.getElementById("gu-surveiller");
+  const compte = document.getElementById("gu-compte");
+  function sansAccents(t) { return (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+  function filtrer() {
+    const q = sansAccents(recherche.value.trim());
+    let visibles = 0;
+    lignes.forEach((l) => {
+      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!pays || !pays.value || l.dataset.pays === pays.value) && (!surveiller.checked || l.dataset.surveiller === "1");
+      l.hidden = !ok;
+      if (ok) visibles++;
+    });
+    compte.textContent = `${visibles} agence${visibles > 1 ? "s" : ""} affichée${visibles > 1 ? "s" : ""}`;
+  }
+  [recherche, pays, surveiller].forEach((c) => c && c.addEventListener("input", filtrer));
+  filtrer();
+})();
+</script>
+{% endblock %}

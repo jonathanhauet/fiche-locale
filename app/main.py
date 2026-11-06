@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from time import monotonic
 from types import SimpleNamespace
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote_plus, urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -120,6 +120,7 @@ from . import (
     rapport_donnees,
     google_sheets,
     reporting_mensuel,
+    suivi_goldunion,
     reporting_sheet,
     jsonld_agences,
     audit_photos,
@@ -197,6 +198,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN longitude REAL"))
         if "email" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN email TEXT DEFAULT ''"))
+        if "responsable" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN responsable VARCHAR DEFAULT ''"))
         if "prenom" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN prenom TEXT DEFAULT ''"))
         if "lien_avis_google" not in colonnes_clients:
@@ -733,6 +736,9 @@ def _purge_archive_quotidienne():
 
 
 planificateur.add_job(_purge_archive_quotidienne, "cron", hour=4, minute=10, timezone="Europe/Brussels", id="purge_archive_creations")
+# Suivi GoldUnion : fiches relues chaque nuit, positions naturelles (payantes, quelques centimes) une fois par semaine.
+planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal), "cron", hour=5, minute=30, timezone="Europe/Brussels", id="suivi_goldunion_fiches")
+planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal, seulement_positions=True), "cron", day_of_week="mon", hour=5, minute=50, timezone="Europe/Brussels", id="suivi_goldunion_positions")
 planificateur.start()
 
 
@@ -7431,6 +7437,143 @@ def _mois_reporting_depuis_requete(request: Request):
     if fin_demandee > aujourdhui.replace(day=1) or not 1 <= nb_mois <= reporting_mensuel.NB_MOIS_MAX:
         return None, f"Choisissez un mois deja commence et entre 1 et {reporting_mensuel.NB_MOIS_MAX} mois d'historique."
     return reporting_mensuel.derniers_mois(fin_demandee, nb_mois), None
+
+
+# --- Suivi GoldUnion : page des responsables (lien secret, lecture seule) et sa gestion -----------------------------------------
+
+
+def _url_page_goldunion(request: Request, parametre) -> str:
+    if not parametre.token:
+        return ""
+    protocole = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return f"{protocole}://{request.headers.get('host') or request.url.netloc}/goldunion/{parametre.token}"
+
+
+def _etat_suivi_goldunion(parametre) -> dict:
+    return {
+        "en_cours": suivi_goldunion.est_en_cours(parametre), "statut": parametre.statut or "", "message": parametre.message or "",
+        "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "",
+        "positions_maj_le": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
+    }
+
+
+@app.get("/suivi-goldunion", response_class=HTMLResponse)
+def page_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    parametre = suivi_goldunion.lire_parametre(db)
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    entrees = suivi_goldunion.lignes(db, parametre)
+    mots = suivi_goldunion.mots_cles(parametre)
+    nb_france = sum(1 for e in entrees if (e["donnees"].get("pays") or "FR") == "FR")
+    return templates.TemplateResponse(request, "suivi_goldunion.html", {
+        "page_actuelle": "suivi_goldunion", "parametre": parametre, "etiquettes": etiquettes, "ids_etiquettes": suivi_goldunion.ids_etiquettes(parametre),
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "lien": _url_page_goldunion(request, parametre), "etat": _etat_suivi_goldunion(parametre),
+        "mots_cles": ", ".join(mots), "cout_positions": round(nb_france * len(mots) * 0.06, 1), "nb_france": nb_france,
+        "dataforseo_configure": rank_tracking.identifiants_configures(), "message": request.query_params.get("message", ""),
+    })
+
+
+@app.post("/suivi-goldunion/reglages")
+async def reglages_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    parametre = suivi_goldunion.lire_parametre(db)
+    parametre.etiquette_ids = ",".join(str(int(v)) for v in formulaire.getlist("etiquette_ids") if v.strip().isdigit())
+    parametre.groupe_attendu = formulaire.get("groupe_attendu", "").strip()[:120]
+    mots = [m.strip() for m in formulaire.get("mots_cles", "").split(",") if m.strip()][:8]
+    parametre.mots_cles = ",".join(mots) or suivi_goldunion.MOTS_CLES_DEFAUT
+    db.commit()
+    return RedirectResponse("/suivi-goldunion?message=" + quote_plus("Réglages enregistrés."), status_code=303)
+
+
+@app.post("/suivi-goldunion/lien")
+async def lien_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    parametre = suivi_goldunion.lire_parametre(db)
+    if formulaire.get("action") == "desactiver":
+        parametre.token = ""
+        message = "Lien désactivé : la page n'est plus accessible."
+    else:
+        parametre.token = suivi_goldunion.nouveau_jeton()
+        message = "Nouveau lien créé (l'ancien ne fonctionne plus)."
+    db.commit()
+    return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
+
+
+@app.post("/suivi-goldunion/responsables")
+async def responsables_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
+    """Responsable de chaque agence : champs « resp_<id> » du tableau, ou liste « agence ; responsable » collee depuis un tableur."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    parametre = suivi_goldunion.lire_parametre(db)
+    clients = suivi_goldunion.clients_suivis(db, parametre)
+    for client in clients:
+        valeur = formulaire.get(f"resp_{client.id}")
+        if valeur is not None:
+            client.responsable = valeur.strip()[:120]
+    db.commit()
+    bilan = suivi_goldunion.importer_responsables(db, formulaire.get("import", ""), clients) if formulaire.get("import", "").strip() else None
+    message = "Responsables enregistrés."
+    if bilan:
+        message = f"{bilan['mis_a_jour']} responsable(s) importé(s)." + (f" Agences non reconnues : {', '.join(bilan['inconnus'][:5])}." if bilan["inconnus"] else "")
+    return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
+
+
+@app.post("/suivi-goldunion/actualiser")
+async def actualiser_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    mode = formulaire.get("mode", "fiches")
+    demarre = suivi_goldunion.lancer(SessionLocal, avec_positions=(mode == "tout"), seulement_positions=(mode == "positions"))
+    message = "Mise à jour lancée." if demarre else "Une mise à jour est déjà en cours."
+    return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
+
+
+@app.get("/suivi-goldunion/etat")
+def etat_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    return JSONResponse(_etat_suivi_goldunion(suivi_goldunion.lire_parametre(db)))
+
+
+ENTETES_PAGE_PRIVEE = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+
+@app.get("/goldunion/{jeton}", response_class=HTMLResponse)
+def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Page des responsables GoldUnion : etat des agences, en lecture seule, accessible uniquement par son lien secret (revocable)."""
+    parametre = suivi_goldunion.lire_parametre(db)
+    if not suivi_goldunion.jeton_valide(parametre, jeton):
+        return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    entrees = suivi_goldunion.lignes(db, parametre)
+    mots = suivi_goldunion.mots_cles(parametre)
+    pays = sorted({e["donnees"].get("pays") for e in entrees if e["donnees"].get("pays")})
+    return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "pays": pays, "jeton": jeton, "parametre": parametre,
+        "pays_noms": {code: reporting_mensuel.nom_pays(code) for code in pays}, "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
+        "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
+    }, headers=ENTETES_PAGE_PRIVEE)
+
+
+@app.get("/goldunion/{jeton}/export.xlsx")
+def export_publique_goldunion(jeton: str, db: Session = Depends(obtenir_session)):
+    parametre = suivi_goldunion.lire_parametre(db)
+    if not suivi_goldunion.jeton_valide(parametre, jeton):
+        return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    octets = suivi_goldunion.generer_excel(suivi_goldunion.lignes(db, parametre), suivi_goldunion.mots_cles(parametre))
+    return Response(content=octets, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={**ENTETES_PAGE_PRIVEE, "Content-Disposition": f'attachment; filename="agences_goldunion_{date.today().isoformat()}.xlsx"'})
 
 
 @app.get("/reporting", response_class=HTMLResponse)

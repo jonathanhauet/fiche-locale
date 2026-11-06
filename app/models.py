@@ -75,6 +75,7 @@ class Client(Base):
     logo_google_maj_le = Column(DateTime, nullable=True)
     # Adresse du site web du client (pour le controle technique GEO et pour reperer les sources qui sont son propre site).
     site_web = Column(String, default="")
+    responsable = Column(String, default="")      # responsable de l'agence (suivi GoldUnion, voir suivi_goldunion.py)
     account_id = Column(String, default="")
     location_id = Column(String, default="")
     compte_google_id = Column(Integer, ForeignKey("comptes_google.id"), nullable=True)
@@ -1370,3 +1371,33 @@ class PersonnageBDImage(Base):
     personnage_id = Column(Integer, ForeignKey("personnages_bd.id"), nullable=False, index=True)
     nom = Column(String, nullable=False)
     png = Column(LargeBinary, nullable=False)
+
+
+class SuiviAgence(Base):
+    """Dernier etat connu d'une agence pour le suivi GoldUnion (voir suivi_goldunion.py) : donnees de la fiche Google et positions, en JSON."""
+
+    __tablename__ = "suivi_agences"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), unique=True, nullable=False)
+    donnees_json = Column(Text, default="")
+    maj_le = Column(DateTime, nullable=True)
+    positions_json = Column(Text, default="")
+    positions_maj_le = Column(DateTime, nullable=True)
+
+
+class ParametreSuiviGoldUnion(Base):
+    """Reglages du suivi GoldUnion : lien secret de la page des responsables, agences suivies, groupe Google attendu, mots-cles. Une seule ligne."""
+
+    __tablename__ = "parametre_suivi_goldunion"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, default="")                         # vide = page desactivee
+    etiquette_ids = Column(String, default="")                 # vide = toutes les etiquettes dont le nom commence par « GoldUnion »
+    groupe_attendu = Column(String, default="")                # morceau du nom du groupe Google attendu (vide = pas de controle)
+    mots_cles = Column(String, default="")                     # separes par des virgules ; la ville de l'agence est ajoutee a chacun
+    statut = Column(String, default="")                        # "", "en_cours", "ok" ou "erreur"
+    message = Column(Text, default="")
+    maj_demarree_le = Column(DateTime, nullable=True)
+    derniere_maj = Column(DateTime, nullable=True)
+    positions_maj_le = Column(DateTime, nullable=True)
