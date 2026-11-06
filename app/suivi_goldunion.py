@@ -463,19 +463,32 @@ def lire_agence(travail: dict) -> dict:
 
 # ---------- positions naturelles (grille autour de l'agence)
 
-NB_MAX_CONCURRENTS = 10
+NB_MAX_CONCURRENTS = 20
+PROFONDEUR_CONCURRENTS = 20                      # nombre de resultats demandes a DataForSEO par point (il en renvoie 7 a 20 selon la densite de la zone ; meme tarif)
 
 
 def concurrents_devant(position, classement: list) -> list:
     """
     Fiches classees devant l'agence a un point de mesure, sous forme compacte [{"p": rang, "n": nom, "c": cid, "i": place_id, "a": adresse, "s": site, "r": note, "v": avis}].
-    Agence a la 1re place : liste vide ; agence au-dela des 10 premiers resultats (ou absente) : les 10 premiers resultats.
+    Agence a la 1re place : liste vide ; agence absente des resultats : tous les resultats releves.
     """
-    devant = [c for c in (classement or []) if c.get("position") is not None and (position is None or position > NB_MAX_CONCURRENTS or c["position"] < position)]
+    devant = [c for c in (classement or []) if c.get("position") is not None and (position is None or c["position"] < position)]
     return [
         {"p": c["position"], "n": c.get("nom", ""), "c": c.get("cid", ""), "i": c.get("place_id", ""), "a": c.get("adresse", ""), "s": c.get("site", ""), "r": c.get("note"), "v": c.get("nombre_avis")}
         for c in sorted(devant, key=lambda c: c["position"])[:NB_MAX_CONCURRENTS]
     ]
+
+
+def _mesure_avec_reprises(mesure, *arguments, essais: int = 3):
+    """Appelle la mesure d'un point ; une erreur passagere (reseau, delai, code 429 ou 5xx) est retentee 2 fois : un point rate ne fait plus perdre toute la mesure de l'agence."""
+    for numero in range(essais):
+        try:
+            return mesure(*arguments)
+        except Exception as erreur:
+            passagere = bool(re.search(r"reseau|timeout|timed out|connection|code (429|5\d\d)", str(erreur).lower()))
+            if numero == essais - 1 or not passagere:
+                raise
+            time.sleep(1.5 * (numero + 1))
 
 
 def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 3, ecart: float = 2.0, mesure=None) -> dict:
@@ -484,7 +497,7 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
     fiche. Resultat : {"mots": {mot: [position ou None, ...]}, "concurrents": {mot: [[fiches devant l'agence], ...]}} (points de la grille du sud-ouest au
     nord-est). Agences hors France : non mesurees.
     """
-    mesure = mesure or rank_tracking.verifier_position
+    mesure = mesure or (lambda mot, la, lo, nom: rank_tracking.verifier_position(mot, la, lo, nom, profondeur=PROFONDEUR_CONCURRENTS))
     base = {"maj": datetime.utcnow().isoformat(timespec="seconds"), "taille": taille, "ecart_km": ecart}
     if (donnees.get("pays") or "FR") != "FR":
         return {**base, "mots": {}, "non_applicable": True}
@@ -499,7 +512,7 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
         liste, devant = [], []
         for latitude, longitude in points:
             try:
-                position, _, classement = mesure(f"{mot} {ville}", latitude, longitude, nom_agence)
+                position, _, classement = _mesure_avec_reprises(mesure, f"{mot} {ville}", latitude, longitude, nom_agence)
             except Exception as erreur:
                 resultat["erreur"] = str(erreur)[:160]
                 return resultat
@@ -508,6 +521,51 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
         resultat["mots"][mot] = liste
         resultat["concurrents"][mot] = devant
     return resultat
+
+
+def mesure_a_jour(positions: dict, mois: str = None) -> bool:
+    """Mesure complete de ce mois-ci, concurrents compris et sans erreur : inutile de la repayer."""
+    mois = mois or date.today().strftime("%Y-%m")
+    if not positions or positions.get("erreur") or not positions.get("mots") or not positions.get("concurrents"):
+        return False
+    historique = positions.get("historique") or []
+    return bool(historique) and historique[-1].get("mois") == mois
+
+
+def raison_non_mesurable(donnees: dict) -> str:
+    """Pourquoi une agence ne peut pas etre mesuree (vide si elle peut l'etre ; une agence pas encore relue est consideree mesurable)."""
+    if not donnees:
+        return ""
+    fiche = donnees.get("fiche") or {}
+    if not fiche.get("creee"):
+        return "fiche non reliée"
+    if not donnees.get("adresse"):
+        return "fiche illisible à la dernière relecture"
+    if (donnees.get("pays") or "FR") != "FR":
+        return "hors France"
+    if not donnees.get("ville"):
+        return "ville introuvable sur la fiche"
+    if donnees.get("lat") is None or donnees.get("lng") is None:
+        return "adresse non localisable"
+    return ""
+
+
+def diagnostic_mesure(entrees: list, mots: list, taille: int, mois: str = None) -> dict:
+    """
+    Avant de payer une mesure : quelles agences seront mesurees, lesquelles ne le seront pas (et pourquoi), combien de requetes et quel cout, et combien
+    d'agences resteraient a mesurer pour une simple reprise. Les agences pas encore relues sont comptees (elles sont lues avant d'etre mesurees).
+    """
+    mesurables, a_mesurer, exclues = 0, 0, []
+    for e in entrees:
+        raison = raison_non_mesurable(e["donnees"])
+        if raison:
+            exclues.append((e["client"].nom, raison))
+            continue
+        mesurables += 1
+        if not mesure_a_jour(e["positions"], mois):
+            a_mesurer += 1
+    return {"mesurables": mesurables, "a_mesurer": a_mesurer, "non_mesurables": exclues, "requetes": mesurables * len(mots) * taille * taille,
+            "cout_centimes": cout_mesure_centimes(mesurables, len(mots), taille), "cout_reprise_centimes": cout_mesure_centimes(a_mesurer, len(mots), taille)}
 
 
 def _score_positions(mots: dict) -> dict:
@@ -775,10 +833,11 @@ def est_en_cours(parametre) -> bool:
     return bool(parametre and parametre.statut == "en_cours" and parametre.maj_demarree_le and datetime.utcnow() - parametre.maj_demarree_le < DUREE_MAX_MAJ)
 
 
-def rafraichir(session_factory, avec_positions: bool = False, seulement_positions: bool = False, client_id: int = None) -> bool:
+def rafraichir(session_factory, avec_positions: bool = False, seulement_positions: bool = False, client_id: int = None, seulement_manquantes: bool = False) -> bool:
     """
     Relit les fiches et les avis (et mesure les positions si demande). Renvoie False si une mise a jour est deja en cours.
     client_id : ne traiter que cette agence (les autres gardent leurs donnees, et les dates de derniere mise a jour generales ne changent pas).
+    seulement_manquantes : ne mesurer que les agences sans mesure complete de ce mois-ci (reprise d'une analyse interrompue, sans repayer les autres).
     A lancer dans un fil (voir lancer) : l'etat d'avancement est ecrit dans ParametreSuiviGoldUnion.
     """
     if not _verrou.acquire(blocking=False):
@@ -832,6 +891,9 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
         donnees_finales = {t["client_id"]: resultats.get(t["client_id"]) or anciennes.get(t["client_id"], {}) for t in travaux}
 
         positions = {}
+        a_mesurer = [t for t in travaux if not raison_non_mesurable(donnees_finales.get(t["client_id"])) and (not seulement_manquantes or not mesure_a_jour(anciennes_positions.get(t["client_id"])))]
+        # les agences non mesurables passent aussi (sans aucune requete payante) pour que la page explique pourquoi ; pas en reprise
+        a_traiter = a_mesurer if seulement_manquantes else a_mesurer + [t for t in travaux if raison_non_mesurable(donnees_finales.get(t["client_id"]))]
         if avec_positions or seulement_positions:
             if not rank_tracking.identifiants_configures():
                 _noter(session_factory, message="Positions non mesurées : identifiants DataForSEO manquants.")
@@ -843,10 +905,10 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
                     _enregistrer_agence(session_factory, travail["client_id"], positions=positions[travail["client_id"]], anciennes_positions=anciennes_positions.get(travail["client_id"]))
                     faits[0] += 1
                     if faits[0] % 5 == 0:
-                        _noter(session_factory, message=f"Positions : {faits[0]}/{total} agences")
+                        _noter(session_factory, message=f"Positions : {faits[0]}/{len(a_traiter)} agences")
 
                 with ThreadPoolExecutor(max_workers=NB_MESURES_PARALLELES) as pool:
-                    list(pool.map(mesurer, travaux))
+                    list(pool.map(mesurer, a_traiter))
 
         db = session_factory()
         try:
@@ -858,7 +920,7 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
             if client_id is not None:
                 parametre.message = f"{travaux[0]['nom']} mise à jour" + (" (fiche non lue)" if illisibles else "") + (f" (mesure en erreur : {next(iter(positions.values())).get('erreur')})" if echecs_positions else "")
             else:
-                parametre.message = f"{total} agences" + (f", {illisibles} fiche(s) non lue(s)" if illisibles else "") + (f", {echecs_positions} mesure(s) de position en erreur" if echecs_positions else "")
+                parametre.message = (f"Reprise : {len(positions)} agence(s) mesurée(s) sur {len(a_mesurer)} à mesurer" if seulement_manquantes else f"{total} agences") + (f", {illisibles} fiche(s) non lue(s)" if illisibles else "") + (f", {echecs_positions} mesure(s) de position en erreur" if echecs_positions else "")
                 if resultats:
                     parametre.derniere_maj = maintenant
                 if positions:
@@ -877,7 +939,7 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
         _verrou.release()
 
 
-def lancer(session_factory, avec_positions: bool = False, seulement_positions: bool = False, client_id: int = None) -> bool:
+def lancer(session_factory, avec_positions: bool = False, seulement_positions: bool = False, client_id: int = None, seulement_manquantes: bool = False) -> bool:
     """Demarre la mise a jour (de toutes les agences, ou d'une seule) dans un fil. False si une mise a jour est deja en cours."""
     db = session_factory()
     try:
@@ -885,7 +947,7 @@ def lancer(session_factory, avec_positions: bool = False, seulement_positions: b
             return False
     finally:
         db.close()
-    threading.Thread(target=rafraichir, args=(session_factory, avec_positions, seulement_positions, client_id), daemon=True).start()
+    threading.Thread(target=rafraichir, args=(session_factory, avec_positions, seulement_positions, client_id, seulement_manquantes), daemon=True).start()
     return True
 
 

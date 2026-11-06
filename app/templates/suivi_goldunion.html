@@ -45,10 +45,23 @@
     {% endif %}
   </p>
   <p class="texte-discret">Automatique : fiches et avis relus chaque nuit, positions mesurées le 1<sup>er</sup> de chaque mois (l'évolution se calcule d'un mois sur l'autre).</p>
+  {% if diag.mesurables or diag.non_mesurables %}
+  <div class="bandeau-info" id="avant-mesure">
+    <strong>Avant de mesurer les positions</strong> : {{ diag.mesurables }} agence{{ 's' if diag.mesurables != 1 else '' }} mesurable{{ 's' if diag.mesurables != 1 else '' }} ·
+    {{ diag.requetes }} requêtes ({{ mots_cles }} · grille {{ taille_grille }}×{{ taille_grille }}, {{ '%g'|format(ecart_km) }} km) ≈ <strong>{{ cout_positions }}</strong>.
+    {% if diag.mesurables and diag.a_mesurer == 0 %}Toutes sont déjà mesurées complètement ce mois-ci (concurrents compris) : inutile de remesurer.
+    {% elif diag.a_mesurer != diag.mesurables %}{{ diag.mesurables - diag.a_mesurer }} déjà mesurée{{ 's' if diag.mesurables - diag.a_mesurer != 1 else '' }} complètement ce mois-ci (concurrents compris) : la « reprise » ne mesure que les {{ diag.a_mesurer }} autre{{ 's' if diag.a_mesurer != 1 else '' }} (≈ {{ cout_reprise }}).{% endif %}
+    {% if diag.non_mesurables %}<br>Non mesurables ({{ diag.non_mesurables|length }}) : {% for nom, raison in diag.non_mesurables[:12] %}{{ nom }} ({{ raison }}){{ ', ' if not loop.last }}{% endfor %}{% if diag.non_mesurables|length > 12 %} et {{ diag.non_mesurables|length - 12 }} autres{% endif %}.{% endif %}
+    {% if not diag.non_mesurables and diag.mesurables %}Aucune agence exclue.{% endif %}
+  </div>
+  {% endif %}
   <div class="actions-avis">
     <form method="post" action="/suivi-goldunion/actualiser"><input type="hidden" name="mode" value="fiches"><button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Relire les fiches et les avis maintenant</button></form>
     {% if dataforseo_configure %}
     <form method="post" action="/suivi-goldunion/actualiser" onsubmit="return confirm('Mesurer les positions maintenant ? Coût estimé : {{ cout_positions }}. La mesure du mois en cours sera remplacée.');"><input type="hidden" name="mode" value="tout"><button type="submit" {{ 'disabled' if etat.en_cours else '' }}>Mesurer les positions maintenant (≈ {{ cout_positions }})</button></form>
+    {% if diag.a_mesurer and diag.a_mesurer != diag.mesurables %}
+    <form method="post" action="/suivi-goldunion/actualiser" onsubmit="return confirm('Reprendre la mesure : seules les {{ diag.a_mesurer }} agences pas encore mesurées complètement ce mois-ci seront mesurées. Coût estimé : {{ cout_reprise }}.');"><input type="hidden" name="mode" value="manquantes"><button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Reprendre : mesurer seulement les {{ diag.a_mesurer }} agences restantes (≈ {{ cout_reprise }})</button></form>
+    {% endif %}
     {% endif %}
   </div>
   {% if not dataforseo_configure %}<p class="texte-discret">Positions indisponibles : identifiants DataForSEO manquants.</p>{% endif %}

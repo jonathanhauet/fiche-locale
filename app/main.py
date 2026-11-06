@@ -7476,14 +7476,16 @@ def page_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session
     etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
     entrees = suivi_goldunion.lignes(db, parametre)
     mots = suivi_goldunion.mots_cles(parametre)
-    nb_france = sum(1 for e in entrees if (e["donnees"].get("pays") or "FR") == "FR")
-    cout = suivi_goldunion.cout_mesure_centimes(nb_france, len(mots), suivi_goldunion.taille_grille(parametre))
+    diag = suivi_goldunion.diagnostic_mesure(entrees, mots, suivi_goldunion.taille_grille(parametre))
+    nb_france = diag["mesurables"]
+    cout = diag["cout_centimes"]
+    formater = lambda c: f"{c:g} ¢" if c < 100 else f"{c / 100:.1f} $".replace(".", ",")
     return templates.TemplateResponse(request, "suivi_goldunion.html", {
         "page_actuelle": "suivi_goldunion", "parametre": parametre, "etiquettes": etiquettes, "ids_etiquettes": suivi_goldunion.ids_etiquettes(parametre),
         "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "lien": _url_page_goldunion(request, parametre), "etat": _etat_suivi_goldunion(parametre),
         "agences": [{"id": e["client"].id, "nom": e["client"].nom, "maj": e["maj_le"].strftime("%d/%m") if e["maj_le"] else "", "positions": (e["positions"].get("maj") or "")[8:10] + "/" + (e["positions"].get("maj") or "")[5:7] if e["positions"].get("maj") else ""} for e in entrees],
         "cout_une_agence": (lambda c: f"{c:g} ¢" if c < 100 else f"{c / 100:.1f} $".replace(".", ","))(suivi_goldunion.cout_mesure_centimes(1, len(mots), suivi_goldunion.taille_grille(parametre))),
-        "mots_cles": ", ".join(mots), "cout_positions": (f"{cout:g} ¢" if cout < 100 else f"{cout / 100:.1f} $".replace(".", ",")), "nb_france": nb_france,
+        "mots_cles": ", ".join(mots), "cout_positions": formater(cout), "cout_reprise": formater(diag["cout_reprise_centimes"]), "diag": diag, "nb_france": nb_france,
         "mois_recente": suivi_goldunion.mois_recente(parametre), "taille_grille": suivi_goldunion.taille_grille(parametre), "ecart_km": suivi_goldunion.ecart_km(parametre), "tailles_grille": suivi_goldunion.TAILLES_GRILLE, "ecarts_km": suivi_goldunion.ECARTS_KM,
         "dataforseo_configure": rank_tracking.identifiants_configures(), "message": request.query_params.get("message", ""),
     })
@@ -7545,7 +7547,7 @@ async def actualiser_suivi_goldunion(request: Request, db: Session = Depends(obt
         client_id = int(formulaire["client_id"]) if formulaire["client_id"].strip().isdigit() else None
         if client_id not in suivies:
             return RedirectResponse("/suivi-goldunion?message=" + quote_plus("Agence introuvable parmi les agences suivies."), status_code=303)
-    demarre = suivi_goldunion.lancer(SessionLocal, avec_positions=(mode == "tout"), seulement_positions=(mode == "positions"), client_id=client_id)
+    demarre = suivi_goldunion.lancer(SessionLocal, avec_positions=(mode == "tout"), seulement_positions=(mode in ("positions", "manquantes")), client_id=client_id, seulement_manquantes=(mode == "manquantes"))
     message = ("Mise à jour de l'agence lancée." if client_id else "Mise à jour lancée.") if demarre else "Une mise à jour est déjà en cours."
     return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
 

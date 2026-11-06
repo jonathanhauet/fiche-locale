@@ -88,7 +88,7 @@ def _score_correspondance(nom_resultat: str, nom_entreprise: str, mots_mot_cle: 
     return difflib.SequenceMatcher(None, a, b).ratio() * 0.5
 
 
-def verifier_position(mot_cle: str, latitude: float, longitude: float, nom_entreprise: str):
+def verifier_position(mot_cle: str, latitude: float, longitude: float, nom_entreprise: str, profondeur: int = 10):
     """
     Interroge DataForSEO pour un point donne. Renvoie (position, nom_correspondance, classement) :
     - position est None si l'entreprise n'apparait pas dans les resultats renvoyes
@@ -137,7 +137,7 @@ def verifier_position(mot_cle: str, latitude: float, longitude: float, nom_entre
             "nombre_avis": (item.get("rating") or {}).get("votes_count"),
             "cid": item.get("cid") or "", "place_id": item.get("place_id") or "", "adresse": item.get("address") or "", "site": item.get("domain") or "",
         }
-        for item in resultats_classes[:10]
+        for item in resultats_classes[:profondeur]
     ]
 
     mots_mot_cle = _mots(mot_cle)
