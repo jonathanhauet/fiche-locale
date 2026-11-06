@@ -118,6 +118,8 @@ def verifier_position(mot_cle: str, latitude: float, longitude: float, nom_entre
 
     donnees = reponse.json()
     taches = donnees.get("tasks") or []
+    if taches and (taches[0].get("status_code") == 40102 or "no search results" in str(taches[0].get("status_message", "")).lower()):
+        return None, "", []     # aucun resultat a ce point (zone rurale, hors zone d'activite) : ce n'est pas une panne, la fiche n'y est simplement pas classee
     if not taches or taches[0].get("status_code") != 20000:
         message = taches[0].get("status_message") if taches else "reponse vide"
         raise RuntimeError(f"Erreur DataForSEO : {message}")
