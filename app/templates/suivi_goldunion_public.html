@@ -132,6 +132,7 @@
             <div style="margin-top:0.4rem" class="gu-doux">Page agence :</div>
             {% if site.get("etat") == "ok" %}<span class="gu-puce gu-ok">En ligne</span>
             {% elif site.get("etat") == "ville_absente" %}<span class="gu-puce gu-attention">Sans la ville</span>
+            {% elif site.get("etat") == "indeterminee" %}<span class="gu-puce gu-neutre">À vérifier à la main</span>
             {% elif site.get("etat") == "erreur" %}<span class="gu-puce gu-alerte">En erreur</span>
             {% else %}<span class="gu-puce gu-neutre">Aucun site</span>{% endif %}
             {% if site.get("detail") %}<div class="gu-doux">{{ site.detail }}</div>{% endif %}

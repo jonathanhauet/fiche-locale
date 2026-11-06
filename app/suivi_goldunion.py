@@ -8,6 +8,7 @@ Les donnees sont lues chez Google puis gardees (models.SuiviAgence) : la page ne
 Les fiches et les avis sont relus chaque nuit ; les positions (payantes) une fois par mois.
 """
 
+import html as html_stdlib
 import json
 import re
 import secrets
@@ -218,10 +219,26 @@ def _adresse(infos: dict) -> str:
     return ", ".join(x for x in (ligne, ville) if x)
 
 
+def _forme_comparable(texte: str) -> str:
+    """Minuscules, sans accents, ponctuation et tirets remplaces par des espaces : « Saint-Brieuc » = « Saint Brieuc » = « SAINT‑BRIEUC »."""
+    return " " + " ".join(re.sub(r"[^a-z0-9]+", " ", _sans_accents(texte)).split()) + " "
+
+
+def _texte_visible(contenu: str) -> str:
+    """Texte lisible d'une page : sans scripts, styles ni balises, entites HTML decodees."""
+    sans_code = re.sub(r"(?is)<(script|style|noscript|svg)\b.*?</\1>", " ", contenu or "")
+    return " ".join(html_stdlib.unescape(re.sub(r"(?s)<[^>]+>", " ", sans_code)).split())
+
+
+SEUIL_PAGE_DYNAMIQUE = 400      # moins de caracteres de texte : la page se construit probablement par JavaScript, on ne peut pas y chercher la ville
+
+
 def verifier_page_site(url: str, ville: str = "") -> dict:
     """
-    Etat de la page agence du site : {"etat": "absent" | "ok" | "ville_absente" | "erreur", "code": int, "detail": str}.
-    Adresses privees refusees, redirections suivies avec controle ; « ville_absente » = la page repond mais ne parle pas de la ville de l'agence.
+    Etat de la page agence du site : {"etat": "absent" | "ok" | "ville_absente" | "indeterminee" | "erreur", "code": int, "detail": str}.
+    Adresses privees refusees, redirections suivies avec controle ; « ville_absente » = la page repond mais ne parle pas de la ville de l'agence
+    (la ville est cherchee dans le texte de la page ou dans son adresse, sans tenir compte des accents, des majuscules ni des tirets) ;
+    « indeterminee » = page quasiment vide sans JavaScript : impossible de dire si la ville y figure.
     """
     url = (url or "").strip()
     if not url:
@@ -244,8 +261,13 @@ def verifier_page_site(url: str, ville: str = "") -> dict:
                 return {"etat": "erreur", "code": code, "detail": f"La page répond {code}"}
             contenu = reponse.raw.read(600_000, decode_content=True).decode(reponse.encoding or "utf-8", errors="ignore")
             reponse.close()
-            if ville and _sans_accents(ville) not in _sans_accents(contenu):
-                return {"etat": "ville_absente", "code": 200, "detail": f"La page ne mentionne pas « {ville} »"}
+            if ville:
+                texte = _texte_visible(contenu)
+                cherchee = _forme_comparable(ville)
+                if cherchee not in _forme_comparable(texte) and cherchee not in _forme_comparable(courant):
+                    if len(texte) < SEUIL_PAGE_DYNAMIQUE:
+                        return {"etat": "indeterminee", "code": 200, "detail": "Page construite par JavaScript : à vérifier à la main"}
+                    return {"etat": "ville_absente", "code": 200, "detail": f"La page ne mentionne pas « {ville} »"}
             return {"etat": "ok", "code": 200, "detail": ""}
         return {"etat": "erreur", "code": 0, "detail": "Trop de redirections"}
     except requests.RequestException:
@@ -712,7 +734,7 @@ def generer_excel(entrees: list, mots: list) -> bytes:
     feuille.append(ENTETES_EXCEL + [f"Top 3 « {m} » (points)" for m in mots])
     for cellule in feuille[1]:
         cellule.font = Font(bold=True)
-    libelles_site = {"ok": "OK", "ville_absente": "Ville absente de la page", "erreur": "En erreur", "absent": "Aucun site"}
+    libelles_site = {"ok": "OK", "ville_absente": "Ville absente de la page", "indeterminee": "À vérifier à la main (page dynamique)", "erreur": "En erreur", "absent": "Aucun site"}
     for e in entrees:
         d, fiche, avis, pos = e["donnees"], (e["donnees"].get("fiche") or {}), e["avis"], e["pos"]
         etat_site = d.get("site_etat") or {}
