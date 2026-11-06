@@ -237,10 +237,10 @@
   </div>
 
   <div class="gu-filtres" role="group" aria-label="Filtres">
-    <div class="gu-groupe-filtre" data-vues="tout"><span class="gu-titre-filtre">Fiche Google</span>
+    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Fiche Google</span>
       {% for code, libelle, nb in options_fiche %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="fiche" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
-    <div class="gu-groupe-filtre" data-vues="tout"><span class="gu-titre-filtre">Ouverture</span>
+    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Ouverture</span>
       {% for code, libelle, nb in options_ouverture %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="ouverture" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
     <div class="gu-groupe-filtre" data-vues="visibilite avis tout"><span class="gu-titre-filtre">Date d'ouverture</span>
