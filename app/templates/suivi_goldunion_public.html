@@ -166,6 +166,9 @@
     <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Ouverture</span>
       {% for code, libelle, nb in options_ouverture %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="ouverture" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
+    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Date d'ouverture</span>
+      {% for code, libelle, nb in options_anciennete %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="anciennete" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
+    </div>
     <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Visibilité (top 3)</span>
       {% for p in paliers %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="palier" value="{{ p.code }}"> <span class="gu-pastille-palier p-{{ p.code }}"></span> {{ p.libelle if p.code != 'aucune' else 'Non mesurée' }} <span class="gu-nb">{{ p.nb }}</span></label>{% endfor %}
     </div>
@@ -183,7 +186,7 @@
     <tbody>
       {% for e in entrees %}
       {% set d = e.donnees %}{% set fiche = d.get("fiche") or {} %}{% set site = d.get("site_etat") or {} %}{% set stats = d.get("stats") or {} %}{% set avis = e.avis %}{% set pos = e.pos %}
-      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-statuts="{{ e.statuts|join(' ') }}" data-palier="{{ e.palier }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
+      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-statuts="{{ e.statuts|join(' ') }}" data-palier="{{ e.palier }}" data-anciennete="{{ e.anciennete }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
           data-nom="{{ e.client.nom|lower }}" data-nb="{{ e.problemes|length }}" data-visibilite="{{ pos.pct3 if pos else 999 }}" data-evolution="{{ pos.evolution if pos and pos.evolution is not none else 999 }}"
           data-note="{{ avis.note if avis and avis.note is not none else 99 }}" data-sans-reponse="{{ avis.sans_reponse if avis else 0 }}"
           data-texte="{{ (e.client.nom ~ ' ' ~ d.get('ville', '') ~ ' ' ~ d.get('adresse', ''))|lower }}">
@@ -219,7 +222,7 @@
         </td>
         <td data-label="Ouverture et fermetures">
           {% if d.get("statut_ouverture") %}<div><span class="gu-puce {{ 'gu-ok' if 'ouverte' in e.statuts else ('gu-alerte' if 'fermee_def' in e.statuts else ('gu-attention' if 'fermee_temp' in e.statuts else 'gu-neutre')) }}">{{ d.statut_ouverture }}</span></div>{% endif %}
-          {% if d.get("date_ouverture") %}<div class="gu-doux">Ouverte depuis le {{ libelle_date_ouverture(d.date_ouverture) }}</div>{% elif d %}<div class="gu-doux">Date d'ouverture non renseignée</div>{% endif %}
+          {% if d.get("date_ouverture") %}<div class="gu-doux">Ouverte depuis le {{ libelle_date_ouverture(d.date_ouverture) }}{% if e.anciennete == "recente" %} <span class="gu-puce gu-attention" title="Ouverte depuis moins de {{ mois_recente }} mois : il est normal qu'elle soit encore peu positionnée">Récente</span>{% endif %}</div>{% elif d %}<div class="gu-doux">Date d'ouverture non renseignée</div>{% endif %}
           {% if d.get("conges") %}
           <ul class="gu-liste">
             {% for c in d.conges %}<li><span class="gu-puce {{ 'gu-attention' if c.libelle == 'Fermé' else 'gu-neutre' }}">{{ c.date[8:10] }}/{{ c.date[5:7] }}{% if c.get("jusqu_au") %} → {{ c.jusqu_au[8:10] }}/{{ c.jusqu_au[5:7] }}{% endif %}</span> {{ c.libelle }}</li>{% endfor %}
@@ -262,15 +265,14 @@
               <div class="gu-carte-mot">
                 <div><strong>{{ mot }} {{ d.get("ville", "") }}</strong> · {{ m.top3 }}/{{ m.total }} en top 3</div>
                 <div class="gu-grille" style="grid-template-columns: repeat({{ m.grille[0]|length }}, 1.7rem)">
-                  {% set balise = 'button' if pos.avec_concurrents else 'span' %}
-                  {% for ligne in m.grille %}{% set ligne_i = loop.index0 %}{% for p in ligne %}<{{ balise }}{% if pos.avec_concurrents %} type="button" data-mot="{{ mot }}" data-i="{{ m.indices[ligne_i][loop.index0] }}"{% endif %} class="gu-cell {{ 'c-rien' if p is none else ('c-ok' if p <= 3 else ('c-moyen' if p <= 10 else 'c-bas')) }}" title="{{ ('Hors des premiers résultats' if p is none else 'Position ' ~ p) ~ (' · cliquez pour voir les concurrents devant' if pos.avec_concurrents else '') }}">{{ '–' if p is none else p }}</{{ balise }}>{% endfor %}{% endfor %}
+                  {% for ligne in m.grille %}{% set ligne_i = loop.index0 %}{% for p in ligne %}<button type="button" data-mot="{{ mot }}" data-i="{{ m.indices[ligne_i][loop.index0] }}" class="gu-cell {{ 'c-rien' if p is none else ('c-ok' if p <= 3 else ('c-moyen' if p <= 10 else 'c-bas')) }}" title="{{ ('Hors des premiers résultats' if p is none else 'Position ' ~ p) ~ ' · cliquez pour voir les concurrents devant' }}">{{ '–' if p is none else p }}</button>{% endfor %}{% endfor %}
                 </div>
               </div>
               {% endfor %}
             </div>
             </div>
-            {% if pos.avec_concurrents %}<div class="gu-concurrents" hidden></div>{% endif %}
-            <div class="gu-doux" style="margin-top:0.3rem">{% if pos.avec_concurrents %}Cliquez sur une brique (ou un chiffre de la carte) pour voir les concurrents classés devant l'agence · {% endif %}Nord en haut · {{ pos.taille }}×{{ pos.taille }} points, {{ "%g"|format(pos.ecart_km) }} km d'écart{% if e.positions.get("erreur") %} · dernière mesure en erreur : {{ e.positions.erreur }}{% endif %}</div>
+            <div class="gu-concurrents" hidden></div>
+            <div class="gu-doux" style="margin-top:0.3rem">Cliquez sur une brique (ou un chiffre de la carte) pour voir les concurrents classés devant l'agence · Nord en haut · {{ pos.taille }}×{{ pos.taille }} points, {{ "%g"|format(pos.ecart_km) }} km d'écart{% if e.positions.get("erreur") %} · dernière mesure en erreur : {{ e.positions.erreur }}{% endif %}</div>
           </details>
           {% elif e.positions.get("erreur") %}<span class="gu-doux">{{ e.positions.erreur }}</span>
           {% else %}<span class="gu-doux">Pas encore mesuré</span>{% endif %}
@@ -332,6 +334,10 @@
     const briques = Array.from(details.querySelectorAll(".gu-cell[data-i]"));
     briques.forEach((b) => b.classList.toggle("selectionnee", b.dataset.i === String(index) && (!mot || b.dataset.mot === mot)));
     panneau.hidden = false;
+    if (!details.dataset.conc) {                                  // mesure faite avant l'enregistrement des concurrents
+      panneau.textContent = "Les concurrents ne sont pas encore enregistrés pour cette agence : ils seront disponibles après la prochaine mesure des positions.";
+      return;
+    }
     panneau.textContent = "Chargement…";
     let donnees;
     try { donnees = await chargerConcurrents(details); } catch (e) { panneau.textContent = "Le détail n'a pas pu être chargé. Réessayez dans un instant."; return; }
@@ -367,7 +373,7 @@
     });
     panneau.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
-  document.querySelectorAll("details.gu-details[data-conc]").forEach((d) => d.addEventListener("click", (ev) => {
+  document.querySelectorAll("details.gu-details").forEach((d) => d.addEventListener("click", (ev) => {
     const brique = ev.target.closest(".gu-cell[data-i]");
     if (brique) ouvrirConcurrents(d, brique.dataset.mot, parseInt(brique.dataset.i, 10));
   }));
@@ -399,8 +405,8 @@
         }
         const couleur = { "c-ok": "#1f9d55", "c-moyen": "#d98a06", "c-bas": "#dc2626", "c-rien": "#6b7280" }[classe];
         L.circle(p, { radius: demi, color: couleur, weight: 1, fillColor: couleur, fillOpacity: 0.22 }).addTo(couche);
-        const etiquette = L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="gu-etiquette-carte ${classe}${details.dataset.conc ? " cliquable" : ""}">${texte}</div>`, iconSize: [26, 20], iconAnchor: [13, 10] }), interactive: !!details.dataset.conc }).addTo(couche);
-        if (details.dataset.conc) etiquette.on("click", (ev) => { L.DomEvent.stopPropagation(ev); ouvrirConcurrents(details, selecteur.value, i); });
+        const etiquette = L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="gu-etiquette-carte ${classe}${details.querySelector(".gu-concurrents") ? " cliquable" : ""}">${texte}</div>`, iconSize: [26, 20], iconAnchor: [13, 10] }), interactive: !!details.querySelector(".gu-concurrents") }).addTo(couche);
+        if (details.querySelector(".gu-concurrents")) etiquette.on("click", (ev) => { L.DomEvent.stopPropagation(ev); ouvrirConcurrents(details, selecteur.value, i); });
       });
       L.marker(donnees.centre, { icon: L.divIcon({ className: "", html: '<div class="gu-centre-carte" title="Agence"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }), interactive: false }).addTo(couche);
     }
@@ -437,11 +443,11 @@
   const cochees = (groupe) => casesFiltre.filter((c) => c.dataset.groupe === groupe && c.checked).map((c) => c.value);
   function filtrer() {
     const q = sansAccents(recherche.value.trim());
-    const fiche = cochees("fiche"), ouverture = cochees("ouverture"), paliers = cochees("palier");        // « ou » dans une rubrique, « et » entre rubriques
+    const fiche = cochees("fiche"), ouverture = cochees("ouverture"), paliers = cochees("palier"), anciennetes = cochees("anciennete");        // « ou » dans une rubrique, « et » entre rubriques
     let visibles = 0;
     lignes.sort(comparateurs[tri.value] || comparateurs.nom).forEach((l) => corps.appendChild(l));
     lignes.forEach((l) => {
-      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!fiche.length || fiche.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!ouverture.length || ouverture.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!paliers.length || paliers.includes(l.dataset.palier)) && (!surveiller.checked || l.dataset.surveiller === "1");
+      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!fiche.length || fiche.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!ouverture.length || ouverture.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!paliers.length || paliers.includes(l.dataset.palier)) && (!anciennetes.length || anciennetes.includes(l.dataset.anciennete)) && (!surveiller.checked || l.dataset.surveiller === "1");
       l.hidden = !ok;
       if (ok) visibles++;
     });

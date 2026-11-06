@@ -41,6 +41,7 @@ JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 CODES_JOUR = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
 _verrou = threading.Lock()
 _verrou_geocodage = threading.Lock()
+_verrou_ecriture = threading.Lock()            # une seule ecriture en base a la fois entre les fils de lecture et de mesure
 _dernier_geocodage = [0.0]
 
 
@@ -62,6 +63,37 @@ def ids_etiquettes(parametre) -> list:
 
 def mots_cles(parametre) -> list:
     return [m.strip() for m in (parametre.mots_cles or MOTS_CLES_DEFAUT).split(",") if m.strip()]
+
+
+MOIS_RECENTE_MAX = 23                           # au-dela, « recente » recouvrirait « 2 ans »
+CATEGORIES_ANCIENNETE = [("recente", "Récente (moins de {n} mois)"), ("moyenne", "{n} mois à 2 ans"), ("ancienne", "Plus de 2 ans"), ("inconnue", "Date d'ouverture inconnue")]
+
+
+def mois_recente(parametre) -> int:
+    try:
+        return max(1, min(MOIS_RECENTE_MAX, int(parametre.mois_agence_recente or 6)))
+    except (TypeError, ValueError):
+        return 6
+
+
+def anciennete_mois(date_ouverture: str, aujourdhui: date = None):
+    """Age de l'agence en mois d'apres sa date d'ouverture (« AAAA-MM-JJ » ou « AAAA-MM »), ou None si inconnue ou dans le futur."""
+    aujourdhui = aujourdhui or date.today()
+    morceaux = (date_ouverture or "").split("-")
+    try:
+        ouverture = date(int(morceaux[0]), int(morceaux[1]) if len(morceaux) > 1 else 1, int(morceaux[2]) if len(morceaux) > 2 else 1)
+    except (ValueError, IndexError):
+        return None
+    mois = (aujourdhui.year - ouverture.year) * 12 + aujourdhui.month - ouverture.month - (1 if aujourdhui.day < ouverture.day and len(morceaux) > 2 else 0)
+    return mois if mois >= 0 else None
+
+
+def categorie_anciennete(date_ouverture: str, n_mois: int = 6, aujourdhui: date = None) -> str:
+    """« recente » (moins de n_mois mois), « moyenne » (jusqu'a 2 ans), « ancienne » (plus de 2 ans) ou « inconnue »."""
+    mois = anciennete_mois(date_ouverture, aujourdhui)
+    if mois is None:
+        return "inconnue"
+    return "recente" if mois < n_mois else "moyenne" if mois < 24 else "ancienne"
 
 
 def taille_grille(parametre) -> int:
@@ -542,8 +574,8 @@ def resume_positions(positions: dict, centre=None) -> dict:
 
 # ---------- points d'attention
 
-def problemes(donnees: dict, groupe_attendu: str = "", positions: dict = None) -> list:
-    """Points d'attention d'une agence (textes courts)."""
+def problemes(donnees: dict, groupe_attendu: str = "", positions: dict = None, n_mois_recente: int = 6) -> list:
+    """Points d'attention d'une agence (textes courts). Une agence recente n'est pas signalee « absente du top 10 » : c'est normal pour une fiche toute neuve."""
     liste = []
     fiche = donnees.get("fiche") or {}
     if not fiche.get("creee"):
@@ -574,7 +606,7 @@ def problemes(donnees: dict, groupe_attendu: str = "", positions: dict = None) -
     if visibilite:
         if visibilite["evolution"] is not None and visibilite["evolution"] <= -SEUIL_BAISSE_VISIBILITE:
             liste.append(f"Visibilité en baisse ({visibilite['evolution']} pts)")
-        if visibilite["top10"] == 0:
+        if visibilite["top10"] == 0 and categorie_anciennete(donnees.get("date_ouverture"), n_mois_recente) != "recente":
             liste.append("Absente du top 10")
     return liste
 
@@ -652,7 +684,8 @@ def lignes(db, parametre) -> list:
         resultat.append({
             "client": client, "donnees": donnees, "positions": positions, "pos": resume_positions(positions, [donnees.get("lat"), donnees.get("lng")]), "avis": resume_avis(donnees.get("avis") or {}),
             "maj_le": suivi.maj_le if suivi else None, "statuts": statuts_fiche(donnees), "palier": palier_visibilite(resume_positions(positions, [donnees.get("lat"), donnees.get("lng")]).get("pct3")),
-            "problemes": problemes(donnees, parametre.groupe_attendu or "", positions) if donnees else ["Pas encore lue"],
+            "anciennete": categorie_anciennete(donnees.get("date_ouverture"), mois_recente(parametre)),
+            "problemes": problemes(donnees, parametre.groupe_attendu or "", positions, mois_recente(parametre)) if donnees else ["Pas encore lue"],
         })
     return resultat
 
@@ -688,14 +721,54 @@ def _noms_groupes(travaux_identifiants: dict) -> dict:
 
 
 def _noter(session_factory, **champs):
-    db = session_factory()
-    try:
-        parametre = lire_parametre(db)
-        for cle, valeur in champs.items():
-            setattr(parametre, cle, valeur)
-        db.commit()
-    finally:
-        db.close()
+    with _verrou_ecriture:
+        db = session_factory()
+        try:
+            parametre = lire_parametre(db)
+            for cle, valeur in champs.items():
+                setattr(parametre, cle, valeur)
+            db.commit()
+        finally:
+            db.close()
+
+
+def _enregistrer_agence(session_factory, client_id: int, donnees: dict = None, positions: dict = None, anciennes_positions: dict = None, lat_cache=None) -> None:
+    """
+    Enregistre tout de suite le resultat d'UNE agence (des qu'elle est lue ou mesuree), au lieu d'attendre la fin de la mise a jour : un redemarrage du
+    serveur en cours de route ne fait plus perdre ce qui est deja fait.
+    """
+    with _verrou_ecriture:
+        db = session_factory()
+        try:
+            maintenant = datetime.utcnow()
+            suivi = db.query(models.SuiviAgence).filter_by(client_id=client_id).first()
+            if not suivi:
+                suivi = models.SuiviAgence(client_id=client_id)
+                db.add(suivi)
+            if donnees is not None:
+                suivi.donnees_json, suivi.maj_le = json.dumps(donnees), maintenant
+                if donnees.get("lat") is not None and donnees.get("lng") is not None and lat_cache is None:
+                    client = db.get(models.Client, client_id)                    # coordonnees gardees sur la fiche : plus de geocodage la fois suivante
+                    if client is not None and client.latitude is None:
+                        client.latitude, client.longitude = donnees["lat"], donnees["lng"]
+            if positions is not None:
+                suivi.positions_json, suivi.positions_maj_le = json.dumps(fusionner_positions(anciennes_positions, positions)), maintenant
+            db.commit()
+        finally:
+            db.close()
+
+
+def liberer_mise_a_jour_interrompue(connexion) -> bool:
+    """
+    A appeler au demarrage du serveur : une mise a jour marquee « en cours » alors que le serveur vient de demarrer a forcement ete interrompue
+    (redemarrage, deploiement). On la declare interrompue pour qu'on puisse la relancer tout de suite (sinon elle bloquerait pendant 2 heures).
+    """
+    from sqlalchemy import inspect as inspecter, text
+    if "parametre_suivi_goldunion" not in set(inspecter(connexion).get_table_names()):
+        return False
+    resultat = connexion.execute(text("UPDATE parametre_suivi_goldunion SET statut = 'erreur', message = :m WHERE statut = 'en_cours'"),
+                                 {"m": "Mise à jour interrompue par un redémarrage du serveur : relancez-la (ce qui était déjà relu ou mesuré est conservé)."})
+    return bool(resultat.rowcount)
 
 
 def est_en_cours(parametre) -> bool:
@@ -749,6 +822,7 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
 
             def lire(travail):
                 resultats[travail["client_id"]] = lire_agence(travail)
+                _enregistrer_agence(session_factory, travail["client_id"], donnees=resultats[travail["client_id"]], lat_cache=travail.get("lat_cache"))
                 faits[0] += 1
                 if faits[0] % 10 == 0:
                     _noter(session_factory, message=f"Lecture des fiches : {faits[0]}/{total}")
@@ -766,6 +840,7 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
 
                 def mesurer(travail):
                     positions[travail["client_id"]] = mesurer_positions(donnees_finales.get(travail["client_id"]) or {}, travail["nom"], mots, taille, ecart)
+                    _enregistrer_agence(session_factory, travail["client_id"], positions=positions[travail["client_id"]], anciennes_positions=anciennes_positions.get(travail["client_id"]))
                     faits[0] += 1
                     if faits[0] % 5 == 0:
                         _noter(session_factory, message=f"Positions : {faits[0]}/{total} agences")
@@ -775,23 +850,7 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
 
         db = session_factory()
         try:
-            maintenant = datetime.utcnow()
-            suivis = {s.client_id: s for s in db.query(models.SuiviAgence).all()}
-            for travail in travaux:
-                suivi = suivis.get(travail["client_id"])
-                if not suivi:
-                    suivi = models.SuiviAgence(client_id=travail["client_id"])
-                    db.add(suivi)
-                if travail["client_id"] in resultats:
-                    suivi.donnees_json, suivi.maj_le = json.dumps(resultats[travail["client_id"]]), maintenant
-                    lue = resultats[travail["client_id"]]
-                    if lue.get("lat") is not None and lue.get("lng") is not None and travail.get("lat_cache") is None:
-                        client = db.get(models.Client, travail["client_id"])         # coordonnees gardees sur la fiche : plus de geocodage la fois suivante
-                        if client is not None and client.latitude is None:
-                            client.latitude, client.longitude = lue["lat"], lue["lng"]
-                if travail["client_id"] in positions:
-                    suivi.positions_json = json.dumps(fusionner_positions(anciennes_positions.get(travail["client_id"]), positions[travail["client_id"]]))
-                    suivi.positions_maj_le = maintenant
+            maintenant = datetime.utcnow()                    # les agences ont deja ete enregistrees une a une (voir _enregistrer_agence)
             parametre = lire_parametre(db)
             illisibles = sum(1 for r in resultats.values() if r.get("erreur") and not r.get("adresse"))
             echecs_positions = sum(1 for p in positions.values() if p.get("erreur"))
@@ -833,7 +892,7 @@ def lancer(session_factory, avec_positions: bool = False, seulement_positions: b
 # ---------- export Excel
 
 ENTETES_EXCEL = [
-    "Agence", "Pays", "Ville", "Adresse", "Téléphone", "Horaires", "Statut d'ouverture", "Date d'ouverture", "Fermetures / horaires exceptionnels à venir",
+    "Agence", "Pays", "Ville", "Adresse", "Téléphone", "Horaires", "Statut d'ouverture", "Date d'ouverture", "Ancienneté", "Fermetures / horaires exceptionnels à venir",
     "Fiche Google reliée", "Fiche validée", "Groupe Google", "Site de la fiche", "Page agence : état",
     "Note moyenne", "Nombre d'avis", "Nouveaux avis (30 j)", "Avis sans réponse (60 j)", "Avis négatifs sans réponse (90 j)", "Évolution du nombre d'avis (vs mois dernier)", "Évolution de la note (vs mois dernier)",
     "Vues Maps (mois dernier)", "Appels", "Itinéraires", "Clics site", "Mois des statistiques",
@@ -856,7 +915,7 @@ def generer_excel(entrees: list, mots: list) -> bytes:
         stats = d.get("stats") or {}
         feuille.append([
             e["client"].nom, d.get("pays", ""), d.get("ville", ""), d.get("adresse", ""), d.get("telephone", ""), d.get("horaires", ""),
-            d.get("statut_ouverture", ""), libelle_date_ouverture(d.get("date_ouverture", "")),
+            d.get("statut_ouverture", ""), libelle_date_ouverture(d.get("date_ouverture", "")), {"recente": "Récente", "moyenne": "Moins de 2 ans", "ancienne": "Plus de 2 ans", "inconnue": ""}[e["anciennete"]],
             " ; ".join(f"{c['date']} : {c['libelle']}" for c in d.get("conges", [])),
             "Oui" if fiche.get("creee") else "Non", {True: "Oui", False: "Non"}.get(fiche.get("validee"), ""), fiche.get("groupe", ""), d.get("site", ""),
             (libelles_site.get(etat_site.get("etat"), "") + (f" ({etat_site['detail']})" if etat_site.get("detail") else "")) if etat_site else "",
@@ -867,7 +926,7 @@ def generer_excel(entrees: list, mots: list) -> bytes:
             f"{pos['taille']}×{pos['taille']}, {pos['ecart_km']:g} km" if pos else "",
             " ; ".join(e["problemes"]), e["maj_le"].strftime("%d/%m/%Y %H:%M") if e["maj_le"] else "",
         ] + [f"{pos['par_mot'][m]['top3']}/{pos['par_mot'][m]['total']}" if pos and m in pos.get("par_mot", {}) else "" for m in mots])
-    for i, largeur in enumerate([34, 6, 18, 40, 16, 40, 16, 12, 40, 10, 10, 22, 34, 26, 10, 10, 12, 12, 14, 16, 16, 12, 8, 10, 10, 10, 14, 14, 16, 16, 34, 16] + [14] * len(mots), start=1):
+    for i, largeur in enumerate([34, 6, 18, 40, 16, 40, 16, 12, 14, 40, 10, 10, 22, 34, 26, 10, 10, 12, 12, 14, 16, 16, 12, 8, 10, 10, 10, 14, 14, 16, 16, 34, 16] + [14] * len(mots), start=1):
         feuille.column_dimensions[get_column_letter(i)].width = largeur
     feuille.freeze_panes = "B2"
     sortie = BytesIO()

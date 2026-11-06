@@ -193,6 +193,8 @@ def _migrer_vers_multi_comptes():
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN taille_grille INTEGER DEFAULT 3"))
             if "ecart_km" not in colonnes_suivi:
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN ecart_km REAL DEFAULT 2.0"))
+            if "mois_agence_recente" not in colonnes_suivi:
+                connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN mois_agence_recente INTEGER DEFAULT 6"))
 
     with engine.begin() as connexion:
         if "compte_google_id" not in colonnes_clients:
@@ -468,6 +470,7 @@ def _migrer_vers_multi_comptes():
 _migrer_vers_multi_comptes()
 with engine.begin() as _connexion_nettoyage:
     suivi_goldunion.nettoyer_ancienne_mesure(_connexion_nettoyage)
+    suivi_goldunion.liberer_mise_a_jour_interrompue(_connexion_nettoyage)
 
 app = FastAPI(title="Fiche Locale - Plateforme")
 
@@ -7481,7 +7484,7 @@ def page_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session
         "agences": [{"id": e["client"].id, "nom": e["client"].nom, "maj": e["maj_le"].strftime("%d/%m") if e["maj_le"] else "", "positions": (e["positions"].get("maj") or "")[8:10] + "/" + (e["positions"].get("maj") or "")[5:7] if e["positions"].get("maj") else ""} for e in entrees],
         "cout_une_agence": (lambda c: f"{c:g} ¢" if c < 100 else f"{c / 100:.1f} $".replace(".", ","))(suivi_goldunion.cout_mesure_centimes(1, len(mots), suivi_goldunion.taille_grille(parametre))),
         "mots_cles": ", ".join(mots), "cout_positions": (f"{cout:g} ¢" if cout < 100 else f"{cout / 100:.1f} $".replace(".", ",")), "nb_france": nb_france,
-        "taille_grille": suivi_goldunion.taille_grille(parametre), "ecart_km": suivi_goldunion.ecart_km(parametre), "tailles_grille": suivi_goldunion.TAILLES_GRILLE, "ecarts_km": suivi_goldunion.ECARTS_KM,
+        "mois_recente": suivi_goldunion.mois_recente(parametre), "taille_grille": suivi_goldunion.taille_grille(parametre), "ecart_km": suivi_goldunion.ecart_km(parametre), "tailles_grille": suivi_goldunion.TAILLES_GRILLE, "ecarts_km": suivi_goldunion.ECARTS_KM,
         "dataforseo_configure": rank_tracking.identifiants_configures(), "message": request.query_params.get("message", ""),
     })
 
@@ -7501,6 +7504,10 @@ async def reglages_suivi_goldunion(request: Request, db: Session = Depends(obten
         taille, ecart = int(formulaire.get("taille_grille", 3)), float(formulaire.get("ecart_km", 2))
     except ValueError:
         taille, ecart = 3, 2.0
+    try:
+        parametre.mois_agence_recente = max(1, min(suivi_goldunion.MOIS_RECENTE_MAX, int(formulaire.get("mois_agence_recente", 6))))
+    except ValueError:
+        parametre.mois_agence_recente = 6
     parametre.taille_grille = taille if taille in suivi_goldunion.TAILLES_GRILLE else 3
     parametre.ecart_km = ecart if ecart in suivi_goldunion.ECARTS_KM else 2.0
     db.commit()
@@ -7563,10 +7570,13 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
     entrees = suivi_goldunion.lignes(db, parametre)
     mots = suivi_goldunion.mots_cles(parametre)
     nb_par_statut = {code: sum(1 for e in entrees if code in e["statuts"]) for code, _ in suivi_goldunion.STATUTS_FICHE}
+    nb_par_anciennete = {code: sum(1 for e in entrees if e["anciennete"] == code) for code, _ in suivi_goldunion.CATEGORIES_ANCIENNETE}
+    n_mois = suivi_goldunion.mois_recente(parametre)
+    options_anciennete = [(code, libelle.replace("{n}", str(n_mois)), nb_par_anciennete[code]) for code, libelle in suivi_goldunion.CATEGORIES_ANCIENNETE if nb_par_anciennete[code]]
     libelles_statut = dict(suivi_goldunion.STATUTS_FICHE)
     options_groupes = {g: [(code, libelles_statut[code], nb_par_statut[code]) for code in codes if nb_par_statut[code]] for g, codes in suivi_goldunion.GROUPES_STATUT.items()}
     return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
-        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "options_anciennete": options_anciennete, "mois_recente": n_mois, "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
         "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
         "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
     }, headers=ENTETES_PAGE_PRIVEE)

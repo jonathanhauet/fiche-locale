@@ -88,6 +88,11 @@
   </label>
   <p class="texte-discret">Si renseigné, une agence dont la fiche n'est pas dans un groupe Google dont le nom contient ce texte est signalée « hors du bon groupe ».</p>
   <label>
+    Agence récente : ouverte depuis moins de
+    <input type="number" name="mois_agence_recente" value="{{ mois_recente }}" min="1" max="23" step="1" inputmode="numeric" style="max-width: 7rem"> mois
+  </label>
+  <p class="texte-discret">Une agence récente est normalement peu positionnée : elle reçoit un repère « Récente » sur la page, n'est pas signalée « absente du top 10 », et se filtre à part grâce à sa date d'ouverture.</p>
+  <label>
     Recherches suivies <span class="texte-discret">(séparées par des virgules ; la ville de l'agence est ajoutée à chacune)</span>
     <input type="text" name="mots_cles" value="{{ mots_cles }}">
   </label>
