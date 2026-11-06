@@ -88,12 +88,10 @@
 
   <div class="gu-barre">
     <input type="search" id="gu-recherche" placeholder="Rechercher une agence ou une ville…" autocomplete="off">
-    {% if pays|length > 1 %}
-    <select id="gu-pays" aria-label="Pays">
-      <option value="">Tous les pays</option>
-      {% for code in pays %}<option value="{{ code }}">{{ pays_noms[code] }}</option>{% endfor %}
+    <select id="gu-statut" aria-label="Statut de la fiche">
+      <option value="">Tous les statuts</option>
+      {% for code, libelle, nb in options_statut %}<option value="{{ code }}">{{ libelle }} ({{ nb }})</option>{% endfor %}
     </select>
-    {% endif %}
     <select id="gu-tri" aria-label="Trier">
       <option value="nom">Trier : ordre alphabétique</option>
       <option value="surveiller">Trier : à surveiller d'abord</option>
@@ -114,13 +112,13 @@
     <tbody>
       {% for e in entrees %}
       {% set d = e.donnees %}{% set fiche = d.get("fiche") or {} %}{% set site = d.get("site_etat") or {} %}{% set stats = d.get("stats") or {} %}{% set avis = e.avis %}{% set pos = e.pos %}
-      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-pays="{{ d.get('pays', '') }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
+      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-statuts="{{ e.statuts|join(' ') }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
           data-nom="{{ e.client.nom|lower }}" data-nb="{{ e.problemes|length }}" data-visibilite="{{ pos.pct3 if pos else 999 }}" data-evolution="{{ pos.evolution if pos and pos.evolution is not none else 999 }}"
           data-note="{{ avis.note if avis and avis.note is not none else 99 }}" data-sans-reponse="{{ avis.sans_reponse if avis else 0 }}"
           data-texte="{{ (e.client.nom ~ ' ' ~ d.get('ville', '') ~ ' ' ~ d.get('adresse', ''))|lower }}">
         <td class="gu-premiere" data-label="Agence">
           <div class="gu-nom">{{ e.client.nom }}</div>
-          <div class="gu-doux">{{ d.get("ville", "") }}{% if d.get("pays") %} · {{ pays_noms.get(d.get("pays"), d.get("pays")) }}{% endif %}</div>
+          <div class="gu-doux">{{ d.get("ville", "") }}</div>
         </td>
         <td data-label="Fiche Google et site">
           {% if not d %}<span class="gu-puce gu-neutre">Pas encore lue</span>
@@ -147,7 +145,7 @@
           {% if d.get("horaires") %}<div class="gu-doux">{{ d.horaires }}</div>{% elif d %}<div class="gu-doux">Horaires non renseignés</div>{% endif %}
         </td>
         <td data-label="Ouverture et fermetures">
-          {% if d.get("statut_ouverture") %}<div>{{ d.statut_ouverture }}</div>{% endif %}
+          {% if d.get("statut_ouverture") %}<div><span class="gu-puce {{ 'gu-ok' if 'ouverte' in e.statuts else ('gu-alerte' if 'fermee_def' in e.statuts else ('gu-attention' if 'fermee_temp' in e.statuts else 'gu-neutre')) }}">{{ d.statut_ouverture }}</span></div>{% endif %}
           {% if d.get("date_ouverture") %}<div class="gu-doux">Ouverte depuis le {{ libelle_date_ouverture(d.date_ouverture) }}</div>{% elif d %}<div class="gu-doux">Date d'ouverture non renseignée</div>{% endif %}
           {% if d.get("conges") %}
           <ul class="gu-liste">
@@ -222,7 +220,7 @@
   const corps = document.querySelector("#gu-tableau tbody");
   const lignes = Array.from(corps.querySelectorAll("tr[data-texte]"));
   const recherche = document.getElementById("gu-recherche");
-  const pays = document.getElementById("gu-pays");
+  const statut = document.getElementById("gu-statut");
   const surveiller = document.getElementById("gu-surveiller");
   const tri = document.getElementById("gu-tri");
   const compte = document.getElementById("gu-compte");
@@ -241,13 +239,13 @@
     let visibles = 0;
     lignes.sort(comparateurs[tri.value] || comparateurs.nom).forEach((l) => corps.appendChild(l));
     lignes.forEach((l) => {
-      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!pays || !pays.value || l.dataset.pays === pays.value) && (!surveiller.checked || l.dataset.surveiller === "1");
+      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!statut.value || l.dataset.statuts.split(" ").includes(statut.value)) && (!surveiller.checked || l.dataset.surveiller === "1");
       l.hidden = !ok;
       if (ok) visibles++;
     });
     compte.textContent = `${visibles} agence${visibles > 1 ? "s" : ""} affichée${visibles > 1 ? "s" : ""}`;
   }
-  [recherche, pays, surveiller, tri].forEach((c) => c && c.addEventListener("input", filtrer));
+  [recherche, statut, surveiller, tri].forEach((c) => c && c.addEventListener("input", filtrer));
   filtrer();
 })();
 </script>

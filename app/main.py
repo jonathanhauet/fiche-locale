@@ -7550,10 +7550,11 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
         return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
     entrees = suivi_goldunion.lignes(db, parametre)
     mots = suivi_goldunion.mots_cles(parametre)
-    pays = sorted({e["donnees"].get("pays") for e in entrees if e["donnees"].get("pays")})
+    nb_par_statut = {code: sum(1 for e in entrees if code in e["statuts"]) for code, _ in suivi_goldunion.STATUTS_FICHE}
+    options_statut = [(code, libelle, nb_par_statut[code]) for code, libelle in suivi_goldunion.STATUTS_FICHE if nb_par_statut[code]]
     return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
-        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "pays": pays, "jeton": jeton, "parametre": parametre,
-        "pays_noms": {code: reporting_mensuel.nom_pays(code) for code in pays}, "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_statut": options_statut, "jeton": jeton, "parametre": parametre,
+        "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
         "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
     }, headers=ENTETES_PAGE_PRIVEE)
 

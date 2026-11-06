@@ -480,6 +480,27 @@ def problemes(donnees: dict, groupe_attendu: str = "", positions: dict = None) -
     return liste
 
 
+STATUTS_FICHE = [
+    ("validee", "Fiche validée"), ("non_validee", "Fiche non validée"), ("non_reliee", "Fiche non reliée"),
+    ("ouverte", "Ouverte"), ("fermee_temp", "Fermée temporairement"), ("fermee_def", "Fermée définitivement"), ("statut_non_renseigne", "Statut d'ouverture non renseigné"),
+]
+
+
+def statuts_fiche(donnees: dict) -> list:
+    """Codes de statut d'une agence (voir STATUTS_FICHE) : validation de la fiche et statut d'ouverture ; vide si la fiche n'a pas pu etre lue."""
+    if not donnees:
+        return []
+    fiche = donnees.get("fiche") or {}
+    if not fiche.get("creee"):
+        return ["non_reliee"]
+    if not donnees.get("adresse"):
+        return []
+    statuts = ["validee" if fiche.get("validee") else "non_validee"]
+    ouverture = (donnees.get("statut_ouverture") or "").lower()
+    statuts.append("fermee_def" if "définitivement" in ouverture else "fermee_temp" if "temporairement" in ouverture else "ouverte" if ouverture.startswith("ouvert") else "statut_non_renseigne")
+    return statuts
+
+
 def libelle_date_ouverture(valeur: str) -> str:
     parties = (valeur or "").split("-")
     if len(parties) == 3:
@@ -500,7 +521,7 @@ def lignes(db, parametre) -> list:
         positions = json.loads(suivi.positions_json) if suivi and suivi.positions_json else {}
         resultat.append({
             "client": client, "donnees": donnees, "positions": positions, "pos": resume_positions(positions), "avis": resume_avis(donnees.get("avis") or {}),
-            "maj_le": suivi.maj_le if suivi else None,
+            "maj_le": suivi.maj_le if suivi else None, "statuts": statuts_fiche(donnees),
             "problemes": problemes(donnees, parametre.groupe_attendu or "", positions) if donnees else ["Pas encore lue"],
         })
     return resultat
