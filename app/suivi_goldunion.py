@@ -552,6 +552,29 @@ def statuts_fiche(donnees: dict) -> list:
     return statuts
 
 
+# Paliers de visibilite (part des points de la grille ou l'agence est dans le top 3) : (code, libelle, borne basse, borne haute)
+PALIERS_VISIBILITE = [("0-25", "0 – 25 %", 0, 25), ("26-50", "26 – 50 %", 26, 50), ("51-75", "51 – 75 %", 51, 75), ("76-100", "76 – 100 %", 76, 100)]
+
+
+def palier_visibilite(pourcentage) -> str:
+    """Code du palier d'un pourcentage de visibilite (« 0-25 », « 26-50 », « 51-75 », « 76-100 ») ; « aucune » si l'agence n'a pas de mesure."""
+    if pourcentage is None:
+        return "aucune"
+    for code, _, bas, haut in PALIERS_VISIBILITE:
+        if bas <= pourcentage <= haut:
+            return code
+    return "76-100" if pourcentage > 100 else "0-25"
+
+
+def repartition_paliers(entrees: list) -> list:
+    """[{"code", "libelle", "nb"}] : nombre d'agences par palier de visibilite, puis celles pas encore mesurees (hors France, ou pas encore de mesure)."""
+    nb = {}
+    for e in entrees:
+        nb[e["palier"]] = nb.get(e["palier"], 0) + 1
+    liste = [{"code": code, "libelle": libelle, "nb": nb.get(code, 0)} for code, libelle, _, _ in PALIERS_VISIBILITE]
+    return liste + [{"code": "aucune", "libelle": "Pas mesurées", "nb": nb.get("aucune", 0)}]
+
+
 def libelle_date_ouverture(valeur: str) -> str:
     parties = (valeur or "").split("-")
     if len(parties) == 3:
@@ -572,7 +595,7 @@ def lignes(db, parametre) -> list:
         positions = json.loads(suivi.positions_json) if suivi and suivi.positions_json else {}
         resultat.append({
             "client": client, "donnees": donnees, "positions": positions, "pos": resume_positions(positions, [donnees.get("lat"), donnees.get("lng")]), "avis": resume_avis(donnees.get("avis") or {}),
-            "maj_le": suivi.maj_le if suivi else None, "statuts": statuts_fiche(donnees),
+            "maj_le": suivi.maj_le if suivi else None, "statuts": statuts_fiche(donnees), "palier": palier_visibilite(resume_positions(positions, [donnees.get("lat"), donnees.get("lng")]).get("pct3")),
             "problemes": problemes(donnees, parametre.groupe_attendu or "", positions) if donnees else ["Pas encore lue"],
         })
     return resultat

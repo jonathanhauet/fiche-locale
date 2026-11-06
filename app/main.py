@@ -7563,7 +7563,7 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
     nb_par_statut = {code: sum(1 for e in entrees if code in e["statuts"]) for code, _ in suivi_goldunion.STATUTS_FICHE}
     options_statut = [(code, libelle, nb_par_statut[code]) for code, libelle in suivi_goldunion.STATUTS_FICHE if nb_par_statut[code]]
     return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
-        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_statut": options_statut, "jeton": jeton, "parametre": parametre,
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_statut": options_statut, "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
         "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
         "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
     }, headers=ENTETES_PAGE_PRIVEE)
