@@ -266,14 +266,17 @@
     let termines = total - aFaire.length, echecs = 0, derniereErreur = "", curseur = 0, interrompu = false;
     function actualiserProgression() {
       barreProgression.style.width = `${Math.round((termines / total) * 100)}%`;
-      texteProgression.textContent = `${termines} / ${total} points vérifiés`;
+      let texte = `${termines} / ${total} points vérifiés`;
+      if (echecs) texte += ` · ${echecs} en erreur (${derniereErreur})`;
+      else if (termines < total) texte += " · en attente de DataForSEO (quelques secondes par point)";
+      texteProgression.textContent = texte;
     }
     actualiserProgression();
     async function traiterSuivant() {
       while (curseur < aFaire.length && !interrompu) {
         const point = aFaire[curseur++];
         try {
-          const reponsePoint = await fetch(`/clients/${clientId}/positions/verifier/point/${point.id}`, { method: "POST" });
+          const reponsePoint = await fetch(`/clients/${clientId}/positions/verifier/point/${point.id}`, { method: "POST", signal: AbortSignal.timeout(75000) });
           const resultat = await reponsePoint.json().catch(() => ({}));
           if (reponsePoint.ok) {
             carte.removeLayer(marqueursParPoint[point.id]);
@@ -289,7 +292,7 @@
           }
         } catch (e) {
           echecs++;
-          derniereErreur = "connexion interrompue";
+          derniereErreur = e && e.name === "TimeoutError" ? "pas de réponse du serveur au bout de 75 s" : "connexion interrompue";
         }
         actualiserProgression();
       }
