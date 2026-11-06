@@ -608,9 +608,10 @@ def est_en_cours(parametre) -> bool:
     return bool(parametre and parametre.statut == "en_cours" and parametre.maj_demarree_le and datetime.utcnow() - parametre.maj_demarree_le < DUREE_MAX_MAJ)
 
 
-def rafraichir(session_factory, avec_positions: bool = False, seulement_positions: bool = False) -> bool:
+def rafraichir(session_factory, avec_positions: bool = False, seulement_positions: bool = False, client_id: int = None) -> bool:
     """
     Relit les fiches et les avis (et mesure les positions si demande). Renvoie False si une mise a jour est deja en cours.
+    client_id : ne traiter que cette agence (les autres gardent leurs donnees, et les dates de derniere mise a jour generales ne changent pas).
     A lancer dans un fil (voir lancer) : l'etat d'avancement est ecrit dans ParametreSuiviGoldUnion.
     """
     if not _verrou.acquire(blocking=False):
@@ -622,7 +623,7 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
             parametre.statut, parametre.message, parametre.maj_demarree_le = "en_cours", "Préparation…", datetime.utcnow()
             db.commit()
             mots, taille, ecart = mots_cles(parametre), taille_grille(parametre), ecart_km(parametre)
-            clients = clients_suivis(db, parametre)
+            clients = [c for c in clients_suivis(db, parametre) if client_id is None or c.id == client_id]
             comptes = {}
             existants = {s.client_id: s for s in db.query(models.SuiviAgence).all()}
             anciennes = {cid: json.loads(s.donnees_json) for cid, s in existants.items() if s.donnees_json}
@@ -639,6 +640,9 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
             db.close()
         total = len(travaux)
         if not total:
+            if client_id is not None:
+                _noter(session_factory, statut="ok", message="Agence introuvable parmi les agences suivies.")
+                return True
             _noter(session_factory, statut="ok", message="Aucune agence suivie : choisissez les étiquettes GoldUnion dans les réglages.", derniere_maj=datetime.utcnow())
             return True
 
@@ -698,11 +702,14 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
             illisibles = sum(1 for r in resultats.values() if r.get("erreur") and not r.get("adresse"))
             echecs_positions = sum(1 for p in positions.values() if p.get("erreur"))
             parametre.statut = "ok"
-            parametre.message = f"{total} agences" + (f", {illisibles} fiche(s) non lue(s)" if illisibles else "") + (f", {echecs_positions} mesure(s) de position en erreur" if echecs_positions else "")
-            if resultats:
-                parametre.derniere_maj = maintenant
-            if positions:
-                parametre.positions_maj_le = maintenant
+            if client_id is not None:
+                parametre.message = f"{travaux[0]['nom']} mise à jour" + (" (fiche non lue)" if illisibles else "") + (f" (mesure en erreur : {next(iter(positions.values())).get('erreur')})" if echecs_positions else "")
+            else:
+                parametre.message = f"{total} agences" + (f", {illisibles} fiche(s) non lue(s)" if illisibles else "") + (f", {echecs_positions} mesure(s) de position en erreur" if echecs_positions else "")
+                if resultats:
+                    parametre.derniere_maj = maintenant
+                if positions:
+                    parametre.positions_maj_le = maintenant
             db.commit()
         finally:
             db.close()
@@ -717,15 +724,15 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
         _verrou.release()
 
 
-def lancer(session_factory, avec_positions: bool = False, seulement_positions: bool = False) -> bool:
-    """Demarre la mise a jour dans un fil. False si une mise a jour est deja en cours."""
+def lancer(session_factory, avec_positions: bool = False, seulement_positions: bool = False, client_id: int = None) -> bool:
+    """Demarre la mise a jour (de toutes les agences, ou d'une seule) dans un fil. False si une mise a jour est deja en cours."""
     db = session_factory()
     try:
         if est_en_cours(lire_parametre(db)):
             return False
     finally:
         db.close()
-    threading.Thread(target=rafraichir, args=(session_factory, avec_positions, seulement_positions), daemon=True).start()
+    threading.Thread(target=rafraichir, args=(session_factory, avec_positions, seulement_positions, client_id), daemon=True).start()
     return True
 
 

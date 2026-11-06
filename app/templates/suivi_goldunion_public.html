@@ -131,6 +131,7 @@
         <td class="gu-premiere" data-label="Agence">
           <div class="gu-nom">{{ e.client.nom }}</div>
           <div class="gu-doux">{{ d.get("ville", "") }}</div>
+          {% if e.maj_le %}<div class="gu-doux" title="Dernière relecture de la fiche, des avis et du site{% if pos and pos.maj %} · dernière mesure des positions{% endif %}">Relue le {{ e.maj_le.strftime("%d/%m") }}{% if pos and pos.maj %} · positions le {{ pos.maj[8:10] }}/{{ pos.maj[5:7] }}{% endif %}</div>{% endif %}
         </td>
         <td data-label="Fiche Google et site">
           {% if not d %}<span class="gu-puce gu-neutre">Pas encore lue</span>

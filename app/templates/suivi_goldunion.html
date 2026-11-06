@@ -54,6 +54,23 @@
   {% if not dataforseo_configure %}<p class="texte-discret">Positions indisponibles : identifiants DataForSEO manquants.</p>{% endif %}
 </div>
 
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Actualiser une seule agence</span>
+  <p class="texte-discret">Relit la fiche, les avis et la page du site d'une agence, sans toucher aux autres. Les positions sont facultatives (payantes) : la mesure remplace celle du mois pour cette agence.</p>
+  <form method="post" action="/suivi-goldunion/actualiser">
+    <select name="client_id" required>
+      <option value="">Choisir une agence…</option>
+      {% for a in agences %}<option value="{{ a.id }}">{{ a.nom }}{% if a.maj %} — relue le {{ a.maj }}{% endif %}{% if a.positions %}, positions le {{ a.positions }}{% endif %}</option>{% endfor %}
+    </select>
+    <div class="actions-avis">
+      <button type="submit" name="mode" value="fiches" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Relire la fiche et les avis</button>
+      {% if dataforseo_configure %}
+      <button type="submit" name="mode" value="tout" {{ 'disabled' if etat.en_cours else '' }} onclick="return confirm('Relire cette agence et mesurer ses positions ? Coût estimé : {{ cout_une_agence }}. La mesure du mois sera remplacée pour cette agence.');">Relire et mesurer les positions (≈ {{ cout_une_agence }})</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
 <form class="formulaire" method="post" action="/suivi-goldunion/reglages">
   <h2>Réglages</h2>
   <div class="choix-image-bloc">
