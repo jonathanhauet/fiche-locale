@@ -359,19 +359,30 @@ def _date_avis(texte: str):
         return None
 
 
+NB_PAGES_MAX_AVIS = 100                       # 50 avis par page : jusqu'a 5000 avis par agence
+
+
 def lire_avis(identifiants, account_id: str, location_id: str, maintenant: datetime = None) -> dict:
     """
-    Avis d'une fiche en UN appel (50 avis les plus recents + note moyenne et total donnes par Google) : note, total, nouveaux avis sur 30 jours,
-    avis sans reponse (60 jours) et avis negatifs (1-2 etoiles) sans reponse (90 jours).
+    TOUS les avis d'une fiche (pagination de 50) : note et total donnes par Google, nouveaux avis sur 30 jours, avis sans reponse (60 jours), avis negatifs
+    (1-2 etoiles) sans reponse (90 jours), et « liste » : un texte compact « AAAA-MM-JJ|note|repondu » par avis (le plus recent d'abord), qui permet a la
+    page de recalculer n'importe quelle periode (comme le Comparatif avis). Une page en erreur fait echouer la lecture : jamais de liste incomplete sans le dire.
     """
     maintenant = maintenant or datetime.utcnow()
-    reponse = requests.get(f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/reviews",
-                           headers={"Authorization": f"Bearer {identifiants.token}"}, params={"pageSize": 50}, timeout=30)
-    if reponse.status_code != 200:
-        raise RuntimeError(f"Lecture des avis impossible (code {reponse.status_code})")
-    donnees = reponse.json()
-    avis = donnees.get("reviews", [])
+    url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/reviews"
+    avis, jeton, donnees = [], None, {}
+    for _ in range(NB_PAGES_MAX_AVIS):
+        reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params={"pageSize": 50, **({"pageToken": jeton} if jeton else {})}, timeout=30)
+        if reponse.status_code != 200:
+            raise RuntimeError(f"Lecture des avis impossible (code {reponse.status_code})")
+        page = reponse.json()
+        donnees = donnees or page
+        avis.extend(page.get("reviews", []))
+        jeton = page.get("nextPageToken")
+        if not jeton:
+            break
     nouveaux = sans_reponse = negatifs = 0
+    liste = []
     for a in avis:
         cree = _date_avis(a.get("createTime"))
         if not cree:
@@ -379,14 +390,15 @@ def lire_avis(identifiants, account_id: str, location_id: str, maintenant: datet
         age = (maintenant - cree).days
         note = google_reviews.NOTES.get(a.get("starRating"), 0)
         repondu = bool((a.get("reviewReply") or {}).get("comment"))
+        liste.append(f"{cree.date().isoformat()}|{note}|{1 if repondu else 0}")
         nouveaux += age <= 30
         sans_reponse += (age <= 60 and not repondu)
         negatifs += (age <= 90 and not repondu and 1 <= note <= 2)
     note_moyenne = donnees.get("averageRating")
     return {
         "total": int(donnees.get("totalReviewCount") or 0), "note": round(float(note_moyenne), 1) if note_moyenne is not None else None,
-        "nouveaux_30j": nouveaux, "nouveaux_plus": len(avis) >= 50 and nouveaux >= 50, "sans_reponse": sans_reponse, "negatifs_sans_reponse": negatifs,
-        "maj": maintenant.isoformat(timespec="seconds"),
+        "nouveaux_30j": nouveaux, "nouveaux_plus": False, "sans_reponse": sans_reponse, "negatifs_sans_reponse": negatifs,
+        "liste": sorted(liste, reverse=True), "complet": jeton is None, "maj": maintenant.isoformat(timespec="seconds"),
     }
 
 
@@ -723,6 +735,26 @@ def detail_concurrents(positions: dict) -> dict:
     return {"rangs": positions.get("mots") or {}, "concurrents": positions.get("concurrents") or {}}
 
 
+ETATS_REPONSES = [("sans_reponse", "Avis sans réponse (60 j)"), ("negatif", "Avis négatif sans réponse (90 j)"), ("tout_repondu", "Tout est répondu")]
+
+
+def etats_reponses(avis: dict) -> list:
+    """Etat des reponses d'une agence (« sans_reponse », « negatif », « tout_repondu ») pour les filtres de la vue Avis ; vide sans avis."""
+    if not avis or avis.get("total") is None:
+        return []
+    return (["sans_reponse"] if avis.get("sans_reponse") else []) + (["negatif"] if avis.get("negatifs_sans_reponse") else []) + ([] if avis.get("sans_reponse") else ["tout_repondu"])
+
+
+def problemes_avis(problemes_liste: list) -> list:
+    """Parmi les points d'attention d'une agence, ceux qui concernent les avis."""
+    return [p for p in problemes_liste if "avis" in p.lower() or p == "Note en baisse"]
+
+
+def avis_pour_page(entrees: list) -> dict:
+    """{identifiant d'agence: ["AAAA-MM-JJ|note|repondu", ...]} pour recalculer les periodes dans la page (agences relues avec le detail des avis seulement)."""
+    return {str(e["client"].id): e["donnees"]["avis"]["liste"] for e in entrees if (e["donnees"].get("avis") or {}).get("liste") is not None}
+
+
 def libelle_date_ouverture(valeur: str) -> str:
     parties = (valeur or "").split("-")
     if len(parties) == 3:
@@ -745,8 +777,11 @@ def lignes(db, parametre) -> list:
             "client": client, "donnees": donnees, "positions": positions, "pos": resume_positions(positions, [donnees.get("lat"), donnees.get("lng")]), "avis": resume_avis(donnees.get("avis") or {}),
             "maj_le": suivi.maj_le if suivi else None, "statuts": statuts_fiche(donnees), "palier": palier_visibilite(resume_positions(positions, [donnees.get("lat"), donnees.get("lng")]).get("pct3")),
             "anciennete": categorie_anciennete(donnees.get("date_ouverture"), mois_recente(parametre)),
+            "avis_reponses": etats_reponses(resume_avis(donnees.get("avis") or {})),
             "problemes": problemes(donnees, parametre.groupe_attendu or "", positions, mois_recente(parametre)) if donnees else ["Pas encore lue"],
         })
+    for e in resultat:
+        e["problemes_avis"] = problemes_avis(e["problemes"]) if e["donnees"] else []
     return resultat
 
 

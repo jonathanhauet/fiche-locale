@@ -95,6 +95,37 @@
   .gu-cell.c-moyen { background: rgba(217, 138, 6, 0.85); color: #fff; }
   .gu-cell.c-bas { background: rgba(220, 38, 38, 0.85); color: #fff; }
   .gu-cell.c-rien { background: rgba(150, 150, 150, 0.35); color: var(--texte-discret); }
+  .gu-onglets { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; }
+  .gu-onglet { background: var(--carte); color: var(--texte); border: 1px solid var(--carte-bordure); border-radius: 999px; padding: 0.45rem 1.1rem; font: inherit; font-weight: 600; cursor: pointer; }
+  .gu-onglet:hover { background: var(--carte); border-color: var(--accent); }
+  .gu-onglet.actif, .gu-onglet.actif:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .gu[data-vue="visibilite"] [data-vues]:not([data-vues~="visibilite"]), .gu[data-vue="avis"] [data-vues]:not([data-vues~="avis"]), .gu[data-vue="tout"] [data-vues]:not([data-vues~="tout"]) { display: none !important; }
+  .gu[data-vue="visibilite"] .col-infos, .gu[data-vue="visibilite"] .col-avis, .gu[data-vue="visibilite"] .col-maps, .gu[data-vue="visibilite"] .col-vavis { display: none; }
+  .gu[data-vue="avis"] .col-infos, .gu[data-vue="avis"] .col-avis, .gu[data-vue="avis"] .col-pos, .gu[data-vue="avis"] .col-maps, .gu[data-vue="avis"] .col-surv { display: none; }
+  .gu[data-vue="tout"] .col-vavis, .gu[data-vue="tout"] .gu-date-agence { display: none; }
+  .gu-periode { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: flex-end; margin-bottom: 0.9rem; }
+  .gu-periode label { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.78rem; color: var(--texte-discret); width: auto; margin: 0; }
+  .gu-periode input[type="date"] { min-width: 10.5rem; }
+  .gu-raccourcis { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .gu-titre-section { font-size: 1.05rem; margin: 1.2rem 0 0.5rem; }
+  .gu-avis-note { color: var(--texte-discret); font-size: 0.82rem; margin: -0.4rem 0 0.9rem; }
+  .gu-tuile.positive strong { color: #1f9d55; }
+  .gu-graphique-avis { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 0.6rem 0.9rem; margin-bottom: 1.1rem; }
+  .gu-graphique-avis svg { display: block; margin: 0 auto; }
+  .gu-graphique-avis .barre-graphique { fill: var(--accent); }
+  .gu-graphique-avis .ligne-base-graphique { stroke: var(--carte-bordure); stroke-width: 1; }
+  .gu-graphique-avis .texte-axe-graphique { fill: var(--texte-discret); font-size: 11px; }
+  .gu-analyse-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.7rem; margin-bottom: 0.7rem; }
+  .gu-analyse-carte { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 0.7rem 0.9rem; font-size: 0.86rem; }
+  .gu-analyse-carte.bonne { border-left: 4px solid #1f9d55; }
+  .gu-analyse-carte.attention { border-left: 4px solid #d98a06; }
+  .gu-analyse-carte h3 { margin: 0 0 0.3rem; font-size: 0.85rem; }
+  .gu-analyse-carte ol { margin: 0; padding-left: 1.2rem; }
+  .gu-alertes-avis { background: rgba(217, 138, 6, 0.1); border: 1px solid rgba(217, 138, 6, 0.4); border-radius: var(--rayon); padding: 0.6rem 0.9rem; font-size: 0.86rem; margin-bottom: 1rem; }
+  .gu-alertes-avis p { margin: 0.25rem 0; }
+  .av-hausse { color: #1a7f45; font-weight: 700; font-size: 0.8rem; margin-left: 0.3rem; }
+  .av-baisse { color: var(--danger); font-weight: 700; font-size: 0.8rem; margin-left: 0.3rem; }
+  .gu-num-avis { font-size: 1.05rem; font-weight: 700; }
   @media (max-width: 1000px) {
     .gu-tableau, .gu-tableau tbody, .gu-tableau tr, .gu-tableau td { display: block; }
     .gu-tableau { background: none; border: 0; box-shadow: none; }
@@ -116,14 +147,20 @@
   {%- else -%}<span class="gu-stable">＝ stable</span>
   {%- endif -%}
 {% endmacro %}
-<div class="gu">
+<div class="gu" id="gu-racine" data-vue="visibilite">
   <h1>Suivi des agences GoldUnion</h1>
   <p class="intro">
     État de la fiche Google de chaque agence, coordonnées, horaires, fermetures prévues, page agence du site, avis et positionnement sur Google.
     {% if derniere_maj %}Fiches et avis relus le {{ derniere_maj }}{% endif %}{% if positions_maj %} · positions mesurées le {{ positions_maj }}{% endif %}.
   </p>
 
-  <div class="gu-tuiles">
+  <div class="gu-onglets" role="tablist" aria-label="Vue">
+    <button type="button" class="gu-onglet" role="tab" data-vue="visibilite">📍 Visibilité</button>
+    <button type="button" class="gu-onglet" role="tab" data-vue="avis">★ Avis</button>
+    <button type="button" class="gu-onglet" role="tab" data-vue="tout">Toutes les infos</button>
+  </div>
+
+  <div class="gu-tuiles" data-vues="visibilite tout">
     <div class="gu-tuile"><strong>{{ synthese.total }}</strong><span>agences suivies</span></div>
     <div class="gu-tuile {{ 'alerte' if synthese.avec_probleme else '' }}"><strong>{{ synthese.avec_probleme }}</strong><span>agences à surveiller</span></div>
     <div class="gu-tuile {{ 'alerte' if synthese.avis_sans_reponse else '' }}"><strong>{{ synthese.avis_sans_reponse }}</strong><span>avec des avis sans réponse</span></div>
@@ -132,7 +169,7 @@
     <div class="gu-tuile {{ 'alerte' if synthese.sites_en_erreur else '' }}"><strong>{{ synthese.sites_en_erreur }}</strong><span>pages agence à vérifier</span></div>
   </div>
 
-  <div class="gu-paliers">
+  <div class="gu-paliers" data-vues="visibilite tout">
     <h2>Visibilité sur Google : répartition des agences</h2>
     <p>Part des points mesurés autour de l'agence où elle figure dans le top 3. Cliquez sur un palier pour ne voir que ces agences.</p>
     {% set total_mesurees = paliers|sum(attribute="nb") %}
@@ -141,36 +178,92 @@
       {% for p in paliers %}{% if p.nb and p.code == "aucune" %}<span class="p-aucune" style="width: {{ (100 * p.nb / total_mesurees)|round(1) }}%" title="{{ p.libelle }} : {{ p.nb }}"></span>{% endif %}{% endfor %}
     </div>
     <div class="gu-legende-paliers">
-      {% for p in paliers %}<button type="button" class="gu-palier-bouton" data-palier="{{ p.code }}"><span class="gu-pastille-palier p-{{ p.code }}"></span><strong>{{ p.nb }}</strong> {{ p.libelle }}</button>{% endfor %}
+      {% for p in paliers %}<button type="button" class="gu-palier-bouton" data-groupe="palier" data-palier="{{ p.code }}"><span class="gu-pastille-palier p-{{ p.code }}"></span><strong>{{ p.nb }}</strong> {{ p.libelle }}</button>{% endfor %}
+    </div>
+  </div>
+
+  <div class="gu-avis-bloc" data-vues="avis">
+    <div class="gu-periode">
+      <label>Du <input type="date" id="gu-du"></label>
+      <label>Au <input type="date" id="gu-au"></label>
+      <span class="gu-raccourcis">
+        <button type="button" class="bouton-secondaire" data-jours="30">30 jours</button>
+        <button type="button" class="bouton-secondaire" data-mois="dernier">Mois dernier</button>
+        <button type="button" class="bouton-secondaire" data-jours="90">3 mois</button>
+        <button type="button" class="bouton-secondaire" data-jours="365">12 mois</button>
+      </span>
+      <span class="gu-doux" id="gu-periode-texte"></span>
+    </div>
+    {% if nb_sans_detail_avis %}<div class="bandeau-info">Le détail des avis de {{ nb_sans_detail_avis }} agence{{ 's' if nb_sans_detail_avis > 1 else '' }} sera disponible après la prochaine relecture des fiches (chaque nuit, ou depuis la page de gestion).</div>{% endif %}
+    <div class="gu-tuiles">
+      <div class="gu-tuile"><strong id="av-total-periode">—</strong><span>Avis reçus (période)</span></div>
+      <div class="gu-tuile"><strong id="av-moyenne-periode">—</strong><span>Moyenne (période)</span></div>
+      <div class="gu-tuile positive"><strong id="av-positifs-periode">—</strong><span>Avis positifs (4-5 étoiles)</span></div>
+      <div class="gu-tuile alerte"><strong id="av-negatifs-periode">—</strong><span>Avis négatifs (1-3 étoiles)</span></div>
+      <div class="gu-tuile"><strong id="av-total-historique">—</strong><span>Avis au total (tout historique)</span></div>
+      <div class="gu-tuile"><strong id="av-moyenne-historique">—</strong><span>Moyenne globale (tout historique)</span></div>
+    </div>
+    <div class="gu-paliers">
+      <h2>Avis : répartition des agences par moyenne sur la période</h2>
+      <p>Moyenne des notes reçues pendant la période choisie. Cliquez sur un palier pour ne voir que ces agences.</p>
+      <div class="gu-barre-paliers" aria-hidden="true" id="av-barre-paliers"></div>
+      <div class="gu-legende-paliers">
+        <button type="button" class="gu-palier-bouton" data-groupe="moyper" data-palier="lt4"><span class="gu-pastille-palier p-0-25"></span><strong class="nb">0</strong> Moins de 4,0</button>
+        <button type="button" class="gu-palier-bouton" data-groupe="moyper" data-palier="4-44"><span class="gu-pastille-palier p-26-50"></span><strong class="nb">0</strong> 4,0 – 4,4</button>
+        <button type="button" class="gu-palier-bouton" data-groupe="moyper" data-palier="45-47"><span class="gu-pastille-palier p-51-75"></span><strong class="nb">0</strong> 4,5 – 4,7</button>
+        <button type="button" class="gu-palier-bouton" data-groupe="moyper" data-palier="48p"><span class="gu-pastille-palier p-76-100"></span><strong class="nb">0</strong> 4,8 et plus</button>
+        <button type="button" class="gu-palier-bouton" data-groupe="moyper" data-palier="aucune"><span class="gu-pastille-palier p-aucune"></span><strong class="nb">0</strong> Aucun avis sur la période</button>
+      </div>
     </div>
   </div>
 
   <div class="gu-barre">
     <input type="search" id="gu-recherche" placeholder="Rechercher une agence ou une ville…" autocomplete="off">
     <select id="gu-tri" aria-label="Trier">
-      <option value="nom">Trier : ordre alphabétique</option>
-      <option value="surveiller">Trier : à surveiller d'abord</option>
-      <option value="baisse">Trier : plus forte baisse de visibilité</option>
-      <option value="visibilite">Trier : visibilité la plus faible</option>
-      <option value="note">Trier : note la plus basse</option>
-      <option value="sans-reponse">Trier : avis sans réponse</option>
+      <option value="nom" data-vues="visibilite avis tout">Trier : ordre alphabétique</option>
+      <option value="surveiller" data-vues="visibilite avis tout">Trier : à surveiller d'abord</option>
+      <option value="baisse" data-vues="visibilite tout">Trier : plus forte baisse de visibilité</option>
+      <option value="visibilite" data-vues="visibilite tout">Trier : visibilité la plus faible</option>
+      <option value="a-periode" data-vues="avis">Trier : plus d'avis sur la période</option>
+      <option value="a-moyenne" data-vues="avis">Trier : moyenne de la période la plus basse</option>
+      <option value="a-negatifs" data-vues="avis">Trier : plus d'avis négatifs (période)</option>
+      <option value="a-tendance" data-vues="avis">Trier : plus forte baisse de la note</option>
+      <option value="a-total" data-vues="avis">Trier : plus d'avis au total</option>
+      <option value="note" data-vues="avis tout">Trier : note globale la plus basse</option>
+      <option value="sans-reponse" data-vues="avis tout">Trier : avis sans réponse</option>
     </select>
     <a class="bouton-secondaire" href="/goldunion/{{ jeton }}/export.xlsx">⬇ Télécharger en Excel</a>
     <span class="gu-compte" id="gu-compte"></span>
   </div>
 
   <div class="gu-filtres" role="group" aria-label="Filtres">
-    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Fiche Google</span>
+    <div class="gu-groupe-filtre" data-vues="tout"><span class="gu-titre-filtre">Fiche Google</span>
       {% for code, libelle, nb in options_fiche %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="fiche" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
-    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Ouverture</span>
+    <div class="gu-groupe-filtre" data-vues="tout"><span class="gu-titre-filtre">Ouverture</span>
       {% for code, libelle, nb in options_ouverture %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="ouverture" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
-    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Date d'ouverture</span>
+    <div class="gu-groupe-filtre" data-vues="visibilite avis tout"><span class="gu-titre-filtre">Date d'ouverture</span>
       {% for code, libelle, nb in options_anciennete %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="anciennete" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
-    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Visibilité (top 3)</span>
+    <div class="gu-groupe-filtre" data-vues="visibilite tout"><span class="gu-titre-filtre">Visibilité (top 3)</span>
       {% for p in paliers %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="palier" value="{{ p.code }}"> <span class="gu-pastille-palier p-{{ p.code }}"></span> {{ p.libelle if p.code != 'aucune' else 'Non mesurée' }} <span class="gu-nb">{{ p.nb }}</span></label>{% endfor %}
+    </div>
+    <div class="gu-groupe-filtre" data-vues="avis"><span class="gu-titre-filtre">Moyenne (période)</span>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="moyper" value="lt4"> <span class="gu-pastille-palier p-0-25"></span> Moins de 4,0 <span class="gu-nb">0</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="moyper" value="4-44"> <span class="gu-pastille-palier p-26-50"></span> 4,0 – 4,4 <span class="gu-nb">0</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="moyper" value="45-47"> <span class="gu-pastille-palier p-51-75"></span> 4,5 – 4,7 <span class="gu-nb">0</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="moyper" value="48p"> <span class="gu-pastille-palier p-76-100"></span> 4,8 et plus <span class="gu-nb">0</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="moyper" value="aucune"> <span class="gu-pastille-palier p-aucune"></span> Aucun avis <span class="gu-nb">0</span></label>
+    </div>
+    <div class="gu-groupe-filtre" data-vues="avis"><span class="gu-titre-filtre">Sur la période</span>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="activite" value="negatif"> Avis négatifs <span class="gu-nb">0</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="activite" value="sous_moyenne"> Sous la moyenne du réseau (−0,5) <span class="gu-nb">0</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="activite" value="en_baisse"> Note en baisse vs période précédente <span class="gu-nb">0</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="activite" value="aucun"> Aucun avis reçu <span class="gu-nb">0</span></label>
+    </div>
+    <div class="gu-groupe-filtre" data-vues="avis"><span class="gu-titre-filtre">Réponses (état actuel)</span>
+      {% for code, libelle, nb in options_reponses %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="reponses" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
     <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Alertes</span>
       <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="surveiller" id="gu-surveiller"> À surveiller</label>
@@ -179,23 +272,35 @@
     <p class="gu-aide-filtres">Plusieurs cases d'une même rubrique : l'une <strong>ou</strong> l'autre. Cases de rubriques différentes : <strong>toutes</strong> les conditions à la fois.</p>
   </div>
 
+  <div class="gu-avis-bloc" data-vues="avis">
+    <h2 class="gu-titre-section">Analyse</h2>
+    <div id="gu-analyse"></div>
+    <h2 class="gu-titre-section">Évolution du nombre d'avis</h2>
+    <div class="gu-graphique-avis" id="gu-graphique-avis"></div>
+    <h2 class="gu-titre-section">Classement par agence</h2>
+    <p class="gu-avis-note">Les chiffres tiennent compte des filtres. Avis négatifs : 1 à 3 étoiles. Période précédente : même durée, juste avant.</p>
+  </div>
+
   <table class="gu-tableau" id="gu-tableau" data-jeton="{{ jeton }}">
     <thead>
-      <tr><th>Agence</th><th>Fiche Google et site</th><th>Coordonnées et horaires</th><th>Ouverture et fermetures</th><th>Avis</th><th>Positionnement naturel</th><th>Maps · mois dernier</th><th>À surveiller</th></tr>
+      <tr><th>Agence</th><th class="col-infos">Fiche Google et site</th><th class="col-infos">Coordonnées et horaires</th><th class="col-infos">Ouverture et fermetures</th><th class="col-avis">Avis</th><th class="col-pos">Positionnement naturel</th><th class="col-maps">Maps · mois dernier</th><th class="col-surv">À surveiller</th>
+          <th class="col-vavis">Avis (période)</th><th class="col-vavis">Moyenne (période)</th><th class="col-vavis">Positifs</th><th class="col-vavis">Négatifs</th><th class="col-vavis">Note globale</th><th class="col-vavis">Total (historique)</th><th class="col-vavis">Sans réponse</th><th class="col-vavis">À surveiller (avis)</th></tr>
     </thead>
     <tbody>
       {% for e in entrees %}
       {% set d = e.donnees %}{% set fiche = d.get("fiche") or {} %}{% set site = d.get("site_etat") or {} %}{% set stats = d.get("stats") or {} %}{% set avis = e.avis %}{% set pos = e.pos %}
-      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-statuts="{{ e.statuts|join(' ') }}" data-palier="{{ e.palier }}" data-anciennete="{{ e.anciennete }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
+      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-statuts="{{ e.statuts|join(' ') }}" data-palier="{{ e.palier }}" data-anciennete="{{ e.anciennete }}" data-id="{{ e.client.id }}" data-avisetats="{{ e.avis_reponses|join(' ') }}" data-survavis="{{ 1 if e.problemes_avis else 0 }}" data-nbavis="{{ e.problemes_avis|length }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
           data-nom="{{ e.client.nom|lower }}" data-nb="{{ e.problemes|length }}" data-visibilite="{{ pos.pct3 if pos else 999 }}" data-evolution="{{ pos.evolution if pos and pos.evolution is not none else 999 }}"
           data-note="{{ avis.note if avis and avis.note is not none else 99 }}" data-sans-reponse="{{ avis.sans_reponse if avis else 0 }}"
           data-texte="{{ (e.client.nom ~ ' ' ~ d.get('ville', '') ~ ' ' ~ d.get('adresse', ''))|lower }}">
         <td class="gu-premiere" data-label="Agence">
           <div class="gu-nom">{{ e.client.nom }}</div>
           <div class="gu-doux">{{ d.get("ville", "") }}</div>
+          {% if d.get("date_ouverture") %}<div class="gu-doux gu-date-agence">Ouverte le {{ libelle_date_ouverture(d.date_ouverture) }}</div>{% endif %}
+          {% if e.anciennete == "recente" %}<span class="gu-puce gu-attention" title="Ouverte depuis moins de {{ mois_recente }} mois : il est normal qu'elle soit encore peu positionnée">Récente</span>{% endif %}
           {% if e.maj_le %}<div class="gu-doux" title="Dernière relecture de la fiche, des avis et du site{% if pos and pos.maj %} · dernière mesure des positions{% endif %}">Relue le {{ e.maj_le.strftime("%d/%m") }}{% if pos and pos.maj %} · positions le {{ pos.maj[8:10] }}/{{ pos.maj[5:7] }}{% endif %}</div>{% endif %}
         </td>
-        <td data-label="Fiche Google et site">
+        <td class="col-infos" data-label="Fiche Google et site">
           {% if not d %}<span class="gu-puce gu-neutre">Pas encore lue</span>
           {% elif not fiche.get("creee") %}<span class="gu-puce gu-alerte">Non reliée</span>
           {% elif not d.get("adresse") %}<span class="gu-puce gu-alerte">Illisible</span><div class="gu-doux">La fiche n'a pas pu être lue lors de la dernière relecture (accès Google à vérifier).</div>
@@ -215,21 +320,21 @@
           {% endif %}
           {% if d.get("erreur") and d.get("adresse") %}<div class="gu-doux">Certaines données n'ont pas pu être relues cette nuit.</div>{% endif %}
         </td>
-        <td data-label="Coordonnées et horaires">
+        <td class="col-infos" data-label="Coordonnées et horaires">
           {% if d.get("adresse") %}<div>{{ d.adresse }}</div>{% endif %}
           {% if d.get("telephone") %}<div>{{ d.telephone }}</div>{% elif d %}<div class="gu-doux">Pas de téléphone sur la fiche</div>{% endif %}
           {% if d.get("horaires") %}<div class="gu-doux">{{ d.horaires }}</div>{% elif d %}<div class="gu-doux">Horaires non renseignés</div>{% endif %}
         </td>
-        <td data-label="Ouverture et fermetures">
+        <td class="col-infos" data-label="Ouverture et fermetures">
           {% if d.get("statut_ouverture") %}<div><span class="gu-puce {{ 'gu-ok' if 'ouverte' in e.statuts else ('gu-alerte' if 'fermee_def' in e.statuts else ('gu-attention' if 'fermee_temp' in e.statuts else 'gu-neutre')) }}">{{ d.statut_ouverture }}</span></div>{% endif %}
-          {% if d.get("date_ouverture") %}<div class="gu-doux">Ouverte depuis le {{ libelle_date_ouverture(d.date_ouverture) }}{% if e.anciennete == "recente" %} <span class="gu-puce gu-attention" title="Ouverte depuis moins de {{ mois_recente }} mois : il est normal qu'elle soit encore peu positionnée">Récente</span>{% endif %}</div>{% elif d %}<div class="gu-doux">Date d'ouverture non renseignée</div>{% endif %}
+          {% if d.get("date_ouverture") %}<div class="gu-doux">Ouverte depuis le {{ libelle_date_ouverture(d.date_ouverture) }}</div>{% elif d %}<div class="gu-doux">Date d'ouverture non renseignée</div>{% endif %}
           {% if d.get("conges") %}
           <ul class="gu-liste">
             {% for c in d.conges %}<li><span class="gu-puce {{ 'gu-attention' if c.libelle == 'Fermé' else 'gu-neutre' }}">{{ c.date[8:10] }}/{{ c.date[5:7] }}{% if c.get("jusqu_au") %} → {{ c.jusqu_au[8:10] }}/{{ c.jusqu_au[5:7] }}{% endif %}</span> {{ c.libelle }}</li>{% endfor %}
           </ul>
           {% elif d %}<div class="gu-doux">Aucune fermeture prévue</div>{% endif %}
         </td>
-        <td data-label="Avis">
+        <td class="col-avis" data-label="Avis">
           {% if avis %}
           <div><span class="gu-gros">★ {{ avis.note|string|replace(".", ",") if avis.note is not none else "—" }}</span> <span class="gu-doux">{{ avis.total }} avis</span></div>
           <div class="gu-doux">{{ "50+" if avis.nouveaux_plus else avis.nouveaux_30j }} nouveau{{ "x" if avis.nouveaux_30j != 1 else "" }} sur 30 jours</div>
@@ -242,7 +347,7 @@
           </div>
           {% else %}<span class="gu-doux">—</span>{% endif %}
         </td>
-        <td data-label="Positionnement naturel">
+        <td class="col-pos" data-label="Positionnement naturel">
           {% if e.positions.get("non_applicable") and not pos %}<span class="gu-doux">Non mesuré hors France</span>
           {% elif pos %}
           <div><span class="gu-gros gu-pct-{{ e.palier }}">{{ pos.pct3 }} %</span> <span class="gu-doux">des points dans le top 3</span></div>
@@ -277,7 +382,7 @@
           {% elif e.positions.get("erreur") %}<span class="gu-doux">{{ e.positions.erreur }}</span>
           {% else %}<span class="gu-doux">Pas encore mesuré</span>{% endif %}
         </td>
-        <td data-label="Maps · mois dernier">
+        <td class="col-maps" data-label="Maps · mois dernier">
           {% if stats %}
           <div><strong>{{ stats.vues }}</strong> <span class="gu-doux">vues</span></div>
           <div><strong>{{ stats.appels }}</strong> <span class="gu-doux">appels</span></div>
@@ -285,15 +390,30 @@
           <div class="gu-doux">{{ stats.mois[5:7] }}/{{ stats.mois[0:4] }}</div>
           {% else %}<span class="gu-doux">—</span>{% endif %}
         </td>
-        <td data-label="À surveiller">
+        <td class="col-surv" data-label="À surveiller">
           {% if e.problemes %}{% for p in e.problemes %}<span class="gu-puce gu-alerte">{{ p }}</span> {% endfor %}{% else %}<span class="gu-puce gu-ok">Rien à signaler</span>{% endif %}
+        </td>
+        <td class="col-vavis" data-label="Avis (période)"><span class="av-periode gu-num-avis">—</span></td>
+        <td class="col-vavis" data-label="Moyenne (période)"><span class="av-moyenne gu-num-avis">—</span><span class="av-tendance"></span></td>
+        <td class="col-vavis" data-label="Positifs"><span class="av-positifs">—</span></td>
+        <td class="col-vavis" data-label="Négatifs"><span class="av-negatifs">—</span></td>
+        <td class="col-vavis" data-label="Note globale"><span class="av-note">—</span></td>
+        <td class="col-vavis" data-label="Total (historique)"><span class="av-total">—</span>{% if d.get("maps_uri") %}<div class="gu-doux"><a href="{{ d.maps_uri }}" target="_blank" rel="noopener noreferrer">Voir sur Google Maps</a></div>{% endif %}</td>
+        <td class="col-vavis" data-label="Sans réponse">
+          {% if avis %}{% if avis.negatifs_sans_reponse %}<span class="gu-puce gu-alerte">{{ avis.negatifs_sans_reponse }} négatif{{ 's' if avis.negatifs_sans_reponse > 1 else '' }}</span>{% endif %}
+          {% if avis.sans_reponse %}<span class="gu-puce gu-attention">{{ avis.sans_reponse }} sans réponse</span>{% else %}<span class="gu-puce gu-ok">Tout est répondu</span>{% endif %}{% else %}<span class="gu-doux">—</span>{% endif %}
+        </td>
+        <td class="col-vavis" data-label="À surveiller (avis)">
+          {% if e.problemes_avis %}{% for p in e.problemes_avis %}<span class="gu-puce gu-alerte">{{ p }}</span> {% endfor %}{% elif d %}<span class="gu-puce gu-ok">Rien à signaler</span>{% else %}<span class="gu-doux">—</span>{% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="gu-vide">Aucune agence à afficher pour l'instant.</td></tr>
+      <tr><td colspan="16" class="gu-vide">Aucune agence à afficher pour l'instant.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+
+  <script id="gu-donnees-avis" type="application/json">{{ avis_page|tojson }}</script>
 
   <p class="gu-pied">
     Positionnement : pour chaque recherche suivie ({{ mots|join(", ") }}) complétée par la ville de l'agence, la position de l'agence dans Google Maps est relevée en plusieurs points autour d'elle.
@@ -422,6 +542,7 @@
   }
   document.querySelectorAll("details.gu-details[data-carte]").forEach((d) => d.addEventListener("toggle", () => { if (d.open) creerCarte(d); }));
 
+  const racine = document.getElementById("gu-racine");
   const corps = document.querySelector("#gu-tableau tbody");
   const lignes = Array.from(corps.querySelectorAll("tr[data-texte]"));
   const recherche = document.getElementById("gu-recherche");
@@ -430,35 +551,189 @@
   const surveiller = document.getElementById("gu-surveiller");
   const tri = document.getElementById("gu-tri");
   const compte = document.getElementById("gu-compte");
-  function sansAccents(t) { return (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
-  const nombre = (l, cle) => parseFloat(l.dataset[cle]);
+  const onglets = Array.from(document.querySelectorAll(".gu-onglet"));
+  function sansAccents(t) { return (t || "").normalize("NFD").replace(new RegExp("[\u0300-\u036f]", "g"), "").toLowerCase(); }
+  function echapper(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  const valeur = (l, cle, defaut) => { const v = parseFloat(l.dataset[cle]); return isNaN(v) ? defaut : v; };
+  const parNom = (a, b) => a.dataset.nom.localeCompare(b.dataset.nom, "fr");
   const comparateurs = {
-    nom: (a, b) => a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
-    surveiller: (a, b) => nombre(b, "nb") - nombre(a, "nb") || a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
-    baisse: (a, b) => nombre(a, "evolution") - nombre(b, "evolution") || a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
-    visibilite: (a, b) => nombre(a, "visibilite") - nombre(b, "visibilite") || a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
-    note: (a, b) => nombre(a, "note") - nombre(b, "note") || a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
-    "sans-reponse": (a, b) => nombre(b, "sansReponse") - nombre(a, "sansReponse") || a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
+    nom: parNom,
+    surveiller: (a, b) => { const cle = racine.dataset.vue === "avis" ? "nbavis" : "nb"; return valeur(b, cle, 0) - valeur(a, cle, 0) || parNom(a, b); },
+    baisse: (a, b) => valeur(a, "evolution", 999) - valeur(b, "evolution", 999) || parNom(a, b),
+    visibilite: (a, b) => valeur(a, "visibilite", 999) - valeur(b, "visibilite", 999) || parNom(a, b),
+    note: (a, b) => valeur(a, "note", 99) - valeur(b, "note", 99) || parNom(a, b),
+    "sans-reponse": (a, b) => valeur(b, "sansReponse", 0) - valeur(a, "sansReponse", 0) || parNom(a, b),
+    "a-periode": (a, b) => valeur(b, "avperiode", -1) - valeur(a, "avperiode", -1) || parNom(a, b),
+    "a-moyenne": (a, b) => valeur(a, "avmoy", 999) - valeur(b, "avmoy", 999) || parNom(a, b),
+    "a-negatifs": (a, b) => valeur(b, "avneg", -1) - valeur(a, "avneg", -1) || parNom(a, b),
+    "a-tendance": (a, b) => valeur(a, "avtend", 999) - valeur(b, "avtend", 999) || parNom(a, b),
+    "a-total": (a, b) => valeur(b, "avtotal", -1) - valeur(a, "avtotal", -1) || parNom(a, b),
   };
+  const GROUPES = { fiche: "statuts", ouverture: "statuts", palier: "palier", anciennete: "anciennete", moyper: "moyper", activite: "activite", reponses: "avisetats" };
   const cochees = (groupe) => casesFiltre.filter((c) => c.dataset.groupe === groupe && c.checked).map((c) => c.value);
+
+  // ---- Vue Avis : memes definitions que le Comparatif avis (positifs 4-5 etoiles, negatifs 1-3, periode precedente de meme duree juste avant)
+  const brutAvis = JSON.parse(document.getElementById("gu-donnees-avis").textContent || "{}");
+  const AVIS = {};
+  Object.keys(brutAvis).forEach((id) => { AVIS[id] = brutAvis[id].map((t) => { const [d, n, r] = t.split("|"); return { d, n: parseInt(n, 10), r: r === "1" }; }); });
+  const champDu = document.getElementById("gu-du"), champAu = document.getElementById("gu-au");
+  const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const decaler = (iso, jours) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + jours); return isoDate(d); };
+  const nbJours = (debut, fin) => Math.round((new Date(fin + "T12:00:00") - new Date(debut + "T12:00:00")) / 86400000) + 1;
+  function moyenne(liste) { const v = liste.filter((a) => a.n > 0); return v.length ? Math.round(v.reduce((s, a) => s + a.n, 0) / v.length * 10) / 10 : null; }
+  const texteNote = (m) => m == null ? "—" : String(m).replace(".", ",") + "/5";
+  const nomCourt = (l) => l.querySelector(".gu-nom").textContent.replace(/^Gold ?Union - /i, "").trim();
+  let stats = {}, periode = null;
+  function codeMoyenne(s) { return !s || s.total === 0 ? "aucune" : s.moy < 4 ? "lt4" : s.moy < 4.5 ? "4-44" : s.moy < 4.8 ? "45-47" : "48p"; }
+  function poser(l, s, moyReseau) {
+    const dire = (cle, texte) => { const n = l.querySelector(".av-" + cle); if (n) n.textContent = texte; };
+    const tendance = l.querySelector(".av-tendance"); tendance.textContent = ""; tendance.className = "av-tendance";
+    if (!s) {
+      ["avperiode", "avmoy", "avneg", "avtotal", "avtend"].forEach((c) => delete l.dataset[c]);
+      l.dataset.moyper = ""; l.dataset.activite = "";
+      ["periode", "moyenne", "positifs", "negatifs", "note", "total"].forEach((c) => dire(c, "—"));
+      return;
+    }
+    l.dataset.avperiode = s.total; l.dataset.avneg = s.neg; l.dataset.avtotal = s.totalHist;
+    if (s.moy != null) l.dataset.avmoy = s.moy; else delete l.dataset.avmoy;
+    if (s.tend != null) l.dataset.avtend = s.tend; else delete l.dataset.avtend;
+    l.dataset.moyper = codeMoyenne(s);
+    l.dataset.activite = [s.total === 0 ? "aucun" : "", s.neg > 0 ? "negatif" : "", s.moy != null && moyReseau != null && s.moy <= moyReseau - 0.5 ? "sous_moyenne" : "", s.tend != null && s.tend <= -0.1 ? "en_baisse" : ""].filter(Boolean).join(" ");
+    dire("periode", s.total); dire("moyenne", texteNote(s.moy)); dire("positifs", s.pos); dire("negatifs", s.neg); dire("note", texteNote(s.moyHist)); dire("total", s.totalHist);
+    if (s.tend != null && s.tend !== 0) { tendance.textContent = (s.tend > 0 ? "▲ +" : "▼ ") + String(s.tend).replace(".", ","); tendance.className = "av-tendance " + (s.tend > 0 ? "av-hausse" : "av-baisse"); }
+  }
+  function calculerAgences() {
+    const debut = champDu.value, fin = champAu.value;
+    if (!debut || !fin || debut > fin) return false;
+    const n = nbJours(debut, fin), finPrec = decaler(debut, -1), debutPrec = decaler(finPrec, -(n - 1));
+    const dansPeriode = (a) => a.d >= debut && a.d <= fin;
+    const moyReseau = moyenne([].concat(...Object.values(AVIS)).filter(dansPeriode));
+    stats = {};
+    lignes.forEach((l) => {
+      const liste = AVIS[l.dataset.id];
+      if (!liste) { stats[l.dataset.id] = null; poser(l, null); return; }
+      const per = liste.filter(dansPeriode), prec = liste.filter((a) => a.d >= debutPrec && a.d <= finPrec);
+      const s = { total: per.length, moy: moyenne(per), pos: per.filter((a) => a.n >= 4).length, neg: per.filter((a) => a.n > 0 && a.n <= 3).length, totalHist: liste.length, moyHist: moyenne(liste),
+                  totalPrec: prec.length, moyPrec: moyenne(prec), negSansRep: per.filter((a) => a.n > 0 && a.n <= 3 && !a.r).length };
+      s.tend = s.moy != null && s.moyPrec != null ? Math.round((s.moy - s.moyPrec) * 10) / 10 : null;
+      stats[l.dataset.id] = s; poser(l, s, moyReseau);
+    });
+    periode = { debut, fin, n, debutPrec, finPrec, moyReseau };
+    document.getElementById("gu-periode-texte").textContent = `${n} jour${n > 1 ? "s" : ""} · période précédente : du ${debutPrec.split("-").reverse().join("/")} au ${finPrec.split("-").reverse().join("/")}`;
+    // compteurs des paliers et des cases de la vue Avis
+    ["moyper", "activite"].forEach((g) => casesFiltre.filter((c) => c.dataset.groupe === g).forEach((c) => {
+      const nb = lignes.filter((l) => (l.dataset[GROUPES[g]] || "").split(" ").includes(c.value)).length;
+      const badge = c.closest("label").querySelector(".gu-nb"); if (badge) badge.textContent = nb;
+    }));
+    boutonsPaliers.filter((b) => b.dataset.groupe === "moyper").forEach((b) => { b.querySelector(".nb").textContent = lignes.filter((l) => l.dataset.moyper === b.dataset.palier).length; });
+    const total = lignes.length || 1, couleurs = { lt4: "p-0-25", "4-44": "p-26-50", "45-47": "p-51-75", "48p": "p-76-100", aucune: "p-aucune" };
+    document.getElementById("av-barre-paliers").innerHTML = Object.keys(couleurs).map((code) => { const nb = lignes.filter((l) => l.dataset.moyper === code).length; return nb ? `<span class="${couleurs[code]}" style="width:${(100 * nb / total).toFixed(1)}%"></span>` : ""; }).join("");
+    return true;
+  }
+  function construireGraphique(donnees, unite) {
+    const LARGEUR = Math.max(320, (document.getElementById("gu-graphique-avis").clientWidth || 800) - 24), HAUTEUR = 170, BAS = 22, HAUT = 10, zone = HAUTEUR - BAS - HAUT, n = donnees.length;
+    const max = Math.max(1, ...donnees.map((d) => d.total)), bande = LARGEUR / n, largeur = Math.max(1, Math.min(24, bande - 2));
+    let barres = "", etiquettes = "";
+    donnees.forEach((j, i) => {
+      const x = i * bande + (bande - largeur) / 2, h = j.total === 0 ? 0 : Math.max(2, (j.total / max) * zone), y = HAUTEUR - BAS - h;
+      barres += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${largeur.toFixed(1)}" height="${h.toFixed(1)}" rx="3" class="barre-graphique"><title>${echapper(j.libelle)} : ${j.total} avis</title></rect>`;
+    });
+    const pas = Math.max(1, Math.ceil(n / Math.max(3, Math.floor(LARGEUR / 70))));
+    donnees.forEach((j, i) => { if (i % pas !== 0) return; etiquettes += `<text x="${(i * bande + bande / 2).toFixed(1)}" y="${HAUTEUR - 6}" class="texte-axe-graphique" text-anchor="middle">${echapper(j.court)}</text>`; });
+    return `<svg viewBox="0 0 ${LARGEUR} ${HAUTEUR}" role="img" aria-label="Évolution du nombre d'avis par ${unite}"><line x1="0" y1="${HAUTEUR - BAS}" x2="${LARGEUR}" y2="${HAUTEUR - BAS}" class="ligne-base-graphique" />${barres}${etiquettes}</svg>`;
+  }
+  function rendreAvis(visibles) {
+    if (!periode) return;
+    const { debut, fin, n, debutPrec, finPrec } = periode;
+    const ids = visibles.map((l) => l.dataset.id).filter((id) => AVIS[id]);
+    const dansPeriode = (a) => a.d >= debut && a.d <= fin, dansPrec = (a) => a.d >= debutPrec && a.d <= finPrec;
+    const tous = [].concat(...ids.map((id) => AVIS[id])), per = tous.filter(dansPeriode), prec = tous.filter(dansPrec), moyPer = moyenne(per), moyPrec = moyenne(prec);
+    const mettre = (id, texte) => { document.getElementById(id).textContent = texte; };
+    mettre("av-total-periode", per.length); mettre("av-moyenne-periode", texteNote(moyPer)); mettre("av-positifs-periode", per.filter((a) => a.n >= 4).length);
+    mettre("av-negatifs-periode", per.filter((a) => a.n > 0 && a.n <= 3).length); mettre("av-total-historique", tous.length); mettre("av-moyenne-historique", texteNote(moyenne(tous)));
+    // analyse (mêmes éléments que le Comparatif avis)
+    const parAgence = visibles.filter((l) => stats[l.dataset.id]).map((l) => ({ nom: nomCourt(l), ...stats[l.dataset.id] }));
+    const avecAvis = parAgence.filter((s) => s.total > 0);
+    const meilleures = [...avecAvis].sort((a, b) => (b.moy - a.moy) || (b.total - a.total)).slice(0, 3);
+    const actives = [...avecAvis].sort((a, b) => b.total - a.total).slice(0, 3);
+    const sansAvis = parAgence.filter((s) => s.total === 0).map((s) => s.nom);
+    const seuil = moyPer != null ? moyPer - 0.5 : null;
+    const sousMoyenne = seuil == null ? [] : avecAvis.filter((s) => s.moy != null && s.moy <= seuil).map((s) => ({ nom: s.nom, moy: s.moy, ecart: Math.round((moyPer - s.moy) * 10) / 10 })).sort((a, b) => a.moy - b.moy);
+    const negSansRep = parAgence.reduce((s, a) => s + a.negSansRep, 0);
+    const evolutionPct = prec.length > 0 ? Math.round(((per.length - prec.length) / prec.length) * 1000) / 10 : null;
+    const evolutionNote = moyPer != null && moyPrec != null ? Math.round((moyPer - moyPrec) * 10) / 10 : null;
+    const liste = (tab, f) => `<ol>${tab.map((x) => `<li>${echapper(x.nom)} — ${f(x)}</li>`).join("")}</ol>`;
+    const cartes = [];
+    if (meilleures.length) cartes.push(`<div class="gu-analyse-carte bonne"><h3>🏆 Top 3 — meilleure note</h3>${liste(meilleures, (x) => `${texteNote(x.moy)} (${x.total} avis)`)}</div>`);
+    if (actives.length) cartes.push(`<div class="gu-analyse-carte"><h3>🔥 Top 3 — plus actives</h3>${liste(actives, (x) => `${x.total} avis`)}</div>`);
+    cartes.push(`<div class="gu-analyse-carte ${evolutionPct != null ? (evolutionPct >= 0 ? "bonne" : "attention") : ""}"><h3>📈 Tendance (volume)</h3>${evolutionPct != null ? `${evolutionPct >= 0 ? "▲" : "▼"} ${String(Math.abs(evolutionPct)).replace(".", ",")} % vs période précédente (${prec.length} avis)` : "Pas de comparaison possible (aucun avis sur la période précédente)."}</div>`);
+    cartes.push(`<div class="gu-analyse-carte ${evolutionNote != null ? (evolutionNote >= 0 ? "bonne" : "attention") : ""}"><h3>⭐ Évolution de la note</h3>${evolutionNote != null ? `${evolutionNote > 0 ? "▲ +" : evolutionNote < 0 ? "▼ " : "= "}${String(evolutionNote).replace(".", ",")} (${texteNote(moyPrec)} → ${texteNote(moyPer)})` : "Pas de comparaison possible (aucun avis sur la période précédente)."}</div>`);
+    let html = `<div class="gu-analyse-grille">${cartes.join("")}</div>`;
+    const alertes = [];
+    if (negSansRep > 0) alertes.push(`<p>🔔 <strong>${negSansRep}</strong> avis négatif${negSansRep > 1 ? "s" : ""} sans réponse sur la période.</p>`);
+    if (sousMoyenne.length) alertes.push(`<p>⚠️ <strong>${sousMoyenne.length}</strong> agence${sousMoyenne.length > 1 ? "s" : ""} nettement sous la moyenne : ${sousMoyenne.map((f) => `${echapper(f.nom)} (${texteNote(f.moy)}, −${String(f.ecart).replace(".", ",")} pt)`).join(", ")}.</p>`);
+    if (sansAvis.length) alertes.push(`<p>😴 <strong>${sansAvis.length}</strong> agence${sansAvis.length > 1 ? "s" : ""} sans avis sur la période : ${sansAvis.slice(0, 10).map(echapper).join(", ")}${sansAvis.length > 10 ? `, et ${sansAvis.length - 10} autre${sansAvis.length - 10 > 1 ? "s" : ""}` : ""}.</p>`);
+    if (!ids.length) alertes.push("<p>Aucune agence avec le détail des avis pour l'instant.</p>");
+    if (alertes.length) html += `<div class="gu-alertes-avis">${alertes.join("")}</div>`;
+    document.getElementById("gu-analyse").innerHTML = html;
+    // graphique : un jour par barre jusqu'a 92 jours, un mois par barre au-dela
+    let donnees = [];
+    if (n <= 92) {
+      const compteJour = {}; per.forEach((a) => { compteJour[a.d] = (compteJour[a.d] || 0) + 1; });
+      for (let i = 0; i < n; i++) { const j = decaler(debut, i), [aa, mm, jj] = j.split("-"); donnees.push({ total: compteJour[j] || 0, libelle: `${jj}/${mm}/${aa}`, court: `${jj}/${mm}` }); }
+    } else {
+      const compteMois = {}; per.forEach((a) => { const m = a.d.slice(0, 7); compteMois[m] = (compteMois[m] || 0) + 1; });
+      let [aa, mm] = debut.split("-").map(Number); const [af, mf] = fin.split("-").map(Number);
+      while (aa < af || (aa === af && mm <= mf)) { const cle = `${aa}-${String(mm).padStart(2, "0")}`; donnees.push({ total: compteMois[cle] || 0, libelle: `${String(mm).padStart(2, "0")}/${aa}`, court: `${String(mm).padStart(2, "0")}/${String(aa).slice(2)}` }); mm++; if (mm > 12) { mm = 1; aa++; } }
+    }
+    document.getElementById("gu-graphique-avis").innerHTML = construireGraphique(donnees, n <= 92 ? "jour" : "mois");
+  }
+
   function filtrer() {
+    const vue = racine.dataset.vue;
+    if (vue === "avis") calculerAgences();
     const q = sansAccents(recherche.value.trim());
-    const fiche = cochees("fiche"), ouverture = cochees("ouverture"), paliers = cochees("palier"), anciennetes = cochees("anciennete");        // « ou » dans une rubrique, « et » entre rubriques
-    let visibles = 0;
+    const actifs = Object.keys(GROUPES).map((g) => [g, cochees(g)]).filter(([, v]) => v.length);        // « ou » dans une rubrique, « et » entre rubriques
+    const cleSurv = vue === "avis" ? "survavis" : "surveiller";
+    const visibles = [];
     lignes.sort(comparateurs[tri.value] || comparateurs.nom).forEach((l) => corps.appendChild(l));
     lignes.forEach((l) => {
-      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!fiche.length || fiche.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!ouverture.length || ouverture.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!paliers.length || paliers.includes(l.dataset.palier)) && (!anciennetes.length || anciennetes.includes(l.dataset.anciennete)) && (!surveiller.checked || l.dataset.surveiller === "1");
+      const ok = (!q || sansAccents(l.dataset.texte).includes(q))
+        && actifs.every(([g, valeurs]) => { const presentes = (l.dataset[GROUPES[g]] || "").split(" "); return valeurs.some((v) => presentes.includes(v)); })
+        && (!surveiller.checked || l.dataset[cleSurv] === "1");
       l.hidden = !ok;
-      if (ok) visibles++;
+      if (ok) visibles.push(l);
     });
-    boutonsPaliers.forEach((b) => b.classList.toggle("actif", casesFiltre.some((c) => c.dataset.groupe === "palier" && c.value === b.dataset.palier && c.checked)));
-    compte.textContent = `${visibles} agence${visibles > 1 ? "s" : ""} affichée${visibles > 1 ? "s" : ""}`;
+    boutonsPaliers.forEach((b) => b.classList.toggle("actif", casesFiltre.some((c) => c.dataset.groupe === (b.dataset.groupe || "palier") && c.value === b.dataset.palier && c.checked)));
+    compte.textContent = `${visibles.length} agence${visibles.length > 1 ? "s" : ""} affichée${visibles.length > 1 ? "s" : ""}`;
+    if (vue === "avis") rendreAvis(visibles);
   }
-  boutonsPaliers.forEach((b) => b.addEventListener("click", () => { const c = casesFiltre.find((x) => x.dataset.groupe === "palier" && x.value === b.dataset.palier); if (c) { c.checked = !c.checked; filtrer(); } }));      // les paliers du bandeau cochent la case correspondante
+  boutonsPaliers.forEach((b) => b.addEventListener("click", () => { const c = casesFiltre.find((x) => x.dataset.groupe === (b.dataset.groupe || "palier") && x.value === b.dataset.palier); if (c) { c.checked = !c.checked; filtrer(); } }));      // les paliers du bandeau cochent la case correspondante
   casesFiltre.forEach((c) => c.addEventListener("change", filtrer));
-  [recherche, tri].forEach((c) => c.addEventListener("input", filtrer));
+  [recherche, tri, champDu, champAu].forEach((c) => c.addEventListener("input", filtrer));
   document.getElementById("gu-effacer-filtres").addEventListener("click", () => { casesFiltre.forEach((c) => { c.checked = false; }); filtrer(); });
-  filtrer();
+  document.querySelectorAll(".gu-raccourcis button").forEach((b) => b.addEventListener("click", () => {
+    const aujourdhui = isoDate(new Date());
+    if (b.dataset.mois === "dernier") { const t = new Date(); const premier = new Date(t.getFullYear(), t.getMonth() - 1, 1), dernier = new Date(t.getFullYear(), t.getMonth(), 0); champDu.value = isoDate(premier); champAu.value = isoDate(dernier); }
+    else { champAu.value = aujourdhui; champDu.value = decaler(aujourdhui, -(parseInt(b.dataset.jours, 10) - 1)); }
+    filtrer();
+  }));
+  champAu.value = isoDate(new Date()); champDu.value = decaler(champAu.value, -29);                              // par defaut : les 30 derniers jours, comme le Comparatif avis
+
+  // ---- Vues : Visibilite / Avis / Toutes les infos (les filtres sont remis a zero au changement de vue)
+  function appliquerVue(vue, reinitialiser) {
+    racine.dataset.vue = vue;
+    onglets.forEach((o) => { o.classList.toggle("actif", o.dataset.vue === vue); o.setAttribute("aria-selected", o.dataset.vue === vue ? "true" : "false"); });
+    Array.from(tri.options).forEach((o) => { const ok = (o.dataset.vues || "").split(" ").includes(vue); o.hidden = !ok; o.disabled = !ok; });
+    if (tri.selectedOptions[0] && tri.selectedOptions[0].disabled) tri.value = "nom";
+    if (reinitialiser) casesFiltre.forEach((c) => { c.checked = false; });
+    try { localStorage.setItem("gu-vue", vue); } catch (e) { /* stockage indisponible : sans importance */ }
+    filtrer();
+  }
+  onglets.forEach((o) => o.addEventListener("click", () => appliquerVue(o.dataset.vue, true)));
+  let vueInitiale = "visibilite";
+  try { const v = localStorage.getItem("gu-vue"); if (["visibilite", "avis", "tout"].includes(v)) vueInitiale = v; } catch (e) { /* ignore */ }
+  appliquerVue(vueInitiale, false);
 })();
 </script>
 {% endblock %}

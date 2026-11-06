@@ -7572,13 +7572,16 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
     entrees = suivi_goldunion.lignes(db, parametre)
     mots = suivi_goldunion.mots_cles(parametre)
     nb_par_statut = {code: sum(1 for e in entrees if code in e["statuts"]) for code, _ in suivi_goldunion.STATUTS_FICHE}
+    options_reponses = [(code, libelle, sum(1 for e in entrees if code in e["avis_reponses"])) for code, libelle in suivi_goldunion.ETATS_REPONSES]
+    options_reponses = [o for o in options_reponses if o[2]]
     nb_par_anciennete = {code: sum(1 for e in entrees if e["anciennete"] == code) for code, _ in suivi_goldunion.CATEGORIES_ANCIENNETE}
     n_mois = suivi_goldunion.mois_recente(parametre)
     options_anciennete = [(code, libelle.replace("{n}", str(n_mois)), nb_par_anciennete[code]) for code, libelle in suivi_goldunion.CATEGORIES_ANCIENNETE if nb_par_anciennete[code]]
     libelles_statut = dict(suivi_goldunion.STATUTS_FICHE)
     options_groupes = {g: [(code, libelles_statut[code], nb_par_statut[code]) for code in codes if nb_par_statut[code]] for g, codes in suivi_goldunion.GROUPES_STATUT.items()}
     return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
-        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "options_anciennete": options_anciennete, "mois_recente": n_mois, "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "options_anciennete": options_anciennete, "mois_recente": n_mois, "options_reponses": options_reponses,
+        "avis_page": suivi_goldunion.avis_pour_page(entrees), "nb_sans_detail_avis": sum(1 for e in entrees if e["donnees"].get("adresse") and (e["donnees"].get("avis") or {}).get("liste") is None), "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
         "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
         "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
     }, headers=ENTETES_PAGE_PRIVEE)
