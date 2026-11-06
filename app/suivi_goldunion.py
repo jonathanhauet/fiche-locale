@@ -23,12 +23,14 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-from . import geo_technique, google_business, google_location, google_oauth, google_performance, google_reviews, models, rank_tracking, reporting_mensuel
+import time
+
+from . import geo_technique, geocodage, google_business, google_location, google_oauth, google_performance, google_reviews, models, rank_tracking, reporting_mensuel
 
 MOTS_CLES_DEFAUT = "achat or,rachat or,vente or,goldunion"
 TAILLES_GRILLE = (1, 3, 5)                    # 1 = un seul point, a l'adresse de l'agence
 ECARTS_KM = (1.0, 2.0, 5.0)
-COUT_PAR_POINT_CENTIMES = 0.06                # tarif affiche sur la page Positions (25 points = 1,5 centime)
+COUT_PAR_POINT_CENTIMES = 0.2                 # 0,002 $ par requete DataForSEO (releve sur le solde du compte : 36 requetes = 0,072 $)
 SEUIL_BAISSE_VISIBILITE = 10                  # points de visibilite perdus d'un mois a l'autre pour etre signale
 NB_LECTURES_PARALLELES = 6
 NB_MESURES_PARALLELES = 8
@@ -36,6 +38,8 @@ DUREE_MAX_MAJ = timedelta(hours=2)
 JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 CODES_JOUR = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
 _verrou = threading.Lock()
+_verrou_geocodage = threading.Lock()
+_dernier_geocodage = [0.0]
 
 
 # ---------- reglages
@@ -163,6 +167,41 @@ def conges_prevus(special_hours: dict, aujourdhui: date = None, maximum: int = 8
             item["jusqu_au"] = entree["jusqu_au"].isoformat()
         resultat.append(item)
     return resultat[:maximum]
+
+
+def geocoder_adresse(adresse: str) -> tuple:
+    """(latitude, longitude) d'une adresse (Nominatim, au plus une requete par seconde pour tous les fils), ou (None, None)."""
+    if not (adresse or "").strip(", "):
+        return None, None
+    with _verrou_geocodage:
+        attente = 1.1 - (time.monotonic() - _dernier_geocodage[0])
+        if attente > 0:
+            time.sleep(attente)
+        try:
+            lieux = geocodage.rechercher_lieu(adresse)
+        except Exception:
+            lieux = []
+        finally:
+            _dernier_geocodage[0] = time.monotonic()
+    return (lieux[0]["latitude"], lieux[0]["longitude"]) if lieux else (None, None)
+
+
+def trouver_coordonnees(infos: dict, travail: dict) -> tuple:
+    """
+    Coordonnees de l'agence : celles deja gardees sur la fiche de la plateforme, sinon celles de Google (rarement renseignees),
+    sinon l'adresse geocodee (d'abord l'adresse complete, puis le code postal et la ville).
+    """
+    if travail.get("lat_cache") is not None and travail.get("lng_cache") is not None:
+        return travail["lat_cache"], travail["lng_cache"]
+    latitude, longitude = google_location.coordonnees(infos)
+    if latitude is not None and longitude is not None:
+        return latitude, longitude
+    adresse = infos.get("storefrontAddress") or {}
+    for texte in (google_location.adresse_texte(infos), ", ".join(x for x in (" ".join(y for y in (adresse.get("postalCode"), adresse.get("locality")) if y), adresse.get("regionCode")) if x)):
+        latitude, longitude = geocoder_adresse(texte)
+        if latitude is not None:
+            return latitude, longitude
+    return None, None
 
 
 def _date_ouverture(infos: dict) -> str:
@@ -293,14 +332,14 @@ def lire_agence(travail: dict) -> dict:
         return donnees
     adresse = infos.get("storefrontAddress") or {}
     ville = (adresse.get("locality") or "").strip()
-    latlng = infos.get("latlng") or {}
+    latitude, longitude = trouver_coordonnees(infos, travail)
     donnees.update({
         "nom_google": infos.get("title", ""), "adresse": _adresse(infos), "ville": ville, "pays": adresse.get("regionCode", ""),
         "telephone": (infos.get("phoneNumbers") or {}).get("primaryPhone", ""), "site": infos.get("websiteUri", ""),
         "maps_uri": (infos.get("metadata") or {}).get("mapsUri", ""), "horaires": resumer_horaires(infos.get("regularHours")),
         "date_ouverture": _date_ouverture(infos), "conges": conges_prevus(infos.get("specialHours")),
         "statut_ouverture": google_location.LIBELLES_STATUT_OUVERTURE.get((infos.get("openInfo") or {}).get("status", ""), (infos.get("openInfo") or {}).get("status", "")),
-        "lat": latlng.get("latitude"), "lng": latlng.get("longitude"),
+        "lat": latitude, "lng": longitude,
     })
     donnees["fiche"]["validee"] = bool(google_location.fiche_validee(infos))
     donnees["site_etat"] = verifier_page_site(donnees["site"], ville or travail.get("ville_secours", ""))
@@ -336,8 +375,10 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
     if (donnees.get("pays") or "FR") != "FR":
         return {**base, "mots": {}, "non_applicable": True}
     ville, lat, lng = donnees.get("ville") or "", donnees.get("lat"), donnees.get("lng")
-    if not ville or lat is None or lng is None:
-        return {**base, "mots": {}, "erreur": "Ville ou coordonnées de la fiche introuvables."}
+    if not ville:
+        return {**base, "mots": {}, "erreur": "Ville introuvable sur la fiche Google."}
+    if lat is None or lng is None:
+        return {**base, "mots": {}, "erreur": "Adresse de la fiche non localisable (coordonnées introuvables)."}
     points = rank_tracking.generer_points_grille(lat, lng, taille, ecart)
     resultat = {**base, "mots": {}}
     for mot in mots:
@@ -535,7 +576,7 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
                     comptes[client.compte_google_id] = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.account_id else None
                 travaux.append({"client_id": client.id, "nom": client.nom, "account_id": client.account_id, "location_id": client.location_id,
                                 "compte": client.compte_google_id, "identifiants": comptes[client.compte_google_id],
-                                "ville_secours": (client.localisation_ville or "").strip(),
+                                "ville_secours": (client.localisation_ville or "").strip(), "lat_cache": client.latitude, "lng_cache": client.longitude,
                                 "avis_ancien": (anciennes.get(client.id) or {}).get("avis") or {}})
         finally:
             db.close()
@@ -588,6 +629,11 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
                     db.add(suivi)
                 if travail["client_id"] in resultats:
                     suivi.donnees_json, suivi.maj_le = json.dumps(resultats[travail["client_id"]]), maintenant
+                    lue = resultats[travail["client_id"]]
+                    if lue.get("lat") is not None and lue.get("lng") is not None and travail.get("lat_cache") is None:
+                        client = db.get(models.Client, travail["client_id"])         # coordonnees gardees sur la fiche : plus de geocodage la fois suivante
+                        if client is not None and client.latitude is None:
+                            client.latitude, client.longitude = lue["lat"], lue["lng"]
                 if travail["client_id"] in positions:
                     suivi.positions_json = json.dumps(fusionner_positions(anciennes_positions.get(travail["client_id"]), positions[travail["client_id"]]))
                     suivi.positions_maj_le = maintenant
