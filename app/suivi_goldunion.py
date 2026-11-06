@@ -501,6 +501,8 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
     base = {"maj": datetime.utcnow().isoformat(timespec="seconds"), "taille": taille, "ecart_km": ecart}
     if (donnees.get("pays") or "FR") != "FR":
         return {**base, "mots": {}, "non_applicable": True}
+    if donnees.get("erreur") and not donnees.get("adresse"):
+        return {**base, "mots": {}, "erreur": "Fiche Google illisible à la dernière relecture : positions non mesurées."}
     ville, lat, lng = donnees.get("ville") or "", donnees.get("lat"), donnees.get("lng")
     if not ville:
         return {**base, "mots": {}, "erreur": "Ville introuvable sur la fiche Google."}
@@ -559,7 +561,7 @@ def diagnostic_mesure(entrees: list, mots: list, taille: int, mois: str = None) 
     for e in entrees:
         raison = raison_non_mesurable(e["donnees"])
         if raison:
-            exclues.append((e["client"].nom, raison))
+            exclues.append((e["client"].nom, raison, (e["donnees"].get("erreur") or "")[:240] if raison.startswith("fiche illisible") else ""))
             continue
         mesurables += 1
         if not mesure_a_jour(e["positions"], mois):

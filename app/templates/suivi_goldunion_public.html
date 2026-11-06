@@ -198,7 +198,7 @@
         <td data-label="Fiche Google et site">
           {% if not d %}<span class="gu-puce gu-neutre">Pas encore lue</span>
           {% elif not fiche.get("creee") %}<span class="gu-puce gu-alerte">Non reliée</span>
-          {% elif not d.get("adresse") %}<span class="gu-puce gu-alerte">Illisible</span>
+          {% elif not d.get("adresse") %}<span class="gu-puce gu-alerte">Illisible</span><div class="gu-doux">La fiche n'a pas pu être lue lors de la dernière relecture (accès Google à vérifier).</div>
           {% else %}
             <span class="gu-puce gu-ok">Créée</span>
             {% if fiche.get("validee") %}<span class="gu-puce gu-ok">Validée</span>{% else %}<span class="gu-puce gu-alerte">Non validée</span>{% endif %}

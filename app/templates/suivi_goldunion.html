@@ -51,7 +51,7 @@
     {{ diag.requetes }} requêtes ({{ mots_cles }} · grille {{ taille_grille }}×{{ taille_grille }}, {{ '%g'|format(ecart_km) }} km) ≈ <strong>{{ cout_positions }}</strong>.
     {% if diag.mesurables and diag.a_mesurer == 0 %}Toutes sont déjà mesurées complètement ce mois-ci (concurrents compris) : inutile de remesurer.
     {% elif diag.a_mesurer != diag.mesurables %}{{ diag.mesurables - diag.a_mesurer }} déjà mesurée{{ 's' if diag.mesurables - diag.a_mesurer != 1 else '' }} complètement ce mois-ci (concurrents compris) : la « reprise » ne mesure que les {{ diag.a_mesurer }} autre{{ 's' if diag.a_mesurer != 1 else '' }} (≈ {{ cout_reprise }}).{% endif %}
-    {% if diag.non_mesurables %}<br>Non mesurables ({{ diag.non_mesurables|length }}) : {% for nom, raison in diag.non_mesurables[:12] %}{{ nom }} ({{ raison }}){{ ', ' if not loop.last }}{% endfor %}{% if diag.non_mesurables|length > 12 %} et {{ diag.non_mesurables|length - 12 }} autres{% endif %}.{% endif %}
+    {% if diag.non_mesurables %}<br>Non mesurables ({{ diag.non_mesurables|length }}) : {% for nom, raison, detail in diag.non_mesurables[:12] %}<span title="{{ detail }}">{{ nom }} ({{ raison }}{% if detail %} : {{ detail }}{% endif %})</span>{{ ', ' if not loop.last }}{% endfor %}{% if diag.non_mesurables|length > 12 %} et {{ diag.non_mesurables|length - 12 }} autres{% endif %}.{% endif %}
     {% if not diag.non_mesurables and diag.mesurables %}Aucune agence exclue.{% endif %}
   </div>
   {% endif %}
