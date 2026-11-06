@@ -6922,6 +6922,10 @@ def verifier_point_grille(
     if not point or point.releve.client_id != client_id:
         return JSONResponse({"erreur": "Point introuvable."}, status_code=404)
 
+    if point.verifie:
+        return JSONResponse({"position": point.position, "nom_correspondance": point.nom_correspondance,
+                             "classement": json.loads(point.resultats_json) if point.resultats_json else []})
+
     client = point.releve.client
     try:
         position, nom_correspondance, classement = rank_tracking.verifier_position(

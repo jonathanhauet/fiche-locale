@@ -93,7 +93,7 @@
 <div class="conteneur-tableau">
   <table class="tableau-historique">
     <thead>
-      <tr><th>Date</th><th>Mot-clé</th><th>Grille</th><th>Statut</th><th></th><th></th></tr>
+      <tr><th>Date</th><th>Mot-clé</th><th>Grille</th><th>Statut</th><th></th><th></th><th></th></tr>
     </thead>
     <tbody>
       {% for releve in releves %}
@@ -101,8 +101,20 @@
         <td>{{ releve.cree_le | heure_locale("%d/%m/%Y %H:%M") }}</td>
         <td>{{ releve.mot_cle_texte }}</td>
         <td>{{ releve.taille_grille }}×{{ releve.taille_grille }}</td>
-        <td><span class="etiquette-statut etiquette-{{ releve.statut|lower }}">{{ releve.statut }}</span></td>
+        {% set nb_verifies = releve.points|selectattr("verifie")|list|length %}
+        <td>
+          {% if releve.statut == "EN_COURS" %}
+          <span class="etiquette-statut etiquette-avertissement" title="La vérification a été interrompue (page quittée ou rechargée) : elle peut être reprise.">Interrompu · {{ nb_verifies }}/{{ releve.points|length }}</span>
+          {% else %}
+          <span class="etiquette-statut etiquette-{{ releve.statut|lower }}">{{ releve.statut }}</span>
+          {% endif %}
+        </td>
         <td><button type="button" class="bouton-secondaire bouton-voir-releve" data-releve-id="{{ releve.id }}">Voir la carte</button></td>
+        <td>
+          {% if releve.statut == "EN_COURS" and dataforseo_configure and latitude is not none and client.mots_cles %}
+          <button type="button" class="bouton bouton-reprendre-releve" data-releve-id="{{ releve.id }}">Reprendre</button>
+          {% endif %}
+        </td>
         <td>
           <form method="post" action="/clients/{{ client.id }}/positions/releve/{{ releve.id }}/supprimer" onsubmit="return confirm('Supprimer ce relevé de position ? Cette action est irréversible.');">
             <button type="submit" class="bouton-secondaire bouton-danger" title="Supprimer">Supprimer</button>
@@ -245,66 +257,101 @@
     bouton.addEventListener("click", () => chargerReleve(bouton.dataset.releveId));
   });
 
+  // Verifie, quatre a la fois, les points pas encore verifies d'un releve (lancement ou reprise) ; un point en echec est signale, pas ignore.
+  async function verifierPoints(releveId, tousLesPoints) {
+    const marqueursParPoint = {};
+    tousLesPoints.forEach((p) => { marqueursParPoint[p.id] = ajouterMarqueurPoint(p); });
+    const aFaire = tousLesPoints.filter((p) => !p.verifie);
+    const total = tousLesPoints.length;
+    let termines = total - aFaire.length, echecs = 0, derniereErreur = "", curseur = 0, interrompu = false;
+    function actualiserProgression() {
+      barreProgression.style.width = `${Math.round((termines / total) * 100)}%`;
+      texteProgression.textContent = `${termines} / ${total} points vérifiés`;
+    }
+    actualiserProgression();
+    async function traiterSuivant() {
+      while (curseur < aFaire.length && !interrompu) {
+        const point = aFaire[curseur++];
+        try {
+          const reponsePoint = await fetch(`/clients/${clientId}/positions/verifier/point/${point.id}`, { method: "POST" });
+          const resultat = await reponsePoint.json().catch(() => ({}));
+          if (reponsePoint.ok) {
+            carte.removeLayer(marqueursParPoint[point.id]);
+            marqueursParPoint[point.id] = ajouterMarqueurPoint({
+              ...point, verifie: true, position: resultat.position,
+              nom_correspondance: resultat.nom_correspondance, classement: resultat.classement,
+            });
+            termines++;
+          } else {
+            echecs++;
+            derniereErreur = resultat.erreur || `erreur ${reponsePoint.status}`;
+            if (reponsePoint.status === 401) interrompu = true;      // session expiree : inutile d'insister
+          }
+        } catch (e) {
+          echecs++;
+          derniereErreur = "connexion interrompue";
+        }
+        actualiserProgression();
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, aFaire.length) }, traiterSuivant));
+    await chargerReleve(releveId);
+    if (echecs) {
+      erreurVerification.textContent = `${echecs} point(s) n'ont pas pu être vérifiés (${derniereErreur}). Actualisez la page puis cliquez sur « Reprendre » dans l'historique : seuls les points restants seront vérifiés.`;
+      erreurVerification.hidden = false;
+    } else {
+      resumeReleve.textContent += " — actualisez la page pour mettre à jour l'historique ci-dessous.";
+    }
+  }
+
+  async function executerVerification(boutonsADesactiver, travail) {
+    erreurVerification.hidden = true;
+    boutonsADesactiver.forEach((b) => { b.disabled = true; });
+    conteneurProgression.hidden = false;
+    barreProgression.style.width = "0%";
+    texteProgression.textContent = "Préparation de la grille…";
+    try {
+      await travail();
+    } catch (erreur) {
+      erreurVerification.textContent = erreur.message;
+      erreurVerification.hidden = false;
+    } finally {
+      boutonsADesactiver.forEach((b) => { b.disabled = false; });
+      conteneurProgression.hidden = true;
+    }
+  }
+
   if (boutonLancer) {
-    boutonLancer.addEventListener("click", async () => {
+    boutonLancer.addEventListener("click", () => {
       const motCle = document.getElementById("select-mot-cle-verif").value;
       const taille = document.getElementById("select-taille-grille").value;
       const rayon = document.getElementById("select-rayon-grille").value;
-      erreurVerification.hidden = true;
-      boutonLancer.disabled = true;
-      conteneurProgression.hidden = false;
-      barreProgression.style.width = "0%";
-      texteProgression.textContent = "Préparation de la grille…";
-
-      try {
+      executerVerification([boutonLancer], async () => {
         const reponseDemarrage = await fetch(`/clients/${clientId}/positions/verifier/demarrer`, {
           method: "POST",
           body: new URLSearchParams({ mot_cle_texte: motCle, taille_grille: taille, rayon_km: rayon }),
         });
         const demarrage = await reponseDemarrage.json();
         if (!reponseDemarrage.ok) throw new Error(demarrage.erreur || "Erreur inconnue.");
-
         initialiserCarte(demarrage.latitude_centre, demarrage.longitude_centre);
-        const points = demarrage.points;
-        const marqueursParPoint = {};
-        points.forEach((p) => { marqueursParPoint[p.id] = ajouterMarqueurPoint({ ...p, verifie: false, position: null }); });
-
-        let termines = 0;
-        const CONCURRENCE = 4;
-        let curseur = 0;
-        async function traiterSuivant() {
-          while (curseur < points.length) {
-            const point = points[curseur++];
-            try {
-              const reponsePoint = await fetch(`/clients/${clientId}/positions/verifier/point/${point.id}`, { method: "POST" });
-              const resultat = await reponsePoint.json();
-              if (reponsePoint.ok) {
-                const marqueur = marqueursParPoint[point.id];
-                carte.removeLayer(marqueur);
-                marqueursParPoint[point.id] = ajouterMarqueurPoint({
-                  ...point, verifie: true, position: resultat.position,
-                  nom_correspondance: resultat.nom_correspondance, classement: resultat.classement,
-                });
-              }
-            } catch (e) { /* on continue avec les points suivants */ }
-            termines++;
-            barreProgression.style.width = `${Math.round((termines / points.length) * 100)}%`;
-            texteProgression.textContent = `${termines} / ${points.length} points vérifiés`;
-          }
-        }
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCE, points.length) }, traiterSuivant));
-
-        await chargerReleve(demarrage.releve_id);
-        resumeReleve.textContent += " — actualisez la page pour le voir apparaître dans l'historique ci-dessous.";
-      } catch (erreur) {
-        erreurVerification.textContent = erreur.message;
-        erreurVerification.hidden = false;
-      } finally {
-        boutonLancer.disabled = false;
-        conteneurProgression.hidden = true;
-      }
+        await verifierPoints(demarrage.releve_id, demarrage.points.map((p) => ({ ...p, verifie: false, position: null })));
+      });
     });
   }
+
+  // Releve interrompu (page quittee ou rechargee pendant la verification) : on ne verifie que les points restants.
+  document.querySelectorAll(".bouton-reprendre-releve").forEach((bouton) => {
+    bouton.addEventListener("click", () => {
+      const tous = Array.from(document.querySelectorAll(".bouton-reprendre-releve"));
+      executerVerification(tous, async () => {
+        const reponse = await fetch(`/clients/${clientId}/positions/releve/${bouton.dataset.releveId}`);
+        const donnees = await reponse.json();
+        if (!reponse.ok) throw new Error(donnees.erreur || "Erreur inconnue.");
+        initialiserCarte(donnees.latitude_centre, donnees.longitude_centre);
+        await verifierPoints(donnees.id, donnees.points);
+      });
+    });
+  });
 })();
 </script>
 {% endblock %}
