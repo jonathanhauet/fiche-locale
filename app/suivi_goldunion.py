@@ -224,6 +224,22 @@ def _forme_comparable(texte: str) -> str:
     return " " + " ".join(re.sub(r"[^a-z0-9]+", " ", _sans_accents(texte)).split()) + " "
 
 
+MOTS_VILLE_BANALS = {"saint", "sainte", "st", "ste", "le", "la", "les", "l", "de", "du", "des", "d", "sur", "sous", "en", "aux", "au", "et", "lez", "les"}
+
+
+def ville_dans_page(ville: str, texte: str, adresse: str = "") -> bool:
+    """
+    La ville de l'agence figure-t-elle dans la page ? Soit en entier (« Saint-Brieuc » = « Saint Brieuc »), soit par tous ses mots significatifs, dans
+    n'importe quel ordre (« Saint-Denis Réunion » : la page parle de « Saint-Denis 97400 » et de « La Réunion »). Les mots banals (saint, le, la, sur...) ne comptent pas.
+    """
+    cherchee = _forme_comparable(ville)
+    ensemble = _forme_comparable(texte) + _forme_comparable(adresse)
+    if cherchee in ensemble:
+        return True
+    mots = [m for m in cherchee.split() if m not in MOTS_VILLE_BANALS and len(m) >= 3]
+    return bool(mots) and all(f" {m} " in ensemble for m in mots)
+
+
 def _texte_visible(contenu: str) -> str:
     """Texte lisible d'une page : sans scripts, styles ni balises, entites HTML decodees."""
     sans_code = re.sub(r"(?is)<(script|style|noscript|svg)\b.*?</\1>", " ", contenu or "")
@@ -263,8 +279,7 @@ def verifier_page_site(url: str, ville: str = "") -> dict:
             reponse.close()
             if ville:
                 texte = _texte_visible(contenu)
-                cherchee = _forme_comparable(ville)
-                if cherchee not in _forme_comparable(texte) and cherchee not in _forme_comparable(courant):
+                if not ville_dans_page(ville, texte, courant):
                     if len(texte) < SEUIL_PAGE_DYNAMIQUE:
                         return {"etat": "indeterminee", "code": 200, "detail": "Page construite par JavaScript : à vérifier à la main"}
                     return {"etat": "ville_absente", "code": 200, "detail": f"La page ne mentionne pas « {ville} »"}
