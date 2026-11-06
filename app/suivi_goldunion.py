@@ -402,7 +402,7 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
     if lat is None or lng is None:
         return {**base, "mots": {}, "erreur": "Adresse de la fiche non localisable (coordonnées introuvables)."}
     points = rank_tracking.generer_points_grille(lat, lng, taille, ecart)
-    resultat = {**base, "mots": {}}
+    resultat = {**base, "mots": {}, "centre": [lat, lng]}
     for mot in mots:
         liste = []
         for latitude, longitude in points:
@@ -444,7 +444,21 @@ def grille_nord_en_haut(positions: list, taille: int) -> list:
     return lignes[::-1]
 
 
-def resume_positions(positions: dict) -> dict:
+def donnees_carte(positions: dict, centre=None) -> dict:
+    """Ce qu'il faut pour dessiner la mesure sur une carte : centre, points de la grille (meme ordre que les positions) et position par recherche ; {} sans centre connu."""
+    centre = positions.get("centre") or centre
+    mots = positions.get("mots") or {}
+    taille = positions.get("taille") or 3
+    if not centre or centre[0] is None or centre[1] is None or not mots:
+        return {}
+    points = rank_tracking.generer_points_grille(centre[0], centre[1], taille, positions.get("ecart_km") or 2.0)
+    if any(len(liste) != len(points) for liste in mots.values()):
+        return {}
+    return {"centre": [round(centre[0], 6), round(centre[1], 6)], "points": [[round(la, 6), round(lo, 6)] for la, lo in points], "taille": taille,
+            "ecart_km": positions.get("ecart_km") or 2.0, "mots": mots}
+
+
+def resume_positions(positions: dict, centre=None) -> dict:
     """Visibilite d'une agence (part des points ou elle est dans le top 3 / top 10) et son evolution depuis le mois precedent ; {} si pas encore mesuree."""
     mots = (positions or {}).get("mots") or {}
     if not mots or not any(mots.values()):
@@ -458,7 +472,7 @@ def resume_positions(positions: dict) -> dict:
     for mot, liste in mots.items():
         par_mot[mot] = {"top3": sum(1 for p in liste if p is not None and p <= 3), "top10": sum(1 for p in liste if p is not None and p <= 10), "total": len(liste),
                         "grille": grille_nord_en_haut(liste, taille) if len(liste) == taille * taille else [liste]}
-    return {**score, "taille": taille, "ecart_km": positions.get("ecart_km"), "mois": mois, "par_mot": par_mot,
+    return {**score, "taille": taille, "ecart_km": positions.get("ecart_km"), "mois": mois, "par_mot": par_mot, "carte": donnees_carte(positions, centre),
             "evolution": score["pct3"] - precedent["pct3"] if precedent else None, "evolution10": score["pct10"] - precedent["pct10"] if precedent else None,
             "mois_precedent": precedent["mois"] if precedent else None, "maj": positions.get("maj", "")}
 
@@ -542,7 +556,7 @@ def lignes(db, parametre) -> list:
         donnees = json.loads(suivi.donnees_json) if suivi and suivi.donnees_json else {}
         positions = json.loads(suivi.positions_json) if suivi and suivi.positions_json else {}
         resultat.append({
-            "client": client, "donnees": donnees, "positions": positions, "pos": resume_positions(positions), "avis": resume_avis(donnees.get("avis") or {}),
+            "client": client, "donnees": donnees, "positions": positions, "pos": resume_positions(positions, [donnees.get("lat"), donnees.get("lng")]), "avis": resume_avis(donnees.get("avis") or {}),
             "maj_le": suivi.maj_le if suivi else None, "statuts": statuts_fiche(donnees),
             "problemes": problemes(donnees, parametre.groupe_attendu or "", positions) if donnees else ["Pas encore lue"],
         })

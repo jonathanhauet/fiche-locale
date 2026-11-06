@@ -7539,7 +7539,8 @@ def etat_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session
     return JSONResponse(_etat_suivi_goldunion(suivi_goldunion.lire_parametre(db)))
 
 
-ENTETES_PAGE_PRIVEE = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+# « strict-origin » : seul le nom du site est transmis (jamais l'adresse secrete de la page) ; les fonds de carte OpenStreetMap refusent les requetes sans referer.
+ENTETES_PAGE_PRIVEE = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "strict-origin"}
 
 
 @app.get("/goldunion/{jeton}", response_class=HTMLResponse)

@@ -2,7 +2,9 @@
 {% block titre %}Suivi des agences GoldUnion{% endblock %}
 {% block tete_supplementaire %}
 <meta name="robots" content="noindex, nofollow">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="strict-origin">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
   .gu { max-width: 1500px; margin: 0 auto; padding: 1.2rem max(1rem, env(safe-area-inset-left)) 3rem; }
   .gu h1 { font-size: 1.6rem; margin: 0 0 0.2rem; }
@@ -40,8 +42,18 @@
   .gu-baisse { color: var(--danger); font-weight: 700; }
   .gu-stable { color: var(--texte-discret); font-weight: 700; }
   .gu-details summary { cursor: pointer; color: var(--accent); font-size: 0.82rem; margin-top: 0.3rem; }
-  .gu-cartes { display: flex; flex-wrap: wrap; gap: 0.7rem 1rem; margin-top: 0.5rem; }
-  .gu-carte-mot { font-size: 0.78rem; }
+  .gu-ligne-cartes { display: flex; flex-wrap: wrap; gap: 0.8rem 1.2rem; align-items: flex-start; margin-top: 0.5rem; }
+  .gu-cartes { display: contents; }
+  .gu-minicarte-bloc { width: 150px; font-size: 0.72rem; color: var(--texte-discret); }
+  .gu-minicarte-place { position: relative; width: 150px; height: 150px; }
+  .gu-minicarte { position: absolute; left: 0; top: 0; width: 150px; height: 150px; border-radius: 10px; overflow: hidden; border: 1px solid var(--carte-bordure); background: #e5e3df; z-index: 2; transition: width 0.2s, height 0.2s, box-shadow 0.2s; cursor: zoom-in; }
+  .gu-minicarte.agrandie { width: min(480px, 84vw); height: min(480px, 84vw); z-index: 40; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5); cursor: zoom-out; }
+  .gu-minicarte-bloc select.gu-choix-recherche { width: 100%; margin-top: 0.3rem; font-size: 0.78rem; padding: 0.2rem; }
+  .gu-etiquette-carte { display: flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 3px; font-size: 11px; font-weight: 800; color: #fff; border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+  .gu-etiquette-carte.c-ok { background: #1f9d55; } .gu-etiquette-carte.c-moyen { background: #d98a06; } .gu-etiquette-carte.c-bas { background: #dc2626; } .gu-etiquette-carte.c-rien { background: #6b7280; }
+  .gu-centre-carte { width: 14px; height: 14px; transform: rotate(45deg); background: #111; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.6); }
+  .gu-carte-mot { font-size: 0.78rem; width: 150px; }
+  .gu-tableau td[data-label="Positionnement naturel"] { min-width: 340px; }
   .gu-carte-mot > div:first-child { margin-bottom: 0.2rem; }
   .gu-grille { display: inline-grid; gap: 2px; }
   .gu-cell { width: 1.7rem; height: 1.7rem; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 0.75rem; font-weight: 700; }
@@ -175,8 +187,16 @@
           <div class="gu-doux">
             {% if pos.evolution is not none %}Depuis le mois dernier : {{ evolution(pos.evolution, " pts", -10) }}{% else %}Première mesure : l'évolution apparaîtra le mois prochain{% endif %}
           </div>
-          <details class="gu-details">
+          <details class="gu-details"{% if pos.carte %} data-carte='{{ pos.carte|tojson }}'{% endif %}>
             <summary>Voir les cartes</summary>
+            <div class="gu-ligne-cartes">
+            {% if pos.carte %}
+            <div class="gu-minicarte-bloc">
+              <div class="gu-minicarte-place"><div class="gu-minicarte" title="Survolez pour agrandir"></div></div>
+              <select class="gu-choix-recherche" aria-label="Recherche affichée sur la carte"></select>
+              <div>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a></div>
+            </div>
+            {% endif %}
             <div class="gu-cartes">
               {% for mot, m in pos.par_mot.items() %}
               <div class="gu-carte-mot">
@@ -186,6 +206,7 @@
                 </div>
               </div>
               {% endfor %}
+            </div>
             </div>
             <div class="gu-doux" style="margin-top:0.3rem">Nord en haut · {{ pos.taille }}×{{ pos.taille }} points, {{ "%g"|format(pos.ecart_km) }} km d'écart{% if e.positions.get("erreur") %} · dernière mesure en erreur : {{ e.positions.erreur }}{% endif %}</div>
           </details>
@@ -218,6 +239,53 @@
 </div>
 <script>
 (function () {
+  // Cartes : creees a la premiere ouverture de « Voir les cartes » ; la petite carte grossit au survol (au toucher sur telephone).
+  const survol = window.matchMedia("(hover: hover)").matches;
+  function classeRang(p) { return p == null ? "c-rien" : p <= 3 ? "c-ok" : p <= 10 ? "c-moyen" : "c-bas"; }
+  function creerCarte(details) {
+    if (details._carte || !window.L || !details.dataset.carte) return;
+    const donnees = JSON.parse(details.dataset.carte);
+    const element = details.querySelector(".gu-minicarte");
+    const selecteur = details.querySelector(".gu-choix-recherche");
+    const options = Object.keys(donnees.mots);
+    selecteur.innerHTML = (options.length > 1 ? '<option value="">Toutes les recherches</option>' : "") + options.map((m) => `<option value="${m.replace(/"/g, "&quot;")}">${m.replace(/</g, "&lt;")}</option>`).join("");
+    const carte = L.map(element, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(carte);
+    const demi = donnees.ecart_km * 500;                     // rayon d'un point = la moitie de l'ecart : les cercles se touchent
+    const degLat = demi / 111320;
+    const degLng = demi / (111320 * Math.cos(donnees.centre[0] * Math.PI / 180));
+    const lats = donnees.points.map((p) => p[0]), lngs = donnees.points.map((p) => p[1]);
+    const limites = L.latLngBounds([Math.min(...lats) - degLat, Math.min(...lngs) - degLng], [Math.max(...lats) + degLat, Math.max(...lngs) + degLng]);
+    L.rectangle(limites, { color: "#2a55f0", weight: 1, dashArray: "4 3", fill: false }).addTo(carte);
+    const couche = L.layerGroup().addTo(carte);
+    function dessiner() {
+      couche.clearLayers();
+      const mot = selecteur.value;
+      donnees.points.forEach((p, i) => {
+        let texte, classe;
+        if (mot) { const rang = donnees.mots[mot][i]; texte = rang == null ? "–" : String(rang); classe = classeRang(rang); }
+        else {
+          const nb = options.filter((m) => { const r = donnees.mots[m][i]; return r != null && r <= 3; }).length;
+          texte = `${nb}/${options.length}`; classe = nb === 0 ? "c-rien" : nb * 2 >= options.length ? "c-ok" : "c-moyen";
+        }
+        const couleur = { "c-ok": "#1f9d55", "c-moyen": "#d98a06", "c-bas": "#dc2626", "c-rien": "#6b7280" }[classe];
+        L.circle(p, { radius: demi, color: couleur, weight: 1, fillColor: couleur, fillOpacity: 0.22 }).addTo(couche);
+        L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="gu-etiquette-carte ${classe}">${texte}</div>`, iconSize: [26, 20], iconAnchor: [13, 10] }), interactive: false }).addTo(couche);
+      });
+      L.marker(donnees.centre, { icon: L.divIcon({ className: "", html: '<div class="gu-centre-carte" title="Agence"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }), interactive: false }).addTo(couche);
+    }
+    selecteur.addEventListener("change", dessiner);
+    function ajuster() { carte.invalidateSize(); carte.fitBounds(limites, { padding: [3, 3], animate: false }); }
+    function agrandir(oui) { element.classList.toggle("agrandie", oui); setTimeout(ajuster, 40); setTimeout(ajuster, 260); }      // recadrage pendant et apres l'animation
+    element.addEventListener("transitionend", ajuster);
+    if (window.ResizeObserver) new ResizeObserver(ajuster).observe(element);
+    if (survol) { element.addEventListener("mouseenter", () => agrandir(true)); element.addEventListener("mouseleave", () => agrandir(false)); }
+    else element.addEventListener("click", () => agrandir(!element.classList.contains("agrandie")));
+    dessiner(); ajuster();
+    details._carte = carte;
+  }
+  document.querySelectorAll("details.gu-details[data-carte]").forEach((d) => d.addEventListener("toggle", () => { if (d.open) creerCarte(d); }));
+
   const corps = document.querySelector("#gu-tableau tbody");
   const lignes = Array.from(corps.querySelectorAll("tr[data-texte]"));
   const recherche = document.getElementById("gu-recherche");
