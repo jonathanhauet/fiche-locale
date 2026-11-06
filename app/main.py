@@ -466,6 +466,8 @@ def _migrer_vers_multi_comptes():
 
 
 _migrer_vers_multi_comptes()
+with engine.begin() as _connexion_nettoyage:
+    suivi_goldunion.nettoyer_ancienne_mesure(_connexion_nettoyage)
 
 app = FastAPI(title="Fiche Locale - Plateforme")
 

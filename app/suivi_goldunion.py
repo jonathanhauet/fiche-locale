@@ -28,7 +28,8 @@ import time
 
 from . import geo_technique, geocodage, google_business, google_location, google_oauth, google_performance, google_reviews, models, rank_tracking, reporting_mensuel
 
-MOTS_CLES_DEFAUT = "achat or,rachat or,vente or,goldunion"
+MOTS_CLES_DEFAUT = "achat or,rachat or,vente or"
+ANCIEN_MOTS_CLES_DEFAUT = "achat or,rachat or,vente or,goldunion"           # reglage d'origine, retire : voir nettoyer_ancienne_mesure
 TAILLES_GRILLE = (1, 3, 5)                    # 1 = un seul point, a l'adresse de l'agence
 ECARTS_KM = (1.0, 2.0, 5.0)
 COUT_PAR_POINT_CENTIMES = 0.2                 # 0,002 $ par requete DataForSEO (releve sur le solde du compte : 36 requetes = 0,072 $)
@@ -74,6 +75,34 @@ def ecart_km(parametre) -> float:
 def cout_mesure_centimes(nb_agences: int, nb_mots: int, taille: int) -> float:
     """Cout estime d'une mesure complete des positions (une requete DataForSEO par agence, mot-cle et point de la grille)."""
     return round(nb_agences * nb_mots * taille * taille * COUT_PAR_POINT_CENTIMES, 1)
+
+
+def nettoyer_ancienne_mesure(connexion) -> dict:
+    """
+    Nettoyage unique (sans effet une fois fait, a chaque demarrage) apres le retrait du mot-cle « goldunion » des recherches suivies :
+    - le reglage d'origine « achat or,rachat or,vente or,goldunion » devient « achat or,rachat or,vente or » (un reglage modifie n'est pas touche) ;
+    - les mesures de positions faites avec l'ancien mot-cle (la toute premiere analyse) sont effacees des agences, historique compris, pour que la
+      prochaine analyse globale soit la premiere mesure de reference.
+    connexion : connexion SQLAlchemy (voir main._migrer_vers_multi_comptes). Renvoie {"mesures_effacees": n, "reglage_corrige": bool}.
+    """
+    from sqlalchemy import inspect as inspecter, text
+    tables = set(inspecter(connexion).get_table_names())
+    bilan = {"mesures_effacees": 0, "reglage_corrige": False}
+    if "parametre_suivi_goldunion" in tables:
+        resultat = connexion.execute(text("UPDATE parametre_suivi_goldunion SET mots_cles = :nouveau WHERE mots_cles = :ancien"), {"nouveau": MOTS_CLES_DEFAUT, "ancien": ANCIEN_MOTS_CLES_DEFAUT})
+        bilan["reglage_corrige"] = bool(resultat.rowcount)
+    if "suivi_agences" in tables:
+        for identifiant, positions_json in connexion.execute(text("SELECT id, positions_json FROM suivi_agences WHERE positions_json LIKE :motif"), {"motif": '%"goldunion"%'}).fetchall():
+            try:
+                mots = (json.loads(positions_json or "{}").get("mots") or {})
+            except ValueError:
+                continue
+            if any(m.strip().lower() == "goldunion" for m in mots):
+                connexion.execute(text("UPDATE suivi_agences SET positions_json = '', positions_maj_le = NULL WHERE id = :id"), {"id": identifiant})
+                bilan["mesures_effacees"] += 1
+        if bilan["mesures_effacees"] and "parametre_suivi_goldunion" in tables and not connexion.execute(text("SELECT 1 FROM suivi_agences WHERE positions_json <> '' LIMIT 1")).fetchone():
+            connexion.execute(text("UPDATE parametre_suivi_goldunion SET positions_maj_le = NULL"))
+    return bilan
 
 
 def clients_suivis(db, parametre) -> list:
