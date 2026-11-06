@@ -7563,12 +7563,24 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
     entrees = suivi_goldunion.lignes(db, parametre)
     mots = suivi_goldunion.mots_cles(parametre)
     nb_par_statut = {code: sum(1 for e in entrees if code in e["statuts"]) for code, _ in suivi_goldunion.STATUTS_FICHE}
-    options_statut = [(code, libelle, nb_par_statut[code]) for code, libelle in suivi_goldunion.STATUTS_FICHE if nb_par_statut[code]]
+    libelles_statut = dict(suivi_goldunion.STATUTS_FICHE)
+    options_groupes = {g: [(code, libelles_statut[code], nb_par_statut[code]) for code in codes if nb_par_statut[code]] for g, codes in suivi_goldunion.GROUPES_STATUT.items()}
     return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
-        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_statut": options_statut, "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
         "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
         "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
     }, headers=ENTETES_PAGE_PRIVEE)
+
+
+@app.get("/goldunion/{jeton}/agence/{client_id}/concurrents")
+def concurrents_publique_goldunion(jeton: str, client_id: int, db: Session = Depends(obtenir_session)):
+    """Fiches classees devant une agence a chaque point de mesure (charge au clic sur une brique de la grille, pour ne pas alourdir la page)."""
+    parametre = suivi_goldunion.lire_parametre(db)
+    if not suivi_goldunion.jeton_valide(parametre, jeton) or client_id not in {c.id for c in suivi_goldunion.clients_suivis(db, parametre)}:
+        return JSONResponse({"erreur": "Introuvable."}, status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    suivi = db.query(models.SuiviAgence).filter_by(client_id=client_id).first()
+    positions = json.loads(suivi.positions_json) if suivi and suivi.positions_json else {}
+    return JSONResponse(suivi_goldunion.detail_concurrents(positions), headers=ENTETES_PAGE_PRIVEE)
 
 
 @app.get("/goldunion/{jeton}/export.xlsx")

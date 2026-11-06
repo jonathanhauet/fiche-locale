@@ -431,10 +431,26 @@ def lire_agence(travail: dict) -> dict:
 
 # ---------- positions naturelles (grille autour de l'agence)
 
+NB_MAX_CONCURRENTS = 10
+
+
+def concurrents_devant(position, classement: list) -> list:
+    """
+    Fiches classees devant l'agence a un point de mesure, sous forme compacte [{"p": rang, "n": nom, "c": cid, "i": place_id, "a": adresse, "s": site, "r": note, "v": avis}].
+    Agence a la 1re place : liste vide ; agence au-dela des 10 premiers resultats (ou absente) : les 10 premiers resultats.
+    """
+    devant = [c for c in (classement or []) if c.get("position") is not None and (position is None or position > NB_MAX_CONCURRENTS or c["position"] < position)]
+    return [
+        {"p": c["position"], "n": c.get("nom", ""), "c": c.get("cid", ""), "i": c.get("place_id", ""), "a": c.get("adresse", ""), "s": c.get("site", ""), "r": c.get("note"), "v": c.get("nombre_avis")}
+        for c in sorted(devant, key=lambda c: c["position"])[:NB_MAX_CONCURRENTS]
+    ]
+
+
 def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 3, ecart: float = 2.0, mesure=None) -> dict:
     """
     Position naturelle de l'agence pour chaque mot-cle + ville, en chaque point d'une grille taille x taille (ecart en km entre points) centree sur la
-    fiche. Resultat : {"mots": {mot: [position ou None, ...]}} (points de la grille du sud-ouest au nord-est). Agences hors France : non mesurees.
+    fiche. Resultat : {"mots": {mot: [position ou None, ...]}, "concurrents": {mot: [[fiches devant l'agence], ...]}} (points de la grille du sud-ouest au
+    nord-est). Agences hors France : non mesurees.
     """
     mesure = mesure or rank_tracking.verifier_position
     base = {"maj": datetime.utcnow().isoformat(timespec="seconds"), "taille": taille, "ecart_km": ecart}
@@ -446,17 +462,19 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
     if lat is None or lng is None:
         return {**base, "mots": {}, "erreur": "Adresse de la fiche non localisable (coordonnées introuvables)."}
     points = rank_tracking.generer_points_grille(lat, lng, taille, ecart)
-    resultat = {**base, "mots": {}, "centre": [lat, lng]}
+    resultat = {**base, "mots": {}, "centre": [lat, lng], "concurrents": {}}
     for mot in mots:
-        liste = []
+        liste, devant = [], []
         for latitude, longitude in points:
             try:
-                position, _, _ = mesure(f"{mot} {ville}", latitude, longitude, nom_agence)
+                position, _, classement = mesure(f"{mot} {ville}", latitude, longitude, nom_agence)
             except Exception as erreur:
                 resultat["erreur"] = str(erreur)[:160]
                 return resultat
             liste.append(position)
+            devant.append(concurrents_devant(position, classement))
         resultat["mots"][mot] = liste
+        resultat["concurrents"][mot] = devant
     return resultat
 
 
@@ -515,8 +533,9 @@ def resume_positions(positions: dict, centre=None) -> dict:
     par_mot = {}
     for mot, liste in mots.items():
         par_mot[mot] = {"top3": sum(1 for p in liste if p is not None and p <= 3), "top10": sum(1 for p in liste if p is not None and p <= 10), "total": len(liste),
-                        "grille": grille_nord_en_haut(liste, taille) if len(liste) == taille * taille else [liste]}
-    return {**score, "taille": taille, "ecart_km": positions.get("ecart_km"), "mois": mois, "par_mot": par_mot, "carte": donnees_carte(positions, centre),
+                        "grille": grille_nord_en_haut(liste, taille) if len(liste) == taille * taille else [liste],
+                        "indices": grille_nord_en_haut(list(range(len(liste))), taille) if len(liste) == taille * taille else [list(range(len(liste)))]}
+    return {**score, "taille": taille, "ecart_km": positions.get("ecart_km"), "mois": mois, "par_mot": par_mot, "carte": donnees_carte(positions, centre), "avec_concurrents": bool(positions.get("concurrents")),
             "evolution": score["pct3"] - precedent["pct3"] if precedent else None, "evolution10": score["pct10"] - precedent["pct10"] if precedent else None,
             "mois_precedent": precedent["mois"] if precedent else None, "maj": positions.get("maj", "")}
 
@@ -566,6 +585,9 @@ STATUTS_FICHE = [
 ]
 
 
+GROUPES_STATUT = {"fiche": ["validee", "non_validee", "non_reliee"], "ouverture": ["ouverte", "fermee_temp", "fermee_def", "statut_non_renseigne"]}
+
+
 def statuts_fiche(donnees: dict) -> list:
     """Codes de statut d'une agence (voir STATUTS_FICHE) : validation de la fiche et statut d'ouverture ; vide si la fiche n'a pas pu etre lue."""
     if not donnees:
@@ -602,6 +624,11 @@ def repartition_paliers(entrees: list) -> list:
         nb[e["palier"]] = nb.get(e["palier"], 0) + 1
     liste = [{"code": code, "libelle": libelle, "nb": nb.get(code, 0)} for code, libelle, _, _ in PALIERS_VISIBILITE]
     return liste + [{"code": "aucune", "libelle": "Pas mesurées", "nb": nb.get("aucune", 0)}]
+
+
+def detail_concurrents(positions: dict) -> dict:
+    """Donnees du panneau « qui est devant moi ? » d'une agence : positions de l'agence et fiches devant elle, par recherche et par point (meme ordre que la grille)."""
+    return {"rangs": positions.get("mots") or {}, "concurrents": positions.get("concurrents") or {}}
 
 
 def libelle_date_ouverture(valeur: str) -> str:

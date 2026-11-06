@@ -27,6 +27,14 @@
   .gu-pastille-palier { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; flex: none; }
   .p-0-25 { background: #dc2626; } .p-26-50 { background: #d98a06; } .p-51-75 { background: #65a30d; } .p-76-100 { background: #1f9d55; } .p-aucune { background: #8b8f98; }
   .gu-pct-0-25 { color: #dc2626; } .gu-pct-26-50 { color: #d98a06; } .gu-pct-51-75 { color: #65a30d; } .gu-pct-76-100 { color: #1f9d55; }
+  .gu-filtres { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 0.7rem 0.9rem; margin-bottom: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.7rem 1.6rem; align-items: flex-start; }
+  .gu-groupe-filtre { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.5rem; }
+  .gu-titre-filtre { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--texte-discret); margin-right: 0.2rem; }
+  .gu-case { display: inline-flex; flex-direction: row; align-items: center; gap: 0.35rem; width: auto; margin: 0; font-size: 0.85rem; padding: 0.25rem 0.6rem; border: 1px solid var(--carte-bordure); border-radius: 999px; background: var(--fond); cursor: pointer; }
+  .gu-case input { width: auto; margin: 0; flex: none; }
+  .gu-case:has(input:checked) { border-color: var(--accent); background: rgba(79, 110, 247, 0.14); font-weight: 600; }
+  .gu-case .gu-nb { color: var(--texte-discret); font-size: 0.78rem; }
+  .gu-aide-filtres { flex-basis: 100%; margin: 0; color: var(--texte-discret); font-size: 0.78rem; }
   .gu-barre { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 0.9rem; }
   .gu-barre input[type="search"], .gu-barre select { min-width: 0; flex: 1 1 200px; max-width: 320px; }
   .gu-barre label { display: inline-flex; flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.9rem; width: auto; margin: 0; }
@@ -69,6 +77,19 @@
   .gu-tableau td[data-label="Positionnement naturel"] { min-width: 340px; }
   .gu-carte-mot > div:first-child { margin-bottom: 0.2rem; }
   .gu-grille { display: inline-grid; gap: 2px; }
+  button.gu-cell { border: 0; padding: 0; font-family: inherit; cursor: pointer; }
+  button.gu-cell:hover { filter: brightness(1.2); transform: scale(1.1); }
+  .gu-cell.selectionnee { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .gu-concurrents { margin-top: 0.6rem; padding: 0.6rem 0.75rem; border: 1px solid var(--accent); border-radius: 10px; background: var(--fond); }
+  .gu-concurrents[hidden] { display: none; }
+  .gu-conc-entete { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.85rem; }
+  .gu-conc-fermer { background: none; border: 0; color: var(--texte-discret); font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 0 0.3rem; }
+  .gu-conc-bloc + .gu-conc-bloc { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--carte-bordure); }
+  .gu-conc-titre { font-size: 0.8rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .gu-conc-liste { list-style: none; margin: 0; padding: 0; }
+  .gu-conc-liste li { margin-bottom: 0.35rem; font-size: 0.85rem; }
+  .gu-conc-rang { display: inline-block; min-width: 1.9rem; margin-right: 0.3rem; font-weight: 800; color: var(--texte-discret); }
+  .gu-etiquette-carte.cliquable { cursor: pointer; }
   .gu-cell { width: 1.7rem; height: 1.7rem; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 0.75rem; font-weight: 700; }
   .gu-cell.c-ok { background: rgba(34, 160, 90, 0.85); color: #fff; }
   .gu-cell.c-moyen { background: rgba(217, 138, 6, 0.85); color: #fff; }
@@ -126,14 +147,6 @@
 
   <div class="gu-barre">
     <input type="search" id="gu-recherche" placeholder="Rechercher une agence ou une ville…" autocomplete="off">
-    <select id="gu-statut" aria-label="Statut de la fiche">
-      <option value="">Tous les statuts</option>
-      {% for code, libelle, nb in options_statut %}<option value="{{ code }}">{{ libelle }} ({{ nb }})</option>{% endfor %}
-    </select>
-    <select id="gu-palier" aria-label="Palier de visibilité">
-      <option value="">Toutes les visibilités</option>
-      {% for p in paliers %}<option value="{{ p.code }}">{{ 'Visibilité ' ~ p.libelle if p.code != 'aucune' else 'Visibilité non mesurée' }} ({{ p.nb }})</option>{% endfor %}
-    </select>
     <select id="gu-tri" aria-label="Trier">
       <option value="nom">Trier : ordre alphabétique</option>
       <option value="surveiller">Trier : à surveiller d'abord</option>
@@ -142,12 +155,28 @@
       <option value="note">Trier : note la plus basse</option>
       <option value="sans-reponse">Trier : avis sans réponse</option>
     </select>
-    <label><input type="checkbox" id="gu-surveiller"> Seulement les agences à surveiller</label>
     <a class="bouton-secondaire" href="/goldunion/{{ jeton }}/export.xlsx">⬇ Télécharger en Excel</a>
     <span class="gu-compte" id="gu-compte"></span>
   </div>
 
-  <table class="gu-tableau" id="gu-tableau">
+  <div class="gu-filtres" role="group" aria-label="Filtres">
+    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Fiche Google</span>
+      {% for code, libelle, nb in options_fiche %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="fiche" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
+    </div>
+    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Ouverture</span>
+      {% for code, libelle, nb in options_ouverture %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="ouverture" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
+    </div>
+    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Visibilité (top 3)</span>
+      {% for p in paliers %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="palier" value="{{ p.code }}"> <span class="gu-pastille-palier p-{{ p.code }}"></span> {{ p.libelle if p.code != 'aucune' else 'Non mesurée' }} <span class="gu-nb">{{ p.nb }}</span></label>{% endfor %}
+    </div>
+    <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Alertes</span>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="surveiller" id="gu-surveiller"> À surveiller</label>
+      <button type="button" class="bouton-secondaire" id="gu-effacer-filtres">Effacer les filtres</button>
+    </div>
+    <p class="gu-aide-filtres">Plusieurs cases d'une même rubrique : l'une <strong>ou</strong> l'autre. Cases de rubriques différentes : <strong>toutes</strong> les conditions à la fois.</p>
+  </div>
+
+  <table class="gu-tableau" id="gu-tableau" data-jeton="{{ jeton }}">
     <thead>
       <tr><th>Agence</th><th>Fiche Google et site</th><th>Coordonnées et horaires</th><th>Ouverture et fermetures</th><th>Avis</th><th>Positionnement naturel</th><th>Maps · mois dernier</th><th>À surveiller</th></tr>
     </thead>
@@ -218,7 +247,7 @@
           <div class="gu-doux">
             {% if pos.evolution is not none %}Depuis le mois dernier : {{ evolution(pos.evolution, " pts", -10) }}{% else %}Première mesure : l'évolution apparaîtra le mois prochain{% endif %}
           </div>
-          <details class="gu-details"{% if pos.carte %} data-carte='{{ pos.carte|tojson }}'{% endif %}>
+          <details class="gu-details" data-client="{{ e.client.id }}" data-taille="{{ pos.taille }}" data-ville="{{ d.get('ville', '') }}"{% if pos.avec_concurrents %} data-conc="1"{% endif %}{% if pos.carte %} data-carte='{{ pos.carte|tojson }}'{% endif %}>
             <summary>Voir les cartes</summary>
             <div class="gu-ligne-cartes">
             {% if pos.carte %}
@@ -233,13 +262,15 @@
               <div class="gu-carte-mot">
                 <div><strong>{{ mot }} {{ d.get("ville", "") }}</strong> · {{ m.top3 }}/{{ m.total }} en top 3</div>
                 <div class="gu-grille" style="grid-template-columns: repeat({{ m.grille[0]|length }}, 1.7rem)">
-                  {% for ligne in m.grille %}{% for p in ligne %}<span class="gu-cell {{ 'c-rien' if p is none else ('c-ok' if p <= 3 else ('c-moyen' if p <= 10 else 'c-bas')) }}" title="{{ 'Hors des premiers résultats' if p is none else 'Position ' ~ p }}">{{ '–' if p is none else p }}</span>{% endfor %}{% endfor %}
+                  {% set balise = 'button' if pos.avec_concurrents else 'span' %}
+                  {% for ligne in m.grille %}{% set ligne_i = loop.index0 %}{% for p in ligne %}<{{ balise }}{% if pos.avec_concurrents %} type="button" data-mot="{{ mot }}" data-i="{{ m.indices[ligne_i][loop.index0] }}"{% endif %} class="gu-cell {{ 'c-rien' if p is none else ('c-ok' if p <= 3 else ('c-moyen' if p <= 10 else 'c-bas')) }}" title="{{ ('Hors des premiers résultats' if p is none else 'Position ' ~ p) ~ (' · cliquez pour voir les concurrents devant' if pos.avec_concurrents else '') }}">{{ '–' if p is none else p }}</{{ balise }}>{% endfor %}{% endfor %}
                 </div>
               </div>
               {% endfor %}
             </div>
             </div>
-            <div class="gu-doux" style="margin-top:0.3rem">Nord en haut · {{ pos.taille }}×{{ pos.taille }} points, {{ "%g"|format(pos.ecart_km) }} km d'écart{% if e.positions.get("erreur") %} · dernière mesure en erreur : {{ e.positions.erreur }}{% endif %}</div>
+            {% if pos.avec_concurrents %}<div class="gu-concurrents" hidden></div>{% endif %}
+            <div class="gu-doux" style="margin-top:0.3rem">{% if pos.avec_concurrents %}Cliquez sur une brique (ou un chiffre de la carte) pour voir les concurrents classés devant l'agence · {% endif %}Nord en haut · {{ pos.taille }}×{{ pos.taille }} points, {{ "%g"|format(pos.ecart_km) }} km d'écart{% if e.positions.get("erreur") %} · dernière mesure en erreur : {{ e.positions.erreur }}{% endif %}</div>
           </details>
           {% elif e.positions.get("erreur") %}<span class="gu-doux">{{ e.positions.erreur }}</span>
           {% else %}<span class="gu-doux">Pas encore mesuré</span>{% endif %}
@@ -273,6 +304,73 @@
   // Cartes : creees a la premiere ouverture de « Voir les cartes » ; la petite carte grossit au survol (au toucher sur telephone).
   const survol = window.matchMedia("(hover: hover)").matches;
   function classeRang(p) { return p == null ? "c-rien" : p <= 3 ? "c-ok" : p <= 10 ? "c-moyen" : "c-bas"; }
+
+  // Concurrents devant l'agence : charges au clic sur une brique (ou un chiffre de la carte), une seule fois par agence.
+  const jeton = document.getElementById("gu-tableau").dataset.jeton;
+  function el(balise, classe, texte) { const n = document.createElement(balise); if (classe) n.className = classe; if (texte != null) n.textContent = texte; return n; }
+  function nomPoint(i, taille) {
+    if (taille === 1) return "à l'adresse de l'agence";
+    const milieu = (taille - 1) / 2, dy = Math.floor(i / taille) - milieu, dx = (i % taille) - milieu;
+    if (dy === 0 && dx === 0) return "au centre (adresse de l'agence)";
+    const nom = (dy > 0 ? "nord" : dy < 0 ? "sud" : "") + (dx > 0 ? (dy ? "-est" : "est") : dx < 0 ? (dy ? "-ouest" : "ouest") : "");
+    return (nom === "est" || nom === "ouest" ? "à l'" : "au ") + nom + " de l'agence";
+  }
+  function lienFiche(c) {
+    if (c.c) return "https://www.google.com/maps?cid=" + encodeURIComponent(c.c);
+    if (c.i) return "https://www.google.com/maps/place/?q=place_id:" + encodeURIComponent(c.i);
+    return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(((c.n || "") + " " + (c.a || "")).trim());
+  }
+  function chargerConcurrents(details) {
+    if (!details._concurrents) {
+      details._concurrents = fetch(`/goldunion/${jeton}/agence/${details.dataset.client}/concurrents`).then((r) => { if (!r.ok) throw new Error("erreur"); return r.json(); }).catch((e) => { details._concurrents = null; throw e; });
+    }
+    return details._concurrents;
+  }
+  async function ouvrirConcurrents(details, mot, index) {
+    const panneau = details.querySelector(".gu-concurrents");
+    if (!panneau) return;
+    const briques = Array.from(details.querySelectorAll(".gu-cell[data-i]"));
+    briques.forEach((b) => b.classList.toggle("selectionnee", b.dataset.i === String(index) && (!mot || b.dataset.mot === mot)));
+    panneau.hidden = false;
+    panneau.textContent = "Chargement…";
+    let donnees;
+    try { donnees = await chargerConcurrents(details); } catch (e) { panneau.textContent = "Le détail n'a pas pu être chargé. Réessayez dans un instant."; return; }
+    const taille = parseInt(details.dataset.taille, 10) || 3, ville = details.dataset.ville || "";
+    panneau.replaceChildren();
+    const entete = el("div", "gu-conc-entete");
+    const fermer = el("button", "gu-conc-fermer", "×"); fermer.type = "button"; fermer.title = "Fermer";
+    fermer.addEventListener("click", () => { panneau.hidden = true; briques.forEach((b) => b.classList.remove("selectionnee")); });
+    entete.append(el("strong", "", "Concurrents classés devant l'agence, " + nomPoint(index, taille)), fermer);
+    panneau.append(entete);
+    (mot ? [mot] : Object.keys(donnees.rangs || {})).forEach((m) => {
+      const rang = ((donnees.rangs || {})[m] || [])[index];
+      const liste = (((donnees.concurrents || {})[m]) || [])[index] || [];
+      const bloc = el("div", "gu-conc-bloc");
+      bloc.append(el("div", "gu-conc-titre", `« ${m} ${ville} » : l'agence est ` + (rang == null ? "hors des premiers résultats" : "n° " + rang)));
+      if (!liste.length) bloc.append(el("div", "gu-doux", rang === 1 ? "Aucune fiche devant l'agence : elle est première à cet endroit. 🎉" : "Aucun concurrent relevé à ce point."));
+      else {
+        const ol = el("ol", "gu-conc-liste");
+        liste.forEach((c) => {
+          const li = el("li");
+          const lien = el("a", "", c.n || "Fiche sans nom"); lien.href = lienFiche(c); lien.target = "_blank"; lien.rel = "noopener noreferrer"; lien.title = "Ouvrir la fiche Google de ce concurrent";
+          li.append(el("span", "gu-conc-rang", "#" + c.p), lien);
+          const infos = [];
+          if (c.r != null) infos.push("★ " + String(c.r).replace(".", ",") + (c.v ? ` (${c.v} avis)` : ""));
+          if (c.a) infos.push(c.a);
+          if (c.s) infos.push(c.s);
+          if (infos.length) li.append(el("div", "gu-doux", infos.join(" · ")));
+          ol.append(li);
+        });
+        bloc.append(ol);
+      }
+      panneau.append(bloc);
+    });
+    panneau.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  document.querySelectorAll("details.gu-details[data-conc]").forEach((d) => d.addEventListener("click", (ev) => {
+    const brique = ev.target.closest(".gu-cell[data-i]");
+    if (brique) ouvrirConcurrents(d, brique.dataset.mot, parseInt(brique.dataset.i, 10));
+  }));
   function creerCarte(details) {
     if (details._carte || !window.L || !details.dataset.carte) return;
     const donnees = JSON.parse(details.dataset.carte);
@@ -301,7 +399,8 @@
         }
         const couleur = { "c-ok": "#1f9d55", "c-moyen": "#d98a06", "c-bas": "#dc2626", "c-rien": "#6b7280" }[classe];
         L.circle(p, { radius: demi, color: couleur, weight: 1, fillColor: couleur, fillOpacity: 0.22 }).addTo(couche);
-        L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="gu-etiquette-carte ${classe}">${texte}</div>`, iconSize: [26, 20], iconAnchor: [13, 10] }), interactive: false }).addTo(couche);
+        const etiquette = L.marker(p, { icon: L.divIcon({ className: "", html: `<div class="gu-etiquette-carte ${classe}${details.dataset.conc ? " cliquable" : ""}">${texte}</div>`, iconSize: [26, 20], iconAnchor: [13, 10] }), interactive: !!details.dataset.conc }).addTo(couche);
+        if (details.dataset.conc) etiquette.on("click", (ev) => { L.DomEvent.stopPropagation(ev); ouvrirConcurrents(details, selecteur.value, i); });
       });
       L.marker(donnees.centre, { icon: L.divIcon({ className: "", html: '<div class="gu-centre-carte" title="Agence"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }), interactive: false }).addTo(couche);
     }
@@ -320,8 +419,7 @@
   const corps = document.querySelector("#gu-tableau tbody");
   const lignes = Array.from(corps.querySelectorAll("tr[data-texte]"));
   const recherche = document.getElementById("gu-recherche");
-  const statut = document.getElementById("gu-statut");
-  const palier = document.getElementById("gu-palier");
+  const casesFiltre = Array.from(document.querySelectorAll(".gu-filtre"));
   const boutonsPaliers = Array.from(document.querySelectorAll(".gu-palier-bouton"));
   const surveiller = document.getElementById("gu-surveiller");
   const tri = document.getElementById("gu-tri");
@@ -336,20 +434,24 @@
     note: (a, b) => nombre(a, "note") - nombre(b, "note") || a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
     "sans-reponse": (a, b) => nombre(b, "sansReponse") - nombre(a, "sansReponse") || a.dataset.nom.localeCompare(b.dataset.nom, "fr"),
   };
+  const cochees = (groupe) => casesFiltre.filter((c) => c.dataset.groupe === groupe && c.checked).map((c) => c.value);
   function filtrer() {
     const q = sansAccents(recherche.value.trim());
+    const fiche = cochees("fiche"), ouverture = cochees("ouverture"), paliers = cochees("palier");        // « ou » dans une rubrique, « et » entre rubriques
     let visibles = 0;
     lignes.sort(comparateurs[tri.value] || comparateurs.nom).forEach((l) => corps.appendChild(l));
     lignes.forEach((l) => {
-      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!statut.value || l.dataset.statuts.split(" ").includes(statut.value)) && (!palier.value || l.dataset.palier === palier.value) && (!surveiller.checked || l.dataset.surveiller === "1");
+      const ok = (!q || sansAccents(l.dataset.texte).includes(q)) && (!fiche.length || fiche.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!ouverture.length || ouverture.some((v) => l.dataset.statuts.split(" ").includes(v))) && (!paliers.length || paliers.includes(l.dataset.palier)) && (!surveiller.checked || l.dataset.surveiller === "1");
       l.hidden = !ok;
       if (ok) visibles++;
     });
-    boutonsPaliers.forEach((b) => b.classList.toggle("actif", b.dataset.palier === palier.value));
+    boutonsPaliers.forEach((b) => b.classList.toggle("actif", casesFiltre.some((c) => c.dataset.groupe === "palier" && c.value === b.dataset.palier && c.checked)));
     compte.textContent = `${visibles} agence${visibles > 1 ? "s" : ""} affichée${visibles > 1 ? "s" : ""}`;
   }
-  boutonsPaliers.forEach((b) => b.addEventListener("click", () => { palier.value = palier.value === b.dataset.palier ? "" : b.dataset.palier; filtrer(); }));      // un second clic retire le filtre
-  [recherche, statut, palier, surveiller, tri].forEach((c) => c && c.addEventListener("input", filtrer));
+  boutonsPaliers.forEach((b) => b.addEventListener("click", () => { const c = casesFiltre.find((x) => x.dataset.groupe === "palier" && x.value === b.dataset.palier); if (c) { c.checked = !c.checked; filtrer(); } }));      // les paliers du bandeau cochent la case correspondante
+  casesFiltre.forEach((c) => c.addEventListener("change", filtrer));
+  [recherche, tri].forEach((c) => c.addEventListener("input", filtrer));
+  document.getElementById("gu-effacer-filtres").addEventListener("click", () => { casesFiltre.forEach((c) => { c.checked = false; }); filtrer(); });
   filtrer();
 })();
 </script>

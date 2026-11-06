@@ -135,6 +135,7 @@ def verifier_position(mot_cle: str, latitude: float, longitude: float, nom_entre
             "nom": item.get("title", ""),
             "note": (item.get("rating") or {}).get("value"),
             "nombre_avis": (item.get("rating") or {}).get("votes_count"),
+            "cid": item.get("cid") or "", "place_id": item.get("place_id") or "", "adresse": item.get("address") or "", "site": item.get("domain") or "",
         }
         for item in resultats_classes[:10]
     ]
