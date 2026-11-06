@@ -1,10 +1,11 @@
 """
 Suivi des agences GoldUnion pour leurs responsables : une page en lecture seule (lien secret) qui regroupe, pour chaque agence,
 l'etat de la fiche Google (reliee, validee, groupe), adresse, telephone, horaires, date d'ouverture, fermetures prevues, etat de la
-page agence du site, indicateurs Maps du dernier mois et positionnement naturel (DataForSEO, un point a l'agence).
+page agence du site, avis (note, nouveaux avis, avis sans reponse), indicateurs Maps du dernier mois et positionnement naturel
+(DataForSEO, grille de points autour de l'agence, avec l'evolution d'un mois a l'autre).
 
 Les donnees sont lues chez Google puis gardees (models.SuiviAgence) : la page ne fait aucun appel externe quand elle s'ouvre.
-La lecture se fait en tache de fond (chaque nuit, ou a la demande) ; les positions (payantes, quelques centimes) une fois par semaine.
+Les fiches et les avis sont relus chaque nuit ; les positions (payantes) une fois par mois.
 """
 
 import json
@@ -22,11 +23,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-from . import geo_technique, google_business, google_location, google_oauth, google_performance, models, rank_tracking, reporting_mensuel
+from . import geo_technique, google_business, google_location, google_oauth, google_performance, google_reviews, models, rank_tracking, reporting_mensuel
 
 MOTS_CLES_DEFAUT = "achat or,rachat or,vente or,goldunion"
+TAILLES_GRILLE = (1, 3, 5)                    # 1 = un seul point, a l'adresse de l'agence
+ECARTS_KM = (1.0, 2.0, 5.0)
+COUT_PAR_POINT_CENTIMES = 0.06                # tarif affiche sur la page Positions (25 points = 1,5 centime)
+SEUIL_BAISSE_VISIBILITE = 10                  # points de visibilite perdus d'un mois a l'autre pour etre signale
 NB_LECTURES_PARALLELES = 6
-NB_MESURES_PARALLELES = 4
+NB_MESURES_PARALLELES = 8
 DUREE_MAX_MAJ = timedelta(hours=2)
 JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 CODES_JOUR = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
@@ -39,7 +44,7 @@ def lire_parametre(db) -> "models.ParametreSuiviGoldUnion":
     """Ligne de reglages (creee au premier appel)."""
     parametre = db.query(models.ParametreSuiviGoldUnion).first()
     if not parametre:
-        parametre = models.ParametreSuiviGoldUnion(mots_cles=MOTS_CLES_DEFAUT)
+        parametre = models.ParametreSuiviGoldUnion(mots_cles=MOTS_CLES_DEFAUT, taille_grille=3, ecart_km=2.0)
         db.add(parametre)
         db.commit()
     return parametre
@@ -51,6 +56,19 @@ def ids_etiquettes(parametre) -> list:
 
 def mots_cles(parametre) -> list:
     return [m.strip() for m in (parametre.mots_cles or MOTS_CLES_DEFAUT).split(",") if m.strip()]
+
+
+def taille_grille(parametre) -> int:
+    return parametre.taille_grille if parametre.taille_grille in TAILLES_GRILLE else 3
+
+
+def ecart_km(parametre) -> float:
+    return float(parametre.ecart_km) if parametre.ecart_km in ECARTS_KM else 2.0
+
+
+def cout_mesure_centimes(nb_agences: int, nb_mots: int, taille: int) -> float:
+    """Cout estime d'une mesure complete des positions (une requete DataForSEO par agence, mot-cle et point de la grille)."""
+    return round(nb_agences * nb_mots * taille * taille * COUT_PAR_POINT_CENTIMES, 1)
 
 
 def clients_suivis(db, parametre) -> list:
@@ -195,10 +213,72 @@ def verifier_page_site(url: str, ville: str = "") -> dict:
         return {"etat": "erreur", "code": 0, "detail": "Site injoignable"}
 
 
+# ---------- avis
+
+def _date_avis(texte: str):
+    try:
+        return datetime.fromisoformat(re.sub(r"\.\d+", "", texte or "").replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def lire_avis(identifiants, account_id: str, location_id: str, maintenant: datetime = None) -> dict:
+    """
+    Avis d'une fiche en UN appel (50 avis les plus recents + note moyenne et total donnes par Google) : note, total, nouveaux avis sur 30 jours,
+    avis sans reponse (60 jours) et avis negatifs (1-2 etoiles) sans reponse (90 jours).
+    """
+    maintenant = maintenant or datetime.utcnow()
+    reponse = requests.get(f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/reviews",
+                           headers={"Authorization": f"Bearer {identifiants.token}"}, params={"pageSize": 50}, timeout=30)
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Lecture des avis impossible (code {reponse.status_code})")
+    donnees = reponse.json()
+    avis = donnees.get("reviews", [])
+    nouveaux = sans_reponse = negatifs = 0
+    for a in avis:
+        cree = _date_avis(a.get("createTime"))
+        if not cree:
+            continue
+        age = (maintenant - cree).days
+        note = google_reviews.NOTES.get(a.get("starRating"), 0)
+        repondu = bool((a.get("reviewReply") or {}).get("comment"))
+        nouveaux += age <= 30
+        sans_reponse += (age <= 60 and not repondu)
+        negatifs += (age <= 90 and not repondu and 1 <= note <= 2)
+    note_moyenne = donnees.get("averageRating")
+    return {
+        "total": int(donnees.get("totalReviewCount") or 0), "note": round(float(note_moyenne), 1) if note_moyenne is not None else None,
+        "nouveaux_30j": nouveaux, "nouveaux_plus": len(avis) >= 50 and nouveaux >= 50, "sans_reponse": sans_reponse, "negatifs_sans_reponse": negatifs,
+        "maj": maintenant.isoformat(timespec="seconds"),
+    }
+
+
+def _historique_avis(ancien: list, avis: dict, aujourdhui: date = None) -> list:
+    """Une valeur par mois (la derniere connue) : sert a dire comment la note et le nombre d'avis evoluent d'un mois a l'autre."""
+    mois = (aujourdhui or date.today()).strftime("%Y-%m")
+    return ([h for h in (ancien or []) if h.get("mois") != mois] + [{"mois": mois, "total": avis["total"], "note": avis["note"]}])[-14:]
+
+
+def resume_avis(avis: dict) -> dict:
+    """Avis d'une agence avec l'evolution depuis la fin du mois precedent (None tant qu'aucun mois precedent n'est connu)."""
+    if not avis or avis.get("total") is None:
+        return {}
+    historique = avis.get("historique") or []
+    mois = historique[-1]["mois"] if historique else None
+    precedent = next((h for h in reversed(historique[:-1]) if mois and h.get("mois", "") < mois), None)
+    evolution_total = avis["total"] - precedent["total"] if precedent else None
+    evolution_note = round(avis["note"] - precedent["note"], 1) if precedent and avis.get("note") is not None and precedent.get("note") is not None else None
+    return {**{k: avis.get(k) for k in ("total", "note", "nouveaux_30j", "nouveaux_plus", "sans_reponse", "negatifs_sans_reponse")},
+            "evolution_total": evolution_total, "evolution_note": evolution_note}
+
+
+# ---------- lecture d'une agence
+
 def lire_agence(travail: dict) -> dict:
     """Donnees d'une agence d'apres sa fiche Google. Ne leve jamais d'exception : les erreurs sont notees dans « erreur »."""
     donnees = {"erreur": "", "fiche": {"creee": bool(travail.get("location_id")), "validee": None, "groupe": travail.get("groupe", "")}}
     identifiants = travail.get("identifiants")
+    ancien_avis = travail.get("avis_ancien") or {}
     if not travail.get("location_id") or not travail.get("account_id"):
         donnees["fiche"]["creee"] = False
         donnees["erreur"] = "Fiche Google non reliée à la plateforme."
@@ -224,6 +304,7 @@ def lire_agence(travail: dict) -> dict:
     })
     donnees["fiche"]["validee"] = bool(google_location.fiche_validee(infos))
     donnees["site_etat"] = verifier_page_site(donnees["site"], ville or travail.get("ville_secours", ""))
+    erreurs = []
     try:
         fin = date.today().replace(day=1) - timedelta(days=1)
         stats = google_performance.recuperer_statistiques_par_mois(identifiants, travail["location_id"], fin.replace(day=1), fin)
@@ -231,33 +312,97 @@ def lire_agence(travail: dict) -> dict:
         donnees["stats"] = {"mois": f"{fin.year}-{fin.month:02d}", **{k: indicateurs[k] for k in ("vues", "appels", "itineraires", "site")}}
     except Exception as erreur:
         donnees["stats"] = {}
-        donnees["erreur"] = f"Statistiques Maps indisponibles : {str(erreur)[:120]}"
+        erreurs.append(f"Statistiques Maps indisponibles : {str(erreur)[:100]}")
+    try:
+        avis = lire_avis(identifiants, travail["account_id"], travail["location_id"])
+        avis["historique"] = _historique_avis(ancien_avis.get("historique"), avis)
+        donnees["avis"] = avis
+    except Exception as erreur:
+        donnees["avis"] = ancien_avis                                       # on garde les derniers avis connus plutot que de tout effacer
+        erreurs.append(f"Avis : {str(erreur)[:100]}")
+    donnees["erreur"] = " ; ".join(erreurs)
     return donnees
 
 
-def mesurer_positions(donnees: dict, nom_agence: str, mots: list, mesure=None) -> dict:
-    """Position naturelle (un point, a l'agence) pour chaque mot-cle + ville. Agences hors France : non mesurees (mots-cles en francais)."""
+# ---------- positions naturelles (grille autour de l'agence)
+
+def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 3, ecart: float = 2.0, mesure=None) -> dict:
+    """
+    Position naturelle de l'agence pour chaque mot-cle + ville, en chaque point d'une grille taille x taille (ecart en km entre points) centree sur la
+    fiche. Resultat : {"mots": {mot: [position ou None, ...]}} (points de la grille du sud-ouest au nord-est). Agences hors France : non mesurees.
+    """
     mesure = mesure or rank_tracking.verifier_position
-    maj = datetime.utcnow().isoformat(timespec="seconds")
+    base = {"maj": datetime.utcnow().isoformat(timespec="seconds"), "taille": taille, "ecart_km": ecart}
     if (donnees.get("pays") or "FR") != "FR":
-        return {"maj": maj, "mots": {}, "non_applicable": True}
+        return {**base, "mots": {}, "non_applicable": True}
     ville, lat, lng = donnees.get("ville") or "", donnees.get("lat"), donnees.get("lng")
     if not ville or lat is None or lng is None:
-        return {"maj": maj, "mots": {}, "erreur": "Ville ou coordonnées de la fiche introuvables."}
-    resultat = {"maj": maj, "mots": {}}
+        return {**base, "mots": {}, "erreur": "Ville ou coordonnées de la fiche introuvables."}
+    points = rank_tracking.generer_points_grille(lat, lng, taille, ecart)
+    resultat = {**base, "mots": {}}
     for mot in mots:
-        try:
-            position, _, _ = mesure(f"{mot} {ville}", lat, lng, nom_agence)
-            resultat["mots"][mot] = position
-        except Exception as erreur:
-            resultat["erreur"] = str(erreur)[:160]
-            break
+        liste = []
+        for latitude, longitude in points:
+            try:
+                position, _, _ = mesure(f"{mot} {ville}", latitude, longitude, nom_agence)
+            except Exception as erreur:
+                resultat["erreur"] = str(erreur)[:160]
+                return resultat
+            liste.append(position)
+        resultat["mots"][mot] = liste
     return resultat
 
 
-# ---------- problemes a signaler
+def _score_positions(mots: dict) -> dict:
+    valeurs = [p for liste in mots.values() for p in liste]
+    total = len(valeurs)
+    top3 = sum(1 for p in valeurs if p is not None and p <= 3)
+    top10 = sum(1 for p in valeurs if p is not None and p <= 10)
+    return {"total": total, "top3": top3, "top10": top10, "pct3": round(100 * top3 / total) if total else 0, "pct10": round(100 * top10 / total) if total else 0}
 
-def problemes(donnees: dict, groupe_attendu: str = "") -> list:
+
+def fusionner_positions(ancien: dict, nouveau: dict, aujourdhui: date = None) -> dict:
+    """
+    Garde l'historique mensuel (une ligne par mois, la plus recente) : une mesure complete s'ajoute, une mesure en erreur ou incomplete laisse
+    l'ancienne en place avec le message d'erreur.
+    """
+    ancien = ancien or {}
+    if nouveau.get("erreur") or nouveau.get("non_applicable") or not nouveau.get("mots"):
+        return {**ancien, "erreur": nouveau.get("erreur", ""), "non_applicable": nouveau.get("non_applicable", False)} if ancien.get("mots") else nouveau
+    mois = (aujourdhui or date.today()).strftime("%Y-%m")
+    score = _score_positions(nouveau["mots"])
+    historique = [h for h in ancien.get("historique", []) if h.get("mois") != mois] + [{"mois": mois, "pct3": score["pct3"], "pct10": score["pct10"], "top3": score["top3"], "top10": score["top10"], "total": score["total"]}]
+    return {**nouveau, "historique": historique[-14:]}
+
+
+def grille_nord_en_haut(positions: list, taille: int) -> list:
+    """Lignes de la grille pour l'affichage : le nord en haut, l'ouest a gauche."""
+    lignes = [positions[i * taille:(i + 1) * taille] for i in range(taille)]
+    return lignes[::-1]
+
+
+def resume_positions(positions: dict) -> dict:
+    """Visibilite d'une agence (part des points ou elle est dans le top 3 / top 10) et son evolution depuis le mois precedent ; {} si pas encore mesuree."""
+    mots = (positions or {}).get("mots") or {}
+    if not mots or not any(mots.values()):
+        return {}
+    taille = positions.get("taille") or 3
+    score = _score_positions(mots)
+    historique = positions.get("historique") or []
+    mois = historique[-1]["mois"] if historique else None
+    precedent = next((h for h in reversed(historique[:-1]) if mois and h.get("mois", "") < mois), None)
+    par_mot = {}
+    for mot, liste in mots.items():
+        par_mot[mot] = {"top3": sum(1 for p in liste if p is not None and p <= 3), "top10": sum(1 for p in liste if p is not None and p <= 10), "total": len(liste),
+                        "grille": grille_nord_en_haut(liste, taille) if len(liste) == taille * taille else [liste]}
+    return {**score, "taille": taille, "ecart_km": positions.get("ecart_km"), "mois": mois, "par_mot": par_mot,
+            "evolution": score["pct3"] - precedent["pct3"] if precedent else None, "evolution10": score["pct10"] - precedent["pct10"] if precedent else None,
+            "mois_precedent": precedent["mois"] if precedent else None, "maj": positions.get("maj", "")}
+
+
+# ---------- points d'attention
+
+def problemes(donnees: dict, groupe_attendu: str = "", positions: dict = None) -> list:
     """Points d'attention d'une agence (textes courts)."""
     liste = []
     fiche = donnees.get("fiche") or {}
@@ -278,6 +423,19 @@ def problemes(donnees: dict, groupe_attendu: str = "") -> list:
         liste.append("Pas de site sur la fiche")
     if donnees.get("statut_ouverture") and "définitivement" in donnees["statut_ouverture"].lower():
         liste.append("Fermée définitivement")
+    avis = resume_avis(donnees.get("avis") or {})
+    if avis.get("negatifs_sans_reponse"):
+        liste.append("Avis négatif sans réponse")
+    if (avis.get("sans_reponse") or 0) >= 3:
+        liste.append(f"{avis['sans_reponse']} avis sans réponse")
+    if avis.get("evolution_note") is not None and avis["evolution_note"] <= -0.1:
+        liste.append("Note en baisse")
+    visibilite = resume_positions(positions or {})
+    if visibilite:
+        if visibilite["evolution"] is not None and visibilite["evolution"] <= -SEUIL_BAISSE_VISIBILITE:
+            liste.append(f"Visibilité en baisse ({visibilite['evolution']} pts)")
+        if visibilite["top10"] == 0:
+            liste.append("Absente du top 10")
     return liste
 
 
@@ -291,7 +449,7 @@ def libelle_date_ouverture(valeur: str) -> str:
 
 
 def lignes(db, parametre) -> list:
-    """Une entree par agence suivie : {"client", "responsable", "donnees", "positions", "maj_le", "problemes"}, triee par nom."""
+    """Une entree par agence suivie : {"client", "donnees", "positions", "pos", "avis", "maj_le", "problemes"}, triee par nom."""
     clients = clients_suivis(db, parametre)
     suivis = {s.client_id: s for s in db.query(models.SuiviAgence).filter(models.SuiviAgence.client_id.in_([c.id for c in clients] or [0])).all()}
     resultat = []
@@ -300,9 +458,9 @@ def lignes(db, parametre) -> list:
         donnees = json.loads(suivi.donnees_json) if suivi and suivi.donnees_json else {}
         positions = json.loads(suivi.positions_json) if suivi and suivi.positions_json else {}
         resultat.append({
-            "client": client, "responsable": (client.responsable or "").strip(), "donnees": donnees, "positions": positions,
+            "client": client, "donnees": donnees, "positions": positions, "pos": resume_positions(positions), "avis": resume_avis(donnees.get("avis") or {}),
             "maj_le": suivi.maj_le if suivi else None,
-            "problemes": problemes(donnees, parametre.groupe_attendu or "") if donnees else ["Pas encore lue"],
+            "problemes": problemes(donnees, parametre.groupe_attendu or "", positions) if donnees else ["Pas encore lue"],
         })
     return resultat
 
@@ -315,6 +473,8 @@ def synthese(entrees: list) -> dict:
         "avec_probleme": sum(1 for e in entrees if e["problemes"]),
         "sites_en_erreur": sum(1 for e in lues if (e["donnees"].get("site_etat") or {}).get("etat") in ("erreur", "ville_absente")),
         "avec_conges": sum(1 for e in lues if e["donnees"].get("conges")),
+        "avis_sans_reponse": sum(1 for e in lues if (e["avis"].get("sans_reponse") or 0) > 0),
+        "visibilite_en_baisse": sum(1 for e in lues if e["pos"] and e["pos"]["evolution"] is not None and e["pos"]["evolution"] <= -SEUIL_BAISSE_VISIBILITE),
     }
 
 
@@ -352,7 +512,7 @@ def est_en_cours(parametre) -> bool:
 
 def rafraichir(session_factory, avec_positions: bool = False, seulement_positions: bool = False) -> bool:
     """
-    Relit les fiches (et mesure les positions si demande). Renvoie False si une mise a jour est deja en cours.
+    Relit les fiches et les avis (et mesure les positions si demande). Renvoie False si une mise a jour est deja en cours.
     A lancer dans un fil (voir lancer) : l'etat d'avancement est ecrit dans ParametreSuiviGoldUnion.
     """
     if not _verrou.acquire(blocking=False):
@@ -363,18 +523,20 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
             parametre = lire_parametre(db)
             parametre.statut, parametre.message, parametre.maj_demarree_le = "en_cours", "Préparation…", datetime.utcnow()
             db.commit()
-            mots = mots_cles(parametre)
+            mots, taille, ecart = mots_cles(parametre), taille_grille(parametre), ecart_km(parametre)
             clients = clients_suivis(db, parametre)
             comptes = {}
+            existants = {s.client_id: s for s in db.query(models.SuiviAgence).all()}
+            anciennes = {cid: json.loads(s.donnees_json) for cid, s in existants.items() if s.donnees_json}
+            anciennes_positions = {cid: json.loads(s.positions_json) for cid, s in existants.items() if s.positions_json}
             travaux = []
             for client in clients:
                 if client.compte_google_id not in comptes:
                     comptes[client.compte_google_id] = google_oauth.obtenir_identifiants(db, client.compte_google_id) if client.account_id else None
                 travaux.append({"client_id": client.id, "nom": client.nom, "account_id": client.account_id, "location_id": client.location_id,
                                 "compte": client.compte_google_id, "identifiants": comptes[client.compte_google_id],
-                                "ville_secours": (client.localisation_ville or "").strip()})
-            existants = {s.client_id: s for s in db.query(models.SuiviAgence).all()}
-            anciennes = {cid: json.loads(s.donnees_json) for cid, s in existants.items() if s.donnees_json}
+                                "ville_secours": (client.localisation_ville or "").strip(),
+                                "avis_ancien": (anciennes.get(client.id) or {}).get("avis") or {}})
         finally:
             db.close()
         total = len(travaux)
@@ -407,10 +569,10 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
                 faits = [0]
 
                 def mesurer(travail):
-                    positions[travail["client_id"]] = mesurer_positions(donnees_finales.get(travail["client_id"]) or {}, travail["nom"], mots)
+                    positions[travail["client_id"]] = mesurer_positions(donnees_finales.get(travail["client_id"]) or {}, travail["nom"], mots, taille, ecart)
                     faits[0] += 1
-                    if faits[0] % 10 == 0:
-                        _noter(session_factory, message=f"Positions : {faits[0]}/{total}")
+                    if faits[0] % 5 == 0:
+                        _noter(session_factory, message=f"Positions : {faits[0]}/{total} agences")
 
                 with ThreadPoolExecutor(max_workers=NB_MESURES_PARALLELES) as pool:
                     list(pool.map(mesurer, travaux))
@@ -427,11 +589,13 @@ def rafraichir(session_factory, avec_positions: bool = False, seulement_position
                 if travail["client_id"] in resultats:
                     suivi.donnees_json, suivi.maj_le = json.dumps(resultats[travail["client_id"]]), maintenant
                 if travail["client_id"] in positions:
-                    suivi.positions_json, suivi.positions_maj_le = json.dumps(positions[travail["client_id"]]), maintenant
+                    suivi.positions_json = json.dumps(fusionner_positions(anciennes_positions.get(travail["client_id"]), positions[travail["client_id"]]))
+                    suivi.positions_maj_le = maintenant
             parametre = lire_parametre(db)
-            erreurs = sum(1 for r in resultats.values() if r.get("erreur") and not r.get("adresse"))
+            illisibles = sum(1 for r in resultats.values() if r.get("erreur") and not r.get("adresse"))
+            echecs_positions = sum(1 for p in positions.values() if p.get("erreur"))
             parametre.statut = "ok"
-            parametre.message = f"{total} agences" + (f", {erreurs} fiche(s) non lue(s)" if erreurs else "")
+            parametre.message = f"{total} agences" + (f", {illisibles} fiche(s) non lue(s)" if illisibles else "") + (f", {echecs_positions} mesure(s) de position en erreur" if echecs_positions else "")
             if resultats:
                 parametre.derniere_maj = maintenant
             if positions:
@@ -462,37 +626,15 @@ def lancer(session_factory, avec_positions: bool = False, seulement_positions: b
     return True
 
 
-# ---------- responsables : import colle depuis un tableur
-
-def importer_responsables(db, texte: str, clients: list) -> dict:
-    """Lignes « agence ; responsable » (ou tabulation) : rapproche par nom (accents, casse et ponctuation ignores). {"mis_a_jour", "inconnus"}."""
-    def forme(nom):
-        return re.sub(r"[^a-z0-9]", "", _sans_accents(nom))
-    index = {}
-    for c in clients:
-        index[forme(c.nom)] = c
-        index.setdefault(forme(c.nom.split(" - ")[-1]), c)
-    mis_a_jour, inconnus = 0, []
-    for ligne in (texte or "").splitlines():
-        morceaux = [m.strip() for m in re.split(r"[;\t]", ligne, maxsplit=1)]
-        if len(morceaux) < 2 or not morceaux[0] or not morceaux[1]:
-            continue
-        client = index.get(forme(morceaux[0]))
-        if client:
-            client.responsable = morceaux[1][:120]
-            mis_a_jour += 1
-        else:
-            inconnus.append(morceaux[0])
-    db.commit()
-    return {"mis_a_jour": mis_a_jour, "inconnus": inconnus}
-
-
 # ---------- export Excel
 
 ENTETES_EXCEL = [
-    "Agence", "Responsable", "Pays", "Ville", "Adresse", "Téléphone", "Horaires", "Statut d'ouverture", "Date d'ouverture", "Fermetures / horaires exceptionnels à venir",
-    "Fiche Google reliée", "Fiche validée", "Groupe Google", "Site de la fiche", "Page agence : état", "Vues Maps (mois dernier)", "Appels", "Itinéraires", "Clics site",
-    "Mois des statistiques", "Points d'attention", "Mise à jour",
+    "Agence", "Pays", "Ville", "Adresse", "Téléphone", "Horaires", "Statut d'ouverture", "Date d'ouverture", "Fermetures / horaires exceptionnels à venir",
+    "Fiche Google reliée", "Fiche validée", "Groupe Google", "Site de la fiche", "Page agence : état",
+    "Note moyenne", "Nombre d'avis", "Nouveaux avis (30 j)", "Avis sans réponse (60 j)", "Avis négatifs sans réponse (90 j)", "Évolution du nombre d'avis (vs mois dernier)", "Évolution de la note (vs mois dernier)",
+    "Vues Maps (mois dernier)", "Appels", "Itinéraires", "Clics site", "Mois des statistiques",
+    "Visibilité : points dans le top 3 (%)", "Visibilité : points dans le top 10 (%)", "Évolution top 3 (pts vs mois dernier)", "Mesure des positions",
+    "Points d'attention", "Mise à jour",
 ]
 
 
@@ -500,26 +642,28 @@ def generer_excel(entrees: list, mots: list) -> bytes:
     classeur = Workbook()
     feuille = classeur.active
     feuille.title = "Agences GoldUnion"
-    entetes = ENTETES_EXCEL + [f"Position « {m} »" for m in mots]
-    feuille.append(entetes)
+    feuille.append(ENTETES_EXCEL + [f"Top 3 « {m} » (points)" for m in mots])
     for cellule in feuille[1]:
         cellule.font = Font(bold=True)
+    libelles_site = {"ok": "OK", "ville_absente": "Ville absente de la page", "erreur": "En erreur", "absent": "Aucun site"}
     for e in entrees:
-        d, fiche = e["donnees"], (e["donnees"].get("fiche") or {})
+        d, fiche, avis, pos = e["donnees"], (e["donnees"].get("fiche") or {}), e["avis"], e["pos"]
         etat_site = d.get("site_etat") or {}
-        libelles_site = {"ok": "OK", "ville_absente": "Ville absente de la page", "erreur": "En erreur", "absent": "Aucun site"}
         stats = d.get("stats") or {}
-        positions = (e["positions"] or {}).get("mots", {})
         feuille.append([
-            e["client"].nom, e["responsable"], d.get("pays", ""), d.get("ville", ""), d.get("adresse", ""), d.get("telephone", ""), d.get("horaires", ""),
+            e["client"].nom, d.get("pays", ""), d.get("ville", ""), d.get("adresse", ""), d.get("telephone", ""), d.get("horaires", ""),
             d.get("statut_ouverture", ""), libelle_date_ouverture(d.get("date_ouverture", "")),
             " ; ".join(f"{c['date']} : {c['libelle']}" for c in d.get("conges", [])),
             "Oui" if fiche.get("creee") else "Non", {True: "Oui", False: "Non"}.get(fiche.get("validee"), ""), fiche.get("groupe", ""), d.get("site", ""),
             (libelles_site.get(etat_site.get("etat"), "") + (f" ({etat_site['detail']})" if etat_site.get("detail") else "")) if etat_site else "",
+            avis.get("note", ""), avis.get("total", ""), avis.get("nouveaux_30j", ""), avis.get("sans_reponse", ""), avis.get("negatifs_sans_reponse", ""),
+            "" if avis.get("evolution_total") is None else avis["evolution_total"], "" if avis.get("evolution_note") is None else avis["evolution_note"],
             stats.get("vues", ""), stats.get("appels", ""), stats.get("itineraires", ""), stats.get("site", ""), stats.get("mois", ""),
+            pos.get("pct3", ""), pos.get("pct10", ""), "" if not pos or pos.get("evolution") is None else pos["evolution"],
+            f"{pos['taille']}×{pos['taille']}, {pos['ecart_km']:g} km" if pos else "",
             " ; ".join(e["problemes"]), e["maj_le"].strftime("%d/%m/%Y %H:%M") if e["maj_le"] else "",
-        ] + [positions.get(m, "") if positions.get(m) is not None else ("hors résultats" if m in positions else "") for m in mots])
-    for i, largeur in enumerate([34, 20, 6, 18, 40, 16, 40, 16, 12, 40, 10, 10, 22, 34, 26, 12, 8, 10, 10, 10, 34, 16] + [14] * len(mots), start=1):
+        ] + [f"{pos['par_mot'][m]['top3']}/{pos['par_mot'][m]['total']}" if pos and m in pos.get("par_mot", {}) else "" for m in mots])
+    for i, largeur in enumerate([34, 6, 18, 40, 16, 40, 16, 12, 40, 10, 10, 22, 34, 26, 10, 10, 12, 12, 14, 16, 16, 12, 8, 10, 10, 10, 14, 14, 16, 16, 34, 16] + [14] * len(mots), start=1):
         feuille.column_dimensions[get_column_letter(i)].width = largeur
     feuille.freeze_panes = "B2"
     sortie = BytesIO()

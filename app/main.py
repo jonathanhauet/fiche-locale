@@ -186,6 +186,13 @@ def _migrer_vers_multi_comptes():
         return  # base toute neuve : deja creee avec le bon schema, rien a faire
 
     colonnes_clients = [c["name"] for c in inspecteur.get_columns("clients")]
+    if "parametre_suivi_goldunion" in inspecteur.get_table_names():
+        colonnes_suivi = {c["name"] for c in inspecteur.get_columns("parametre_suivi_goldunion")}
+        with engine.begin() as connexion:
+            if "taille_grille" not in colonnes_suivi:
+                connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN taille_grille INTEGER DEFAULT 3"))
+            if "ecart_km" not in colonnes_suivi:
+                connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN ecart_km REAL DEFAULT 2.0"))
 
     with engine.begin() as connexion:
         if "compte_google_id" not in colonnes_clients:
@@ -198,8 +205,6 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN longitude REAL"))
         if "email" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN email TEXT DEFAULT ''"))
-        if "responsable" not in colonnes_clients:
-            connexion.execute(text("ALTER TABLE clients ADD COLUMN responsable VARCHAR DEFAULT ''"))
         if "prenom" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN prenom TEXT DEFAULT ''"))
         if "lien_avis_google" not in colonnes_clients:
@@ -736,9 +741,9 @@ def _purge_archive_quotidienne():
 
 
 planificateur.add_job(_purge_archive_quotidienne, "cron", hour=4, minute=10, timezone="Europe/Brussels", id="purge_archive_creations")
-# Suivi GoldUnion : fiches relues chaque nuit, positions naturelles (payantes, quelques centimes) une fois par semaine.
+# Suivi GoldUnion : fiches et avis relus chaque nuit, positions naturelles (payantes) une fois par mois.
 planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal), "cron", hour=5, minute=30, timezone="Europe/Brussels", id="suivi_goldunion_fiches")
-planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal, seulement_positions=True), "cron", day_of_week="mon", hour=5, minute=50, timezone="Europe/Brussels", id="suivi_goldunion_positions")
+planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal, seulement_positions=True), "cron", day=1, hour=6, minute=0, timezone="Europe/Brussels", id="suivi_goldunion_positions")
 planificateur.start()
 
 
@@ -7467,10 +7472,12 @@ def page_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session
     entrees = suivi_goldunion.lignes(db, parametre)
     mots = suivi_goldunion.mots_cles(parametre)
     nb_france = sum(1 for e in entrees if (e["donnees"].get("pays") or "FR") == "FR")
+    cout = suivi_goldunion.cout_mesure_centimes(nb_france, len(mots), suivi_goldunion.taille_grille(parametre))
     return templates.TemplateResponse(request, "suivi_goldunion.html", {
         "page_actuelle": "suivi_goldunion", "parametre": parametre, "etiquettes": etiquettes, "ids_etiquettes": suivi_goldunion.ids_etiquettes(parametre),
         "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "lien": _url_page_goldunion(request, parametre), "etat": _etat_suivi_goldunion(parametre),
-        "mots_cles": ", ".join(mots), "cout_positions": round(nb_france * len(mots) * 0.06, 1), "nb_france": nb_france,
+        "mots_cles": ", ".join(mots), "cout_positions": (f"{cout:g} ¢" if cout < 100 else f"{cout / 100:.1f} $".replace(".", ",")), "nb_france": nb_france,
+        "taille_grille": suivi_goldunion.taille_grille(parametre), "ecart_km": suivi_goldunion.ecart_km(parametre), "tailles_grille": suivi_goldunion.TAILLES_GRILLE, "ecarts_km": suivi_goldunion.ECARTS_KM,
         "dataforseo_configure": rank_tracking.identifiants_configures(), "message": request.query_params.get("message", ""),
     })
 
@@ -7486,6 +7493,12 @@ async def reglages_suivi_goldunion(request: Request, db: Session = Depends(obten
     parametre.groupe_attendu = formulaire.get("groupe_attendu", "").strip()[:120]
     mots = [m.strip() for m in formulaire.get("mots_cles", "").split(",") if m.strip()][:8]
     parametre.mots_cles = ",".join(mots) or suivi_goldunion.MOTS_CLES_DEFAUT
+    try:
+        taille, ecart = int(formulaire.get("taille_grille", 3)), float(formulaire.get("ecart_km", 2))
+    except ValueError:
+        taille, ecart = 3, 2.0
+    parametre.taille_grille = taille if taille in suivi_goldunion.TAILLES_GRILLE else 3
+    parametre.ecart_km = ecart if ecart in suivi_goldunion.ECARTS_KM else 2.0
     db.commit()
     return RedirectResponse("/suivi-goldunion?message=" + quote_plus("Réglages enregistrés."), status_code=303)
 
@@ -7504,27 +7517,6 @@ async def lien_suivi_goldunion(request: Request, db: Session = Depends(obtenir_s
         parametre.token = suivi_goldunion.nouveau_jeton()
         message = "Nouveau lien créé (l'ancien ne fonctionne plus)."
     db.commit()
-    return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
-
-
-@app.post("/suivi-goldunion/responsables")
-async def responsables_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
-    """Responsable de chaque agence : champs « resp_<id> » du tableau, ou liste « agence ; responsable » collee depuis un tableur."""
-    redirection = rediriger_si_non_connecte(request)
-    if redirection:
-        return redirection
-    formulaire = await request.form()
-    parametre = suivi_goldunion.lire_parametre(db)
-    clients = suivi_goldunion.clients_suivis(db, parametre)
-    for client in clients:
-        valeur = formulaire.get(f"resp_{client.id}")
-        if valeur is not None:
-            client.responsable = valeur.strip()[:120]
-    db.commit()
-    bilan = suivi_goldunion.importer_responsables(db, formulaire.get("import", ""), clients) if formulaire.get("import", "").strip() else None
-    message = "Responsables enregistrés."
-    if bilan:
-        message = f"{bilan['mis_a_jour']} responsable(s) importé(s)." + (f" Agences non reconnues : {', '.join(bilan['inconnus'][:5])}." if bilan["inconnus"] else "")
     return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
 
 

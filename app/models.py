@@ -75,7 +75,6 @@ class Client(Base):
     logo_google_maj_le = Column(DateTime, nullable=True)
     # Adresse du site web du client (pour le controle technique GEO et pour reperer les sources qui sont son propre site).
     site_web = Column(String, default="")
-    responsable = Column(String, default="")      # responsable de l'agence (suivi GoldUnion, voir suivi_goldunion.py)
     account_id = Column(String, default="")
     location_id = Column(String, default="")
     compte_google_id = Column(Integer, ForeignKey("comptes_google.id"), nullable=True)
@@ -1396,6 +1395,8 @@ class ParametreSuiviGoldUnion(Base):
     etiquette_ids = Column(String, default="")                 # vide = toutes les etiquettes dont le nom commence par « GoldUnion »
     groupe_attendu = Column(String, default="")                # morceau du nom du groupe Google attendu (vide = pas de controle)
     mots_cles = Column(String, default="")                     # separes par des virgules ; la ville de l'agence est ajoutee a chacun
+    taille_grille = Column(Integer, default=3)                 # points de mesure des positions : 1 (a l'agence), 3x3 ou 5x5
+    ecart_km = Column(Float, default=2.0)                      # ecart entre deux points de la grille
     statut = Column(String, default="")                        # "", "en_cours", "ok" ou "erreur"
     message = Column(Text, default="")
     maj_demarree_le = Column(DateTime, nullable=True)
