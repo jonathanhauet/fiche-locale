@@ -8392,6 +8392,28 @@ def regenerer_profil_voix(client_id: int, request: Request, db: Session = Depend
     return RedirectResponse(f"/clients/{client_id}", status_code=303)
 
 
+def _detacher_tables_sans_cascade(db: Session, client_ids: list) -> None:
+    """
+    Avant de supprimer des clients : traite les tables qui pointent vers « clients » mais n'ont pas de cascade ORM (sinon la base refuse la suppression,
+    « Internal Server Error » : cle etrangere encore referencee). Detecte les tables automatiquement, y compris celles ajoutees plus tard :
+    lignes obligatoirement liees supprimees (enfants avant parents), liens facultatifs (creations, idees vocales...) simplement detaches du client.
+    """
+    if not client_ids:
+        return
+    couvertes = {relation.mapper.local_table.name for relation in inspect(models.Client).relationships if "delete" in relation.cascade}
+    for table in reversed(models.Base.metadata.sorted_tables):
+        if table.name in couvertes or table.name == "client_etiquettes":
+            continue
+        for cle in table.foreign_keys:
+            if cle.column.table.name != "clients":
+                continue
+            colonne = cle.parent
+            if colonne.nullable:
+                db.execute(table.update().where(colonne.in_(client_ids)).values({colonne.name: None}))
+            else:
+                db.execute(table.delete().where(colonne.in_(client_ids)))
+
+
 @app.post("/clients/{client_id}/supprimer")
 def supprimer_client(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
@@ -8400,6 +8422,7 @@ def supprimer_client(client_id: int, request: Request, db: Session = Depends(obt
 
     client = db.get(models.Client, client_id)
     if client:
+        _detacher_tables_sans_cascade(db, [client.id])
         db.delete(client)
         db.commit()
     return RedirectResponse("/", status_code=303)
@@ -8416,7 +8439,9 @@ def supprimer_clients_masse(
     # Suppression via l'ORM (pas une requete DELETE en masse) : necessaire
     # pour declencher les cascades (posts, photos, documents...) definies sur
     # les relations de Client, comme pour la suppression d'un seul client.
-    for client in db.query(models.Client).filter(models.Client.id.in_(client_ids)).all():
+    clients = db.query(models.Client).filter(models.Client.id.in_(client_ids)).all()
+    _detacher_tables_sans_cascade(db, [c.id for c in clients])
+    for client in clients:
         db.delete(client)
     db.commit()
     return RedirectResponse("/", status_code=303)

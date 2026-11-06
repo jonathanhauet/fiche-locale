@@ -245,6 +245,7 @@ class Client(Base):
     brouillons_whatsapp = relationship("BrouillonWhatsApp", back_populates="client", cascade="all, delete-orphan")
     photos_reference = relationship("PhotoReferenceClient", back_populates="client", cascade="all, delete-orphan")
     photos_ambiance = relationship("PhotoAmbianceClient", back_populates="client", cascade="all, delete-orphan", order_by="PhotoAmbianceClient.id")
+    suivi_agence = relationship("SuiviAgence", back_populates="client", cascade="all, delete-orphan", uselist=False)
 
 
 class Post(Base):
@@ -1383,6 +1384,8 @@ class SuiviAgence(Base):
     maj_le = Column(DateTime, nullable=True)
     positions_json = Column(Text, default="")
     positions_maj_le = Column(DateTime, nullable=True)
+
+    client = relationship("Client", back_populates="suivi_agence")
 
 
 class ParametreSuiviGoldUnion(Base):
