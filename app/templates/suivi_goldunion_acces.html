@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titre %}Suivi des agences GoldUnion{% endblock %}
+{% block tete_supplementaire %}
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="strict-origin">
+<style>
+  .gu-acces { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1.2rem; }
+  .gu-acces-carte { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 1.6rem 1.5rem; width: 100%; max-width: 390px; }
+  .gu-acces-carte h1 { font-size: 1.3rem; margin: 0 0 0.3rem; }
+  .gu-acces-carte p { margin: 0 0 1rem; color: var(--texte-discret); font-size: 0.9rem; line-height: 1.45; }
+  .gu-acces-carte input[type="password"] { width: 100%; margin-bottom: 0.8rem; }
+  .gu-acces-carte button { width: 100%; }
+  .gu-acces-erreur { background: rgba(220, 38, 38, 0.12); color: var(--danger); border-radius: 8px; padding: 0.5rem 0.7rem; margin-bottom: 0.8rem; font-size: 0.88rem; }
+</style>
+{% endblock %}
+{% block corps %}
+<main class="gu-acces">
+  <form class="gu-acces-carte" method="post" action="/goldunion/{{ jeton }}/acces">
+    <h1>🔒 Suivi des agences GoldUnion</h1>
+    <p>Accès réservé. Saisissez le mot de passe qui vous a été communiqué.</p>
+    {% if erreur %}<div class="gu-acces-erreur" role="alert">{{ erreur }}</div>{% endif %}
+    <input type="password" name="mot_de_passe" placeholder="Mot de passe" autocomplete="current-password" required autofocus>
+    <button type="submit">Accéder à la page</button>
+  </form>
+</main>
+{% endblock %}

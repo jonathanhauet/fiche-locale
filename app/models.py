@@ -1400,6 +1400,7 @@ class ParametreSuiviGoldUnion(Base):
     mots_cles = Column(String, default="")                     # separes par des virgules ; la ville de l'agence est ajoutee a chacun
     taille_grille = Column(Integer, default=3)                 # points de mesure des positions : 1 (a l'agence), 3x3 ou 5x5
     ecart_km = Column(Float, default=2.0)                      # ecart entre deux points de la grille
+    mot_de_passe_hash = Column(String, default="")             # mot de passe partage de la page des responsables (vide = lien secret seul) ; jamais en clair
     mois_agence_recente = Column(Integer, default=6)           # une agence ouverte depuis moins de ce nombre de mois est « recente » (normal de ne pas etre encore bien positionnee)
     statut = Column(String, default="")                        # "", "en_cours", "ok" ou "erreur"
     message = Column(Text, default="")

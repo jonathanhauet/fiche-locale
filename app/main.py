@@ -193,6 +193,8 @@ def _migrer_vers_multi_comptes():
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN taille_grille INTEGER DEFAULT 3"))
             if "ecart_km" not in colonnes_suivi:
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN ecart_km REAL DEFAULT 2.0"))
+            if "mot_de_passe_hash" not in colonnes_suivi:
+                connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN mot_de_passe_hash VARCHAR DEFAULT ''"))
             if "mois_agence_recente" not in colonnes_suivi:
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN mois_agence_recente INTEGER DEFAULT 6"))
 
@@ -7482,7 +7484,7 @@ def page_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session
     formater = lambda c: f"{c:g} ¢" if c < 100 else f"{c / 100:.1f} $".replace(".", ",")
     return templates.TemplateResponse(request, "suivi_goldunion.html", {
         "page_actuelle": "suivi_goldunion", "parametre": parametre, "etiquettes": etiquettes, "ids_etiquettes": suivi_goldunion.ids_etiquettes(parametre),
-        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "lien": _url_page_goldunion(request, parametre), "etat": _etat_suivi_goldunion(parametre),
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mot_de_passe_actif": suivi_goldunion.mot_de_passe_actif(parametre), "lien": _url_page_goldunion(request, parametre), "etat": _etat_suivi_goldunion(parametre),
         "agences": [{"id": e["client"].id, "nom": e["client"].nom, "maj": e["maj_le"].strftime("%d/%m") if e["maj_le"] else "", "positions": (e["positions"].get("maj") or "")[8:10] + "/" + (e["positions"].get("maj") or "")[5:7] if e["positions"].get("maj") else ""} for e in entrees],
         "cout_une_agence": (lambda c: f"{c:g} ¢" if c < 100 else f"{c / 100:.1f} $".replace(".", ","))(suivi_goldunion.cout_mesure_centimes(1, len(mots), suivi_goldunion.taille_grille(parametre))),
         "mots_cles": ", ".join(mots), "cout_positions": formater(cout), "cout_reprise": formater(diag["cout_reprise_centimes"]), "diag": diag, "nb_france": nb_france,
@@ -7563,12 +7565,75 @@ def etat_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session
 ENTETES_PAGE_PRIVEE = {"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store", "Referrer-Policy": "strict-origin"}
 
 
-@app.get("/goldunion/{jeton}", response_class=HTMLResponse)
-def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(obtenir_session)):
-    """Page des responsables GoldUnion : etat des agences, en lecture seule, accessible uniquement par son lien secret (revocable)."""
+def _acces_goldunion_autorise(request: Request, parametre) -> bool:
+    """Sans mot de passe defini : le lien suffit. Avec : il faut l'avoir saisi (session), ou etre connecte a la plateforme."""
+    if not suivi_goldunion.mot_de_passe_actif(parametre) or utilisateur_connecte(request):
+        return True
+    attendu = suivi_goldunion.empreinte_acces(parametre)
+    return bool(attendu) and request.session.get("goldunion") == attendu
+
+
+def _adresse_visiteur(request: Request) -> str:
+    return (request.headers.get("x-forwarded-for", "").split(",")[0].strip()) or (request.client.host if request.client else "?")
+
+
+def _page_acces_goldunion(request: Request, jeton: str, erreur: str = "", code: int = 200):
+    return templates.TemplateResponse(request, "suivi_goldunion_acces.html", {"jeton": jeton, "erreur": erreur}, status_code=code, headers=ENTETES_PAGE_PRIVEE)
+
+
+@app.post("/goldunion/{jeton}/acces")
+async def acces_goldunion(jeton: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Saisie du mot de passe de la page des responsables (partage, defini depuis la page de gestion)."""
     parametre = suivi_goldunion.lire_parametre(db)
     if not suivi_goldunion.jeton_valide(parametre, jeton):
         return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    if not suivi_goldunion.mot_de_passe_actif(parametre):
+        return RedirectResponse(f"/goldunion/{jeton}", status_code=303)
+    adresse = _adresse_visiteur(request)
+    if suivi_goldunion.acces_bloque(adresse):
+        return _page_acces_goldunion(request, jeton, "Trop de tentatives. Réessayez dans quelques minutes.", 429)
+    formulaire = await request.form()
+    if not suivi_goldunion.mot_de_passe_correct(parametre, str(formulaire.get("mot_de_passe", ""))):
+        suivi_goldunion.noter_echec(adresse)
+        return _page_acces_goldunion(request, jeton, "Mot de passe incorrect.", 401)
+    request.session["goldunion"] = suivi_goldunion.empreinte_acces(parametre)
+    return RedirectResponse(f"/goldunion/{jeton}", status_code=303, headers=ENTETES_PAGE_PRIVEE)
+
+
+@app.post("/goldunion/{jeton}/quitter")
+def quitter_goldunion(jeton: str, request: Request):
+    request.session.pop("goldunion", None)
+    return RedirectResponse(f"/goldunion/{jeton}", status_code=303, headers=ENTETES_PAGE_PRIVEE)
+
+
+@app.post("/suivi-goldunion/mot-de-passe")
+async def mot_de_passe_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
+    """Definit, change ou retire le mot de passe de la page des responsables. Le mot de passe n'est jamais conserve en clair."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    parametre = suivi_goldunion.lire_parametre(db)
+    if formulaire.get("action") == "retirer":
+        parametre.mot_de_passe_hash = ""
+        message = "Mot de passe retiré : le lien seul donne accès à la page."
+    else:
+        erreur = suivi_goldunion.definir_mot_de_passe(parametre, str(formulaire.get("mot_de_passe", "")), str(formulaire.get("confirmation", "")))
+        if erreur:
+            return RedirectResponse("/suivi-goldunion?message=" + quote_plus(erreur), status_code=303)
+        message = "Mot de passe enregistré. Les personnes déjà connectées devront le saisir de nouveau."
+    db.commit()
+    return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
+
+
+@app.get("/goldunion/{jeton}", response_class=HTMLResponse)
+def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Page des responsables GoldUnion : etat des agences, en lecture seule, accessible par son lien secret (revocable) et, si defini, un mot de passe."""
+    parametre = suivi_goldunion.lire_parametre(db)
+    if not suivi_goldunion.jeton_valide(parametre, jeton):
+        return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    if not _acces_goldunion_autorise(request, parametre):
+        return _page_acces_goldunion(request, jeton)
     entrees = suivi_goldunion.lignes(db, parametre)
     mots = suivi_goldunion.mots_cles(parametre)
     nb_par_statut = {code: sum(1 for e in entrees if code in e["statuts"]) for code, _ in suivi_goldunion.STATUTS_FICHE}
@@ -7580,7 +7645,7 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
     libelles_statut = dict(suivi_goldunion.STATUTS_FICHE)
     options_groupes = {g: [(code, libelles_statut[code], nb_par_statut[code]) for code in codes if nb_par_statut[code]] for g, codes in suivi_goldunion.GROUPES_STATUT.items()}
     return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
-        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "options_anciennete": options_anciennete, "mois_recente": n_mois, "options_reponses": options_reponses,
+        "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "avec_mot_de_passe": suivi_goldunion.mot_de_passe_actif(parametre) and not utilisateur_connecte(request), "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "options_anciennete": options_anciennete, "mois_recente": n_mois, "options_reponses": options_reponses,
         "avis_page": suivi_goldunion.avis_pour_page(entrees), "nb_sans_detail_avis": sum(1 for e in entrees if e["donnees"].get("adresse") and (e["donnees"].get("avis") or {}).get("liste") is None), "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
         "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
         "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
@@ -7588,21 +7653,25 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
 
 
 @app.get("/goldunion/{jeton}/agence/{client_id}/concurrents")
-def concurrents_publique_goldunion(jeton: str, client_id: int, db: Session = Depends(obtenir_session)):
+def concurrents_publique_goldunion(jeton: str, client_id: int, request: Request, db: Session = Depends(obtenir_session)):
     """Fiches classees devant une agence a chaque point de mesure (charge au clic sur une brique de la grille, pour ne pas alourdir la page)."""
     parametre = suivi_goldunion.lire_parametre(db)
     if not suivi_goldunion.jeton_valide(parametre, jeton) or client_id not in {c.id for c in suivi_goldunion.clients_suivis(db, parametre)}:
         return JSONResponse({"erreur": "Introuvable."}, status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    if not _acces_goldunion_autorise(request, parametre):
+        return JSONResponse({"erreur": "Mot de passe requis."}, status_code=401, headers=ENTETES_PAGE_PRIVEE)
     suivi = db.query(models.SuiviAgence).filter_by(client_id=client_id).first()
     positions = json.loads(suivi.positions_json) if suivi and suivi.positions_json else {}
     return JSONResponse(suivi_goldunion.detail_concurrents(positions), headers=ENTETES_PAGE_PRIVEE)
 
 
 @app.get("/goldunion/{jeton}/export.xlsx")
-def export_publique_goldunion(jeton: str, db: Session = Depends(obtenir_session)):
+def export_publique_goldunion(jeton: str, request: Request, db: Session = Depends(obtenir_session)):
     parametre = suivi_goldunion.lire_parametre(db)
     if not suivi_goldunion.jeton_valide(parametre, jeton):
         return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    if not _acces_goldunion_autorise(request, parametre):
+        return RedirectResponse(f"/goldunion/{jeton}", status_code=303, headers=ENTETES_PAGE_PRIVEE)
     octets = suivi_goldunion.generer_excel(suivi_goldunion.lignes(db, parametre), suivi_goldunion.mots_cles(parametre))
     return Response(content=octets, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={**ENTETES_PAGE_PRIVEE, "Content-Disposition": f'attachment; filename="agences_goldunion_{date.today().isoformat()}.xlsx"'})

@@ -6,7 +6,7 @@
 <div class="barre-titre"><h1>Suivi GoldUnion</h1></div>
 <p class="texte-discret">
   Une page en lecture seule pour les responsables GoldUnion : état de chaque fiche Google, coordonnées, horaires, fermetures prévues, page agence du site,
-  avis, indicateurs Maps et positionnement naturel avec son évolution. Elle n'est accessible que par un lien secret que vous pouvez changer ou désactiver à tout moment.
+  avis, indicateurs Maps et positionnement naturel avec son évolution. Elle n'est accessible que par un lien secret (que vous pouvez changer ou désactiver à tout moment) et, si vous en définissez un, un mot de passe.
 </p>
 
 {% if message %}<div class="bandeau-info">{{ message }}</div>{% endif %}
@@ -19,7 +19,7 @@
     <button type="button" class="bouton-secondaire" id="copier-lien-goldunion">Copier</button>
     <a class="bouton-secondaire" href="{{ lien }}" target="_blank" rel="noopener">Ouvrir la page</a>
   </div>
-  <p class="texte-discret">Toute personne qui a ce lien voit la page (agences, téléphones, adresses, avis, statistiques Maps). Envoyez-le seulement aux personnes concernées.</p>
+  <p class="texte-discret">{% if mot_de_passe_actif %}Pour entrer, il faut ce lien <strong>et</strong> le mot de passe ci-dessous.{% else %}Toute personne qui a ce lien voit la page (agences, téléphones, adresses, avis, statistiques Maps).{% endif %} Envoyez-le seulement aux personnes concernées.</p>
   <div class="actions-avis">
     <form method="post" action="/suivi-goldunion/lien" onsubmit="return confirm('Créer un nouveau lien ? L\'ancien cessera de fonctionner.');">
       <input type="hidden" name="action" value="generer"><button type="submit" class="bouton-secondaire">Créer un nouveau lien</button>
@@ -32,6 +32,28 @@
   <p class="texte-discret">La page n'est pas active : aucun lien n'existe pour l'instant.</p>
   <form method="post" action="/suivi-goldunion/lien"><input type="hidden" name="action" value="generer"><button type="submit">Créer le lien de la page</button></form>
   {% endif %}
+</div>
+
+<div class="choix-image-bloc" id="bloc-mot-de-passe">
+  <span class="choix-image-titre">Mot de passe de la page</span>
+  {% if mot_de_passe_actif %}
+  <p class="texte-discret">🔒 <strong>Un mot de passe est demandé</strong> : le lien seul ne suffit plus. Vous, connecté à la plateforme, n'avez pas à le saisir. Le mot de passe est conservé chiffré : il ne peut pas être réaffiché, notez-le avant de l'enregistrer.</p>
+  {% else %}
+  <p class="texte-discret">⚠️ <strong>Aucun mot de passe</strong> : toute personne qui a le lien voit la page. Définissez-en un pour que le lien seul ne suffise plus.</p>
+  {% endif %}
+  <form method="post" action="/suivi-goldunion/mot-de-passe" autocomplete="off">
+    <div class="formulaire-ligne">
+      <input type="password" name="mot_de_passe" id="champ-mdp" placeholder="{{ 'Nouveau mot de passe' if mot_de_passe_actif else 'Mot de passe (8 caractères minimum)' }}" minlength="8" maxlength="64" autocomplete="new-password" required>
+      <input type="password" name="confirmation" id="champ-mdp-confirmation" placeholder="Confirmer" minlength="8" maxlength="64" autocomplete="new-password" required>
+      <button type="button" class="bouton-secondaire" id="generer-mdp">Générer</button>
+    </div>
+    <p class="texte-discret" id="mdp-genere" hidden></p>
+    <div class="actions-avis">
+      <button type="submit" name="action" value="definir">{{ 'Changer le mot de passe' if mot_de_passe_actif else 'Définir le mot de passe' }}</button>
+      {% if mot_de_passe_actif %}<button type="submit" name="action" value="retirer" class="bouton-secondaire bouton-danger" formnovalidate onclick="return confirm('Retirer le mot de passe ? Le lien seul donnera accès à la page.');">Retirer le mot de passe</button>{% endif %}
+    </div>
+  </form>
+  <p class="texte-discret">Changer le mot de passe, ou créer un nouveau lien, déconnecte toutes les personnes qui étaient entrées. Après 5 essais ratés, l'accès est bloqué 15 minutes depuis la même adresse.</p>
 </div>
 
 <div class="choix-image-bloc">
@@ -129,6 +151,15 @@
 
 <script>
 (function () {
+  const generer = document.getElementById("generer-mdp");
+  if (generer) generer.addEventListener("click", () => {
+    const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";           // sans caracteres ambigus (0/O, 1/l/I)
+    const aleatoire = new Uint32Array(14); crypto.getRandomValues(aleatoire);
+    const mdp = Array.from(aleatoire, (n) => alphabet[n % alphabet.length]).join("");
+    document.getElementById("champ-mdp").type = "text"; document.getElementById("champ-mdp-confirmation").type = "text";
+    document.getElementById("champ-mdp").value = mdp; document.getElementById("champ-mdp-confirmation").value = mdp;
+    const note = document.getElementById("mdp-genere"); note.hidden = false; note.textContent = "Mot de passe généré : " + mdp + " — copiez-le maintenant, puis cliquez sur « Définir le mot de passe ».";
+  });
   const copier = document.getElementById("copier-lien-goldunion");
   if (copier) copier.addEventListener("click", async () => {
     const champ = document.getElementById("lien-goldunion");

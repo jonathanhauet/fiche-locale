@@ -148,6 +148,7 @@
   {%- endif -%}
 {% endmacro %}
 <div class="gu" id="gu-racine" data-vue="visibilite">
+  {% if avec_mot_de_passe %}<form method="post" action="/goldunion/{{ jeton }}/quitter" style="float:right"><button type="submit" class="bouton-secondaire">🔒 Se déconnecter</button></form>{% endif %}
   <h1>Suivi des agences GoldUnion</h1>
   <p class="intro">
     État de la fiche Google de chaque agence, coordonnées, horaires, fermetures prévues, page agence du site, avis et positionnement sur Google.

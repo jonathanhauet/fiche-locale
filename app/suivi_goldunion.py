@@ -8,6 +8,7 @@ Les donnees sont lues chez Google puis gardees (models.SuiviAgence) : la page ne
 Les fiches et les avis sont relus chaque nuit ; les positions (payantes) une fois par mois.
 """
 
+import hashlib
 import html as html_stdlib
 import json
 import re
@@ -26,6 +27,7 @@ from openpyxl.utils import get_column_letter
 
 import time
 
+from .security import hacher_mot_de_passe, verifier_mot_de_passe
 from . import geo_technique, geocodage, google_business, google_location, google_oauth, google_performance, google_reviews, models, rank_tracking, reporting_mensuel
 
 MOTS_CLES_DEFAUT = "achat or,rachat or,vente or"
@@ -151,6 +153,70 @@ def clients_suivis(db, parametre) -> list:
 
 def nouveau_jeton() -> str:
     return secrets.token_urlsafe(24)
+
+
+LONGUEUR_MIN_MOT_DE_PASSE = 8
+LONGUEUR_MAX_MOT_DE_PASSE = 64                    # bcrypt ne lit que 72 octets
+MAX_ECHECS_PAR_ADRESSE = 5
+MAX_ECHECS_TOTAL = 40
+FENETRE_ECHECS = 15 * 60                          # secondes : au-dela, les echecs sont oublies
+_echecs = {}
+_verrou_echecs = threading.Lock()
+
+
+def mot_de_passe_actif(parametre) -> bool:
+    return bool(parametre and (parametre.mot_de_passe_hash or ""))
+
+
+def definir_mot_de_passe(parametre, mot_de_passe: str, confirmation: str) -> str:
+    """Enregistre (hache) le mot de passe partage. Renvoie un message d'erreur, ou « » si tout va bien."""
+    if mot_de_passe != confirmation:
+        return "Les deux saisies ne sont pas identiques."
+    if len(mot_de_passe) < LONGUEUR_MIN_MOT_DE_PASSE:
+        return f"Le mot de passe doit faire au moins {LONGUEUR_MIN_MOT_DE_PASSE} caractères."
+    if len(mot_de_passe) > LONGUEUR_MAX_MOT_DE_PASSE:
+        return f"Le mot de passe ne doit pas dépasser {LONGUEUR_MAX_MOT_DE_PASSE} caractères."
+    parametre.mot_de_passe_hash = hacher_mot_de_passe(mot_de_passe)
+    return ""
+
+
+def mot_de_passe_correct(parametre, mot_de_passe: str) -> bool:
+    return mot_de_passe_actif(parametre) and verifier_mot_de_passe(mot_de_passe or "", parametre.mot_de_passe_hash)
+
+
+def empreinte_acces(parametre) -> str:
+    """
+    Valeur gardee dans la session d'un visiteur qui a saisi le bon mot de passe. Elle depend du lien ET du mot de passe : changer l'un ou l'autre
+    deconnecte tout le monde. Vide quand aucun mot de passe n'est demande.
+    """
+    if not mot_de_passe_actif(parametre):
+        return ""
+    return hashlib.sha256(f"{parametre.token}:{parametre.mot_de_passe_hash}".encode("utf-8")).hexdigest()[:32]
+
+
+def _recents(cle: str, maintenant: float) -> list:
+    horodatages = [t for t in _echecs.get(cle, []) if maintenant - t < FENETRE_ECHECS]
+    _echecs[cle] = horodatages
+    return horodatages
+
+
+def acces_bloque(adresse: str) -> bool:
+    """Trop d'essais rates depuis cette adresse (ou au total, contre les attaques reparties) : on refuse meme le bon mot de passe pendant quelques minutes."""
+    maintenant = time.monotonic()
+    with _verrou_echecs:
+        return len(_recents("adresse:" + (adresse or "?"), maintenant)) >= MAX_ECHECS_PAR_ADRESSE or len(_recents("total", maintenant)) >= MAX_ECHECS_TOTAL
+
+
+def noter_echec(adresse: str) -> None:
+    maintenant = time.monotonic()
+    with _verrou_echecs:
+        for cle in ("adresse:" + (adresse or "?"), "total"):
+            _recents(cle, maintenant).append(maintenant)
+
+
+def reinitialiser_echecs() -> None:
+    with _verrou_echecs:
+        _echecs.clear()
 
 
 def jeton_valide(parametre, jeton: str) -> bool:
