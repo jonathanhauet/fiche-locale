@@ -1053,7 +1053,7 @@
 <h2>Brouillons à valider ({{ brouillons|length }})</h2>
 <p class="texte-discret">Les posts déjà programmés, publiés ou rejetés apparaissent dans le résumé multi-réseaux ci-dessus.</p>
 {% if brouillons %}
-{% set client_oia = client %}{% set oia_ouvert = true %}{% include "_options_image_ia.html" %}
+{% set client_oia = client %}
 <ul class="liste-posts">
   {% for post in brouillons %}
   <li class="carte-post-revue" id="post-{{ post.id }}">
@@ -1080,6 +1080,7 @@
     <label class="description-image-rapide">Description de l'image à générer (modifiable ; si vide, l'IA s'appuie sur le texte du post)
       <textarea class="prompt-image-rapide" data-post-id="{{ post.id }}" rows="3" maxlength="600">{{ post.prompt_image }}</textarea>
     </label>
+    {% set oia_suffixe = "-" ~ post.id %}{% set oia_ouvert = true %}{% include "_options_image_ia.html" %}
     {% endif %}
     <div class="ligne-actions-rapides actions-image-rapides">
       {% if post.prompt_image or post.texte %}
@@ -2022,7 +2023,7 @@ document.querySelectorAll(".bouton-image-ia").forEach((bouton) => {
   bouton.addEventListener("click", () => {
     const statut = document.querySelector('.statut-image-ia[data-post-id="' + bouton.dataset.postId + '"]');
     const description = document.querySelector('.prompt-image-rapide[data-post-id="' + bouton.dataset.postId + '"]');
-    window.genererImageIA(bouton.dataset.postId, bouton, statut, description ? description.value.trim() : "");
+    window.imagesIAParPost[bouton.dataset.postId](bouton, statut, description ? description.value.trim() : "");
   });
 });
 </script>

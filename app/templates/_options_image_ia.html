@@ -1,16 +1,19 @@
 {# Options de l'image IA d'un post, les memes que dans le composeur multi-reseaux. A inclure avec « client_oia » (le client concerne), ou avec
    « oia_masse » pour des posts en masse sur plusieurs fiches (alors sans « qui apparait », sans texte dans l'image et sans couleurs de marque).
-   Le bouton de generation appelle window.genererImageIA(postId, bouton, zoneStatut[, prompt]) ; window.optionsImageIA() renvoie les options cochees. #}
-<details class="options-visuel" id="options-image-ia"{% if oia_ouvert %} open{% endif %}>
+   « oia_suffixe » (ex. "-12") permet d'avoir plusieurs panneaux sur la meme page (un par brouillon) : identifiants et noms de champs en portent alors le suffixe.
+   Sans suffixe : window.genererImageIA(postId, bouton, zoneStatut[, prompt]) genere l'image ; window.optionsImageIA() renvoie les options cochees.
+   Avec suffixe : window.imagesIAParPost[postId](bouton, zoneStatut[, prompt]) genere l'image avec les options de ce panneau-la. #}
+{% set sfx = oia_suffixe|default("") %}
+<details class="options-visuel" id="options-image-ia{{ sfx }}"{% if oia_ouvert %} open{% endif %}>
   <summary>🎨 Options de l'image IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
   <p class="texte-discret">Ces choix s'appliquent à l'image créée avec le bouton « Générer l'image (IA) ». Format 4:3, celui d'un post Google. Par défaut, l'IA peut ajouter des textes, des enseignes et des logos : vérifiez chaque image.</p>
   {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}
   {% if groupe != "personnes" or (not oia_masse and client_oia.photos_reference) %}
-  <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}" {% if groupe == "illustration" %}id="oia-groupe-illustration" hidden{% endif %}>
+  <fieldset class="groupe-options-visuel" data-groupe="{{ groupe }}" {% if groupe == "illustration" %}id="oia-groupe-illustration{{ sfx }}" hidden{% endif %}>
     <legend>{{ libelles_groupes_visuel[groupe] }}{% if choix_multiples %} <span class="texte-discret">(plusieurs possibles)</span>{% endif %}</legend>
     {% for identifiant, libelle, _consigne in options_visuel[groupe] %}
     <label class="etiquette-chip-case">
-      <input type="{{ 'checkbox' if choix_multiples else 'radio' }}" name="oia-{{ groupe }}" value="{{ identifiant }}">
+      <input type="{{ 'checkbox' if choix_multiples else 'radio' }}" name="oia-{{ groupe }}{{ sfx }}" value="{{ identifiant }}">
       {{ libelle }}
     </label>
     {% endfor %}
@@ -20,40 +23,41 @@
   <div class="groupe-options-visuel">
     {% if not oia_masse and (client_oia.photos_ambiance or client_oia.photos_reference) %}
     <label class="etiquette-chip-case">
-      <input type="checkbox" id="oia-bibliotheque">
+      <input type="checkbox" id="oia-bibliotheque{{ sfx }}">
       S'inspirer des photos de cette fiche ({{ client_oia.photos_ambiance|length + client_oia.photos_reference|length }} photos : l'IA en reprend l'ambiance et le style, sans reproduire les visages ; les options « mots en français » et « couleurs de la marque » sont alors ignorées)
     </label>
     {% endif %}
     {% if not oia_masse %}
     <label class="etiquette-chip-case">
-      <input type="checkbox" id="oia-texte-fr">
+      <input type="checkbox" id="oia-texte-fr{{ sfx }}">
       Ajouter quelques mots en français dans l'image (à relire : l'IA peut faire des fautes)
     </label>
     {% endif %}
     <label class="etiquette-chip-case">
-      <input type="checkbox" id="oia-varier">
+      <input type="checkbox" id="oia-varier{{ sfx }}">
       Varier automatiquement (l'IA évite de refaire les derniers visuels de ce client)
     </label>
     {% if not oia_masse %}
     <label class="etiquette-chip-case">
-      <input type="checkbox" id="oia-couleur-marque" {% if not couleur_marque_client(client_oia) %}disabled{% endif %}>
+      <input type="checkbox" id="oia-couleur-marque{{ sfx }}" {% if not couleur_marque_client(client_oia) %}disabled{% endif %}>
       Intégrer les couleurs de la marque
     </label>
     {% if not couleur_marque_client(client_oia) %}<p class="texte-discret">Couleur de marque non enregistrée : à définir dans le bloc « Identité visuelle » du composeur multi-réseaux.</p>{% endif %}
     {% endif %}
     <label class="etiquette-chip-case">
-      <input type="checkbox" id="oia-prudent">
+      <input type="checkbox" id="oia-prudent{{ sfx }}">
       Mode prudent : aucun texte ni logo dans l'image (l'IA contrôle chaque image et la refait si besoin)
     </label>
-    <button type="button" id="oia-effacer" class="bouton-secondaire">Tout décocher</button>
+    <button type="button" id="oia-effacer{{ sfx }}" class="bouton-secondaire">Tout décocher</button>
   </div>
 </details>
 <script>
 (function () {
-  const panneau = document.getElementById("options-image-ia");
+  const sfx = {{ sfx|tojson }};
+  const panneau = document.getElementById("options-image-ia" + sfx);
   if (!panneau) return;
-  const groupeIllustration = document.getElementById("oia-groupe-illustration");
-  const typeIllustration = panneau.querySelector('input[name="oia-type"][value="illustration"]');
+  const groupeIllustration = document.getElementById("oia-groupe-illustration" + sfx);
+  const typeIllustration = panneau.querySelector('input[name="oia-type' + sfx + '"][value="illustration"]');
 
   // Styles d'illustration : visibles seulement pour le type « Illustration simple ».
   function majIllustration() {
@@ -61,8 +65,8 @@
     groupeIllustration.hidden = !typeIllustration.checked;
     if (groupeIllustration.hidden) groupeIllustration.querySelectorAll("input").forEach((c) => { c.checked = false; });
   }
-  panneau.querySelectorAll('input[name="oia-type"]').forEach((r) => r.addEventListener("change", majIllustration));
-  document.getElementById("oia-effacer").addEventListener("click", () => {
+  panneau.querySelectorAll('input[name="oia-type' + sfx + '"]').forEach((r) => r.addEventListener("change", majIllustration));
+  document.getElementById("oia-effacer" + sfx).addEventListener("click", () => {
     panneau.querySelectorAll("input").forEach((c) => { c.checked = false; });
     majIllustration();
   });
@@ -70,22 +74,21 @@
   function lireOptions() {
     const options = {};
     ["type", "illustration", "cadrage", "decor", "lumiere", "personnes"].forEach((groupe) => {
-      const cochees = Array.from(panneau.querySelectorAll('input[name="oia-' + groupe + '"]:checked')).map((c) => c.value);
+      const cochees = Array.from(panneau.querySelectorAll('input[name="oia-' + groupe + sfx + '"]:checked')).map((c) => c.value);
       if (cochees.length) options[groupe] = (groupe === "cadrage" || groupe === "decor" || groupe === "lumiere") ? cochees : cochees[0];
     });
-    if (document.getElementById("oia-varier").checked) options.varier = true;
-    if (document.getElementById("oia-prudent").checked) options.prudent = true;                  // sinon : textes, enseignes et logos permis
-    const texteFr = document.getElementById("oia-texte-fr"), couleur = document.getElementById("oia-couleur-marque");       // absents pour des posts en masse
+    if (document.getElementById("oia-varier" + sfx).checked) options.varier = true;
+    if (document.getElementById("oia-prudent" + sfx).checked) options.prudent = true;                  // sinon : textes, enseignes et logos permis
+    const texteFr = document.getElementById("oia-texte-fr" + sfx), couleur = document.getElementById("oia-couleur-marque" + sfx);       // absents pour des posts en masse
     if (texteFr && texteFr.checked) options.texte_fr = true;
     if (couleur && couleur.checked && !couleur.disabled) options.couleur_marque = true;
     return options;
   }
-  window.optionsImageIA = lireOptions;
 
-  window.genererImageIA = async function (postId, bouton, statut, prompt) {
+  async function genererImageIA(postId, bouton, statut, prompt) {
     const options = lireOptions();
     const corps = { options: options, inclure_reference: ["moi", "moi_client", "lieu_reference"].includes(options.personnes) };
-    const bibliotheque = document.getElementById("oia-bibliotheque");
+    const bibliotheque = document.getElementById("oia-bibliotheque" + sfx);
     if (bibliotheque && bibliotheque.checked) corps.utiliser_bibliotheque = true;
     if (prompt) corps.prompt_image = prompt;
     const libelle = bouton.textContent;
@@ -105,6 +108,14 @@
       bouton.disabled = false; bouton.textContent = libelle;
     }
     if (recharger) setTimeout(() => { window.location.hash = "post-" + postId; window.location.reload(); }, delai);
-  };
+  }
+
+  if (!sfx) {
+    window.optionsImageIA = lireOptions;
+    window.genererImageIA = genererImageIA;
+  } else {
+    window.imagesIAParPost = window.imagesIAParPost || {};
+    window.imagesIAParPost[sfx.replace(/^-/, "")] = (bouton, statut, prompt) => genererImageIA(sfx.replace(/^-/, ""), bouton, statut, prompt);
+  }
 })();
 </script>
