@@ -7619,12 +7619,13 @@ def page_suivi_pubs(request: Request, db: Session = Depends(obtenir_session)):
     parametre = suivi_goldunion.lire_parametre(db)
     ads = suivi_ads.charger(parametre)
     agences = suivi_ads.agences_pour_rattachement(suivi_goldunion.lignes(db, parametre))
-    campagnes = [{**c, "agence": suivi_ads.proposer_agence(c, agences)} for c in ads.get("campagnes", [])]
-    rattachees = {c["agence"]["id"] for c in campagnes if c["agence"]}
+    campagnes = suivi_ads.couverture_campagnes(ads.get("campagnes", []), agences)
+    vue_agences = suivi_ads.vue_par_agence(campagnes, agences, ads.get("villes"))
     return templates.TemplateResponse(request, "suivi_goldunion_pubs.html", {
-        "page_actuelle": "suivi_goldunion", "ads": ads, "campagnes": campagnes, "compte": suivi_ads.formater_id(parametre.compte_ads_id or suivi_ads.COMPTE_ADS_DEFAUT),
+        "page_actuelle": "suivi_goldunion", "ads": ads, "campagnes": campagnes, "vue_agences": vue_agences,
+        "nb_agences_actives": sum(1 for l in vue_agences if l["statut"] == "active"), "nb_agences_aucune": sum(1 for l in vue_agences if l["statut"] == "aucune"), "compte": suivi_ads.formater_id(parametre.compte_ads_id or suivi_ads.COMPTE_ADS_DEFAUT),
         "maj": heure_locale(parametre.ads_maj_le) if parametre.ads_maj_le else "", "connexion_ads": google_oauth.ads_configure(db), "parametre_ads": google_oauth.obtenir_parametre_ads(db),
-        "agences_sans_campagne": [a for a in agences if a["id"] not in rattachees], "nb_agences": len(agences), "message": request.query_params.get("message", ""), "erreur": request.query_params.get("erreur", ""),
+        "nb_agences": len(agences), "message": request.query_params.get("message", ""), "erreur": request.query_params.get("erreur", ""),
     })
 
 

@@ -1,12 +1,26 @@
 {% extends "base.html" %}
 {% set page_actuelle = "suivi_goldunion" %}
 {% block titre %}Pubs Google Ads — Suivi GoldUnion{% endblock %}
+{% block tete_supplementaire %}
+<style>
+  .pubs-filtres { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
+  .pubs-filtres label { display: inline-flex; flex-direction: row; align-items: center; gap: 0.35rem; width: auto; margin: 0; font-size: 0.88rem; padding: 0.25rem 0.65rem; border: 1px solid var(--carte-bordure); border-radius: 999px; }
+  .pubs-filtres input[type="checkbox"] { width: auto; margin: 0; }
+  .pubs-filtres input[type="search"] { max-width: 260px; }
+  .pastille-pub { display: inline-block; font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.55rem; border-radius: 999px; white-space: nowrap; }
+  .pastille-pub.active { background: rgba(34, 160, 90, 0.16); color: #1a7f45; }
+  .pastille-pub.pause { background: rgba(217, 138, 6, 0.16); color: var(--attention); }
+  .pastille-pub.aucune { background: rgba(220, 38, 38, 0.13); color: var(--danger); }
+  .liste-pubs { margin: 0; padding: 0; list-style: none; font-size: 0.82rem; }
+  .liste-pubs li { margin-bottom: 0.15rem; }
+</style>
+{% endblock %}
 {% block contenu %}
 <p class="fil-retour"><a href="/suivi-goldunion">&larr; Retour au suivi GoldUnion</a></p>
 <div class="barre-titre"><h1>Pubs Google Ads</h1></div>
 <p class="texte-discret">
   Lecture <strong>en lecture seule</strong> du compte Google Ads : la plateforme ne crée, ne modifie et ne supprime rien. Elle relit les campagnes, leurs résultats des 30 derniers jours
-  et les zones ciblées, puis propose l'agence correspondant à chaque campagne.
+  et les zones ciblées, puis calcule quelles agences chaque campagne couvre (ville ciblée, rayon autour de l'agence, France entière hors villes exclues, ville dans le nom de la campagne).
 </p>
 
 {% if message %}<div class="bandeau-info">{{ message }}</div>{% endif %}
@@ -31,16 +45,50 @@
 <div class="grille-resume">
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.campagnes }}</span><span class="carte-resume-libelle">Campagnes ({{ ads.total.actives }} actives)</span></div>
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ '%.0f'|format(ads.total.cout) }} €</span><span class="carte-resume-libelle">Dépensés ({{ ads.jours }} derniers jours)</span></div>
-  <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.impressions }}</span><span class="carte-resume-libelle">Impressions</span></div>
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.clics }}</span><span class="carte-resume-libelle">Clics</span></div>
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.conversions }}</span><span class="carte-resume-libelle">Conversions</span></div>
-  <div class="carte-resume"><span class="carte-resume-chiffre">{{ campagnes|selectattr("agence")|list|length }} / {{ ads.total.campagnes }}</span><span class="carte-resume-libelle">Campagnes rattachées à une agence</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ nb_agences_actives }} / {{ nb_agences }}</span><span class="carte-resume-libelle">Agences couvertes par une campagne active</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ nb_agences_aucune }}</span><span class="carte-resume-libelle">Agences sans aucune campagne</span></div>
+</div>
+{% if ads.villes_erreur %}<p class="texte-discret">ℹ️ Le découpage des résultats par ville n'a pas pu être lu ({{ ads.villes_erreur }}) : la dépense des campagnes partagées entre plusieurs agences n'est donc pas répartie.</p>
+{% elif ads.villes %}<p class="texte-discret">✔ Résultats lus par ville ({{ ads.villes|length }} lignes) : la dépense des campagnes partagées est comptée dans la ville de chaque agence.</p>{% endif %}
+
+<h2>Par agence</h2>
+<p class="texte-discret">« Dédiée » : la campagne ne couvre que cette agence, sa dépense lui est entièrement attribuée. « Dans la ville » : part de la dépense des campagnes partagées réalisée dans la ville de l'agence (internautes localisés dans la ville).</p>
+<div class="pubs-filtres">
+  <input type="search" id="pubs-recherche" placeholder="Rechercher une agence…" autocomplete="off">
+  <label><input type="checkbox" class="pubs-statut" value="aucune"> Aucune campagne</label>
+  <label><input type="checkbox" class="pubs-statut" value="pause"> Campagnes en pause seulement</label>
+  <label><input type="checkbox" class="pubs-statut" value="active"> Campagne active</label>
+  <label><input type="checkbox" id="pubs-dediee"> Avec une campagne dédiée active</label>
+  <span class="texte-discret" id="pubs-compte"></span>
+</div>
+<div class="conteneur-tableau">
+  <table class="tableau-historique" id="tableau-agences-pubs">
+    <thead><tr><th>Agence</th><th>Pub</th><th>Campagnes qui la couvrent</th><th>Dépense dédiée (30 j)</th><th>Dépense dans la ville (30 j)</th><th>Conv.</th></tr></thead>
+    <tbody>
+      {% for l in vue_agences %}
+      <tr data-statut="{{ l.statut }}" data-dediee="{{ 1 if l.dediees_actives else 0 }}" data-nom="{{ l.agence.nom|lower }} {{ l.agence.ville|lower }}">
+        <td><strong>{{ l.agence.nom }}</strong></td>
+        <td><span class="pastille-pub {{ l.statut }}">{{ {"active": "Active", "pause": "En pause", "aucune": "Aucune"}[l.statut] }}</span></td>
+        <td>
+          {% if l.campagnes %}<ul class="liste-pubs">{% for c in l.campagnes[:5] %}<li>{{ '⏸ ' if c.statut != 'ENABLED' else '' }}{{ c.nom }}{% if c.dediee %} <strong>(dédiée)</strong>{% endif %} <span class="texte-discret">· {{ c.raison }}</span></li>{% endfor %}</ul>
+          {% if l.campagnes|length > 5 %}<span class="texte-discret">et {{ l.campagnes|length - 5 }} autre(s)</span>{% endif %}
+          {% else %}<span class="texte-discret">—</span>{% endif %}
+        </td>
+        <td>{{ '%.2f'|format(l.depense_dediee) }} €</td>
+        <td>{% if ads.villes %}{{ '%.2f'|format(l.depense_ville) }} €{% else %}<span class="texte-discret">—</span>{% endif %}</td>
+        <td>{{ l.conversions_dediees + l.conversions_ville }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 
 <h2>Campagnes</h2>
 <div class="conteneur-tableau">
   <table class="tableau-historique">
-    <thead><tr><th>Campagne</th><th>Statut</th><th>Type</th><th>Budget / jour</th><th>Dépense</th><th>Impr.</th><th>Clics</th><th>Conv.</th><th>Zones ciblées</th><th>Agence probable</th></tr></thead>
+    <thead><tr><th>Campagne</th><th>Statut</th><th>Type</th><th>Budget / jour</th><th>Dépense</th><th>Clics</th><th>Conv.</th><th>Zones ciblées</th><th>Agences couvertes</th></tr></thead>
     <tbody>
       {% for c in campagnes %}
       <tr>
@@ -49,7 +97,6 @@
         <td>{{ c.type }}</td>
         <td>{{ '%.2f'|format(c.budget_jour) }} €</td>
         <td>{{ '%.2f'|format(c.cout) }} €</td>
-        <td>{{ c.impressions }}</td>
         <td>{{ c.clics }}</td>
         <td>{{ c.conversions }}</td>
         <td>
@@ -57,16 +104,33 @@
           {% if c.zones|length > 4 %}<div class="texte-discret">et {{ c.zones|length - 4 }} autre(s)</div>{% endif %}
           {% if not c.zones %}<span class="texte-discret">—</span>{% endif %}
         </td>
-        <td>{% if c.agence %}<strong>{{ c.agence.nom }}</strong><div class="texte-discret">{{ c.agence.raison }}</div>{% else %}<span class="texte-discret">Non reconnue</span>{% endif %}</td>
+        <td>
+          {% if c.agences|length == 1 %}<strong>{{ c.agences[0].nom }}</strong><div class="texte-discret">{{ c.agences[0].raison }}</div>
+          {% elif c.agences %}<strong>{{ c.agences|length }} agences</strong><div class="texte-discret">{{ c.agences[:3]|map(attribute="nom")|join(", ") }}{% if c.agences|length > 3 %}…{% endif %}</div>
+          {% else %}<span class="texte-discret">Aucune agence reconnue</span>{% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="10" class="texte-vide">Aucune campagne dans ce compte.</td></tr>
+      <tr><td colspan="9" class="texte-vide">Aucune campagne dans ce compte.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
-<h2>Agences sans campagne reconnue ({{ agences_sans_campagne|length }} sur {{ nb_agences }})</h2>
-<p class="texte-discret">{% for a in agences_sans_campagne[:40] %}{{ a.nom }}{{ ', ' if not loop.last }}{% endfor %}{% if agences_sans_campagne|length > 40 %} et {{ agences_sans_campagne|length - 40 }} autres{% endif %}{% if not agences_sans_campagne %}Toutes les agences ont une campagne reconnue.{% endif %}</p>
+<script>
+(function () {
+  const lignes = Array.from(document.querySelectorAll("#tableau-agences-pubs tbody tr"));
+  const recherche = document.getElementById("pubs-recherche"), cases = Array.from(document.querySelectorAll(".pubs-statut")), dediee = document.getElementById("pubs-dediee"), compte = document.getElementById("pubs-compte");
+  const sansAccents = (t) => (t || "").normalize("NFD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "").toLowerCase();
+  function filtrer() {
+    const q = sansAccents(recherche.value.trim()), statuts = cases.filter((c) => c.checked).map((c) => c.value);
+    let n = 0;
+    lignes.forEach((l) => { const ok = (!q || sansAccents(l.dataset.nom).includes(q)) && (!statuts.length || statuts.includes(l.dataset.statut)) && (!dediee.checked || l.dataset.dediee === "1"); l.hidden = !ok; if (ok) n++; });
+    compte.textContent = `${n} agence${n > 1 ? "s" : ""} affichée${n > 1 ? "s" : ""}`;
+  }
+  [recherche, dediee, ...cases].forEach((c) => c.addEventListener("input", filtrer));
+  if (lignes.length) filtrer();
+})();
+</script>
 {% endif %}
 {% endblock %}
