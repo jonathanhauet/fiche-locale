@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% set page_actuelle = "suivi_goldunion" %}
+{% block titre %}Pubs Google Ads — Suivi GoldUnion{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/suivi-goldunion">&larr; Retour au suivi GoldUnion</a></p>
+<div class="barre-titre"><h1>Pubs Google Ads</h1></div>
+<p class="texte-discret">
+  Lecture <strong>en lecture seule</strong> du compte Google Ads : la plateforme ne crée, ne modifie et ne supprime rien. Elle relit les campagnes, leurs résultats des 30 derniers jours
+  et les zones ciblées, puis propose l'agence correspondant à chaque campagne.
+</p>
+
+{% if message %}<div class="bandeau-info">{{ message }}</div>{% endif %}
+{% if erreur %}<p class="message-erreur">{{ erreur }}</p>{% endif %}
+
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Compte lu</span>
+  {% if not connexion_ads %}
+  <p class="texte-discret">⚠️ Google Ads n'est pas encore connecté sur la plateforme (jeton développeur, compte gestionnaire et autorisation Google). Rendez-vous sur <a href="/google/comptes">Comptes Google</a>, bloc « Google Ads ».</p>
+  {% endif %}
+  <form method="post" action="/suivi-goldunion/pubs/lire" class="formulaire-ligne">
+    <label>Compte client (10 chiffres)<input type="text" name="compte" value="{{ compte }}" inputmode="numeric" maxlength="13" required></label>
+    <button type="submit" {{ 'disabled' if not connexion_ads else '' }}>{{ 'Relire le compte' if ads else 'Lire le compte' }}</button>
+  </form>
+  <p class="texte-discret">
+    Compte gestionnaire utilisé pour la connexion : <strong>{{ parametre_ads.customer_id if parametre_ads and parametre_ads.customer_id else 'non renseigné' }}</strong>.
+    {% if maj %}Dernière lecture : {{ maj }}.{% endif %}
+  </p>
+</div>
+
+{% if ads %}
+<div class="grille-resume">
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.campagnes }}</span><span class="carte-resume-libelle">Campagnes ({{ ads.total.actives }} actives)</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ '%.0f'|format(ads.total.cout) }} €</span><span class="carte-resume-libelle">Dépensés ({{ ads.jours }} derniers jours)</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.impressions }}</span><span class="carte-resume-libelle">Impressions</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.clics }}</span><span class="carte-resume-libelle">Clics</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.conversions }}</span><span class="carte-resume-libelle">Conversions</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ campagnes|selectattr("agence")|list|length }} / {{ ads.total.campagnes }}</span><span class="carte-resume-libelle">Campagnes rattachées à une agence</span></div>
+</div>
+
+<h2>Campagnes</h2>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Campagne</th><th>Statut</th><th>Type</th><th>Budget / jour</th><th>Dépense</th><th>Impr.</th><th>Clics</th><th>Conv.</th><th>Zones ciblées</th><th>Agence probable</th></tr></thead>
+    <tbody>
+      {% for c in campagnes %}
+      <tr>
+        <td><strong>{{ c.nom }}</strong><div class="texte-discret">{{ c.id }}{% if c.debut %} · depuis le {{ c.debut[8:10] }}/{{ c.debut[5:7] }}/{{ c.debut[0:4] }}{% endif %}</div></td>
+        <td>{{ {"ENABLED": "Active", "PAUSED": "En pause"}.get(c.statut, c.statut) }}</td>
+        <td>{{ c.type }}</td>
+        <td>{{ '%.2f'|format(c.budget_jour) }} €</td>
+        <td>{{ '%.2f'|format(c.cout) }} €</td>
+        <td>{{ c.impressions }}</td>
+        <td>{{ c.clics }}</td>
+        <td>{{ c.conversions }}</td>
+        <td>
+          {% for z in c.zones[:4] %}<div class="texte-discret">{{ '⛔ ' if z.exclue else '' }}{% if z.type == 'rayon' %}{{ z.rayon_km or '?' }} km autour de {{ z.ville or z.adresse or 'un point' }}{% else %}{{ z.nom }}{% endif %}</div>{% endfor %}
+          {% if c.zones|length > 4 %}<div class="texte-discret">et {{ c.zones|length - 4 }} autre(s)</div>{% endif %}
+          {% if not c.zones %}<span class="texte-discret">—</span>{% endif %}
+        </td>
+        <td>{% if c.agence %}<strong>{{ c.agence.nom }}</strong><div class="texte-discret">{{ c.agence.raison }}</div>{% else %}<span class="texte-discret">Non reconnue</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="texte-vide">Aucune campagne dans ce compte.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Agences sans campagne reconnue ({{ agences_sans_campagne|length }} sur {{ nb_agences }})</h2>
+<p class="texte-discret">{% for a in agences_sans_campagne[:40] %}{{ a.nom }}{{ ', ' if not loop.last }}{% endfor %}{% if agences_sans_campagne|length > 40 %} et {{ agences_sans_campagne|length - 40 }} autres{% endif %}{% if not agences_sans_campagne %}Toutes les agences ont une campagne reconnue.{% endif %}</p>
+{% endif %}
+{% endblock %}

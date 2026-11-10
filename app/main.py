@@ -121,6 +121,7 @@ from . import (
     google_sheets,
     reporting_mensuel,
     suivi_goldunion,
+    suivi_ads,
     reporting_sheet,
     jsonld_agences,
     audit_photos,
@@ -193,6 +194,9 @@ def _migrer_vers_multi_comptes():
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN taille_grille INTEGER DEFAULT 3"))
             if "ecart_km" not in colonnes_suivi:
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN ecart_km REAL DEFAULT 2.0"))
+            for colonne, type_sql in (("compte_ads_id", "VARCHAR DEFAULT ''"), ("ads_json", "TEXT DEFAULT ''"), ("ads_maj_le", "TIMESTAMP")):
+                if colonne not in colonnes_suivi:
+                    connexion.execute(text(f"ALTER TABLE parametre_suivi_goldunion ADD COLUMN {colonne} {type_sql}"))
             if "mot_de_passe_hash" not in colonnes_suivi:
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN mot_de_passe_hash VARCHAR DEFAULT ''"))
             if "mois_agence_recente" not in colonnes_suivi:
@@ -7604,6 +7608,46 @@ async def acces_goldunion(jeton: str, request: Request, db: Session = Depends(ob
 def quitter_goldunion(jeton: str, request: Request):
     request.session.pop("goldunion", None)
     return RedirectResponse(f"/goldunion/{jeton}", status_code=303, headers=ENTETES_PAGE_PRIVEE)
+
+
+@app.get("/suivi-goldunion/pubs", response_class=HTMLResponse)
+def page_suivi_pubs(request: Request, db: Session = Depends(obtenir_session)):
+    """Structure du compte Google Ads (lecture seule) : campagnes, chiffres des 30 derniers jours, zones ciblees, agence probable de chaque campagne."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    parametre = suivi_goldunion.lire_parametre(db)
+    ads = suivi_ads.charger(parametre)
+    agences = suivi_ads.agences_pour_rattachement(suivi_goldunion.lignes(db, parametre))
+    campagnes = [{**c, "agence": suivi_ads.proposer_agence(c, agences)} for c in ads.get("campagnes", [])]
+    rattachees = {c["agence"]["id"] for c in campagnes if c["agence"]}
+    return templates.TemplateResponse(request, "suivi_goldunion_pubs.html", {
+        "page_actuelle": "suivi_goldunion", "ads": ads, "campagnes": campagnes, "compte": suivi_ads.formater_id(parametre.compte_ads_id or suivi_ads.COMPTE_ADS_DEFAUT),
+        "maj": heure_locale(parametre.ads_maj_le) if parametre.ads_maj_le else "", "connexion_ads": google_oauth.ads_configure(db), "parametre_ads": google_oauth.obtenir_parametre_ads(db),
+        "agences_sans_campagne": [a for a in agences if a["id"] not in rattachees], "nb_agences": len(agences), "message": request.query_params.get("message", ""), "erreur": request.query_params.get("erreur", ""),
+    })
+
+
+@app.post("/suivi-goldunion/pubs/lire")
+async def lire_pubs_suivi(request: Request, db: Session = Depends(obtenir_session)):
+    """Lit (lecture seule) le compte Google Ads et garde le resultat ; aucune ecriture n'est faite sur le compte."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    parametre = suivi_goldunion.lire_parametre(db)
+    compte = suivi_ads.normaliser_id(str(formulaire.get("compte", ""))) or suivi_ads.COMPTE_ADS_DEFAUT
+    if not google_oauth.ads_configure(db):
+        return RedirectResponse("/suivi-goldunion/pubs?erreur=" + quote_plus("Google Ads n'est pas connecté : renseignez le jeton développeur et le compte gestionnaire puis connectez Google Ads (page Comptes Google)."), status_code=303)
+    try:
+        resultat = await asyncio.to_thread(suivi_ads.lire_structure, google_oauth.obtenir_parametre_ads(db), compte)
+    except Exception as erreur:
+        texte = google_ads_keywords.message_erreur_lisible(erreur) if hasattr(erreur, "failure") else str(erreur)
+        return RedirectResponse("/suivi-goldunion/pubs?erreur=" + quote_plus(f"Lecture impossible : {texte}"[:500]), status_code=303)
+    parametre.compte_ads_id, parametre.ads_json, parametre.ads_maj_le = compte, json.dumps(resultat), datetime.utcnow()
+    db.commit()
+    t = resultat["total"]
+    return RedirectResponse("/suivi-goldunion/pubs?message=" + quote_plus(f"{t['campagnes']} campagne(s) lue(s), dont {t['actives']} active(s)."), status_code=303)
 
 
 @app.post("/suivi-goldunion/mot-de-passe")
