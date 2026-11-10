@@ -72,6 +72,37 @@ CATEGORIES_CONVERSION = {
 }
 
 
+# Conversions par campagne ET par action : permet de ne compter que les actions retenues (appels, itineraires...) et de calculer un cout par conversion fiable
+REQUETE_CONVERSIONS_CAMPAGNES = """
+SELECT campaign.id, segments.conversion_action_name, metrics.conversions, metrics.all_conversions
+FROM campaign
+WHERE campaign.status != 'REMOVED' AND segments.date DURING LAST_{jours}_DAYS AND metrics.all_conversions > 0
+"""
+
+
+def lire_conversions_campagnes(lignes) -> list:
+    """[{"campagne", "action", "conversions", "toutes"}] : cumul par campagne et par action."""
+    cumul = {}
+    for l in lignes:
+        c = cumul.setdefault((int(l.campaign.id), l.segments.conversion_action_name or "(sans nom)"), [0.0, 0.0])
+        c[0] += float(l.metrics.conversions); c[1] += float(l.metrics.all_conversions)
+    return [{"campagne": cid, "action": action, "conversions": round(v[0], 1), "toutes": round(v[1], 1)} for (cid, action), v in sorted(cumul.items())]
+
+
+def appliquer_conversions_retenues(campagnes: list, conversions_campagnes: list, retenues: list) -> list:
+    """Chaque campagne recoit `conv_retenues` (toutes les conversions des actions retenues) et `cout_par_conv` (None sans conversion retenue)."""
+    retenues = set(retenues or [])
+    par_campagne = {}
+    for l in conversions_campagnes or []:
+        if l["action"] in retenues:
+            par_campagne[l["campagne"]] = round(par_campagne.get(l["campagne"], 0.0) + l["toutes"], 1)
+    resultat = []
+    for c in campagnes:
+        n = par_campagne.get(c["id"], 0.0)
+        resultat.append({**c, "conv_retenues": n, "cout_par_conv": round(c["cout"] / n, 2) if n else None})
+    return resultat
+
+
 def lire_actions_conversion(lignes) -> list:
     return [{"id": int(l.conversion_action.id), "nom": l.conversion_action.name, "type": l.conversion_action.type_.name, "categorie": CATEGORIES_CONVERSION.get(l.conversion_action.category.name, l.conversion_action.category.name),
              "statut": l.conversion_action.status.name, "principale": bool(l.conversion_action.primary_for_goal)} for l in lignes]
@@ -226,8 +257,13 @@ def lire_structure(parametre_ads, compte_client: str, jours: int = 30, executer=
         actions.sort(key=lambda a: (-a["toutes"], a["nom"]))
     except Exception as erreur:                                   # la lecture des conversions est facultative : le reste de la lecture reste valable
         erreur_conversions = str(erreur)[:300]
+    conversions_campagnes, erreur_conv_campagnes = [], ""
+    try:
+        conversions_campagnes = lire_conversions_campagnes(executer(REQUETE_CONVERSIONS_CAMPAGNES.format(jours=int(jours))))
+    except Exception as erreur:
+        erreur_conv_campagnes = str(erreur)[:300]
     liste = sorted(campagnes.values(), key=lambda c: (c["statut"] != "ENABLED", -c["cout"], c["nom"].lower()))
-    return {"compte": compte, "actions_conversion": actions, "conversions_erreur": erreur_conversions, "maj": datetime.utcnow().isoformat(timespec="seconds"), "jours": int(jours), "campagnes": liste, "villes": villes, "villes_erreur": erreur_villes,
+    return {"compte": compte, "conversions_campagnes": conversions_campagnes, "conversions_campagnes_erreur": erreur_conv_campagnes, "actions_conversion": actions, "conversions_erreur": erreur_conversions, "maj": datetime.utcnow().isoformat(timespec="seconds"), "jours": int(jours), "campagnes": liste, "villes": villes, "villes_erreur": erreur_villes,
             "total": {"campagnes": len(liste), "actives": sum(1 for c in liste if c["statut"] == "ENABLED"), "cout": round(sum(c["cout"] for c in liste), 2),
                       "clics": sum(c["clics"] for c in liste), "impressions": sum(c["impressions"] for c in liste), "conversions": round(sum(c["conversions"] for c in liste), 1)}}
 
@@ -324,6 +360,7 @@ def vue_par_agence(campagnes_couvertes: list, agences: list, villes: list = None
             if c["dediee"] == cv["id"]:
                 ligne["depense_dediee"] = round(ligne["depense_dediee"] + c["cout"], 2)
                 ligne["conversions_dediees"] = round(ligne["conversions_dediees"] + c["conversions"], 1)
+                ligne["conv_retenues"] = round(ligne.get("conv_retenues", 0.0) + c.get("conv_retenues", 0.0), 1)
             else:
                 partagees[(c["id"], cv["id"])] = True
     for v in villes or []:
@@ -337,6 +374,8 @@ def vue_par_agence(campagnes_couvertes: list, agences: list, villes: list = None
         ligne["nb_actives"], ligne["nb_pause"] = len(actives), len(ligne["campagnes"]) - len(actives)
         ligne["statut"] = "active" if actives else ("pause" if ligne["campagnes"] else "aucune")
         ligne["dediees_actives"] = sum(1 for c in actives if c["dediee"])
+        ligne.setdefault("conv_retenues", 0.0)
+        ligne["cout_par_conv"] = round(ligne["depense_dediee"] / ligne["conv_retenues"], 2) if ligne["conv_retenues"] else None
     return sorted(par_agence.values(), key=lambda l: ({"aucune": 0, "pause": 1, "active": 2}[l["statut"]], l["agence"]["nom"].lower()))
 
 

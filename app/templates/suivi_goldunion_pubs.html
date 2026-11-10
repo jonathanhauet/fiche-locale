@@ -46,7 +46,8 @@
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.campagnes }}</span><span class="carte-resume-libelle">Campagnes ({{ ads.total.actives }} actives)</span></div>
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ '%.0f'|format(ads.total.cout) }} €</span><span class="carte-resume-libelle">Dépensés ({{ ads.jours }} derniers jours)</span></div>
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.clics }}</span><span class="carte-resume-libelle">Clics</span></div>
-  <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.conversions }}</span><span class="carte-resume-libelle">Conversions</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ ads.total.conversions }}</span><span class="carte-resume-libelle">Conversions (définition Google)</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ conv_retenues_total if retenues else '—' }}</span><span class="carte-resume-libelle">Conversions retenues{% if cout_par_conv_total %} · {{ '%.2f'|format(cout_par_conv_total) }} € chacune{% endif %}</span></div>
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ nb_agences_actives }} / {{ nb_agences }}</span><span class="carte-resume-libelle">Agences couvertes par une campagne active</span></div>
   <div class="carte-resume"><span class="carte-resume-chiffre">{{ nb_agences_aucune }}</span><span class="carte-resume-libelle">Agences sans aucune campagne</span></div>
 </div>
@@ -56,18 +57,29 @@
 <h2>Que compte « Conversions » ?</h2>
 {% if ads.conversions_erreur %}<p class="texte-discret">ℹ️ La liste des conversions n'a pas pu être lue ({{ ads.conversions_erreur }}).</p>
 {% elif ads.actions_conversion %}
-<p class="texte-discret">Les actions « principales » sont celles qui comptent dans la colonne « Conversions » de Google Ads (et donc dans les chiffres ci-dessus). Les actions secondaires n'y figurent pas : elles sont visibles dans « Toutes les conv. ».</p>
+<p class="texte-discret">Les actions « principales » sont celles qui comptent dans la colonne « Conversions » de Google Ads. Pour juger les agences, <strong>cochez les actions qui représentent un vrai contact</strong> (appels, itinéraires, visites en magasin…) : le coût par conversion n'est alors calculé que sur celles-ci, toutes actions de ces types confondues (principales ou secondaires).</p>
+<form method="post" action="/suivi-goldunion/pubs/conversions">
 <div class="conteneur-tableau">
   <table class="tableau-historique">
-    <thead><tr><th>Action de conversion</th><th>Catégorie</th><th>Type</th><th>Compte dans « Conversions »</th><th>Conversions ({{ ads.jours }} j)</th><th>Toutes les conv.</th></tr></thead>
+    <thead><tr><th>Retenir</th><th>Action de conversion</th><th>Catégorie</th><th>Type</th><th>Compte dans « Conversions »</th><th>Conversions ({{ ads.jours }} j)</th><th>Toutes les conv.</th></tr></thead>
     <tbody>
       {% for a in ads.actions_conversion %}
-      <tr><td><strong>{{ a.nom }}</strong>{% if a.statut and a.statut != 'ENABLED' %} <span class="texte-discret">({{ a.statut|lower }})</span>{% endif %}</td><td>{{ a.categorie or '—' }}</td><td>{{ a.type or '—' }}</td>
+      <tr><td><input type="checkbox" name="action" value="{{ a.nom }}" class="action-conversion" data-categorie="{{ a.categorie }}" {{ 'checked' if a.nom in retenues else '' }}></td><td><strong>{{ a.nom }}</strong>{% if a.statut and a.statut != 'ENABLED' %} <span class="texte-discret">({{ a.statut|lower }})</span>{% endif %}</td><td>{{ a.categorie or '—' }}</td><td>{{ a.type or '—' }}</td>
           <td>{{ 'Oui' if a.principale else 'Non (secondaire)' }}</td><td>{{ a.conversions }}</td><td>{{ a.toutes }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+<div class="actions-avis">
+  <button type="submit">Enregistrer le choix</button>
+  <button type="button" class="bouton-secondaire" id="proposer-actions">Cocher appels, itinéraires et visites en magasin</button>
+</div>
+</form>
+<script>
+document.getElementById("proposer-actions").addEventListener("click", () => {
+  document.querySelectorAll(".action-conversion").forEach((c) => { c.checked = ["Appel (prospect)", "Itinéraire", "Visite en magasin"].includes(c.dataset.categorie) || /appel|call|itin|direction|store visit/i.test(c.value); });
+});
+</script>
 {% else %}<p class="texte-discret">Aucune action de conversion trouvée dans ce compte.</p>{% endif %}
 
 <h2>Par agence</h2>
@@ -82,7 +94,7 @@
 </div>
 <div class="conteneur-tableau">
   <table class="tableau-historique" id="tableau-agences-pubs">
-    <thead><tr><th>Agence</th><th>Pub</th><th>Campagnes qui la couvrent</th><th>Dépense dédiée (30 j)</th><th>Dépense dans la ville (30 j)</th><th>Conv.</th></tr></thead>
+    <thead><tr><th>Agence</th><th>Pub</th><th>Campagnes qui la couvrent</th><th>Dépense dédiée (30 j)</th><th>Dépense dans la ville (30 j)</th><th>Conv. retenues (dédiées)</th><th>Coût / conv.</th></tr></thead>
     <tbody>
       {% for l in vue_agences %}
       <tr data-statut="{{ l.statut }}" data-dediee="{{ 1 if l.dediees_actives else 0 }}" data-nom="{{ l.agence.nom|lower }} {{ l.agence.ville|lower }}">
@@ -95,7 +107,8 @@
         </td>
         <td>{{ '%.2f'|format(l.depense_dediee) }} €</td>
         <td>{% if ads.villes %}{{ '%.2f'|format(l.depense_ville) }} €{% else %}<span class="texte-discret">—</span>{% endif %}</td>
-        <td>{{ l.conversions_dediees + l.conversions_ville }}</td>
+        <td>{{ l.conv_retenues if retenues else '—' }}</td>
+        <td>{% if l.cout_par_conv %}{{ '%.2f'|format(l.cout_par_conv) }} €{% else %}—{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -105,7 +118,7 @@
 <h2>Campagnes</h2>
 <div class="conteneur-tableau">
   <table class="tableau-historique">
-    <thead><tr><th>Campagne</th><th>Statut</th><th>Type</th><th>Budget / jour</th><th>Dépense</th><th>Clics</th><th>Conv.</th><th>Zones ciblées</th><th>Agences couvertes</th></tr></thead>
+    <thead><tr><th>Campagne</th><th>Statut</th><th>Type</th><th>Budget / jour</th><th>Dépense</th><th>Clics</th><th>Conv. Google</th><th>Conv. retenues</th><th>Coût / conv. retenue</th><th>Zones ciblées</th><th>Agences couvertes</th></tr></thead>
     <tbody>
       {% for c in campagnes %}
       <tr>
@@ -116,6 +129,8 @@
         <td>{{ '%.2f'|format(c.cout) }} €</td>
         <td>{{ c.clics }}</td>
         <td>{{ c.conversions }}</td>
+        <td>{{ c.conv_retenues if retenues else '—' }}</td>
+        <td>{% if c.cout_par_conv %}{{ '%.2f'|format(c.cout_par_conv) }} €{% else %}—{% endif %}</td>
         <td>
           {% for z in c.zones[:4] %}<div class="texte-discret">{{ '⛔ ' if z.exclue else '' }}{% if z.type == 'rayon' %}{{ z.rayon_km or '?' }} km autour de {{ z.ville or z.adresse or 'un point' }}{% else %}{{ z.nom }}{% endif %}</div>{% endfor %}
           {% if c.zones|length > 4 %}<div class="texte-discret">et {{ c.zones|length - 4 }} autre(s)</div>{% endif %}
@@ -128,7 +143,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="texte-vide">Aucune campagne dans ce compte.</td></tr>
+      <tr><td colspan="11" class="texte-vide">Aucune campagne dans ce compte.</td></tr>
       {% endfor %}
     </tbody>
   </table>

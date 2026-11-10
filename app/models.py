@@ -1400,6 +1400,7 @@ class ParametreSuiviGoldUnion(Base):
     mots_cles = Column(String, default="")                     # separes par des virgules ; la ville de l'agence est ajoutee a chacun
     taille_grille = Column(Integer, default=3)                 # points de mesure des positions : 1 (a l'agence), 3x3 ou 5x5
     ecart_km = Column(Float, default=2.0)                      # ecart entre deux points de la grille
+    ads_actions_retenues = Column(Text, default="")             # actions de conversion que l'on retient pour juger les agences (liste JSON de noms)
     compte_ads_id = Column(String, default="")                  # compte Google Ads lu (client, dans le compte gestionnaire de la plateforme)
     ads_json = Column(Text, default="")                         # derniere lecture : campagnes, chiffres des 30 derniers jours, zones ciblees
     ads_maj_le = Column(DateTime, nullable=True)

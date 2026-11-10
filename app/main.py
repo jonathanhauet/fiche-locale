@@ -194,7 +194,7 @@ def _migrer_vers_multi_comptes():
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN taille_grille INTEGER DEFAULT 3"))
             if "ecart_km" not in colonnes_suivi:
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN ecart_km REAL DEFAULT 2.0"))
-            for colonne, type_sql in (("compte_ads_id", "VARCHAR DEFAULT ''"), ("ads_json", "TEXT DEFAULT ''"), ("ads_maj_le", "TIMESTAMP")):
+            for colonne, type_sql in (("ads_actions_retenues", "TEXT DEFAULT ''"), ("compte_ads_id", "VARCHAR DEFAULT ''"), ("ads_json", "TEXT DEFAULT ''"), ("ads_maj_le", "TIMESTAMP")):
                 if colonne not in colonnes_suivi:
                     connexion.execute(text(f"ALTER TABLE parametre_suivi_goldunion ADD COLUMN {colonne} {type_sql}"))
             if "mot_de_passe_hash" not in colonnes_suivi:
@@ -7619,14 +7619,36 @@ def page_suivi_pubs(request: Request, db: Session = Depends(obtenir_session)):
     parametre = suivi_goldunion.lire_parametre(db)
     ads = suivi_ads.charger(parametre)
     agences = suivi_ads.agences_pour_rattachement(suivi_goldunion.lignes(db, parametre))
-    campagnes = suivi_ads.couverture_campagnes(ads.get("campagnes", []), agences)
+    try:
+        retenues = json.loads(parametre.ads_actions_retenues) if parametre.ads_actions_retenues else []
+    except ValueError:
+        retenues = []
+    campagnes = suivi_ads.couverture_campagnes(suivi_ads.appliquer_conversions_retenues(ads.get("campagnes", []), ads.get("conversions_campagnes"), retenues), agences)
     vue_agences = suivi_ads.vue_par_agence(campagnes, agences, ads.get("villes"))
+    conv_retenues_total = round(sum(c["conv_retenues"] for c in campagnes), 1)
     return templates.TemplateResponse(request, "suivi_goldunion_pubs.html", {
         "page_actuelle": "suivi_goldunion", "ads": ads, "campagnes": campagnes, "vue_agences": vue_agences,
         "nb_agences_actives": sum(1 for l in vue_agences if l["statut"] == "active"), "nb_agences_aucune": sum(1 for l in vue_agences if l["statut"] == "aucune"), "compte": suivi_ads.formater_id(parametre.compte_ads_id or suivi_ads.COMPTE_ADS_DEFAUT),
         "maj": heure_locale(parametre.ads_maj_le) if parametre.ads_maj_le else "", "connexion_ads": google_oauth.ads_configure(db), "parametre_ads": google_oauth.obtenir_parametre_ads(db),
-        "nb_agences": len(agences), "message": request.query_params.get("message", ""), "erreur": request.query_params.get("erreur", ""),
+        "nb_agences": len(agences), "retenues": retenues, "conv_retenues_total": conv_retenues_total,
+        "cout_par_conv_total": round(ads.get("total", {}).get("cout", 0) / conv_retenues_total, 2) if conv_retenues_total else None, "message": request.query_params.get("message", ""), "erreur": request.query_params.get("erreur", ""),
     })
+
+
+@app.post("/suivi-goldunion/pubs/conversions")
+async def choisir_conversions_pubs(request: Request, db: Session = Depends(obtenir_session)):
+    """Actions de conversion retenues pour juger les agences (cochees dans la page) : le cout par conversion n'est calcule que sur celles-ci."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    parametre = suivi_goldunion.lire_parametre(db)
+    connues = {a["nom"] for a in suivi_ads.charger(parametre).get("actions_conversion", [])}
+    choisies = sorted({str(n) for n in formulaire.getlist("action") if str(n) in connues})
+    parametre.ads_actions_retenues = json.dumps(choisies, ensure_ascii=False)
+    db.commit()
+    message = f"{len(choisies)} action(s) retenue(s) : le coût par conversion est calculé sur celles-ci." if choisies else "Aucune action retenue."
+    return RedirectResponse("/suivi-goldunion/pubs?message=" + quote_plus(message), status_code=303)
 
 
 @app.post("/suivi-goldunion/pubs/lire")
