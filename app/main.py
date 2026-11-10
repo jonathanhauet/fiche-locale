@@ -14083,6 +14083,22 @@ def publication_multi_charger_brouillon_whatsapp(
     return RedirectResponse(f"/publication-multi?client_id={client_id}", status_code=303)
 
 
+def _logo_charte_octets(client):
+    """Logo de la charte graphique du client (celui enregistre dans l'identite visuelle, sinon celui de la fiche Google) en JPEG sur fond blanc, ou None.
+    Sert de seul logo que l'IA a le droit de montrer dans une image : sans lui, elle ne dessine aucun logo."""
+    for url in (getattr(client, "logo_url", ""), getattr(client, "logo_google_url", "")):
+        if not url or not str(url).startswith("http"):
+            continue
+        try:
+            reponse = requests.get(url, timeout=15)
+            if getattr(reponse, "status_code", 200) >= 400:
+                continue
+            return _jpeg_normalise(reponse.content, 800)
+        except Exception:
+            continue
+    return None
+
+
 async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, format_image: str, prefixe_fichier: str, references: list = None, agences: bool = False,
                                         securite: str = "defaut"):
     """
@@ -14095,6 +14111,7 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
     par l'IA et refaite 2 fois au plus). Dans tous les cas, les vraies personnes des photos de reference d'agences ne sont jamais reproduites.
     """
     libre, prudent = securite == "libre", securite == "prudent"
+    logo_charte = _logo_charte_octets(client) if libre else None          # mode libre : logos permis seulement s'ils sont celui de la charte du client ; sans logo enregistre, aucun logo n'est dessine
     prompt_image = (donnees.get("prompt_image") or "").strip()
     a_references = bool(references) if references is not None else bool(client.photos_reference)
     inclure_reference = bool(donnees.get("inclure_reference")) or bool(agences and references)
@@ -14145,7 +14162,7 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
             prompt_image = prompt_genere = claude_generation.prompt_image_avec_options(
                 prompt_image, texte_post, choix, bool(inclure_reference and a_references), recents,
                 couleur_marque_client(client) if couleur_marque else "", couleurs_secondaires_client(client) if couleur_marque else [],
-                texte_fr, agences=agences, marques_libres=libre,
+                texte_fr, agences=agences, marques_libres=bool(libre and logo_charte),
             )
             options_appliquees = True
         except Exception as e:
@@ -14188,7 +14205,7 @@ async def _generer_image_ia_pour_client(db: Session, client, donnees: dict, form
         instruction = gemini_images.INSTRUCTION_AGENCES_LIBRE if libre else gemini_images.INSTRUCTION_AGENCES
         for tentative in range(1 + NB_RETENTATIVES_CONTROLE_IMAGE if controle_actif else 1):
             octets = gemini_images.generer_image(
-                prompt_image + consigne_en_plus, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr or libre, sans_logo=prudent,
+                prompt_image + consigne_en_plus, aspect_ratio=format_image, images_reference=images_reference, texte_autorise=texte_fr or libre, sans_logo=prudent or (libre and not logo_charte), logo=logo_charte,
                 **({"instruction_personne": instruction, "nettoyer_interdictions_visage": False} if agences else {}),
             )
             if not controle_actif:

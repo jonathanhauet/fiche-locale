@@ -44,7 +44,8 @@ INSTRUCTION_AGENCES_LIBRE = (
     "The attached photos show several real agencies of the same brand (storefronts, interiors, reception desks, displays). Use them as the reference "
     "for the brand's look: the color palette, the materials, the furniture, the lighting, the level of finish and the style of the signage. Create a NEW "
     "photorealistic image of an agency in that same style, as a candid, natural photo. The brand's logo and signage may appear where they would "
-    "naturally be (storefront sign, reception wall, screens, displays), reproduced as faithfully as you can from the photos; any other text must be "
+    "naturally be (storefront sign, reception wall, screens, displays) ONLY when the official logo image is attached to this request (it is then copied "
+    "exactly, see the OFFICIAL LOGO rule); you must never redraw, approximate or invent a logo from the photos. Any other text must be "
     "short and spelled correctly. Any person in the image must be a generic person who does not resemble the people in the attached photos. "
     "Scene to depict: "
 )
@@ -83,9 +84,17 @@ CONSIGNE_SANS_LOGO = (
 )
 
 
+# Logo officiel de la charte graphique du client, joint en DERNIERE image : seul logo que l'IA a le droit de montrer, recopie a l'identique (jamais un logo invente).
+CONSIGNE_LOGO_CHARTE = (
+    "\n\nOFFICIAL LOGO: the LAST attached image is this brand's official logo. If a logo appears anywhere in the scene (sign, wall, screen, clothing, "
+    "document), it must be an exact copy of that logo: same shapes, colors and wording, never a redrawn or invented one. Do not show any other logo or "
+    "brand mark, and no framed picture, poster or card carrying a made-up name or logo. If you cannot reproduce it faithfully, keep logos out of view."
+)
+
+
 def generer_image(
     prompt_image: str, aspect_ratio: str = None, images_reference: list[bytes] = None, texte_autorise: bool = False,
-    instruction_personne: str = INSTRUCTION_PERSONNE, nettoyer_interdictions_visage: bool = True, sans_logo: bool = False,
+    instruction_personne: str = INSTRUCTION_PERSONNE, nettoyer_interdictions_visage: bool = True, sans_logo: bool = False, logo: bytes = None,
 ) -> bytes:
     """
     Genere une image via Gemini a partir d'un prompt et renvoie les octets
@@ -113,11 +122,13 @@ def generer_image(
         prompt_image = prompt_image + CONSIGNE_SANS_TEXTE
     if sans_logo:
         prompt_image = prompt_image + CONSIGNE_SANS_LOGO
+    if logo:
+        prompt_image = prompt_image + CONSIGNE_LOGO_CHARTE
+    pieces = lambda liste: [{"type": "image", "data": base64.b64encode(octets).decode("utf-8"), "mime_type": "image/jpeg"} for octets in liste]
     if images_reference:
-        entree = [{"type": "text", "text": _prompt_avec_personne(prompt_image, instruction_personne, nettoyer_interdictions_visage)}] + [
-            {"type": "image", "data": base64.b64encode(octets).decode("utf-8"), "mime_type": "image/jpeg"}
-            for octets in images_reference
-        ]
+        entree = [{"type": "text", "text": _prompt_avec_personne(prompt_image, instruction_personne, nettoyer_interdictions_visage)}] + pieces(list(images_reference) + ([logo] if logo else []))
+    elif logo:
+        entree = [{"type": "text", "text": prompt_image}] + pieces([logo])
     else:
         entree = prompt_image
     parametres = {"model": MODELE_GEMINI, "input": entree}

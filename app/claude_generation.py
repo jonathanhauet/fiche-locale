@@ -2584,8 +2584,8 @@ def prompt_image_avec_options(
             lignes.append(
                 "- Place: an agency of the brand shown in the reference photos (they show several agencies of the same brand). Take the look from them: "
                 "color palette, materials, furniture, lighting, style of signage. Do not copy one specific building. The brand's logo and signage may "
-                "appear where they would naturally be (storefront sign, reception wall, screens), reproduced as faithfully as possible from the "
-                "photos. Any person is a generic person, not one of the people from the photos."
+                "appear where they would naturally be (storefront sign, reception wall, screens); the only logo allowed is the official one attached to the "
+                "request, never one redrawn from the photos. Any person is a generic person, not one of the people from the photos."
             )
         elif avec_reference and agences:
             # Les photos de reference montrent plusieurs agences d'une meme marque : on en tire l'ambiance, pas un batiment precis, et surtout aucun logo ni texte.
