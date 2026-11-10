@@ -1076,6 +1076,11 @@
     <p class="texte-complet-post">{{ post.texte }}</p>
 
     {% if not post.image_url %}
+    {% if post.prompt_image or post.texte %}
+    <label class="description-image-rapide">Description de l'image à générer (modifiable ; si vide, l'IA s'appuie sur le texte du post)
+      <textarea class="prompt-image-rapide" data-post-id="{{ post.id }}" rows="3" maxlength="600">{{ post.prompt_image }}</textarea>
+    </label>
+    {% endif %}
     <div class="ligne-actions-rapides actions-image-rapides">
       {% if post.prompt_image or post.texte %}
       <div class="formulaire-image-rapide">
@@ -2016,7 +2021,8 @@
 document.querySelectorAll(".bouton-image-ia").forEach((bouton) => {
   bouton.addEventListener("click", () => {
     const statut = document.querySelector('.statut-image-ia[data-post-id="' + bouton.dataset.postId + '"]');
-    window.genererImageIA(bouton.dataset.postId, bouton, statut);
+    const description = document.querySelector('.prompt-image-rapide[data-post-id="' + bouton.dataset.postId + '"]');
+    window.genererImageIA(bouton.dataset.postId, bouton, statut, description ? description.value.trim() : "");
   });
 });
 </script>
