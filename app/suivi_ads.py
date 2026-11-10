@@ -52,6 +52,41 @@ WHERE campaign.status != 'REMOVED' AND segments.date DURING LAST_{jours}_DAYS AN
 """
 
 
+# Ce que le compte appelle « conversion » : les actions definies, et ce que chacune a rapporte
+REQUETE_ACTIONS_CONVERSION = """
+SELECT conversion_action.id, conversion_action.name, conversion_action.type, conversion_action.category, conversion_action.status, conversion_action.primary_for_goal
+FROM conversion_action
+WHERE conversion_action.status != 'REMOVED'
+"""
+
+REQUETE_CONVERSIONS = """
+SELECT segments.conversion_action_name, metrics.conversions, metrics.all_conversions
+FROM customer
+WHERE segments.date DURING LAST_{jours}_DAYS AND metrics.all_conversions > 0
+"""
+
+CATEGORIES_CONVERSION = {
+    "PURCHASE": "Achat", "PHONE_CALL_LEAD": "Appel (prospect)", "IMPORTED_LEAD": "Prospect importé", "SUBMIT_LEAD_FORM": "Formulaire envoyé", "BOOK_APPOINTMENT": "Rendez-vous",
+    "REQUEST_QUOTE": "Demande de devis", "GET_DIRECTIONS": "Itinéraire", "OUTBOUND_CLICK": "Clic sortant", "CONTACT": "Contact", "ENGAGEMENT": "Engagement", "STORE_VISIT": "Visite en magasin",
+    "STORE_SALE": "Vente en magasin", "PAGE_VIEW": "Page vue", "SIGNUP": "Inscription", "DEFAULT": "Autre (par défaut)", "QUALIFIED_LEAD": "Prospect qualifié", "CONVERTED_LEAD": "Prospect converti",
+}
+
+
+def lire_actions_conversion(lignes) -> list:
+    return [{"id": int(l.conversion_action.id), "nom": l.conversion_action.name, "type": l.conversion_action.type_.name, "categorie": CATEGORIES_CONVERSION.get(l.conversion_action.category.name, l.conversion_action.category.name),
+             "statut": l.conversion_action.status.name, "principale": bool(l.conversion_action.primary_for_goal)} for l in lignes]
+
+
+def lire_conversions_par_action(lignes) -> list:
+    """[{"nom", "conversions" (comptees dans « Conversions »), "toutes" (secondaires comprises)}], les plus importantes d'abord."""
+    cumul = {}
+    for l in lignes:
+        nom = l.segments.conversion_action_name or "(sans nom)"
+        c = cumul.setdefault(nom, [0.0, 0.0])
+        c[0] += float(l.metrics.conversions); c[1] += float(l.metrics.all_conversions)
+    return sorted(({"nom": n, "conversions": round(v[0], 1), "toutes": round(v[1], 1)} for n, v in cumul.items()), key=lambda x: (-x["toutes"], x["nom"]))
+
+
 def normaliser_id(texte: str) -> str:
     """« 719-105-0822 » -> « 7191050822 » (l'API attend dix chiffres, sans tirets)."""
     return re.sub(r"\D", "", texte or "")
@@ -180,8 +215,19 @@ def lire_structure(parametre_ads, compte_client: str, jours: int = 30, executer=
         villes = lire_villes(executer, jours)
     except Exception as erreur:                                   # decoupage par ville indisponible : le reste de la lecture reste valable
         erreur_villes = str(erreur)[:300]
+    actions, erreur_conversions = [], ""
+    try:
+        actions = lire_actions_conversion(executer(REQUETE_ACTIONS_CONVERSION))
+        par_action = {a["nom"]: a for a in lire_conversions_par_action(executer(REQUETE_CONVERSIONS.format(jours=int(jours))))}
+        for a in actions:
+            a["conversions"], a["toutes"] = (par_action.get(a["nom"]) or {}).get("conversions", 0.0), (par_action.get(a["nom"]) or {}).get("toutes", 0.0)
+        connues = {a["nom"] for a in actions}
+        actions += [{"id": 0, "nom": n, "type": "", "categorie": "", "statut": "", "principale": v["conversions"] > 0, "conversions": v["conversions"], "toutes": v["toutes"]} for n, v in par_action.items() if n not in connues]
+        actions.sort(key=lambda a: (-a["toutes"], a["nom"]))
+    except Exception as erreur:                                   # la lecture des conversions est facultative : le reste de la lecture reste valable
+        erreur_conversions = str(erreur)[:300]
     liste = sorted(campagnes.values(), key=lambda c: (c["statut"] != "ENABLED", -c["cout"], c["nom"].lower()))
-    return {"compte": compte, "maj": datetime.utcnow().isoformat(timespec="seconds"), "jours": int(jours), "campagnes": liste, "villes": villes, "villes_erreur": erreur_villes,
+    return {"compte": compte, "actions_conversion": actions, "conversions_erreur": erreur_conversions, "maj": datetime.utcnow().isoformat(timespec="seconds"), "jours": int(jours), "campagnes": liste, "villes": villes, "villes_erreur": erreur_villes,
             "total": {"campagnes": len(liste), "actives": sum(1 for c in liste if c["statut"] == "ENABLED"), "cout": round(sum(c["cout"] for c in liste), 2),
                       "clics": sum(c["clics"] for c in liste), "impressions": sum(c["impressions"] for c in liste), "conversions": round(sum(c["conversions"] for c in liste), 1)}}
 

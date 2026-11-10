@@ -53,6 +53,23 @@
 {% if ads.villes_erreur %}<p class="texte-discret">ℹ️ Le découpage des résultats par ville n'a pas pu être lu ({{ ads.villes_erreur }}) : la dépense des campagnes partagées entre plusieurs agences n'est donc pas répartie.</p>
 {% elif ads.villes %}<p class="texte-discret">✔ Résultats lus par ville ({{ ads.villes|length }} lignes) : la dépense des campagnes partagées est comptée dans la ville de chaque agence.</p>{% endif %}
 
+<h2>Que compte « Conversions » ?</h2>
+{% if ads.conversions_erreur %}<p class="texte-discret">ℹ️ La liste des conversions n'a pas pu être lue ({{ ads.conversions_erreur }}).</p>
+{% elif ads.actions_conversion %}
+<p class="texte-discret">Les actions « principales » sont celles qui comptent dans la colonne « Conversions » de Google Ads (et donc dans les chiffres ci-dessus). Les actions secondaires n'y figurent pas : elles sont visibles dans « Toutes les conv. ».</p>
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Action de conversion</th><th>Catégorie</th><th>Type</th><th>Compte dans « Conversions »</th><th>Conversions ({{ ads.jours }} j)</th><th>Toutes les conv.</th></tr></thead>
+    <tbody>
+      {% for a in ads.actions_conversion %}
+      <tr><td><strong>{{ a.nom }}</strong>{% if a.statut and a.statut != 'ENABLED' %} <span class="texte-discret">({{ a.statut|lower }})</span>{% endif %}</td><td>{{ a.categorie or '—' }}</td><td>{{ a.type or '—' }}</td>
+          <td>{{ 'Oui' if a.principale else 'Non (secondaire)' }}</td><td>{{ a.conversions }}</td><td>{{ a.toutes }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}<p class="texte-discret">Aucune action de conversion trouvée dans ce compte.</p>{% endif %}
+
 <h2>Par agence</h2>
 <p class="texte-discret">« Dédiée » : la campagne ne couvre que cette agence, sa dépense lui est entièrement attribuée. « Dans la ville » : part de la dépense des campagnes partagées réalisée dans la ville de l'agence (internautes localisés dans la ville).</p>
 <div class="pubs-filtres">
