@@ -1,7 +1,7 @@
 {# Options de l'image IA d'un post, les memes que dans le composeur multi-reseaux. A inclure avec « client_oia » (le client concerne), ou avec
    « oia_masse » pour des posts en masse sur plusieurs fiches (alors sans « qui apparait », sans texte dans l'image et sans couleurs de marque).
    Le bouton de generation appelle window.genererImageIA(postId, bouton, zoneStatut[, prompt]) ; window.optionsImageIA() renvoie les options cochees. #}
-<details class="options-visuel" id="options-image-ia">
+<details class="options-visuel" id="options-image-ia"{% if oia_ouvert %} open{% endif %}>
   <summary>🎨 Options de l'image IA (facultatif : sans rien cocher, l'IA choisit seule)</summary>
   <p class="texte-discret">Ces choix s'appliquent à l'image créée avec le bouton « Générer l'image (IA) ». Format 4:3, celui d'un post Google. Par défaut, l'IA peut ajouter des textes, des enseignes et des logos : vérifiez chaque image.</p>
   {% for groupe, choix_multiples in (("type", false), ("illustration", false), ("cadrage", true), ("decor", true), ("lumiere", true), ("personnes", false)) %}

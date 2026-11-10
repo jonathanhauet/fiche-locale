@@ -1053,7 +1053,7 @@
 <h2>Brouillons à valider ({{ brouillons|length }})</h2>
 <p class="texte-discret">Les posts déjà programmés, publiés ou rejetés apparaissent dans le résumé multi-réseaux ci-dessus.</p>
 {% if brouillons %}
-{% set client_oia = client %}{% include "_options_image_ia.html" %}
+{% set client_oia = client %}{% set oia_ouvert = true %}{% include "_options_image_ia.html" %}
 <ul class="liste-posts">
   {% for post in brouillons %}
   <li class="carte-post-revue" id="post-{{ post.id }}">
