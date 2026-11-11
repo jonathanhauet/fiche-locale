@@ -209,6 +209,26 @@ def supprimer_photo_fiche_google(identifiants, nom_media: str) -> None:
         raise RuntimeError(f"Echec de la suppression (code {reponse.status_code}) : {reponse.text}")
 
 
+def media_existe(identifiants, nom_media: str, attentes=(1.0, 3.0)):
+    """
+    Controle apres une suppression : True si Google renvoie encore le media (il est toujours sur la fiche), False s'il est introuvable (vraiment supprime),
+    None si la verification est impossible. Google met parfois un instant a oublier un media : on relit apres chaque attente avant de conclure.
+    """
+    resultat = None
+    for attente in attentes:
+        time.sleep(attente)
+        try:
+            reponse = requests.get(f"https://mybusiness.googleapis.com/v4/{nom_media}", headers={"Authorization": f"Bearer {identifiants.token}"}, timeout=15)
+        except Exception:
+            return None
+        if reponse.status_code == 404:
+            return False
+        resultat = True if reponse.status_code == 200 else None
+        if resultat is None:
+            return None
+    return resultat
+
+
 def lister_posts(identifiants, account_id: str, location_id: str):
     """Renvoie les posts actuellement presents sur la fiche (live ou encore programmes)."""
     url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/localPosts"
@@ -287,9 +307,22 @@ def ajouter_photo(
     La legende (description) n'est modifiable qu'a la creation cote Google, jamais
     apres, et est ignoree pour la categorie COVER.
     """
+    return ajouter_media(identifiants, account_id, location_id, url_source, "PHOTO", categorie, legende)
+
+
+def ajouter_media(
+    identifiants, account_id: str, location_id: str, url_source: str,
+    format_media: str = "PHOTO", categorie: str = "ADDITIONAL", legende: str = "",
+):
+    """
+    Publie directement une photo ou une video deja hebergee publiquement (url_source) sur la fiche Google.
+    format_media : « PHOTO » ou « VIDEO ». Une video reste dans la categorie ADDITIONAL ; Google impose ses propres limites
+    (duree courte, poids, definition) et refuse le fichier sinon : l'erreur est renvoyee telle quelle.
+    """
+    format_media = "VIDEO" if str(format_media).upper() == "VIDEO" else "PHOTO"
     corps = {
-        "mediaFormat": "PHOTO",
-        "locationAssociation": {"category": categorie},
+        "mediaFormat": format_media,
+        "locationAssociation": {"category": "ADDITIONAL" if format_media == "VIDEO" else categorie},
         "sourceUrl": url_source,
     }
     if legende.strip():
@@ -298,7 +331,8 @@ def ajouter_photo(
     url = f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/media"
     reponse = requests.post(url, headers={"Authorization": f"Bearer {identifiants.token}"}, json=corps)
     if reponse.status_code not in (200, 201):
-        raise RuntimeError(f"Echec de l'ajout de la photo (code {reponse.status_code}) : {reponse.text}")
+        quoi = "de la vidéo" if format_media == "VIDEO" else "de la photo"
+        raise RuntimeError(f"Echec de l'ajout {quoi} (code {reponse.status_code}) : {reponse.text}")
     return reponse.json()
 
 

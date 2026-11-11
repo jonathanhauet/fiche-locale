@@ -43,7 +43,7 @@
           ("publier", "📣", "Publier", [
             ("/publication-multi", "publication_multi", "🌐", "Publication multi-réseaux", false), ("/posts", "posts", "▤", "Posts en masse", false),
             ("/horaires-exceptionnelles", "horaires_exceptionnelles", "🕒", "Horaires exceptionnels", false), ("/idees-vocales", "idees_vocales", "🎙️", "Idées vocales", false),
-            ("/transcription-vocale", "transcription_vocale", "🗣️", "Transcription vocale", false)]),
+            ("/transcription-vocale", "transcription_vocale", "🗣️", "Transcription vocale", false), ("/envoi-medias", "envoi_medias", "🎞️", "Photos & vidéos sur les fiches", false)]),
           ("video-creation", "🎬", "Vidéo & création", [
             ("/scripts-video", "scripts_video", "🎬", "Scripts vidéo (IA)", false), ("/montage-video", "montage_video", "🎞️", "Montage vidéo (IA)", false),
             ("/video-motion", "video_motion", "✨", "Vidéo motion design (IA)", false), ("/images-ia", "images_ia", "🖼️", "Images IA (ambiance)", false), ("/prompteur", "prompteur", "📱", "Prompteur (téléphone)", false),
@@ -110,7 +110,7 @@
   {# Raccourcis en bas de l'ecran du telephone (masques sur ordinateur) : les 4 pages les plus utilisees + le menu complet. #}
   <nav class="barre-onglets-mobile" aria-label="Raccourcis">
     <a href="/" class="{{ 'actif' if page_actuelle in ('clients', 'espaces') else '' }}"><span class="onglet-icone">👥</span><span>Clients</span></a>
-    <a href="/publication-multi" class="{{ 'actif' if page_actuelle in ('publication_multi', 'posts', 'horaires_exceptionnelles', 'idees_vocales', 'transcription_vocale') else '' }}"><span class="onglet-icone">📣</span><span>Publier</span></a>
+    <a href="/publication-multi" class="{{ 'actif' if page_actuelle in ('publication_multi', 'posts', 'horaires_exceptionnelles', 'idees_vocales', 'transcription_vocale', 'envoi_medias') else '' }}"><span class="onglet-icone">📣</span><span>Publier</span></a>
     <a href="/creations" class="{{ 'actif' if page_actuelle in ('creations', 'videos', 'montage_video', 'video_motion', 'scripts_video', 'images_ia', 'musiques', 'personnage_bd') else '' }}"><span class="onglet-icone">🗂️</span><span>Créations</span></a>
     <a href="/prompteur/" class="{{ 'actif' if page_actuelle == 'prompteur' else '' }}"><span class="onglet-icone">📱</span><span>Prompteur</span></a>
     <button type="button" id="onglet-menu-mobile" aria-label="Ouvrir le menu complet"><span class="onglet-icone">☰</span><span>Menu</span></button>

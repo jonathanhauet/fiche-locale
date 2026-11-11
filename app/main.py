@@ -5663,7 +5663,9 @@ async def supprimer_photo_fiche_google_route(client_id: int, request: Request, d
     except Exception as erreur:
         return JSONResponse({"erreur": f"Echec de la suppression : {erreur}"}, status_code=500)
 
-    return JSONResponse({"ok": True})
+    # Google peut accepter la demande sans retirer le media : on le relit avant de dire que c'est fait.
+    toujours_present = await run_in_threadpool(google_business.media_existe, identifiants, nom_media) is True
+    return JSONResponse({"ok": True, "toujours_present": toujours_present})
 
 
 @app.post("/clients/{client_id}/photos/{photo_id}/supprimer")
@@ -7326,6 +7328,78 @@ def telecharger_bilan_pdf(request: Request, db: Session = Depends(obtenir_sessio
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
     )
+
+
+TAILLE_MAX_VIDEO_FICHE = 75 * 1024 * 1024           # limite Google pour une video de fiche
+TAILLE_MAX_PHOTO_FICHE = 25 * 1024 * 1024
+EXTENSIONS_PHOTO_FICHE = {"jpg", "jpeg", "png", "webp"}
+
+
+@app.get("/envoi-medias", response_class=HTMLResponse)
+def page_envoi_medias(request: Request, db: Session = Depends(obtenir_session)):
+    """Envoi direct d'une ou plusieurs photos/videos sur plusieurs fiches Google a la fois (voir envoi_medias.html)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    categories = [(c, google_business.LIBELLES_CATEGORIE_PHOTO.get(c, c)) for c in google_business.CATEGORIES_PHOTO]
+    return templates.TemplateResponse(request, "envoi_medias.html", {
+        "etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db), "categories_photo": categories,
+        "taille_max_video_mo": TAILLE_MAX_VIDEO_FICHE // (1024 * 1024), "taille_max_photo_mo": TAILLE_MAX_PHOTO_FICHE // (1024 * 1024),
+    })
+
+
+@app.post("/envoi-medias/televerser")
+def televerser_media_fiches(request: Request, fichier: UploadFile = File(...)):
+    """Heberge UNE fois le fichier (photo normalisee en JPEG, ou video MP4/MOV) sur OVH ; l'URL est ensuite envoyee a chaque fiche choisie."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    nom = fichier.filename or ""
+    extension = _extension_video(nom)
+    try:
+        if extension in EXTENSIONS_VIDEO_AUTORISEES:
+            octets = fichier.file.read(TAILLE_MAX_VIDEO_FICHE + 1)
+            if len(octets) > TAILLE_MAX_VIDEO_FICHE:
+                raise ValueError(f"vidéo trop lourde (Google accepte {TAILLE_MAX_VIDEO_FICHE // (1024 * 1024)} Mo au maximum).")
+            url, format_media = _televerser_video_publication(octets, nom, "mediafiche"), "VIDEO"
+        elif extension in EXTENSIONS_PHOTO_FICHE:
+            octets = fichier.file.read(TAILLE_MAX_PHOTO_FICHE + 1)
+            if len(octets) > TAILLE_MAX_PHOTO_FICHE:
+                raise ValueError(f"photo trop lourde ({TAILLE_MAX_PHOTO_FICHE // (1024 * 1024)} Mo au maximum).")
+            url, format_media = _televerser_image_publication(octets, "mediafiche"), "PHOTO"
+        else:
+            raise ValueError("format non pris en charge (vidéo MP4/MOV, photo JPG/PNG/WEBP).")
+    except ValueError as erreur:
+        return JSONResponse({"erreur": f"« {nom} » : {erreur}"}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"« {nom} » : hébergement impossible ({str(erreur)[:150]})."}, status_code=502)
+    return JSONResponse({"url": url, "format": format_media, "nom": nom})
+
+
+@app.post("/envoi-medias/envoyer")
+def envoyer_media_sur_fiche(
+    request: Request, client_id: int = Form(...), url: str = Form(...), format_media: str = Form("PHOTO"),
+    categorie: str = Form("ADDITIONAL"), legende: str = Form(""), db: Session = Depends(obtenir_session),
+):
+    """Publie directement un media deja heberge (voir televerser_media_fiches) sur UNE fiche ; la page appelle cette route fiche par fiche."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    base = (ovh_upload.URL_PUBLIQUE_BASE or "").rstrip("/")
+    if not base or not url.startswith(base + "/"):
+        return JSONResponse({"erreur": "Fichier non reconnu : retéléversez-le depuis cette page."}, status_code=400)
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"erreur": "Pas de fiche Google associée."}, status_code=404)
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({"erreur": "Compte Google non valide (à reconnecter depuis Comptes Google)."}, status_code=400)
+    format_media = "VIDEO" if format_media.upper() == "VIDEO" else "PHOTO"
+    categorie = categorie if categorie in google_business.CATEGORIES_PHOTO else "ADDITIONAL"
+    try:
+        reponse = google_business.ajouter_media(identifiants, client.account_id, client.location_id, url, format_media, categorie, legende[:300])
+    except Exception as erreur:
+        return JSONResponse({"erreur": str(erreur)[:300]}, status_code=502)
+    return JSONResponse({"ok": True, "nom_media": reponse.get("name", "")})
 
 
 @app.get("/photos-fiches", response_class=HTMLResponse)

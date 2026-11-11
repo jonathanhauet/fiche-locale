@@ -1348,6 +1348,11 @@
       const reponse = await fetch("/clients/{{ client.id }}/photos_google/supprimer", { method: "POST", body: donnees });
       const resultat = await reponse.json();
       if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+      if (resultat.toujours_present) {
+        alert("Google a accepté la suppression mais affiche encore ce média sur la fiche. Il peut mettre quelques minutes à le retirer : réactualisez plus tard. S'il revient, il ne peut pas être retiré d'ici.");
+        bouton.disabled = false;
+        return;
+      }
       carte.remove();
     } catch (erreur) {
       alert(`Echec de la suppression : ${erreur.message}`);
@@ -1495,19 +1500,20 @@
       if (!cartes.length) return;
       if (!confirm("Supprimer définitivement " + cartes.length + " média" + (cartes.length > 1 ? "s" : "") + " de la fiche Google ? Cette action est irréversible.")) return;
       boutonSupprSel.disabled = boutonTout.disabled = boutonAucun.disabled = true;
-      let faits = 0; const echecs = [];
+      let faits = 0, restants = 0; const echecs = [];
       for (const carte of cartes) {
-        etatSel.textContent = "Suppression " + (faits + echecs.length + 1) + "/" + cartes.length + "…";
+        etatSel.textContent = "Suppression " + (faits + restants + echecs.length + 1) + "/" + cartes.length + "…";
         try {
           const reponse = await fetch("/clients/{{ client.id }}/photos_google/supprimer", { method: "POST", body: new URLSearchParams({ nom_media: carte.dataset.nomMedia }) });
           const resultat = await reponse.json();
           if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+          if (resultat.toujours_present) { restants++; continue; }
           carte.remove(); faits++;
         } catch (erreur) { echecs.push(erreur.message); }
       }
       boutonSupprSel.disabled = boutonTout.disabled = boutonAucun.disabled = false;
       window.majSelectionMedia(); appliquerFiltreMedia();
-      etatSel.textContent = faits + " supprimé" + (faits > 1 ? "s" : "") + (echecs.length ? " · " + echecs.length + " échec" + (echecs.length > 1 ? "s" : "") + " (" + echecs[0] + ")" : "");
+      etatSel.textContent = faits + " supprimé" + (faits > 1 ? "s" : "") + (restants ? " · " + restants + " que Google accepte de supprimer mais affiche encore (réactualisez dans quelques minutes ; s'ils reviennent, ils ne peuvent pas être retirés d'ici)" : "") + (echecs.length ? " · " + echecs.length + " échec" + (echecs.length > 1 ? "s" : "") + " (" + echecs[0] + ")" : "");
     });
     const chargeur = chargeurPhotos(grillePhotosFiche, messageFiltre, boutonPlusFiche, carteEnLigne, appliquerFiltreMedia);
     // Chargement seulement quand la section arrive a l'ecran (elle est en bas de page).

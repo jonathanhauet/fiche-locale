@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% set page_actuelle = "envoi_medias" %}
+{% block titre %}Photos et vidéos sur les fiches — Fiche Locale{% endblock %}
+{% block contenu %}
+<style>
+  .em-resultat li { margin: 0.2rem 0; }
+  .em-echec { color: var(--danger); }
+  #ligne-categorie[hidden] { display: none; }
+  .em-ok { color: var(--succes, #1a7f45); }
+</style>
+<div class="barre-titre">
+  <h1>Photos et vidéos sur plusieurs fiches</h1>
+</div>
+<p class="texte-discret">
+  Choisissez un ou plusieurs fichiers, cochez les fiches concernées : chaque fichier est hébergé une seule fois puis <strong>publié directement</strong> sur chaque fiche Google
+  (pas de brouillon à relire : c'est visible sur la fiche dès que Google l'a traité). Les vidéos doivent respecter les règles de Google : courtes (environ 30 secondes),
+  {{ taille_max_video_mo }} Mo au maximum, au moins 720p ; un fichier refusé est signalé dans le compte rendu, fiche par fiche.
+</p>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">1. Fichiers</span>
+  <label>Vidéos (MP4, MOV) ou photos (JPG, PNG, WEBP)
+    <input type="file" id="fichiers-media" accept=".mp4,.mov,.m4v,.jpg,.jpeg,.png,.webp,video/mp4,video/quicktime,image/*" multiple>
+  </label>
+  <div class="formulaire-ligne">
+    <label id="ligne-categorie">Catégorie des photos
+      <select id="categorie-media">
+        {% for valeur, libelle in categories_photo %}<option value="{{ valeur }}" {{ 'selected' if valeur == 'ADDITIONAL' else '' }}>{{ libelle }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Légende (facultative, la même pour tous)
+      <input type="text" id="legende-media" maxlength="300" placeholder="ex. Notre équipe vous accueille">
+    </label>
+  </div>
+  <p class="texte-discret">Les vidéos sont toujours classées « Autre » par Google ; la catégorie ne concerne que les photos.</p>
+</div>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">2. Fiches</span>
+  {% if etiquettes %}
+  <div class="filtre-entreprises">
+    <span class="filtre-titre">Étiquettes :</span>
+    {% for etiquette in etiquettes %}
+    <label class="filtre-case"><input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}</label>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bandeau-avertissement">Aucune étiquette pour l'instant : ajoutez-en depuis la page <a href="/etiquettes">Étiquettes</a>.</div>
+  {% endif %}
+  <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+  <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+  <p id="texte-compte-clients" class="texte-discret" hidden></p>
+  <div class="actions-avis" id="actions-cases" hidden>
+    <button type="button" class="bouton-secondaire" id="tout-cocher">Tout cocher</button>
+    <button type="button" class="bouton-secondaire" id="tout-decocher">Tout décocher</button>
+  </div>
+</div>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">3. Envoi</span>
+  <p id="resume-envoi" class="texte-discret"></p>
+  <div class="actions-avis"><button type="button" class="bouton" id="bouton-envoyer" disabled>Publier sur les fiches</button></div>
+  <div id="progression" class="conteneur-progression-avis" hidden>
+    <div class="barre-progression-fond"><div id="barre-progression" class="barre-progression-remplissage"></div></div>
+    <span id="texte-progression" class="texte-progression-avis"></span>
+  </div>
+  <div id="compte-rendu" class="em-resultat" hidden>
+    <p id="resume-resultat"></p>
+    <ul id="liste-echecs"></ul>
+    <div class="actions-avis"><button type="button" class="bouton-secondaire" id="bouton-relancer" hidden>Relancer les échecs</button></div>
+  </div>
+</div>
+
+<script id="donnees-clients" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients").textContent);
+  const nomClient = Object.fromEntries(clients.map((c) => [String(c.id), c.nom]));
+  const $ = (id) => document.getElementById(id);
+  const MAX_VIDEO = {{ taille_max_video_mo|tojson }} * 1024 * 1024, MAX_PHOTO = {{ taille_max_photo_mo|tojson }} * 1024 * 1024;
+  const EXT_VIDEO = ["mp4", "mov", "m4v"], EXT_PHOTO = ["jpg", "jpeg", "png", "webp"];
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  let echecs = [], enCours = false;
+  const extension = (nom) => (nom.split(".").pop() || "").toLowerCase();
+  function echapper(texte) { const d = document.createElement("div"); d.textContent = texte == null ? "" : String(texte); return d.innerHTML; }
+
+  // ---- choix des fiches
+  function actualiserListe() {
+    const actives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    const conteneur = $("liste-clients-cibles");
+    if (!actives.length) { conteneur.innerHTML = ""; $("texte-aucun-client").hidden = false; $("texte-compte-clients").hidden = true; $("actions-cases").hidden = true; majResume(); return; }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => actives.includes(id)));
+    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false; $("actions-cases").hidden = false;
+    $("texte-compte-clients").textContent = `${correspondants.length} fiche(s) — décochez celles à exclure.`;
+    conteneur.innerHTML = correspondants.map((c) => `<label class="etiquette-chip-case"><input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}</label>`).join("");
+    conteneur.querySelectorAll("input").forEach((c) => c.addEventListener("change", majResume));
+    majResume();
+  }
+  const idsChoisis = () => Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value);
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+  function cocher(etat) { document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]').forEach((c) => { c.checked = etat; }); majResume(); }
+  $("tout-cocher").addEventListener("click", () => cocher(true));
+  $("tout-decocher").addEventListener("click", () => cocher(false));
+
+  function majResume() {
+    const fichiers = Array.from($("fichiers-media").files), m = idsChoisis().length;
+    $("ligne-categorie").hidden = !!fichiers.length && fichiers.every((f) => EXT_VIDEO.includes(extension(f.name)));
+    $("resume-envoi").textContent = fichiers.length && m ? `${fichiers.length} fichier(s) × ${m} fiche(s) = ${fichiers.length * m} publication(s) sur Google.` : "Choisissez au moins un fichier et une fiche.";
+    $("bouton-envoyer").disabled = enCours || !(fichiers.length && m);
+  }
+  $("fichiers-media").addEventListener("change", majResume);
+
+  // ---- envoi : hebergement unique de chaque fichier, puis publication fiche par fiche (3 fiches en parallele)
+  function progression(faits, total, texte) {
+    $("progression").hidden = false;
+    $("barre-progression").style.width = Math.round((faits / Math.max(1, total)) * 100) + "%";
+    $("texte-progression").textContent = texte;
+  }
+  async function publier(taches, legende, categorie) {
+    let curseur = 0, faits = 0, reussies = 0; const nouveauxEchecs = [];
+    progression(0, taches.length, `0 / ${taches.length}`);
+    async function suivant() {
+      while (curseur < taches.length) {
+        const t = taches[curseur++];
+        try {
+          const r = await fetch("/envoi-medias/envoyer", { method: "POST", body: new URLSearchParams({ client_id: t.id, url: t.h.url, format_media: t.h.format, categorie, legende }) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.erreur || "Erreur " + r.status);
+          reussies++;
+        } catch (e) { nouveauxEchecs.push({ ...t, raison: e.message }); }
+        faits++;
+        progression(faits, taches.length, `${faits} / ${taches.length} publication(s)`);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, taches.length) }, suivant));
+    return { reussies, nouveauxEchecs };
+  }
+  function afficherCompteRendu(reussies, total, erreursHebergement) {
+    $("compte-rendu").hidden = false;
+    $("resume-resultat").innerHTML = `<strong class="${echecs.length || erreursHebergement.length ? "" : "em-ok"}">${reussies} publication(s) réussie(s) sur ${total}.</strong>` + (echecs.length || erreursHebergement.length ? ` <span class="em-echec">${echecs.length + erreursHebergement.length} échec(s) :</span>` : " 🎉");
+    $("liste-echecs").innerHTML = erreursHebergement.map((e) => `<li class="em-echec">${echapper(e)}</li>`).join("")
+      + echecs.map((e) => `<li class="em-echec"><strong>${echapper(nomClient[e.id] || e.id)}</strong> — ${echapper(e.h.nom)} : ${echapper(e.raison)}</li>`).join("");
+    $("bouton-relancer").hidden = !echecs.length;
+  }
+
+  $("bouton-envoyer").addEventListener("click", async () => {
+    const fichiers = Array.from($("fichiers-media").files), ids = idsChoisis();
+    if (!fichiers.length || !ids.length || enCours) return;
+    for (const f of fichiers) {
+      const ext = extension(f.name);
+      if (!EXT_VIDEO.includes(ext) && !EXT_PHOTO.includes(ext)) { alert(`« ${f.name} » : format non pris en charge (vidéo MP4/MOV, photo JPG/PNG/WEBP).`); return; }
+      if (EXT_VIDEO.includes(ext) && f.size > MAX_VIDEO) { alert(`« ${f.name} » dépasse ${MAX_VIDEO / 1048576} Mo, limite de Google pour une vidéo.`); return; }
+      if (EXT_PHOTO.includes(ext) && f.size > MAX_PHOTO) { alert(`« ${f.name} » dépasse ${MAX_PHOTO / 1048576} Mo.`); return; }
+    }
+    if (!confirm(`Publier ${fichiers.length} fichier(s) sur ${ids.length} fiche(s), soit ${fichiers.length * ids.length} publication(s) directes sur Google ?`)) return;
+    enCours = true; majResume(); echecs = []; $("compte-rendu").hidden = true;
+    const hotes = [], erreursHebergement = [];
+    for (let i = 0; i < fichiers.length; i++) {
+      progression(i, fichiers.length, `Hébergement du fichier ${i + 1} / ${fichiers.length} : ${fichiers[i].name}…`);
+      try {
+        const fd = new FormData(); fd.append("fichier", fichiers[i]);
+        const r = await fetch("/envoi-medias/televerser", { method: "POST", body: fd });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.erreur || "Erreur " + r.status);
+        hotes.push({ nom: fichiers[i].name, url: d.url, format: d.format });
+      } catch (e) { erreursHebergement.push(e.message.startsWith("«") ? e.message : `« ${fichiers[i].name} » : ${e.message}`); }
+    }
+    const taches = hotes.flatMap((h) => ids.map((id) => ({ h, id })));
+    const legende = $("legende-media").value.trim(), categorie = $("categorie-media").value;
+    const { reussies, nouveauxEchecs } = taches.length ? await publier(taches, legende, categorie) : { reussies: 0, nouveauxEchecs: [] };
+    echecs = nouveauxEchecs;
+    window.__dernierEnvoi = { legende, categorie, erreursHebergement, total: taches.length, reussies };
+    $("progression").hidden = true; enCours = false; majResume();
+    afficherCompteRendu(reussies, taches.length, erreursHebergement);
+  });
+
+  $("bouton-relancer").addEventListener("click", async () => {
+    if (!echecs.length || enCours) return;
+    enCours = true; majResume(); $("bouton-relancer").hidden = true;
+    const prec = window.__dernierEnvoi, taches = echecs.map(({ h, id }) => ({ h, id }));
+    const { reussies, nouveauxEchecs } = await publier(taches, prec.legende, prec.categorie);
+    echecs = nouveauxEchecs; prec.reussies += reussies;
+    $("progression").hidden = true; enCours = false; majResume();
+    afficherCompteRendu(prec.reussies, prec.total, prec.erreursHebergement);
+  });
+  majResume();
+})();
+</script>
+{% endblock %}
