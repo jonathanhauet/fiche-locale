@@ -122,6 +122,7 @@ from . import (
     reporting_mensuel,
     suivi_goldunion,
     suivi_ads,
+    suivi_assorh,
     reporting_sheet,
     jsonld_agences,
     audit_photos,
@@ -500,6 +501,7 @@ if not CLE_SESSION:
 app.add_middleware(SessionMiddleware, secret_key=CLE_SESSION)
 
 app.mount("/static", StaticFiles(directory=os.path.join(DOSSIER_APP, "static")), name="static")
+app.include_router(suivi_assorh.routeur)          # journal de bord AssoRH pour Franck (page /assorh/<jeton>, API /api/assorh/...)
 templates = Jinja2Templates(directory=os.path.join(DOSSIER_APP, "templates"))
 
 # Casse le cache navigateur du CSS/JS statique a chaque modification du
