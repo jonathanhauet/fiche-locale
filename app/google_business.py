@@ -123,6 +123,8 @@ def _photo_depuis_item(item: dict):
         "largeur": (item.get("dimensions") or {}).get("widthPixels"),
         "hauteur": (item.get("dimensions") or {}).get("heightPixels"),
         "description": item.get("description", ""),
+        # « PHOTO » ou « VIDEO » (champ mediaFormat de l'API) : permet de filtrer la galerie.
+        "format": "VIDEO" if str(item.get("mediaFormat", "")).upper() == "VIDEO" else "PHOTO",
     }
 
 

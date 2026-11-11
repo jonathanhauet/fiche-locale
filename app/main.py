@@ -5648,6 +5648,8 @@ async def supprimer_photo_fiche_google_route(client_id: int, request: Request, d
     nom_media = formulaire.get("nom_media", "").strip()
     if not nom_media:
         return JSONResponse({"erreur": "Photo introuvable."}, status_code=400)
+    if client.account_id and client.location_id and not nom_media.startswith(f"accounts/{client.account_id}/locations/{client.location_id}/media/"):
+        return JSONResponse({"erreur": "Ce média n'appartient pas à la fiche de ce client."}, status_code=400)
 
     identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
     if not identifiants:

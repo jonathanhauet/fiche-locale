@@ -1287,6 +1287,24 @@
   <h3>Déjà sur la fiche</h3>
   <button type="button" class="bouton-secondaire" onclick="window.location.reload()">⟳ Rafraîchir</button>
 </div>
+<style>
+  .filtres-media { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0 0 0.8rem; }
+  .filtres-media .filtre-media { width: auto; }
+  .filtres-media .filtre-media.actif { outline: 2px solid var(--accent); font-weight: 700; }
+  .carte-photo-en-ligne[hidden] { display: none; }
+</style>
+<div class="filtres-media" id="filtres-media-fiche" role="group" aria-label="Filtrer les médias de la fiche">
+  <button type="button" class="bouton-secondaire filtre-media actif" data-filtre="tous">Tout</button>
+  <button type="button" class="bouton-secondaire filtre-media" data-filtre="PHOTO">📷 Photos</button>
+  <button type="button" class="bouton-secondaire filtre-media" data-filtre="VIDEO">🎬 Vidéos</button>
+  <span class="texte-discret" id="compte-media-fiche"></span>
+</div>
+<div class="filtres-media" id="barre-selection-media" role="group" aria-label="Sélection multiple">
+  <button type="button" class="bouton-secondaire filtre-media" id="selection-tout-media">☑ Tout sélectionner (affichés)</button>
+  <button type="button" class="bouton-secondaire filtre-media" id="selection-aucun-media" hidden>Tout désélectionner</button>
+  <button type="button" class="filtre-media" id="supprimer-selection-media" hidden style="background: var(--danger); color: #fff;">🗑 Supprimer la sélection</button>
+  <span class="texte-discret" id="etat-selection-media"></span>
+</div>
 <div class="grille-photos" id="grille-photos-fiche"></div>
 <p class="texte-vide" id="message-photos-fiche" hidden></p>
 <div class="actions-avis"><button type="button" class="bouton-secondaire" id="bouton-photos-fiche-plus" hidden>Afficher plus de photos</button></div>
@@ -1369,11 +1387,17 @@
   function carteEnLigne(photo) {
     const carte = document.createElement("figure");
     carte.className = "carte-photo carte-photo-en-ligne";
+    carte.dataset.format = photo.format === "VIDEO" ? "VIDEO" : "PHOTO";
     carte.appendChild(creerImagePhoto(photo));
     const legende = document.createElement("figcaption");
     legende.textContent = (photo.categorie || "—") + (photo.date_publication_affichee ? " · " + photo.date_publication_affichee : "");
     carte.appendChild(legende);
     if (photo.nom_media) {
+      carte.dataset.nomMedia = photo.nom_media;
+      const case_ = document.createElement("input");
+      case_.type = "checkbox"; case_.className = "case-selection-photo"; case_.title = "Sélectionner pour une suppression groupée";
+      case_.addEventListener("change", () => { carte.classList.toggle("selectionnee", case_.checked); if (window.majSelectionMedia) window.majSelectionMedia(); });
+      carte.appendChild(case_);
       const supprimer = document.createElement("button");
       supprimer.type = "button"; supprimer.className = "bouton-supprimer-photo-google";
       supprimer.dataset.nomMedia = photo.nom_media; supprimer.title = "Supprimer cette photo de la fiche Google"; supprimer.textContent = "✕";
@@ -1403,7 +1427,7 @@
     formulaire.appendChild(bouton);
     return formulaire;
   }
-  function chargeurPhotos(conteneur, message, boutonPlus, fabrique) {
+  function chargeurPhotos(conteneur, message, boutonPlus, fabrique, apres) {
     let jeton = "", enCours = false, commence = false;
     async function charger() {
       if (enCours) return;
@@ -1416,6 +1440,7 @@
         jeton = donnees.suivant || "";
         boutonPlus.hidden = !jeton;
         if (!conteneur.children.length) { message.textContent = "Aucune photo trouvée sur cette fiche pour l'instant."; message.hidden = false; }
+        if (apres) apres();
       } catch (erreur) {
         message.textContent = erreur.message; message.hidden = false;
       } finally { enCours = false; boutonPlus.disabled = false; }
@@ -1426,7 +1451,65 @@
 
   const grillePhotosFiche = document.getElementById("grille-photos-fiche");
   if (grillePhotosFiche) {
-    const chargeur = chargeurPhotos(grillePhotosFiche, document.getElementById("message-photos-fiche"), document.getElementById("bouton-photos-fiche-plus"), carteEnLigne);
+    // Filtre Tout / Photos / Vidéos : masque les cartes déjà chargées et celles qui arriveront avec « Afficher plus ».
+    let filtreMedia = "tous";
+    const messageFiltre = document.getElementById("message-photos-fiche"), boutonPlusFiche = document.getElementById("bouton-photos-fiche-plus"), compteMedia = document.getElementById("compte-media-fiche");
+    function appliquerFiltreMedia() {
+      const cartes = Array.from(grillePhotosFiche.children);
+      let visibles = 0, nbPhotos = 0, nbVideos = 0;
+      cartes.forEach((c) => {
+        if (c.dataset.format === "VIDEO") nbVideos++; else nbPhotos++;
+        const montrer = filtreMedia === "tous" || c.dataset.format === filtreMedia;
+        c.hidden = !montrer; if (montrer) visibles++;
+      });
+      compteMedia.textContent = cartes.length ? nbPhotos + " photo" + (nbPhotos > 1 ? "s" : "") + " · " + nbVideos + " vidéo" + (nbVideos > 1 ? "s" : "") + " chargée" + (cartes.length > 1 ? "s" : "") : "";
+      if (cartes.length && !visibles) {
+        messageFiltre.textContent = "Aucune " + (filtreMedia === "VIDEO" ? "vidéo" : "photo") + " parmi les médias déjà chargés" + (boutonPlusFiche.hidden ? "." : " : cliquez sur « Afficher plus de photos » pour en charger d'autres.");
+        messageFiltre.hidden = false;
+      } else if (cartes.length) { messageFiltre.hidden = true; }
+    }
+    document.querySelectorAll("#filtres-media-fiche .filtre-media").forEach((b) => b.addEventListener("click", () => {
+      filtreMedia = b.dataset.filtre;
+      document.querySelectorAll("#filtres-media-fiche .filtre-media").forEach((x) => x.classList.toggle("actif", x === b));
+      appliquerFiltreMedia();
+    }));
+    // Sélection multiple : cases sur chaque carte, puis suppression groupée (une demande par média, avec compte rendu).
+    const boutonTout = document.getElementById("selection-tout-media"), boutonAucun = document.getElementById("selection-aucun-media"), boutonSupprSel = document.getElementById("supprimer-selection-media"), etatSel = document.getElementById("etat-selection-media");
+    const cochees = () => Array.from(grillePhotosFiche.querySelectorAll(".case-selection-photo:checked")).map((c) => c.closest(".carte-photo"));
+    window.majSelectionMedia = function () {
+      const n = cochees().length;
+      boutonSupprSel.hidden = !n; boutonAucun.hidden = !n;
+      boutonSupprSel.textContent = "🗑 Supprimer la sélection (" + n + ")";
+      etatSel.textContent = n ? n + " sélectionné" + (n > 1 ? "s" : "") : "";
+    };
+    boutonTout.addEventListener("click", () => {
+      grillePhotosFiche.querySelectorAll(".carte-photo:not([hidden]) .case-selection-photo").forEach((c) => { c.checked = true; c.closest(".carte-photo").classList.add("selectionnee"); });
+      window.majSelectionMedia();
+    });
+    boutonAucun.addEventListener("click", () => {
+      grillePhotosFiche.querySelectorAll(".case-selection-photo:checked").forEach((c) => { c.checked = false; c.closest(".carte-photo").classList.remove("selectionnee"); });
+      window.majSelectionMedia();
+    });
+    boutonSupprSel.addEventListener("click", async () => {
+      const cartes = cochees();
+      if (!cartes.length) return;
+      if (!confirm("Supprimer définitivement " + cartes.length + " média" + (cartes.length > 1 ? "s" : "") + " de la fiche Google ? Cette action est irréversible.")) return;
+      boutonSupprSel.disabled = boutonTout.disabled = boutonAucun.disabled = true;
+      let faits = 0; const echecs = [];
+      for (const carte of cartes) {
+        etatSel.textContent = "Suppression " + (faits + echecs.length + 1) + "/" + cartes.length + "…";
+        try {
+          const reponse = await fetch("/clients/{{ client.id }}/photos_google/supprimer", { method: "POST", body: new URLSearchParams({ nom_media: carte.dataset.nomMedia }) });
+          const resultat = await reponse.json();
+          if (!reponse.ok) throw new Error(resultat.erreur || "Erreur inconnue.");
+          carte.remove(); faits++;
+        } catch (erreur) { echecs.push(erreur.message); }
+      }
+      boutonSupprSel.disabled = boutonTout.disabled = boutonAucun.disabled = false;
+      window.majSelectionMedia(); appliquerFiltreMedia();
+      etatSel.textContent = faits + " supprimé" + (faits > 1 ? "s" : "") + (echecs.length ? " · " + echecs.length + " échec" + (echecs.length > 1 ? "s" : "") + " (" + echecs[0] + ")" : "");
+    });
+    const chargeur = chargeurPhotos(grillePhotosFiche, messageFiltre, boutonPlusFiche, carteEnLigne, appliquerFiltreMedia);
     // Chargement seulement quand la section arrive a l'ecran (elle est en bas de page).
     if ("IntersectionObserver" in window) {
       const observateur = new IntersectionObserver((entrees) => {
