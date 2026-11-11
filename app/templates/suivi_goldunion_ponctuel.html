@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% set page_actuelle = "suivi_goldunion" %}
+{% block titre %}Recherche ponctuelle — Suivi GoldUnion{% endblock %}
+{% block contenu %}
+<style>
+  .pt-grille { display: inline-grid; gap: 3px; margin: 0.4rem 0; }
+  .pt-cell { width: 2.4rem; height: 2.4rem; border: 0; border-radius: 6px; font: inherit; font-weight: 800; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #fff; }
+  .pt-cell.c-ok { background: #1a7f45; } .pt-cell.c-moyen { background: #a86400; } .pt-cell.c-bas { background: #c62828; } .pt-cell.c-rien { background: #5b6270; }
+  .pt-cell.choisie { outline: 3px solid var(--accent); outline-offset: 1px; }
+  .pt-cartes { display: flex; flex-wrap: wrap; gap: 1.2rem 2rem; margin: 0.6rem 0; }
+  .pt-carte { min-width: 0; }
+  .pt-concurrents { margin-top: 0.8rem; padding: 0.7rem 0.9rem; border: 1px solid var(--accent); border-radius: 10px; background: var(--carte); }
+  .pt-concurrents[hidden] { display: none; }
+  .pt-concurrents ol { margin: 0.3rem 0 0; padding-left: 1.3rem; }
+  .pt-tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; margin: 0.8rem 0; }
+  .pt-tuile { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); padding: 0.6rem 0.9rem; }
+  .pt-tuile strong { display: block; font-size: 1.5rem; line-height: 1.1; }
+  .pt-tuile span { font-size: 0.82rem; color: var(--texte-discret); }
+  .pt-ligne { display: flex; flex-wrap: wrap; gap: 0.8rem 1.2rem; align-items: flex-end; }
+  .pt-ligne label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
+  .pt-case { flex-direction: row !important; align-items: center; gap: 0.4rem !important; }
+  .pt-case input { width: auto; }
+</style>
+<p class="fil-retour"><a href="/suivi-goldunion">&larr; Retour au suivi GoldUnion</a></p>
+<div class="barre-titre"><h1>Recherche ponctuelle sur une agence</h1></div>
+<p class="texte-discret">
+  Mesure la position d'<strong>une</strong> agence pour les mots-clés, la grille et l'écart que vous choisissez ici. Le résultat s'affiche tout de suite et
+  <strong>n'est pas enregistré</strong> : il ne modifie ni la page des responsables, ni l'historique mensuel. Chaque point de la grille est une requête payante
+  (environ {{ '%g'|format(cout_point) }} ¢ l'unité, au maximum {{ max_requetes }} requêtes par recherche).
+</p>
+
+{% if erreur %}<div class="bandeau-erreur">{{ erreur }}</div>{% endif %}
+{% if not dataforseo_configure %}<div class="bandeau-info">DataForSEO n'est pas configuré : la mesure des positions est indisponible.</div>{% endif %}
+
+<form class="formulaire" method="post" action="/suivi-goldunion/ponctuel" id="formulaire-ponctuel">
+  <div class="pt-ligne">
+    <label>Agence
+      <select name="client_id" required id="pt-agence">
+        <option value="">Choisir une agence…</option>
+        {% for a in agences %}<option value="{{ a.id }}" data-ville="{{ a.ville }}" {{ 'selected' if formulaire.client_id == a.id|string else '' }}>{{ a.nom }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <label>Mots-clés (séparés par des virgules)
+    <input type="text" name="mots" id="pt-mots" value="{{ formulaire.mots }}" maxlength="400" required>
+  </label>
+  <div class="pt-ligne">
+    <label>Ville ajoutée à chaque recherche
+      <input type="text" name="ville" id="pt-ville" value="{{ formulaire.ville }}" placeholder="(ville de l'agence)" maxlength="80">
+    </label>
+    <label class="pt-case"><input type="checkbox" name="sans_ville" id="pt-sans-ville" {{ 'checked' if formulaire.sans_ville else '' }}> Ne pas ajouter de ville</label>
+  </div>
+  <div class="pt-ligne">
+    <label>Grille de points
+      <select name="taille" id="pt-taille">
+        {% for t in tailles %}<option value="{{ t }}" {{ 'selected' if formulaire.taille == t else '' }}>{{ t }}×{{ t }} = {{ t * t }} point{{ 's' if t > 1 else '' }}{{ ' (adresse seule)' if t == 1 else '' }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Écart entre les points (km)
+      <input type="number" name="ecart" id="pt-ecart" value="{{ formulaire.ecart }}" min="0.2" max="25" step="0.1" required style="width:8rem">
+    </label>
+    <span class="texte-discret" id="pt-resume"></span>
+  </div>
+  <p class="texte-discret">Exemple : « rachat or », grille 5×5 et écart de 1 km pour regarder finement le centre-ville ; ou 3×3 et 10 km pour voir toute l'agglomération.</p>
+  <div class="actions-avis">
+    <button type="submit" id="pt-lancer" {{ 'disabled' if not dataforseo_configure else '' }}>Lancer la mesure</button>
+  </div>
+</form>
+
+{% if resultat %}
+<h2>Résultat — {{ resultat.agence }}</h2>
+<p class="texte-discret">Mesure faite le {{ resultat.date }} · {{ resultat.taille }}×{{ resultat.taille }} points, {{ '%g'|format(resultat.ecart_km) }} km d'écart · {{ resultat.requetes }} requêtes (≈ {{ '%g'|format(resultat.cout_centimes) }} ¢) · <strong>non enregistrée dans le suivi</strong>.</p>
+<div class="pt-tuiles">
+  <div class="pt-tuile"><strong>{{ resultat.pct3 }} %</strong><span>des points dans le top 3 ({{ resultat.top3 }}/{{ resultat.total }})</span></div>
+  <div class="pt-tuile"><strong>{{ resultat.pct10 }} %</strong><span>des points dans le top 10 ({{ resultat.top10 }}/{{ resultat.total }})</span></div>
+</div>
+<div class="pt-cartes">
+  {% for r in resultat.par_recherche %}{% set ri = loop.index0 %}
+  <div class="pt-carte">
+    <div><strong>{{ r.libelle }}</strong> · {{ r.top3 }}/{{ r.total }} en top 3</div>
+    <div class="pt-grille" style="grid-template-columns: repeat({{ resultat.taille }}, 2.4rem)">
+      {% for ligne in r.grille %}{% set i = loop.index0 %}{% for p in ligne %}<button type="button" class="pt-cell {{ 'c-rien' if p is none else ('c-ok' if p <= 3 else ('c-moyen' if p <= 10 else 'c-bas')) }}" data-r="{{ ri }}" data-i="{{ r.indices[i][loop.index0] }}" title="{{ 'Hors des premiers résultats' if p is none else 'Position ' ~ p }} · cliquez pour voir les concurrents devant">{{ '–' if p is none else p }}</button>{% endfor %}{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<p class="texte-discret">Nord en haut, ouest à gauche. Cliquez sur une case pour voir les fiches classées devant l'agence à ce point.</p>
+<div class="pt-concurrents" id="pt-concurrents" hidden></div>
+<script id="pt-donnees" type="application/json">{{ resultat.par_recherche|tojson }}</script>
+{% endif %}
+
+<script>
+(function () {
+  const COUT = {{ cout_point|tojson }}, MAX = {{ max_requetes|tojson }};
+  const mots = document.getElementById("pt-mots"), taille = document.getElementById("pt-taille"), resume = document.getElementById("pt-resume"), form = document.getElementById("formulaire-ponctuel");
+  function nbMots() { const vus = []; (mots.value || "").split(/[,;\n]/).forEach((m) => { m = m.trim().replace(/\s+/g, " "); if (m && !vus.includes(m.toLowerCase())) vus.push(m.toLowerCase()); }); return vus.length; }
+  function requetes() { const t = parseInt(taille.value, 10) || 3; return nbMots() * t * t; }
+  function majResume() {
+    const n = requetes(), cout = Math.round(n * COUT * 10) / 10;
+    resume.textContent = n + " requête" + (n > 1 ? "s" : "") + " ≈ " + String(cout).replace(".", ",") + " ¢" + (n > MAX ? " (trop : maximum " + MAX + ")" : "");
+    resume.style.color = n > MAX ? "var(--danger)" : "";
+  }
+  [mots, taille].forEach((c) => c.addEventListener("input", majResume)); majResume();
+  const villeAgence = document.getElementById("pt-agence"), champVille = document.getElementById("pt-ville");
+  function majPlaceholder() { const o = villeAgence.selectedOptions[0]; champVille.placeholder = "(ville de l'agence" + (o && o.dataset.ville ? " : " + o.dataset.ville : "") + ")"; }
+  villeAgence.addEventListener("change", majPlaceholder); majPlaceholder();
+  document.getElementById("pt-sans-ville").addEventListener("change", (e) => { champVille.disabled = e.target.checked; }); champVille.disabled = document.getElementById("pt-sans-ville").checked;
+  form.addEventListener("submit", (e) => {
+    const n = requetes();
+    if (n > MAX) { e.preventDefault(); alert("Trop de requêtes : le maximum est " + MAX + "."); return; }
+    if (!confirm("Lancer " + n + " requête" + (n > 1 ? "s" : "") + " (≈ " + String(Math.round(n * COUT * 10) / 10).replace(".", ",") + " ¢) ? Le résultat ne sera pas enregistré.")) { e.preventDefault(); return; }
+    document.getElementById("pt-lancer").disabled = true; document.getElementById("pt-lancer").textContent = "⏳ Mesure en cours…";
+  });
+
+  // Concurrents devant l'agence au point cliqué
+  const brut = document.getElementById("pt-donnees");
+  if (!brut) return;
+  const donnees = JSON.parse(brut.textContent), panneau = document.getElementById("pt-concurrents");
+  function el(b, c, t) { const n = document.createElement(b); if (c) n.className = c; if (t != null) n.textContent = t; return n; }
+  document.querySelectorAll(".pt-cell").forEach((cell) => cell.addEventListener("click", () => {
+    document.querySelectorAll(".pt-cell").forEach((c) => c.classList.remove("choisie")); cell.classList.add("choisie");
+    const r = donnees[parseInt(cell.dataset.r, 10)], i = parseInt(cell.dataset.i, 10), liste = (r.concurrents || [])[i] || [];
+    panneau.hidden = false; panneau.replaceChildren();
+    const rang = cell.textContent === "–" ? "hors des premiers résultats" : "n° " + cell.textContent;
+    panneau.append(el("strong", "", "« " + r.libelle + " » : l'agence est " + rang + " à ce point"));
+    if (!liste.length) { panneau.append(el("div", "texte-discret", rang === "n° 1" ? "Aucune fiche devant l'agence : elle est première à cet endroit. 🎉" : "Aucun concurrent relevé à ce point.")); return; }
+    const ol = el("ol");
+    liste.forEach((c) => {
+      const li = el("li"), lien = el("a", "", c.n || "Fiche sans nom");
+      lien.href = c.c ? "https://www.google.com/maps?cid=" + encodeURIComponent(c.c) : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(((c.n || "") + " " + (c.a || "")).trim());
+      lien.target = "_blank"; lien.rel = "noopener noreferrer";
+      li.append(lien); const infos = [];
+      if (c.r != null) infos.push("★ " + String(c.r).replace(".", ",") + (c.v ? " (" + c.v + " avis)" : ""));
+      if (c.a) infos.push(c.a);
+      if (infos.length) li.append(el("span", "texte-discret", " — " + infos.join(" · ")));
+      ol.append(li);
+    });
+    panneau.append(ol);
+  }));
+})();
+</script>
+{% endblock %}

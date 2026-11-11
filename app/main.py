@@ -7541,6 +7541,56 @@ async def lien_suivi_goldunion(request: Request, db: Session = Depends(obtenir_s
     return RedirectResponse("/suivi-goldunion?message=" + quote_plus(message), status_code=303)
 
 
+def _contexte_ponctuel(db: Session, parametre, entrees: list, formulaire: dict = None, resultat: dict = None, erreur: str = "") -> dict:
+    """Donnees de la page de recherche ponctuelle : formulaire (valeurs par defaut = reglages) et, apres une mesure, son resultat."""
+    formulaire = formulaire or {}
+    return {
+        "page_actuelle": "suivi_goldunion", "agences": [{"id": e["client"].id, "nom": e["client"].nom, "ville": e["donnees"].get("ville", "")} for e in entrees],
+        "dataforseo_configure": rank_tracking.identifiants_configures(), "formulaire": {
+            "client_id": str(formulaire.get("client_id") or ""), "mots": formulaire.get("mots") or ", ".join(suivi_goldunion.mots_cles(parametre)), "taille": int(formulaire.get("taille") or suivi_goldunion.taille_grille(parametre)),
+            "ecart": str(formulaire.get("ecart") or f"{suivi_goldunion.ecart_km(parametre):g}"), "ville": formulaire.get("ville") or "", "sans_ville": str(formulaire.get("sans_ville") or "") in ("1", "on", "true")},
+        "tailles": suivi_goldunion.TAILLES_PONCTUEL, "max_requetes": suivi_goldunion.MAX_REQUETES_PONCTUEL, "cout_point": suivi_goldunion.COUT_PAR_POINT_CENTIMES,
+        "resultat": resultat, "erreur": erreur,
+    }
+
+
+@app.get("/suivi-goldunion/ponctuel", response_class=HTMLResponse)
+def page_recherche_ponctuelle(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    parametre = suivi_goldunion.lire_parametre(db)
+    entrees = suivi_goldunion.lignes(db, parametre)
+    formulaire = {"client_id": request.query_params.get("client_id", "")}
+    return templates.TemplateResponse(request, "suivi_goldunion_ponctuel.html", _contexte_ponctuel(db, parametre, entrees, formulaire))
+
+
+@app.post("/suivi-goldunion/ponctuel", response_class=HTMLResponse)
+async def lancer_recherche_ponctuelle(request: Request, db: Session = Depends(obtenir_session)):
+    """Mesure de positions ponctuelle sur UNE agence (mots-cles, grille et ecart au choix) : affichee tout de suite, jamais enregistree dans le suivi."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = dict(await request.form())
+    parametre = suivi_goldunion.lire_parametre(db)
+    entrees = suivi_goldunion.lignes(db, parametre)
+    contexte = lambda **k: templates.TemplateResponse(request, "suivi_goldunion_ponctuel.html", _contexte_ponctuel(db, parametre, entrees, formulaire, **k))
+    cible = next((e for e in entrees if str(e["client"].id) == str(formulaire.get("client_id", "")).strip()), None)
+    if not cible:
+        return contexte(erreur="Choisissez une agence parmi les agences suivies.")
+    if not rank_tracking.identifiants_configures():
+        return contexte(erreur="DataForSEO n'est pas configuré : les positions ne peuvent pas être mesurées.")
+    demande = suivi_goldunion.lire_demande_ponctuelle(formulaire, cible["donnees"].get("ville", ""))
+    if demande.get("erreur"):
+        return contexte(erreur=demande["erreur"])
+    mesure = await run_in_threadpool(suivi_goldunion.mesurer_ponctuel, cible["donnees"], cible["client"].nom, demande)
+    if mesure.get("erreur"):
+        return contexte(erreur=mesure["erreur"])
+    resume = suivi_goldunion.resume_ponctuel(mesure)
+    resume.update({"agence": cible["client"].nom, "ville": demande["ville"], "date": heure_locale(datetime.utcnow())})
+    return contexte(resultat=resume)
+
+
 @app.post("/suivi-goldunion/actualiser")
 async def actualiser_suivi_goldunion(request: Request, db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)

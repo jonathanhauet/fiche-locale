@@ -603,6 +603,94 @@ def mesurer_positions(donnees: dict, nom_agence: str, mots: list, taille: int = 
     return resultat
 
 
+# ---------- recherche ponctuelle : une agence, des mots-cles et une grille au choix, sans rien enregistrer
+TAILLES_PONCTUEL = (1, 3, 5, 7, 9)
+ECART_PONCTUEL_MIN, ECART_PONCTUEL_MAX = 0.2, 25.0
+MAX_REQUETES_PONCTUEL = 200                      # garde-fou : 200 requetes = environ 0,40 $
+MAX_MOTS_PONCTUEL = 8
+
+
+def lire_demande_ponctuelle(formulaire: dict, ville_agence: str = "") -> dict:
+    """
+    Demande de recherche ponctuelle d'apres le formulaire : {"mots", "taille", "ecart", "ville", "requetes"} ou {"erreur"}.
+    Les mots-cles sont separes par des virgules ; la ville de l'agence (ou celle saisie) est ajoutee a chacun, sauf si « sans_ville » est coche.
+    """
+    mots = []
+    for m in re.split(r"[,;\n]", str(formulaire.get("mots") or "")):
+        m = " ".join(m.split())[:80]
+        if m and m.lower() not in [x.lower() for x in mots]:
+            mots.append(m)
+    if not mots:
+        return {"erreur": "Saisissez au moins un mot-clé."}
+    if len(mots) > MAX_MOTS_PONCTUEL:
+        return {"erreur": f"{MAX_MOTS_PONCTUEL} mots-clés au plus par recherche."}
+    try:
+        taille = int(formulaire.get("taille") or 3)
+        ecart = float(str(formulaire.get("ecart") or "2").replace(",", "."))
+    except ValueError:
+        return {"erreur": "Taille de grille ou écart invalide."}
+    if taille not in TAILLES_PONCTUEL:
+        return {"erreur": "Taille de grille non prévue."}
+    if not (ECART_PONCTUEL_MIN <= ecart <= ECART_PONCTUEL_MAX):
+        return {"erreur": f"L'écart entre points doit être compris entre {ECART_PONCTUEL_MIN:g} et {ECART_PONCTUEL_MAX:g} km."}
+    requetes = len(mots) * taille * taille
+    if requetes > MAX_REQUETES_PONCTUEL:
+        return {"erreur": f"{requetes} requêtes demandées : le maximum est {MAX_REQUETES_PONCTUEL} (réduisez les mots-clés ou la grille)."}
+    sans_ville = str(formulaire.get("sans_ville") or "").lower() in ("1", "on", "true")
+    ville = "" if sans_ville else (" ".join(str(formulaire.get("ville") or "").split())[:80] or ville_agence)
+    return {"mots": mots, "taille": taille, "ecart": round(ecart, 2), "ville": ville, "requetes": requetes}
+
+
+def mesurer_ponctuel(donnees: dict, nom_agence: str, demande: dict, mesure=None, travailleurs: int = 6) -> dict:
+    """
+    Mesure ponctuelle (rien n'est enregistre) : meme principe que mesurer_positions, avec la recherche exacte au choix et les points interroges en parallele.
+    Resultat : {"mots": {recherche: [position ou None, ...]}, "concurrents": {...}, "taille", "ecart_km", "centre", "requetes"} ou {"erreur"}.
+    """
+    mesure = mesure or (lambda q, la, lo, nom: rank_tracking.verifier_position(q, la, lo, nom, profondeur=PROFONDEUR_CONCURRENTS))
+    lat, lng = donnees.get("lat"), donnees.get("lng")
+    if donnees.get("erreur") and not donnees.get("adresse"):
+        return {"erreur": "Fiche Google illisible à la dernière relecture : relancez d'abord une relecture de cette agence."}
+    if lat is None or lng is None:
+        return {"erreur": "Adresse de la fiche non localisable (coordonnées introuvables) : relancez une relecture de cette agence."}
+    if (donnees.get("pays") or "FR") != "FR":
+        return {"erreur": "Agence hors France : positions non mesurées."}
+    points = rank_tracking.generer_points_grille(lat, lng, demande["taille"], demande["ecart"])
+    recherches = [(f"{mot} {demande['ville']}".strip(), mot) for mot in demande["mots"]]
+    taches = [(libelle, p) for libelle, _ in recherches for p in points]
+
+    def une(tache):
+        libelle, (latitude, longitude) = tache
+        return _mesure_avec_reprises(mesure, libelle, latitude, longitude, nom_agence)
+
+    resultat = {"maj": datetime.utcnow().isoformat(timespec="seconds"), "taille": demande["taille"], "ecart_km": demande["ecart"], "centre": [lat, lng], "mots": {}, "concurrents": {}, "requetes": len(taches)}
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, min(travailleurs, len(taches)))) as pool:
+            mesures = list(pool.map(une, taches))
+    except Exception as erreur:
+        return {**resultat, "mots": {}, "concurrents": {}, "erreur": str(erreur)[:200]}
+    n = len(points)
+    for numero, (libelle, _) in enumerate(recherches):
+        morceau = mesures[numero * n:(numero + 1) * n]
+        resultat["mots"][libelle] = [m[0] for m in morceau]
+        resultat["concurrents"][libelle] = [concurrents_devant(m[0], m[2]) for m in morceau]
+    return resultat
+
+
+def resume_ponctuel(resultat: dict) -> dict:
+    """Pour l'affichage : score global, et par recherche les lignes de la grille (nord en haut), les indices et le score."""
+    mots = resultat.get("mots") or {}
+    if not mots:
+        return {}
+    taille = resultat["taille"]
+    par_recherche = []
+    for libelle, liste in mots.items():
+        par_recherche.append({"libelle": libelle, "grille": grille_nord_en_haut(liste, taille), "indices": grille_nord_en_haut(list(range(len(liste))), taille),
+                              "top3": sum(1 for p in liste if p is not None and p <= 3), "top10": sum(1 for p in liste if p is not None and p <= 10), "total": len(liste),
+                              "concurrents": resultat.get("concurrents", {}).get(libelle, [])})
+    return {**_score_positions(mots), "par_recherche": par_recherche, "taille": taille, "ecart_km": resultat["ecart_km"], "requetes": resultat.get("requetes", 0),
+            "cout_centimes": round(resultat.get("requetes", 0) * COUT_PAR_POINT_CENTIMES, 1)}
+
+
 def mesure_a_jour(positions: dict, mois: str = None) -> bool:
     """Mesure complete de ce mois-ci, concurrents compris et sans erreur : inutile de la repayer."""
     mois = mois or date.today().strftime("%Y-%m")

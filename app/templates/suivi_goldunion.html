@@ -112,6 +112,18 @@
   </form>
 </div>
 
+<div class="choix-image-bloc">
+  <span class="choix-image-titre">Recherche ponctuelle sur une agence</span>
+  <p class="texte-discret">Mesure une agence avec les mots-clés, la grille et l'écart de votre choix (par exemple 5×5 points à 1 km pour une rue précise). Le résultat s'affiche tout de suite et n'est pas enregistré dans le suivi.</p>
+  <form method="get" action="/suivi-goldunion/ponctuel">
+    <select name="client_id">
+      <option value="">Choisir une agence…</option>
+      {% for a in agences %}<option value="{{ a.id }}">{{ a.nom }}</option>{% endfor %}
+    </select>
+    <div class="actions-avis"><button type="submit" class="bouton-secondaire">🔎 Préparer la recherche ponctuelle</button></div>
+  </form>
+</div>
+
 <form class="formulaire" method="post" action="/suivi-goldunion/reglages">
   <h2>Réglages</h2>
   <div class="choix-image-bloc">
