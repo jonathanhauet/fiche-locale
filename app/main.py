@@ -3695,6 +3695,37 @@ def _jours_occupes_client(db: Session, client_id: int, posts_en_ligne: list = No
     return json.dumps(sorted(toutes_dates)).replace("</", "<\\/")
 
 
+def _fiches_google_libres_pour_client(db: Session, client: models.Client) -> list[dict]:
+    """Fiches Google pas encore associees, proposees seulement aux clients qui n'en ont pas (evite un appel Google inutile sur les autres pages)."""
+    if client.account_id and client.location_id:
+        return []
+    try:
+        return _fiches_google_non_liees(db) if google_oauth.google_est_connecte(db) else []
+    except Exception:
+        return []
+
+
+@app.post("/clients/{client_id}/fiche-google/associer")
+def associer_fiche_google_client(client_id: int, request: Request, fiche_google: str = Form(""), db: Session = Depends(obtenir_session)):
+    """Associe une fiche Google (choisie parmi celles des comptes connectes, pas encore liees) a un client existant qui n'en avait pas."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    client = db.get(models.Client, client_id)
+    if not client:
+        return HTMLResponse("Client introuvable.", status_code=404)
+    compte_brut, _, reste = fiche_google.partition("|")
+    account_id, _, location_id = reste.partition("|")
+    if not (compte_brut.isdigit() and account_id and location_id):
+        return RedirectResponse(f"/clients/{client_id}", status_code=303)
+    deja = db.query(models.Client).filter(models.Client.account_id == account_id, models.Client.location_id == location_id, models.Client.id != client.id).first()
+    if deja:
+        return HTMLResponse(f"Cette fiche Google est déjà associée au client « {deja.nom} ».", status_code=409)
+    client.account_id, client.location_id, client.compte_google_id = account_id, location_id, int(compte_brut)
+    db.commit()
+    return RedirectResponse(f"/clients/{client_id}", status_code=303)
+
+
 def _reponse_detail_client(
     request: Request, db: Session, client: models.Client, erreur_generation: str = None,
     erreur_photo: str = None, erreur_document: str = None, erreur_post_manuel: str = None,
@@ -3733,6 +3764,8 @@ def _reponse_detail_client(
             # temps (arrive), ne se trompe jamais dans l'autre sens.
             "image_urls_deja_utilisees": {p.image_url for p in posts[:NB_POSTS_RECENTS_PHOTO] if p.image_url},
             "photos_en_preparation": photos_en_preparation,
+            "google_connecte": google_oauth.google_est_connecte(db),
+            "fiches_google_libres": _fiches_google_libres_pour_client(db, client),
             "categories_photo": [
                 (valeur, google_business.LIBELLES_CATEGORIE_PHOTO.get(valeur, valeur))
                 for valeur in google_business.CATEGORIES_PHOTO
@@ -8599,6 +8632,10 @@ def modifier_client(
     client.contenu_site = contenu_site
     client.account_id = account_id.strip()
     client.location_id = location_id.strip()
+    if client.account_id and client.location_id and client.compte_google_id is None:
+        comptes = google_oauth.lister_comptes(db)         # identifiants saisis a la main : sans compte Google relie, la fiche ne pourrait pas etre lue
+        if len(comptes) == 1:
+            client.compte_google_id = comptes[0].id
     client.consignes_avis = consignes_avis
     client.email = email.strip()
     client.prenom = prenom.strip()

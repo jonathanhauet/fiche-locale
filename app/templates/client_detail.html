@@ -98,6 +98,32 @@
   </div>
 </details>
 
+{% if not client.account_id or not client.location_id %}
+<div class="bloc-section" id="associer-fiche-google">
+  <strong>Ce client n'a pas encore de fiche Google</strong>
+  {% if fiches_google_libres %}
+  <form class="formulaire formulaire-ligne" method="post" action="/clients/{{ client.id }}/fiche-google/associer">
+    <label>Associer une fiche Google existante
+      <select name="fiche_google" required>
+        <option value="">— Choisir la fiche —</option>
+        {% for libelle_compte, fiches_du_compte in fiches_google_libres|groupby("compte_libelle") %}
+        <optgroup label="{{ libelle_compte }}">
+          {% for fiche in fiches_du_compte %}<option value="{{ fiche.compte_google_id }}|{{ fiche.account_id }}|{{ fiche.location_id }}">{{ fiche.nom_compte }} — {{ fiche.nom_fiche }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Associer cette fiche</button>
+  </form>
+  <p class="texte-discret">Seules les fiches des comptes Google connectés et pas encore associées à un client sont proposées.</p>
+  {% elif google_connecte %}
+  <p class="texte-discret">Aucune fiche Google libre n'est disponible : toutes celles de vos comptes connectés sont déjà associées à un client. Si la fiche est nouvelle, vérifiez que vous êtes propriétaire ou gestionnaire sur le compte Google connecté (<a href="/google/comptes">Comptes Google</a>), puis rechargez cette page.</p>
+  {% else %}
+  <p class="texte-discret">Aucun compte Google n'est connecté : <a href="/google/comptes">connectez-en un</a> pour pouvoir choisir une fiche.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <details class="bloc-repliable">
   <summary>Informations du client</summary>
   <form class="formulaire" method="post" action="/clients/{{ client.id }}/modifier">
