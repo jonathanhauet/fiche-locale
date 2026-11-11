@@ -5679,6 +5679,7 @@ async def supprimer_photo_fiche_google_route(client_id: int, request: Request, d
 
     formulaire = await request.form()
     nom_media = formulaire.get("nom_media", "").strip()
+    verifier = str(formulaire.get("verifier", "1")) != "0"          # la suppression groupee controle a la fin, fiche par fiche, plutot qu'a chaque media
     if not nom_media:
         return JSONResponse({"erreur": "Photo introuvable."}, status_code=400)
     if client.account_id and client.location_id and not nom_media.startswith(f"accounts/{client.account_id}/locations/{client.location_id}/media/"):
@@ -5697,7 +5698,7 @@ async def supprimer_photo_fiche_google_route(client_id: int, request: Request, d
         return JSONResponse({"erreur": f"Echec de la suppression : {erreur}"}, status_code=500)
 
     # Google peut accepter la demande sans retirer le media : on le relit avant de dire que c'est fait.
-    toujours_present = await run_in_threadpool(google_business.media_existe, identifiants, nom_media) is True
+    toujours_present = verifier and await run_in_threadpool(google_business.media_existe, identifiants, nom_media) is True
     return JSONResponse({"ok": True, "toujours_present": toujours_present})
 
 
@@ -7433,6 +7434,40 @@ def envoyer_media_sur_fiche(
     except Exception as erreur:
         return JSONResponse({"erreur": str(erreur)[:300]}, status_code=502)
     return JSONResponse({"ok": True, "nom_media": reponse.get("name", "")})
+
+
+@app.get("/nettoyage-medias", response_class=HTMLResponse)
+def page_nettoyage_medias(request: Request, db: Session = Depends(obtenir_session)):
+    """Chargement des photos et videos d'une selection de fiches, puis suppression groupee de celles qui sont cochees (voir nettoyage_medias.html)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    etiquettes = db.query(models.Etiquette).order_by(models.Etiquette.nom).all()
+    return templates.TemplateResponse(request, "nettoyage_medias.html", {"etiquettes": etiquettes, "clients_json": _clients_json_avec_etiquettes(db)})
+
+
+@app.get("/nettoyage-medias/fiche/{client_id}")
+def medias_complets_fiche(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Tous les medias (photos et videos) d'UNE fiche, jusqu'a 500, pour la page de suppression groupee."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    client = db.get(models.Client, client_id)
+    if not client or not client.account_id or not client.location_id:
+        return JSONResponse({"erreur": "Pas de fiche Google associée."}, status_code=404)
+    identifiants = google_oauth.obtenir_identifiants(db, client.compte_google_id)
+    if not identifiants:
+        return JSONResponse({"erreur": "Compte Google non valide (à reconnecter depuis Comptes Google)."}, status_code=400)
+    medias, jeton = [], None
+    try:
+        for _ in range(5):
+            page, jeton = google_business.lister_photos_page(identifiants, client.account_id, client.location_id, jeton, 100)
+            medias += [{"url": p["url"], "miniature": p["miniature"] or p["url"], "categorie": p["categorie"], "format": p.get("format", "PHOTO"),
+                        "nom_media": p["nom_media"], "date": _date_photo_affichee(p.get("date_publication", ""))} for p in page if p.get("nom_media")]
+            if not jeton:
+                break
+    except Exception as erreur:
+        return JSONResponse({"erreur": str(erreur)[:200]}, status_code=502)
+    return JSONResponse({"nom": client.nom, "medias": medias, "tronque": bool(jeton)})
 
 
 @app.get("/photos-fiches", response_class=HTMLResponse)

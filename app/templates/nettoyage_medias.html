@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% set page_actuelle = "nettoyage_medias" %}
+{% block titre %}Supprimer des médias en masse — Fiche Locale{% endblock %}
+{% block contenu %}
+<style>
+  .nm-barre { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
+  .nm-barre button { width: auto; }
+  .nm-barre .actif { outline: 2px solid var(--accent); font-weight: 700; }
+  .nm-suppr { background: var(--danger); color: #fff; }
+  .nm-fiche { margin: 0.8rem 0; }
+  .nm-fiche summary { cursor: pointer; font-weight: 700; }
+  .nm-fiche .nm-actions { display: inline-flex; gap: 0.4rem; margin-left: 0.6rem; }
+  .nm-fiche .nm-actions button { width: auto; padding: 0.2rem 0.6rem; font-size: 0.8rem; }
+  .nm-cle { position: absolute; bottom: 1.6rem; left: 0.3rem; background: #1a1a1a; color: #fff; font-size: 0.68rem; padding: 0.05rem 0.35rem; border-radius: 4px; }
+  .nm-fiche .carte-photo[hidden] { display: none; }
+  .nm-ko { color: var(--danger); }
+  .nm-resultat li { margin: 0.2rem 0; }
+</style>
+<div class="barre-titre">
+  <h1>Supprimer des photos et vidéos en masse</h1>
+</div>
+<p class="texte-discret">
+  Choisissez des fiches, chargez leurs photos et vidéos, filtrez (par exemple « Vidéos »), cochez, puis supprimez d'un coup.
+  <strong>La suppression retire vraiment les médias de la fiche Google publique et elle est irréversible.</strong>
+  Les photos de couverture, de profil et le logo ne sont jamais cochés par « Cocher tout » : il faut les cocher une à une.
+</p>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">1. Fiches</span>
+  {% if etiquettes %}
+  <div class="filtre-entreprises">
+    <span class="filtre-titre">Étiquettes :</span>
+    {% for etiquette in etiquettes %}
+    <label class="filtre-case"><input type="checkbox" class="case-filtre-etiquette" value="{{ etiquette.id }}"> {{ etiquette.nom }}</label>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bandeau-avertissement">Aucune étiquette pour l'instant : ajoutez-en depuis la page <a href="/etiquettes">Étiquettes</a>.</div>
+  {% endif %}
+  <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
+  <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
+  <p id="texte-compte-clients" class="texte-discret" hidden></p>
+  <div class="actions-avis">
+    <button type="button" class="bouton" id="bouton-charger" disabled>Charger les photos et vidéos</button>
+  </div>
+  <div id="progression" class="conteneur-progression-avis" hidden>
+    <div class="barre-progression-fond"><div id="barre-progression" class="barre-progression-remplissage"></div></div>
+    <span id="texte-progression" class="texte-progression-avis"></span>
+  </div>
+</div>
+
+<div id="zone-medias" hidden>
+  <div class="bloc-section">
+    <span class="choix-image-titre">2. Sélection</span>
+    <div class="nm-barre" id="filtres">
+      <button type="button" class="bouton-secondaire actif" data-filtre="tous">Tout</button>
+      <button type="button" class="bouton-secondaire" data-filtre="PHOTO">📷 Photos</button>
+      <button type="button" class="bouton-secondaire" data-filtre="VIDEO">🎬 Vidéos</button>
+      <span class="texte-discret" id="compte-media"></span>
+    </div>
+    <div class="nm-barre">
+      <button type="button" class="bouton-secondaire" id="cocher-tout">☑ Cocher tout (affichés)</button>
+      <button type="button" class="bouton-secondaire" id="decocher-tout">Tout décocher</button>
+      <button type="button" class="nm-suppr" id="supprimer" hidden>🗑 Supprimer la sélection</button>
+      <span class="texte-discret" id="etat-selection"></span>
+    </div>
+    <div id="progression-suppr" class="conteneur-progression-avis" hidden>
+      <div class="barre-progression-fond"><div id="barre-suppr" class="barre-progression-remplissage"></div></div>
+      <span id="texte-suppr" class="texte-progression-avis"></span>
+    </div>
+    <div id="compte-rendu" class="nm-resultat" hidden></div>
+  </div>
+  <div id="fiches"></div>
+</div>
+
+<script id="donnees-clients" type="application/json">{{ clients_json|safe }}</script>
+<script>
+(function () {
+  const clients = JSON.parse(document.getElementById("donnees-clients").textContent);
+  const $ = (id) => document.getElementById(id);
+  const CLES = ["COVER", "PROFILE", "LOGO"];
+  const casesEtiquettes = Array.from(document.querySelectorAll(".case-filtre-etiquette"));
+  const fiches = {};            // id -> {nom, medias, grille, resume, erreur}
+  let filtre = "tous", occupe = false;
+  const attendre = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  function el(balise, classe, texte) { const n = document.createElement(balise); if (classe) n.className = classe; if (texte != null) n.textContent = texte; return n; }
+  function echapper(texte) { const d = document.createElement("div"); d.textContent = texte == null ? "" : String(texte); return d.innerHTML; }
+  const pluriel = (n, mot) => n + " " + mot + (n > 1 ? "s" : "");
+
+  // ---- choix des fiches
+  function actualiserListe() {
+    const actives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
+    const conteneur = $("liste-clients-cibles");
+    if (!actives.length) { conteneur.innerHTML = ""; $("texte-aucun-client").hidden = false; $("texte-compte-clients").hidden = true; majBoutonCharger(); return; }
+    const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => actives.includes(id)));
+    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false;
+    $("texte-compte-clients").textContent = `${correspondants.length} fiche(s) — décochez celles à exclure.`;
+    conteneur.innerHTML = correspondants.map((c) => `<label class="etiquette-chip-case"><input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}</label>`).join("");
+    conteneur.querySelectorAll("input").forEach((c) => c.addEventListener("change", majBoutonCharger));
+    majBoutonCharger();
+  }
+  const idsChoisis = () => Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value);
+  function majBoutonCharger() { $("bouton-charger").disabled = occupe || idsChoisis().length === 0; }
+  casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+
+  // ---- affichage des médias d'une fiche
+  function titre(id) {
+    const f = fiches[id], nbV = f.medias.filter((m) => m.format === "VIDEO").length, nbP = f.medias.length - nbV;
+    f.resume.textContent = f.erreur ? `${f.nom} — ⚠ ${f.erreur}` : `${f.nom} — ${pluriel(nbP, "photo")} · ${pluriel(nbV, "vidéo")}${f.tronque ? " (500 premiers médias seulement)" : ""}`;
+    f.resume.classList.toggle("nm-ko", !!f.erreur);
+  }
+  function carte(id, m) {
+    const c = el("figure", "carte-photo carte-photo-en-ligne"); c.dataset.format = m.format === "VIDEO" ? "VIDEO" : "PHOTO"; c.dataset.nom = m.nom_media; c.dataset.fiche = id; c.dataset.cle = CLES.includes(m.categorie) ? "1" : "";
+    const img = el("img"); img.src = m.miniature; img.loading = "lazy"; img.alt = m.categorie || "Média"; img.addEventListener("error", () => { if (img.src !== m.url) img.src = m.url; });
+    c.append(img, el("figcaption", "", (m.format === "VIDEO" ? "🎬 " : "") + (m.categorie || "—") + (m.date ? " · " + m.date : "")));
+    const case_ = el("input", "case-selection-photo"); case_.type = "checkbox"; case_.title = "Sélectionner pour la suppression";
+    case_.addEventListener("change", () => { c.classList.toggle("selectionnee", case_.checked); majSelection(); });
+    c.append(case_);
+    if (c.dataset.cle) c.append(el("span", "nm-cle", "photo clé"));
+    return c;
+  }
+  function dessiner(id) {
+    const f = fiches[id]; f.grille.replaceChildren();
+    f.medias.forEach((m) => f.grille.append(carte(id, m)));
+    titre(id); appliquerFiltre();
+  }
+  function creerBloc(id, nom) {
+    const bloc = el("details", "bloc-repliable nm-fiche"); bloc.open = true;
+    const resume = el("summary"); const actions = el("span", "nm-actions");
+    const bCocher = el("button", "bouton-secondaire", "Cocher (affichés)"), bDecocher = el("button", "bouton-secondaire", "Décocher");
+    bCocher.type = bDecocher.type = "button";
+    bCocher.addEventListener("click", (e) => { e.preventDefault(); basculer(bloc, true); }); bDecocher.addEventListener("click", (e) => { e.preventDefault(); basculer(bloc, false); });
+    actions.append(bCocher, bDecocher); resume.append(el("span", "nm-titre"), actions);
+    const grille = el("div", "grille-photos"); bloc.append(resume, grille);
+    fiches[id] = { nom, medias: [], grille, resume: resume.firstChild, erreur: "", tronque: false };
+    $("fiches").append(bloc); return bloc;
+  }
+  function basculer(portee, etat) {
+    portee.querySelectorAll(".carte-photo:not([hidden])").forEach((c) => {
+      if (etat && c.dataset.cle) return;                         // photos clés : jamais cochées en bloc
+      const k = c.querySelector(".case-selection-photo"); k.checked = etat; c.classList.toggle("selectionnee", etat);
+    });
+    majSelection();
+  }
+  const cochees = () => Array.from(document.querySelectorAll("#fiches .case-selection-photo:checked")).map((k) => k.closest(".carte-photo"));
+  function majSelection() {
+    const cs = cochees(), nbFiches = new Set(cs.map((c) => c.dataset.fiche)).size;
+    $("supprimer").hidden = !cs.length;
+    $("supprimer").textContent = `🗑 Supprimer la sélection (${cs.length})`;
+    $("etat-selection").textContent = cs.length ? `${pluriel(cs.length, "média")} sélectionné${cs.length > 1 ? "s" : ""} sur ${pluriel(nbFiches, "fiche")}` : "";
+  }
+  function appliquerFiltre() {
+    let nbP = 0, nbV = 0, visibles = 0;
+    document.querySelectorAll("#fiches .carte-photo").forEach((c) => {
+      if (c.dataset.format === "VIDEO") nbV++; else nbP++;
+      const montrer = filtre === "tous" || c.dataset.format === filtre; c.hidden = !montrer; if (montrer) visibles++;
+    });
+    $("compte-media").textContent = `${pluriel(nbP, "photo")} · ${pluriel(nbV, "vidéo")} chargées sur ${pluriel(Object.keys(fiches).length, "fiche")} (${pluriel(visibles, "affichée")})`;
+  }
+  document.querySelectorAll("#filtres button").forEach((b) => b.addEventListener("click", () => {
+    filtre = b.dataset.filtre; document.querySelectorAll("#filtres button").forEach((x) => x.classList.toggle("actif", x === b)); appliquerFiltre();
+  }));
+  $("cocher-tout").addEventListener("click", () => basculer($("fiches"), true));
+  $("decocher-tout").addEventListener("click", () => basculer($("fiches"), false));
+
+  // ---- chargement (3 fiches en parallèle)
+  async function lireFiche(id) {
+    const r = await fetch(`/nettoyage-medias/fiche/${id}`); const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.erreur || "Erreur " + r.status);
+    return d;
+  }
+  $("bouton-charger").addEventListener("click", async () => {
+    const ids = idsChoisis(); if (!ids.length || occupe) return;
+    occupe = true; majBoutonCharger(); $("fiches").replaceChildren(); Object.keys(fiches).forEach((k) => delete fiches[k]); $("compte-rendu").hidden = true; majSelection();
+    $("zone-medias").hidden = false; $("progression").hidden = false;
+    let curseur = 0, faits = 0;
+    ids.forEach((id) => creerBloc(id, (clients.find((c) => String(c.id) === id) || {}).nom || id));
+    async function suivant() {
+      while (curseur < ids.length) {
+        const id = ids[curseur++];
+        try { const d = await lireFiche(id); fiches[id].nom = d.nom; fiches[id].medias = d.medias; fiches[id].tronque = d.tronque; }
+        catch (e) { fiches[id].erreur = e.message; }
+        dessiner(id); faits++;
+        $("barre-progression").style.width = Math.round((faits / ids.length) * 100) + "%"; $("texte-progression").textContent = `${faits} / ${ids.length} fiches lues`;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, ids.length) }, suivant));
+    $("progression").hidden = true; occupe = false; majBoutonCharger(); appliquerFiltre();
+  });
+
+  // ---- suppression groupée, puis contrôle auprès de Google fiche par fiche
+  $("supprimer").addEventListener("click", async () => {
+    const cs = cochees(); if (!cs.length || occupe) return;
+    const ids = Array.from(new Set(cs.map((c) => c.dataset.fiche)));
+    if (!confirm(`Supprimer définitivement ${pluriel(cs.length, "média")} sur ${pluriel(ids.length, "fiche")} de Google ? Cette action est irréversible.`)) return;
+    if (cs.length > 10 && (prompt(`${cs.length} médias vont être supprimés. Tapez SUPPRIMER pour confirmer.`) || "").trim().toUpperCase() !== "SUPPRIMER") return;
+    occupe = true; majBoutonCharger(); $("supprimer").disabled = true; $("compte-rendu").hidden = true; $("progression-suppr").hidden = false;
+    const taches = cs.map((c) => ({ id: c.dataset.fiche, nom: c.dataset.nom })), echecs = []; let curseur = 0, faits = 0;
+    async function suivant() {
+      while (curseur < taches.length) {
+        const t = taches[curseur++];
+        try {
+          const r = await fetch(`/clients/${t.id}/photos_google/supprimer`, { method: "POST", body: new URLSearchParams({ nom_media: t.nom, verifier: "0" }) });
+          const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.erreur || "Erreur " + r.status);
+        } catch (e) { echecs.push({ ...t, raison: e.message }); }
+        faits++; $("barre-suppr").style.width = Math.round((faits / taches.length) * 100) + "%"; $("texte-suppr").textContent = `${faits} / ${taches.length} suppressions envoyées`;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, taches.length) }, suivant));
+    $("texte-suppr").textContent = "Contrôle auprès de Google…"; await attendre(3000);
+    const restants = [], nonVerifies = [];
+    for (const id of ids) {
+      try {
+        const d = await lireFiche(id), presents = new Set(d.medias.map((m) => m.nom_media));
+        const encore = taches.filter((t) => t.id === id && presents.has(t.nom) && !echecs.some((e) => e.nom === t.nom)).length;
+        if (encore) restants.push({ id, nb: encore });
+        Object.assign(fiches[id], { medias: d.medias, tronque: d.tronque, erreur: "" }); dessiner(id);
+      } catch (e) { nonVerifies.push(fiches[id].nom); }
+    }
+    const nbRestants = restants.reduce((s, r) => s + r.nb, 0), ok = taches.length - echecs.length - nbRestants;
+    $("progression-suppr").hidden = true; occupe = false; majBoutonCharger(); $("supprimer").disabled = false; majSelection();
+    let html = `<p><strong>${pluriel(Math.max(0, ok), "média")} supprimé${ok > 1 ? "s" : ""}</strong>${nonVerifies.length ? " (non contrôlés pour certaines fiches)" : ""}.</p>`;
+    const lignes = [];
+    if (nbRestants) lignes.push(`<li class="nm-ko">${pluriel(nbRestants, "média")} : Google a accepté la suppression mais les affiche encore (fiches : ${restants.map((r) => echapper(fiches[r.id].nom) + " (" + r.nb + ")").join(", ")}). Réactualisez dans quelques minutes ; s'ils reviennent, ils ne peuvent pas être retirés d'ici.</li>`);
+    echecs.forEach((e) => lignes.push(`<li class="nm-ko"><strong>${echapper((fiches[e.id] || {}).nom || e.id)}</strong> : ${echapper(e.raison)}</li>`));
+    if (nonVerifies.length) lignes.push(`<li class="nm-ko">Contrôle impossible pour : ${nonVerifies.map(echapper).join(", ")}.</li>`);
+    $("compte-rendu").innerHTML = html + (lignes.length ? "<ul>" + lignes.join("") + "</ul>" : ""); $("compte-rendu").hidden = false;
+  });
+  majBoutonCharger();
+})();
+</script>
+{% endblock %}
