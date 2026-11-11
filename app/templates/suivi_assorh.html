@@ -66,6 +66,7 @@ form { display: grid; gap: 10px; margin-top: 10px; }
 textarea { width: 100%; min-height: 96px; resize: vertical; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 textarea:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ligne-envoi { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.choix { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .ligne-envoi label { font-size: .85rem; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 select { font: inherit; font-size: .85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
 button { font: inherit; font-weight: 700; color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
@@ -130,19 +131,26 @@ footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--lin
 
   <section class="generale" id="remarques" aria-labelledby="t-remarques">
     <h2 id="t-remarques">Remarques générales</h2>
-    <p>Pour tout ce qui ne concerne pas une journée en particulier.</p>
+    <p>Écris ta remarque ici, puis choisis si elle est générale ou si elle concerne une journée en particulier.</p>
     {% if generales %}
     <div class="remarques">
       {% for r in generales %}<div class="remarque"><span class="qui">{{ r.auteur }} · {{ r.quand }}</span><p>{{ r.texte }}</p></div>{% endfor %}
     </div>
     {% endif %}
     <form method="post" action="/assorh/{{ jeton }}/remarque">
-      <input type="hidden" name="jour" value="">
-      <textarea id="texte-general" name="texte" maxlength="3000" required aria-label="Ta remarque générale" placeholder="Ta remarque ou ta question"></textarea>
+      <textarea id="texte-general" name="texte" maxlength="3000" required aria-label="Ta remarque" placeholder="Ta remarque ou ta question"></textarea>
       <div class="ligne-envoi">
-        <label for="auteur-general">Écrit par
-          <select id="auteur-general" name="auteur">{% for a in auteurs %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
-        </label>
+        <div class="choix">
+          <label for="jour-general">Concerne
+            <select id="jour-general" name="jour">
+              <option value="">Remarque générale</option>
+              {% for j in jours %}<option value="{{ j.date }}">{{ j.libelle }}</option>{% endfor %}
+            </select>
+          </label>
+          <label for="auteur-general">Écrit par
+            <select id="auteur-general" name="auteur">{% for a in auteurs %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+          </label>
+        </div>
         <button type="submit">Envoyer</button>
       </div>
     </form>
