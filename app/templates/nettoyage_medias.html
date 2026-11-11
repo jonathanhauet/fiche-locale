@@ -40,6 +40,12 @@
   <div id="liste-clients-cibles" class="liste-clients-cibles"></div>
   <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
   <p id="texte-compte-clients" class="texte-discret" hidden></p>
+  <div class="nm-barre" id="actions-cases" hidden>
+    <input type="search" id="recherche-fiche" placeholder="Rechercher une fiche (ex. Biarritz)…" style="max-width:20rem">
+    <button type="button" class="bouton-secondaire" id="tout-cocher">☑ Tout cocher</button>
+    <button type="button" class="bouton-secondaire" id="tout-decocher">☐ Tout décocher</button>
+    <span class="texte-discret">Les boutons agissent sur les fiches affichées (utile avec la recherche).</span>
+  </div>
   <div class="actions-avis">
     <button type="button" class="bouton" id="bouton-charger" disabled>Charger les photos et vidéos</button>
   </div>
@@ -91,9 +97,9 @@
   function actualiserListe() {
     const actives = casesEtiquettes.filter((c) => c.checked).map((c) => Number(c.value));
     const conteneur = $("liste-clients-cibles");
-    if (!actives.length) { conteneur.innerHTML = ""; $("texte-aucun-client").hidden = false; $("texte-compte-clients").hidden = true; majBoutonCharger(); return; }
+    if (!actives.length) { conteneur.innerHTML = ""; $("texte-aucun-client").hidden = false; $("texte-compte-clients").hidden = true; $("actions-cases").hidden = true; majBoutonCharger(); return; }
     const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => actives.includes(id)));
-    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false;
+    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false; $("actions-cases").hidden = false; $("recherche-fiche").value = "";
     $("texte-compte-clients").textContent = `${correspondants.length} fiche(s) — décochez celles à exclure.`;
     conteneur.innerHTML = correspondants.map((c) => `<label class="etiquette-chip-case"><input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}</label>`).join("");
     conteneur.querySelectorAll("input").forEach((c) => c.addEventListener("change", majBoutonCharger));
@@ -102,6 +108,14 @@
   const idsChoisis = () => Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value);
   function majBoutonCharger() { $("bouton-charger").disabled = occupe || idsChoisis().length === 0; }
   casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
+  const chipsAffichees = () => Array.from(document.querySelectorAll("#liste-clients-cibles label")).filter((l) => l.style.display !== "none");
+  function cocherFiches(etat) { chipsAffichees().forEach((l) => { l.querySelector("input").checked = etat; }); majBoutonCharger(); }
+  $("tout-cocher").addEventListener("click", () => cocherFiches(true));
+  $("tout-decocher").addEventListener("click", () => cocherFiches(false));
+  $("recherche-fiche").addEventListener("input", (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll("#liste-clients-cibles label").forEach((l) => { l.style.display = !q || l.textContent.toLowerCase().includes(q) ? "" : "none"; });
+  });
 
   // ---- affichage des médias d'une fiche
   function titre(id) {

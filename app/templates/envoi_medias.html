@@ -51,8 +51,9 @@
   <p id="texte-aucun-client" class="texte-vide">Sélectionnez au moins une étiquette pour voir les fiches correspondantes.</p>
   <p id="texte-compte-clients" class="texte-discret" hidden></p>
   <div class="actions-avis" id="actions-cases" hidden>
-    <button type="button" class="bouton-secondaire" id="tout-cocher">Tout cocher</button>
-    <button type="button" class="bouton-secondaire" id="tout-decocher">Tout décocher</button>
+    <input type="search" id="recherche-fiche" placeholder="Rechercher une fiche (ex. Biarritz)…" style="max-width:20rem">
+    <button type="button" class="bouton-secondaire" id="tout-cocher">☑ Tout cocher</button>
+    <button type="button" class="bouton-secondaire" id="tout-decocher">☐ Tout décocher</button>
   </div>
 </div>
 
@@ -90,7 +91,7 @@
     const conteneur = $("liste-clients-cibles");
     if (!actives.length) { conteneur.innerHTML = ""; $("texte-aucun-client").hidden = false; $("texte-compte-clients").hidden = true; $("actions-cases").hidden = true; majResume(); return; }
     const correspondants = clients.filter((c) => c.etiquette_ids.some((id) => actives.includes(id)));
-    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false; $("actions-cases").hidden = false;
+    $("texte-aucun-client").hidden = true; $("texte-compte-clients").hidden = false; $("actions-cases").hidden = false; $("recherche-fiche").value = "";
     $("texte-compte-clients").textContent = `${correspondants.length} fiche(s) — décochez celles à exclure.`;
     conteneur.innerHTML = correspondants.map((c) => `<label class="etiquette-chip-case"><input type="checkbox" name="client_ids" value="${c.id}" checked> ${echapper(c.nom)}</label>`).join("");
     conteneur.querySelectorAll("input").forEach((c) => c.addEventListener("change", majResume));
@@ -98,7 +99,11 @@
   }
   const idsChoisis = () => Array.from(document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]:checked')).map((c) => c.value);
   casesEtiquettes.forEach((c) => c.addEventListener("change", actualiserListe));
-  function cocher(etat) { document.querySelectorAll('#liste-clients-cibles input[name="client_ids"]').forEach((c) => { c.checked = etat; }); majResume(); }
+  function cocher(etat) { document.querySelectorAll("#liste-clients-cibles label").forEach((l) => { if (l.style.display !== "none") l.querySelector("input").checked = etat; }); majResume(); }
+  $("recherche-fiche").addEventListener("input", (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll("#liste-clients-cibles label").forEach((l) => { l.style.display = !q || l.textContent.toLowerCase().includes(q) ? "" : "none"; });
+  });
   $("tout-cocher").addEventListener("click", () => cocher(true));
   $("tout-decocher").addEventListener("click", () => cocher(false));
 
