@@ -14,6 +14,7 @@
   --bg: #F4F7F6; --surface: #FFFFFF; --ink: #15302A; --muted: #55706A; --line: #D6E2DE;
   --accent: #0F6E64; --accent-ink: #FFFFFF; --accent-soft: #E1F0EC;
   --note-bg: #FFF7E6; --note-ink: #4A3200; --note-line: #EBD3A0;
+  --logo-bg: transparent;
   --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --f-body: "Manrope", "Segoe UI", system-ui, sans-serif;
   color-scheme: light;
@@ -23,6 +24,7 @@
     --bg: #0E1715; --surface: #15211E; --ink: #E2EEEA; --muted: #9DB5AE; --line: #29403A;
     --accent: #4CC9B6; --accent-ink: #082420; --accent-soft: #173A34;
     --note-bg: #2C2310; --note-ink: #F5DFAE; --note-line: #5C4A1E;
+    --logo-bg: #F4F7F6;                      /* le logo a un texte bleu marine : il garde un fond clair en mode sombre */
     color-scheme: dark;
   }
 }
@@ -41,6 +43,7 @@ h1 { font-size: clamp(2rem, 6vw, 2.75rem); letter-spacing: -0.01em; }
 h2 { font-size: 1.3rem; }
 .eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
 header { display: grid; gap: 10px; }
+.logo { display: block; justify-self: start; width: min(240px, 70vw); height: auto; max-width: 100%; background: var(--logo-bg); border-radius: 10px; padding: 8px 10px; margin: 0 0 6px -10px; }
 header p { margin: 0; color: var(--muted); max-width: 60ch; }
 .maj { font-size: .875rem; color: var(--muted); }
 section { display: grid; gap: 16px; min-width: 0; }
@@ -83,8 +86,9 @@ footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--lin
 <body>
 <div class="wrap">
   <header>
-    <span class="eyebrow">AssoRH · lancement digital</span>
-    <h1>Suivi AssoRH</h1>
+    <img class="logo" src="/static/assorh/logo-assorh.png" width="560" height="116" alt="AssoRH">
+    <span class="eyebrow">Lancement digital</span>
+    <h1>Journal de bord</h1>
     <p>Franck, voici ce que j'ai fait pour AssoRH, jour par jour. Tu peux laisser une remarque ou une question sous chaque journée. Jonathan</p>
     {% if maj %}<span class="maj">Dernière mise à jour : {{ maj }}</span>{% endif %}
   </header>
