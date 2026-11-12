@@ -339,6 +339,13 @@ MOTEURS_IA = {"chatgpt": "ChatGPT", "gemini": "Gemini", "mode_ia": "Mode IA de G
 URL_MODE_IA = "https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced"
 NB_RELEVES_IA = 6
 NOMS_DATAFORSEO = {"FR": "France", "ES": "Spain", "IT": "Italy"}
+# Une IA ne comprend pas toujours une requete de mots-cles (« rachat or Lens ») : on pose aussi la question comme un client la formulerait.
+PHRASES_IA = {"FR": ["entreprise de rachat d'or à {ville}"], "ES": ["empresa de compra de oro en {ville}"], "IT": ["azienda che compra oro a {ville}"]}
+
+
+def requetes_ia(pays: str, ville: str) -> list:
+    """Requetes posees aux IA : les requetes cles + ville, puis la question en langage naturel."""
+    return [f"{mot} {ville}" for mot in requetes_pays(pays)] + [p.format(ville=ville) for p in PHRASES_IA.get(pays, PHRASES_IA["FR"])]
 
 
 def interroger_mode_ia(requete: str, pays: str) -> tuple:
@@ -414,8 +421,7 @@ def releve_ia_agence(donnees: dict, nom_client: str, moteurs: list, interrogateu
     if not ville:
         releve["erreur"] = "Ville introuvable : fiche pas encore lue."
         return releve
-    for mot in requetes_pays(pays):
-        requete = f"{mot} {ville}"
+    for requete in requetes_ia(pays, ville):
         for moteur in moteurs:
             cle = f"{moteur}|{requete}"
             try:
