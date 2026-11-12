@@ -9,7 +9,7 @@ cadre. Tous les reglages sont facultatifs : sans rien toucher, on obtient le sty
 import math
 import random
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageStat
 
 from . import carrousel_visuel as cv
 
@@ -302,6 +302,38 @@ def _pastille(largeur, hauteur, texte, fond, accent_texte):
     return tampon.rotate(9, resample=Image.BICUBIC, expand=True)
 
 
+def _sans_bords_sombres(photo: Image.Image, part_max: float = 0.08) -> Image.Image:
+    """
+    Rogne les liserés noirs d'une photo (cadre de capture, bande d'une retouche ou d'une stabilisation) avant son recadrage : sinon ils réapparaissent sur le visuel fini.
+    Une ligne ou colonne de bord n'est retirée que si elle est vraiment noire d'un bout à l'autre ; on ne retire jamais plus de `part_max` de chaque côté.
+    """
+    gris = photo.convert("L")
+    largeur, hauteur = gris.size
+    if ImageStat.Stat(gris.resize((64, 64))).mean[0] < 35:
+        return photo                                                      # photo entierement sombre (nuit, studio) : rien a rogner
+
+    def noire(boite) -> bool:
+        bande = gris.crop(boite)
+        return bande.getextrema()[1] <= 40 and ImageStat.Stat(bande).mean[0] <= 22
+
+    haut, bas, gauche, droite = 0, hauteur, 0, largeur
+    for _ in range(int(hauteur * part_max)):
+        if haut < bas - 1 and noire((gauche, haut, droite, haut + 1)): haut += 1
+        else: break
+    for _ in range(int(hauteur * part_max)):
+        if bas - 1 > haut and noire((gauche, bas - 1, droite, bas)): bas -= 1
+        else: break
+    for _ in range(int(largeur * part_max)):
+        if gauche < droite - 1 and noire((gauche, haut, gauche + 1, bas)): gauche += 1
+        else: break
+    for _ in range(int(largeur * part_max)):
+        if droite - 1 > gauche and noire((droite - 1, haut, droite, bas)): droite -= 1
+        else: break
+    if (haut, bas, gauche, droite) == (0, hauteur, 0, largeur) or bas - haut < hauteur * 0.5 or droite - gauche < largeur * 0.5:
+        return photo
+    return photo.crop((gauche, haut, droite, bas))
+
+
 def dessiner(
     photo: Image.Image, titre: str, sous_titre: str, couleur: str, logo: Image.Image = None, secondaires: list = None,
     reglages: dict = None, nom_client: str = "", numero: int = None, total: int = 1,
@@ -334,7 +366,7 @@ def dessiner(
     haut_min = 170 + (250 if (a_pastille or a_picto) else 0)
     bas_max = hauteur - 110 - reserve_bas
 
-    image = cv._recadrer(photo, largeur, hauteur)
+    image = cv._recadrer(_sans_bords_sombres(photo), largeur, hauteur)
 
     def voile(masque_opacite_haut, masque_opacite_bas):
         """Degrade du cote du texte (bas ou haut), ou uniforme au centre."""
