@@ -122,6 +122,7 @@ from . import (
     google_sheets,
     reporting_mensuel,
     suivi_goldunion,
+    baisse_google,
     suivi_ads,
     suivi_assorh,
     reporting_sheet,
@@ -766,6 +767,8 @@ planificateur.add_job(_purge_archive_quotidienne, "cron", hour=4, minute=10, tim
 # Suivi GoldUnion : fiches et avis relus chaque nuit, positions naturelles (payantes) une fois par mois.
 planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal), "cron", hour=5, minute=30, timezone="Europe/Brussels", id="suivi_goldunion_fiches")
 planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal, seulement_positions=True), "cron", day=1, hour=6, minute=0, timezone="Europe/Brussels", id="suivi_goldunion_positions")
+# Baisse Google : statistiques des fiches et etat des fiches (gratuits) relus chaque lundi ; les releves payants (rangs, IA, annuaires) restent lances a la main.
+planificateur.add_job(lambda: baisse_google.releve_hebdomadaire(SessionLocal), "cron", day_of_week="mon", hour=7, minute=0, timezone="Europe/Brussels", id="suivi_baisse_google")
 planificateur.start()
 
 
@@ -8155,6 +8158,108 @@ async def lire_pubs_suivi(request: Request, db: Session = Depends(obtenir_sessio
     db.commit()
     t = resultat["total"]
     return RedirectResponse("/suivi-goldunion/pubs?message=" + quote_plus(f"{t['campagnes']} campagne(s) lue(s), dont {t['actives']} active(s)."), status_code=303)
+
+
+# --- Baisse de visibilite Google (France, Espagne, Italie) : statistiques, fiches, rangs, reponses des IA, annuaires -------------------------------
+
+
+def _euros_centimes(centimes: float) -> str:
+    return f"{centimes / 100:.2f}".replace(".", ",")
+
+
+@app.get("/suivi-goldunion/baisse", response_class=HTMLResponse)
+def page_baisse_google(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    parametre = suivi_goldunion.lire_parametre(db)
+    entrees = baisse_google.lignes_baisse(db, parametre)
+    synthese = baisse_google.synthese_stats(entrees)
+    cout = baisse_google.COUT_PAR_REQUETE_CENTIMES
+    return templates.TemplateResponse(request, "suivi_baisse_google.html", {
+        "page_actuelle": "suivi_goldunion", "entrees": entrees, "bg": baisse_google, "synthese": synthese,
+        "touchees": {s["code"]: baisse_google.agences_touchees(entrees, s["code"]) for s in synthese},
+        "courbes": {s["code"]: {"nom": s["nom"], "points": [[x["debut"], x["vues"]] for x in s["serie"]], "debut": s["debut"]["date"] if s["debut"] else ""} for s in synthese if s["serie"]},
+        "fiches": baisse_google.synthese_fiches(entrees), "rangs": baisse_google.synthese_rang(entrees), "ia": baisse_google.synthese_ia(entrees), "annuaires": baisse_google.synthese_annuaires(entrees),
+        "etat": baisse_google.etat(), "nb_echantillon": sum(1 for e in entrees if e["echantillon"]), "nb_agences": len(entrees), "mode_ia_possible": rank_tracking.identifiants_configures(),
+        "cout_rang": _euros_centimes(sum(len(baisse_google.requetes_pays(e["pays"])) for e in entrees) * cout["rang"]),
+        "cout_annuaires": _euros_centimes(sum(sum(1 for a in baisse_google.annuaires_pays(e["pays"]) if a["id"] not in baisse_google.ANNUAIRES_MARQUE) for e in entrees) * cout["annuaires"]),
+        "heure_locale": heure_locale, "message": request.query_params.get("message", ""),
+    })
+
+
+@app.post("/suivi-goldunion/baisse/lancer")
+async def lancer_baisse_google(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    tache = str(formulaire.get("tache", ""))
+    moteurs = [m for m in formulaire.getlist("moteur") if m in baisse_google.MOTEURS_IA] or ["chatgpt", "gemini"]
+    cible = int(formulaire["client_id"]) if str(formulaire.get("client_id", "")).isdigit() else None
+    demarre = baisse_google.lancer(SessionLocal, tache, {"moteurs": moteurs, "client_id": cible})
+    message = f"{baisse_google.LIBELLES_TACHES.get(tache, tache)} : relevé lancé." if demarre else "Un relevé est déjà en cours (ou tâche inconnue)."
+    return RedirectResponse("/suivi-goldunion/baisse?message=" + quote_plus(message), status_code=303)
+
+
+@app.get("/suivi-goldunion/baisse/etat")
+def etat_baisse_google(request: Request):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Non connecte."}, status_code=401)
+    return JSONResponse(baisse_google.etat())
+
+
+@app.post("/suivi-goldunion/baisse/echantillon")
+async def echantillon_baisse_google(request: Request, db: Session = Depends(obtenir_session)):
+    """Agences interrogees dans les IA : celles cochees, ou un echantillon automatique (5 par pays)."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    entrees = baisse_google.lignes_baisse(db, suivi_goldunion.lire_parametre(db))
+    connues = {e["client"].id for e in entrees}
+    if formulaire.get("action") == "auto":
+        par_pays = str(formulaire.get("par_pays") or "5")
+        ids = baisse_google.choisir_echantillon(entrees, max(1, min(30, int(par_pays) if par_pays.isdigit() else 5)))
+    else:
+        ids = [int(i) for i in formulaire.getlist("agence") if str(i).isdigit() and int(i) in connues]
+    baisse_google.fixer_echantillon(SessionLocal, ids)
+    return RedirectResponse("/suivi-goldunion/baisse?message=" + quote_plus(f"Échantillon IA : {len(ids)} agence(s).") + "#ia", status_code=303)
+
+
+@app.post("/suivi-goldunion/baisse/annuaire")
+async def annuaire_manuel_baisse_google(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    client_id = int(formulaire["client_id"]) if str(formulaire.get("client_id", "")).isdigit() else 0
+    suivies = {c.id for c in suivi_goldunion.clients_suivis(db, suivi_goldunion.lire_parametre(db))}
+    ok = client_id in suivies and baisse_google.enregistrer_manuel_annuaire(SessionLocal, client_id, str(formulaire.get("annuaire", "")), str(formulaire.get("statut", "")), str(formulaire.get("url", "")), str(formulaire.get("note", "")))
+    return RedirectResponse("/suivi-goldunion/baisse?message=" + quote_plus("Annuaire enregistré." if ok else "Saisie refusée.") + "#annuaires", status_code=303)
+
+
+@app.post("/suivi-goldunion/baisse/ia-manuel")
+async def ia_manuelle_baisse_google(request: Request, db: Session = Depends(obtenir_session)):
+    """Observation faite a la main (typiquement le Mode IA de Google, sans interface officielle) : l'agence est-elle citee ?"""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    formulaire = await request.form()
+    client_id = int(formulaire["client_id"]) if str(formulaire.get("client_id", "")).isdigit() else 0
+    suivies = {c.id for c in suivi_goldunion.clients_suivis(db, suivi_goldunion.lire_parametre(db))}
+    requete = str(formulaire.get("requete", "")).strip()[:120]
+    ok = client_id in suivies and requete and baisse_google.enregistrer_manuel_ia(SessionLocal, client_id, requete, str(formulaire.get("cite")) == "1", str(formulaire.get("moteur") or "mode_ia"))
+    return RedirectResponse("/suivi-goldunion/baisse?message=" + quote_plus("Observation enregistrée." if ok else "Saisie refusée.") + "#ia", status_code=303)
+
+
+@app.get("/suivi-goldunion/baisse/export.xlsx")
+def export_baisse_google(request: Request, db: Session = Depends(obtenir_session)):
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    octets = baisse_google.generer_excel(baisse_google.lignes_baisse(db, suivi_goldunion.lire_parametre(db)))
+    return Response(octets, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="baisse-google-{date.today().isoformat()}.xlsx"'})
 
 
 @app.post("/suivi-goldunion/mot-de-passe")

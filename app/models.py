@@ -1433,6 +1433,26 @@ class SuiviAgence(Base):
     client = relationship("Client", back_populates="suivi_agence")
 
 
+class SuiviBaisse(Base):
+    """Analyse de la baisse de visibilite Google d'une agence (voir baisse_google.py) : statistiques par semaine, etat et modifications de la fiche, rangs sur les requetes cles, presence dans les reponses IA, annuaires. Tout en JSON."""
+
+    __tablename__ = "suivi_baisse"
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), unique=True, nullable=False)
+    stats_json = Column(Text, default="")
+    stats_maj_le = Column(DateTime, nullable=True)
+    fiche_json = Column(Text, default="")
+    fiche_maj_le = Column(DateTime, nullable=True)
+    rang_json = Column(Text, default="")
+    rang_maj_le = Column(DateTime, nullable=True)
+    ia_json = Column(Text, default="")
+    ia_maj_le = Column(DateTime, nullable=True)
+    annuaires_json = Column(Text, default="")
+    annuaires_maj_le = Column(DateTime, nullable=True)
+    echantillon_ia = Column(Boolean, default=False)            # agence retenue pour le releve de presence dans les reponses IA
+
+
 class ParametreSuiviGoldUnion(Base):
     """Reglages du suivi GoldUnion : lien secret de la page des responsables, agences suivies, groupe Google attendu, mots-cles. Une seule ligne."""
 

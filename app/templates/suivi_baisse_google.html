@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% set page_actuelle = "suivi_goldunion" %}
+{% block titre %}Baisse Google — Suivi GoldUnion{% endblock %}
+{% block tete_supplementaire %}
+<style>
+  .bg-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0 1rem; }
+  .bg-nav a { border: 1px solid var(--carte-bordure); border-radius: 999px; padding: 0.3rem 0.9rem; text-decoration: none; color: var(--texte); background: var(--carte); font-weight: 600; font-size: 0.9rem; }
+  .bg-nav a:hover { border-color: var(--accent); }
+  .bg-releves { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.7rem; margin: 0.6rem 0; }
+  .bg-releve { border: 1px solid var(--carte-bordure); border-radius: 10px; padding: 0.7rem 0.8rem; background: var(--carte); color: var(--texte); }
+  .bg-releve strong { display: block; margin-bottom: 0.2rem; }
+  .bg-releve p { margin: 0.15rem 0 0.5rem; font-size: 0.84rem; }
+  .bg-releve label { display: inline-flex; flex-direction: row; align-items: center; gap: 0.3rem; width: auto; margin: 0 0.6rem 0.4rem 0; font-size: 0.85rem; }
+  .bg-releve input[type="checkbox"] { width: auto; margin: 0; }
+  .bg-etat { border: 1px solid var(--carte-bordure); background: var(--carte); color: var(--texte); border-radius: 8px; padding: 0.5rem 0.8rem; margin: 0.5rem 0; font-size: 0.9rem; }
+  .bg-pays { border: 1px solid var(--carte-bordure); border-radius: 12px; padding: 0.9rem 1rem; margin: 0.8rem 0; background: var(--carte); color: var(--texte); }
+  .bg-pays h3 { margin: 0 0 0.3rem; }
+  .bg-courbe { width: 100%; height: 150px; display: block; margin: 0.5rem 0; }
+  .bg-bas { color: var(--danger); font-weight: 700; }
+  .bg-haut { color: #1a7f45; font-weight: 700; }
+  .bg-pastille { display: inline-block; font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.55rem; border-radius: 999px; white-space: nowrap; }
+  .bg-pastille.ok { background: rgba(34, 160, 90, 0.16); color: #1a7f45; }
+  .bg-pastille.attention { background: rgba(217, 138, 6, 0.16); color: #8a5300; }
+  .bg-pastille.grave { background: rgba(220, 38, 38, 0.13); color: #b01919; }
+  .bg-pastille.neutre { background: rgba(107, 114, 128, 0.16); color: #3f4650; }
+  .bg-corriger summary { cursor: pointer; font-size: 0.8rem; color: var(--accent); }
+  .bg-corriger form { display: grid; gap: 0.3rem; margin-top: 0.3rem; min-width: 210px; }
+  .bg-corriger input, .bg-corriger select { font-size: 0.82rem; padding: 0.2rem 0.35rem; }
+  .bg-liste { margin: 0; padding-left: 1.1rem; font-size: 0.84rem; }
+  .bg-note { font-size: 0.84rem; color: var(--texte-discret, var(--texte)); }
+  .bg-echantillon { max-height: 340px; overflow: auto; border: 1px solid var(--carte-bordure); border-radius: 8px; padding: 0.4rem 0.7rem; margin: 0.4rem 0; }
+  .bg-echantillon label { display: flex; flex-direction: row; align-items: center; gap: 0.4rem; width: auto; margin: 0.1rem 0; font-size: 0.86rem; }
+  .bg-echantillon input[type="checkbox"] { width: auto; margin: 0; }
+</style>
+{% endblock %}
+{% macro pct(v) %}{% if v is none %}<span class="texte-discret">—</span>{% else %}<span class="{{ 'bg-bas' if v < 0 else 'bg-haut' if v > 0 else '' }}">{{ ('%+.1f'|format(v)).replace('.', ',') }} %</span>{% endif %}{% endmacro %}
+{% block contenu %}
+<p class="fil-retour"><a href="/suivi-goldunion">&larr; Retour au suivi GoldUnion</a></p>
+<div class="barre-titre"><h1>Baisse de visibilité Google</h1><a class="bouton-secondaire" href="/suivi-goldunion/baisse/export.xlsx">Exporter en Excel</a></div>
+<p class="texte-discret">
+  Fiches établissement de France, d'Espagne et d'Italie. Les chiffres sont lus chez Google puis gardés : cette page n'appelle rien quand elle s'ouvre. Chaque relevé se lance ci-dessous
+  ({{ nb_agences }} agences suivies). Les statistiques et l'état des fiches sont aussi relus chaque lundi matin.
+</p>
+{% if message %}<div class="bandeau-info">{{ message }}</div>{% endif %}
+
+<nav class="bg-nav" aria-label="Sections">
+  <a href="#releves">Lancer un relevé</a><a href="#constat">1. Constat par pays</a><a href="#touchees">1. Agences touchées</a><a href="#fiches">2. État des fiches</a><a href="#rangs">2. Rang sur les requêtes</a><a href="#ia">3. Réponses des IA</a><a href="#annuaires">4. Annuaires</a>
+</nav>
+
+<div class="choix-image-bloc" id="releves">
+  <span class="choix-image-titre">Lancer un relevé</span>
+  <div class="bg-etat" id="bg-etat" {{ '' if etat.en_cours or etat.message else 'hidden' }}>
+    <span id="bg-etat-texte">{{ etat.message }}</span>
+    <ul class="bg-liste" id="bg-etat-erreurs">{% for e in etat.erreurs[:6] %}<li>{{ e }}</li>{% endfor %}</ul>
+  </div>
+  <div class="bg-releves">
+    <form class="bg-releve" method="post" action="/suivi-goldunion/baisse/lancer">
+      <input type="hidden" name="tache" value="stats">
+      <strong>1. Statistiques des fiches</strong>
+      <p>Vues, clics vers le site, appels et itinéraires, semaine par semaine sur 17 mois. Gratuit.</p>
+      <button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Relire les statistiques</button>
+    </form>
+    <form class="bg-releve" method="post" action="/suivi-goldunion/baisse/lancer">
+      <input type="hidden" name="tache" value="fiches">
+      <strong>2. État et modifications des fiches</strong>
+      <p>Suspension, validation, modifications faites par Google, changements de nom, adresse, téléphone, horaires… Gratuit.</p>
+      <button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Relire les fiches</button>
+    </form>
+    <form class="bg-releve" method="post" action="/suivi-goldunion/baisse/lancer" onsubmit="return confirm('Mesurer le rang de toutes les agences sur leurs requêtes clés ? Coût estimé : {{ cout_rang }} $.');">
+      <input type="hidden" name="tache" value="rang">
+      <strong>2. Rang sur « rachat or / compro oro / compra oro » + ville</strong>
+      <p>Rang dans Google Maps à l'adresse de l'agence. Chaque relevé s'ajoute au précédent. ≈ {{ cout_rang }} $.</p>
+      <button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Mesurer les rangs</button>
+    </form>
+    <form class="bg-releve" method="post" action="/suivi-goldunion/baisse/lancer" onsubmit="return confirm('Interroger les IA sur l\'échantillon de {{ nb_echantillon or 'chaque pays (5 agences par pays)' }} agences ? Quelques centimes.');">
+      <input type="hidden" name="tache" value="ia">
+      <strong>3. Réponses des IA</strong>
+      <p>L'agence est-elle citée par l'IA sur ses requêtes clés ? Échantillon : {{ nb_echantillon }} agence(s) (voir plus bas).</p>
+      <label><input type="checkbox" name="moteur" value="chatgpt" checked> ChatGPT</label>
+      <label><input type="checkbox" name="moteur" value="gemini" checked> Gemini</label>
+      <label><input type="checkbox" name="moteur" value="mode_ia" {{ '' if mode_ia_possible else 'disabled' }}> Mode IA de Google{{ '' if mode_ia_possible else ' (DataForSEO manquant)' }}</label>
+      <button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Interroger les IA</button>
+    </form>
+    <form class="bg-releve" method="post" action="/suivi-goldunion/baisse/lancer" onsubmit="return confirm('Vérifier la présence de toutes les agences sur les annuaires ? Coût estimé : {{ cout_annuaires }} $. Compter plusieurs minutes.');">
+      <input type="hidden" name="tache" value="annuaires">
+      <strong>4. Annuaires</strong>
+      <p>Pages Jaunes / Páginas Amarillas / PagineGialle, Trustpilot, Bing Places, Apple Plans : présence, et nom / adresse / téléphone comparés à la fiche. ≈ {{ cout_annuaires }} $.</p>
+      <button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Vérifier les annuaires</button>
+    </form>
+  </div>
+  <p class="texte-discret">Si une colonne reste vide, relisez d'abord les fiches depuis la page <a href="/suivi-goldunion">Suivi GoldUnion</a> (« Relire les fiches et les avis ») : la ville, l'adresse et le pays viennent de cette lecture.</p>
+</div>
+
+<h2 id="constat">1. Constat par pays : 13 dernières semaines contre les 13 précédentes</h2>
+<p class="texte-discret">Les statistiques de Google ont quelques jours de retard : la période se termine au dernier dimanche complet. La comparaison avec la même période de l'an dernier gomme la saisonnalité (quand l'historique le permet).</p>
+{% if not synthese %}<p class="texte-discret">Aucune agence suivie.</p>{% endif %}
+{% for s in synthese %}
+<div class="bg-pays" id="pays-{{ s.code }}">
+  <h3>{{ s.nom }} <span class="texte-discret">· {{ s.nb }} agence(s), {{ s.nb_lues }} avec statistiques</span></h3>
+  {% if s.comparaison %}
+  {% set c = s.comparaison %}
+  <p class="texte-discret">Du {{ bg.date_fr(c.du) }} au {{ bg.date_fr(c.au) }}, contre les 13 semaines précédentes (du {{ bg.date_fr(c.precedent_du) }} au {{ bg.date_fr(c.precedent_au) }}).</p>
+  <div class="conteneur-tableau"><table class="tableau-historique">
+    <thead><tr><th>Indicateur</th><th>13 dernières semaines</th><th>13 semaines précédentes</th><th>Évolution</th><th>Même période l'an dernier</th><th>Évolution sur un an</th></tr></thead>
+    <tbody>
+    {% for k in ('vues', 'appels', 'itineraires', 'site') %}
+      <tr><td><strong>{{ bg.LIBELLES_INDICATEURS[k] }}</strong></td><td>{{ c.actuel[k] }}</td><td>{{ c.precedent[k] }}</td><td>{{ pct(c.var[k]) }}</td>
+        <td>{{ c.an_dernier[k] if c.an_dernier else '—' }}</td><td>{{ pct(c.var_an[k]) if c.var_an else '—' }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  <p><strong>{{ s.nb_touchees }}</strong> agence(s) perdent {{ bg.SEUIL_BAISSE }} % de vues ou plus.
+    {% if s.debut %}Début probable de la baisse du réseau : <strong>semaine du {{ bg.date_fr(s.debut.date) }}</strong> ({{ ('%.0f'|format(s.debut.chute)) }} % de vues en moins depuis).{% else %}Pas de rupture nette détectée dans les vues du réseau sur les 26 dernières semaines.{% endif %}</p>
+  <svg class="bg-courbe" data-pays="{{ s.code }}" role="img" aria-label="Vues par semaine, {{ s.nom }}"></svg>
+  {% else %}
+  <p class="texte-discret">Pas encore de statistiques : lancez « Relire les statistiques » ci-dessus.</p>
+  {% endif %}
+</div>
+{% endfor %}
+
+<h2 id="touchees">1. Agences les plus touchées par pays</h2>
+<p class="texte-discret">Classées par baisse de vues, parmi celles qui avaient au moins {{ bg.VUES_MIN_PERIODE }} vues sur la période précédente (en dessous, un pourcentage ne veut rien dire).</p>
+{% for s in synthese %}
+  <h3>{{ s.nom }}</h3>
+  {% if touchees[s.code] %}
+  <div class="conteneur-tableau"><table class="tableau-historique">
+    <thead><tr><th>Agence</th><th>Ville</th><th>Vues</th><th>Évolution des vues</th><th>Appels</th><th>Itinéraires</th><th>Clics site</th><th>Baisse depuis</th></tr></thead>
+    <tbody>
+    {% for e in touchees[s.code] %}{% set c = e.comparaison %}
+      <tr><td><a href="/clients/{{ e.client.id }}">{{ e.client.nom }}</a></td><td>{{ e.ville }}</td><td>{{ c.precedent.vues }} → {{ c.actuel.vues }}</td><td>{{ pct(c.var.vues) }}</td>
+        <td>{{ pct(c.var.appels) }}</td><td>{{ pct(c.var.itineraires) }}</td><td>{{ pct(c.var.site) }}</td><td>{{ ('semaine du ' ~ bg.date_fr(e.debut.date)) if e.debut else '—' }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}<p class="texte-discret">Rien à afficher pour l'instant.</p>{% endif %}
+{% endfor %}
+
+<h2 id="fiches">2. État des fiches : suspension, validation, modifications</h2>
+{% if not fiches.lues %}
+<p class="texte-discret">Pas encore lu : lancez « Relire les fiches ». La première lecture sert de référence ; les changements s'afficheront à partir de la lecture suivante.</p>
+{% else %}
+<div class="grille-resume">
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ fiches.lues }}</span><span class="carte-resume-libelle">Fiches lues</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ fiches.suspendues }}</span><span class="carte-resume-libelle">Fiches suspendues</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ fiches.alertes|length }}</span><span class="carte-resume-libelle">Fiches avec une alerte</span></div>
+  <div class="carte-resume"><span class="carte-resume-chiffre">{{ fiches.avec_changement|length }}</span><span class="carte-resume-libelle">Fiches modifiées depuis la référence</span></div>
+</div>
+{% if fiches.alertes %}
+<div class="conteneur-tableau"><table class="tableau-historique">
+  <thead><tr><th>Agence</th><th>Pays</th><th>Alertes</th></tr></thead>
+  <tbody>{% for e, alertes in fiches.alertes %}<tr><td><a href="/clients/{{ e.client.id }}">{{ e.client.nom }}</a></td><td>{{ e.pays }}</td><td>{% for gravite, texte in alertes %}<span class="bg-pastille {{ gravite }}">{{ texte }}</span> {% endfor %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p>✔ Aucune fiche suspendue, non validée ni signalée par Google.</p>{% endif %}
+{% if fiches.avec_changement %}
+<h3>Changements constatés d'une lecture à l'autre</h3>
+<div class="conteneur-tableau"><table class="tableau-historique">
+  <thead><tr><th>Agence</th><th>Date</th><th>Champ</th><th>Avant</th><th>Après</th></tr></thead>
+  <tbody>{% for e in fiches.avec_changement %}{% for ch in e.fiche.changements[:5] %}<tr><td>{{ e.client.nom }}</td><td>{{ bg.date_fr(ch.date) }}</td><td>{{ ch.champ }}</td><td>{{ ch.avant }}</td><td>{{ ch.apres }}</td></tr>{% endfor %}{% endfor %}</tbody>
+</table></div>
+{% endif %}
+<p class="texte-discret">Suspendue = Google signale la fiche comme non conforme à ses règles. Si Google ne donne pas cette information pour un compte, l'agence n'apparaît pas comme suspendue : le champ « Fiche non validée » reste alors le meilleur signal. Référence prise le {{ bg.date_fr((fiches.alertes[0][0] if fiches.alertes else fiches.avec_changement[0] if fiches.avec_changement else {'fiche': {'reference_le': ''}}).fiche.reference_le) }} (première lecture).</p>
+{% endif %}
+
+<h2 id="rangs">2. Rang sur les requêtes clés (« rachat or », « compro oro », « compra oro » + ville)</h2>
+<p class="texte-discret">Rang dans Google Maps pour une recherche faite à l'adresse de l'agence. France : « rachat or » · Espagne : « compro oro » et « compra oro » · Italie : « compro oro ». Chaque relevé s'ajoute au précédent pour suivre les sorties du top 3. Ce rang vient de Google Maps : il suit de près le bloc de 3 fiches de la recherche, sans être identique.</p>
+{% if not rangs or not rangs|selectattr('lignes')|list %}<p class="texte-discret">Pas encore mesuré : lancez « Mesurer les rangs ».</p>{% endif %}
+{% for r in rangs if r.lignes %}
+<h3>{{ r.nom }} <span class="texte-discret">· {{ r.nb_top3 }} dans le top 3, {{ r.nb_hors_top3 }} hors du top 3{% if r.sorties %} · <strong>{{ r.sorties|length }} sortie(s) du top 3</strong> depuis le relevé précédent{% endif %}</span></h3>
+<div class="conteneur-tableau"><table class="tableau-historique">
+  <thead><tr><th>Agence</th><th>Requête</th><th>Rang</th><th>Relevé précédent</th><th>Classées devant elle</th></tr></thead>
+  <tbody>{% for l in r.lignes %}<tr><td><a href="/clients/{{ l.entree.client.id }}">{{ l.entree.client.nom }}</a></td><td>{{ l.requete }}</td>
+    <td><span class="bg-pastille {{ 'ok' if l.top3 else 'attention' if l.position else 'grave' }}">{{ l.position if l.position else 'Hors des résultats' }}</span></td>
+    <td>{% if l.a_precedent %}{{ l.avant if l.avant else 'Hors des résultats' }}{% else %}—{% endif %}</td><td>{{ l.devant|join(' · ') }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endfor %}
+
+<h2 id="ia">3. Présence dans les réponses de ChatGPT, Gemini et du Mode IA de Google</h2>
+<p class="texte-discret">On pose à chaque IA les mêmes requêtes que les clients (« rachat or Puteaux »…) et on regarde si la marque, puis l'agence elle-même, sont citées, et quels sites l'IA a consultés. Ces réponses changent d'un jour à l'autre : un relevé est un échantillon, à refaire pour voir une tendance. ChatGPT et Gemini sont interrogés avec leur recherche web ; le Mode IA passe par DataForSEO (format non vérifié sur un compte réel : en cas d'échec, saisissez l'observation à la main).</p>
+<details class="bg-corriger"><summary>Échantillon d'agences interrogées ({{ nb_echantillon }} choisie(s))</summary>
+  <form method="post" action="/suivi-goldunion/baisse/echantillon" class="formulaire-ligne">
+    <input type="hidden" name="action" value="auto"><label>Agences par pays<input type="number" name="par_pays" value="5" min="1" max="30"></label><button type="submit" class="bouton-secondaire">Choisir automatiquement</button>
+  </form>
+  <form method="post" action="/suivi-goldunion/baisse/echantillon">
+    <div class="bg-echantillon">{% for e in entrees %}<label><input type="checkbox" name="agence" value="{{ e.client.id }}" {{ 'checked' if e.echantillon else '' }}> {{ e.client.nom }} <span class="texte-discret">({{ e.pays }}{{ ', ' ~ e.ville if e.ville else ', fiche pas encore lue' }})</span></label>{% endfor %}</div>
+    <button type="submit" class="bouton-secondaire">Enregistrer l'échantillon</button>
+  </form>
+</details>
+{% if ia.par %}
+<div class="conteneur-tableau"><table class="tableau-historique">
+  <thead><tr><th>Pays</th><th>IA</th><th>Requêtes posées</th><th>Marque citée</th><th>Agence citée</th></tr></thead>
+  <tbody>{% for (code, moteur), p in ia.par.items()|sort %}<tr><td>{{ bg.NOMS_PAYS.get(code, 'Autres') }}</td><td>{{ bg.MOTEURS_IA.get(moteur, moteur) }}</td><td>{{ p.n }}</td><td>{{ p.marque }} ({{ (100 * p.marque / p.n)|round|int }} %)</td><td>{{ p.agence }} ({{ (100 * p.agence / p.n)|round|int }} %)</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if ia.domaines %}
+<h3>Sites cités par les IA dans leurs réponses</h3>
+<p class="texte-discret">Les annuaires (Pages Jaunes, Trustpilot…) sont surlignés : s'ils reviennent souvent, ils alimentent bien les réponses de l'IA.</p>
+<div class="conteneur-tableau"><table class="tableau-historique">
+  <thead><tr><th>Site</th><th>Réponses où il est cité</th></tr></thead>
+  <tbody>{% for d in ia.domaines[:25] %}<tr><td>{{ d.domaine }} {% if d.annuaire %}<span class="bg-pastille ok">annuaire</span>{% endif %}</td><td>{{ d.nb }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+<h3>Détail par agence</h3>
+<div class="conteneur-tableau"><table class="tableau-historique">
+  <thead><tr><th>Agence</th><th>Requête</th><th>IA</th><th>Marque</th><th>Agence</th><th>Sites cités</th></tr></thead>
+  <tbody>
+  {% for e in entrees if e.ia and e.ia.releves %}{% set releve = e.ia.releves[-1] %}{% for r in releve.resultats.values() %}
+    <tr><td>{{ e.client.nom }}</td><td>{{ r.requete }}</td><td>{{ bg.MOTEURS_IA.get(r.moteur, r.moteur) }}{% if r.manuel %} <span class="bg-pastille neutre">saisi à la main</span>{% endif %}</td>
+      {% if r.erreur %}<td colspan="3"><span class="bg-pastille attention">Échec : {{ r.erreur }}</span></td>{% else %}
+      <td><span class="bg-pastille {{ 'ok' if r.marque_citee else 'grave' }}">{{ 'Citée' if r.marque_citee else 'Non citée' }}</span></td>
+      <td><span class="bg-pastille {{ 'ok' if r.agence_citee else 'grave' }}">{{ 'Citée' if r.agence_citee else 'Non citée' }}</span></td>
+      <td>{{ r.sources|map(attribute='domaine')|unique|list|join(', ') }}</td>{% endif %}</tr>
+  {% endfor %}{% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="texte-discret">Pas encore de relevé : choisissez l'échantillon puis lancez « Interroger les IA ».</p>{% endif %}
+<details class="bg-corriger"><summary>Saisir à la main une observation (Mode IA de Google, ou autre)</summary>
+  <form method="post" action="/suivi-goldunion/baisse/ia-manuel">
+    <select name="client_id" required><option value="">Agence…</option>{% for e in entrees %}<option value="{{ e.client.id }}">{{ e.client.nom }}</option>{% endfor %}</select>
+    <select name="moteur">{% for k, v in bg.MOTEURS_IA.items() %}<option value="{{ k }}" {{ 'selected' if k == 'mode_ia' else '' }}>{{ v }}</option>{% endfor %}</select>
+    <input type="text" name="requete" placeholder="Requête, ex. rachat or Puteaux" maxlength="120" required>
+    <select name="cite"><option value="1">L'agence est citée</option><option value="0">L'agence n'est pas citée</option></select>
+    <button type="submit" class="bouton-secondaire">Enregistrer</button>
+  </form>
+</details>
+
+<h2 id="annuaires">4. Annuaires qui alimentent l'IA : présence et cohérence nom / adresse / téléphone</h2>
+<p class="texte-discret">Annuaire du pays (Pages Jaunes, Páginas Amarillas ou PagineGialle), Trustpilot (une page pour la marque, pas une par agence), Bing Places et Apple Plans. Quand la page de l'annuaire est lisible, son nom, son téléphone et son adresse sont comparés à la fiche Google ; <strong>les horaires ne sont pas comparés automatiquement</strong>. Beaucoup d'annuaires refusent les robots, et Bing Places comme Apple Plans n'ont pas de page publique : ces cas restent « à vérifier à la main » et vous pouvez saisir le résultat de votre contrôle.</p>
+{% if annuaires %}
+<div class="grille-resume">
+  {% for a in annuaires %}<div class="carte-resume"><span class="carte-resume-chiffre">{{ a.etats.get('conforme', 0) + a.etats.get('marque', 0) }}</span><span class="carte-resume-libelle">{{ a.nom }} · présent · {{ a.etats.get('ecart', 0) }} écart · {{ a.etats.get('absent', 0) }} absent · {{ a.etats.get('illisible', 0) + a.etats.get('inconnu', 0) }} à vérifier</span></div>{% endfor %}
+</div>
+{% endif %}
+<div class="conteneur-tableau"><table class="tableau-historique">
+  <thead><tr><th>Agence</th><th>Pays</th><th>Annuaire du pays</th><th>Trustpilot</th><th>Bing Places</th><th>Apple Plans</th><th>Contrôle manuel</th></tr></thead>
+  <tbody>
+  {% for e in entrees %}
+    <tr><td><a href="/clients/{{ e.client.id }}">{{ e.client.nom }}</a></td><td>{{ e.pays }}</td>
+    {% for a in bg.annuaires_pays(e.pays) %}{% set s = bg.etat_annuaire(e.annuaires, a.id) %}
+      <td><span class="bg-pastille {{ 'ok' if s.etat in ('conforme', 'marque') else 'grave' if s.etat in ('ecart', 'absent') else 'neutre' }}">{{ bg.ETATS_ANNUAIRE.get(s.etat, s.etat) }}</span>{% if s.manuel %} <span class="texte-discret">✎</span>{% endif %}
+        {% if s.manque %}<div class="bg-note">Écart : {{ s.manque|join(', ') }}</div>{% endif %}
+        {% if s.url %}<div class="bg-note"><a href="{{ s.url }}" target="_blank" rel="noopener">ouvrir</a></div>{% endif %}
+        {% if s.note %}<div class="bg-note">{{ s.note }}</div>{% endif %}</td>
+    {% endfor %}
+    <td><details class="bg-corriger"><summary>Saisir</summary>
+      <form method="post" action="/suivi-goldunion/baisse/annuaire">
+        <input type="hidden" name="client_id" value="{{ e.client.id }}">
+        <select name="annuaire">{% for a in bg.annuaires_pays(e.pays) %}<option value="{{ a.id }}">{{ a.nom }}</option>{% endfor %}</select>
+        <select name="statut"><option value="">Effacer ma saisie</option>{% for k, v in bg.STATUTS_MANUELS %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+        <input type="url" name="url" placeholder="Adresse de la page (facultatif)"><input type="text" name="note" placeholder="Note (ex. horaires différents)" maxlength="200">
+        <button type="submit" class="bouton-secondaire">Enregistrer</button>
+      </form></details></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<script type="application/json" id="donnees-courbes">{{ courbes|tojson }}</script>
+<script>
+(function () {
+  "use strict";
+  // courbes hebdomadaires du reseau, une par pays
+  let courbes = {};
+  try { courbes = JSON.parse(document.getElementById("donnees-courbes").textContent); } catch (e) { /* ignore */ }
+  document.querySelectorAll(".bg-courbe").forEach(function (svg) {
+    const donnees = courbes[svg.dataset.pays];
+    if (!donnees || !donnees.points.length) return;
+    const L = 900, H = 150, g = 34, d = 8, pts = donnees.points, max = Math.max.apply(null, pts.map(function (p) { return p[1]; })) || 1;
+    const x = function (i) { return g + (L - g - d) * i / Math.max(1, pts.length - 1); }, y = function (v) { return H - 22 - (H - 32) * v / max; };
+    svg.setAttribute("viewBox", "0 0 " + L + " " + H);
+    let s = '<rect x="' + x(pts.length - 13) + '" y="4" width="' + (x(pts.length - 1) - x(pts.length - 13)) + '" height="' + (H - 26) + '" style="fill: var(--accent); opacity: 0.1"/>';
+    s += '<line x1="' + g + '" y1="' + y(0) + '" x2="' + (L - d) + '" y2="' + y(0) + '" style="stroke: var(--carte-bordure)"/>';
+    s += '<text x="2" y="14" font-size="11" style="fill: var(--texte)">' + max + '</text><text x="2" y="' + (y(0)) + '" font-size="11" style="fill: var(--texte)">0</text>';
+    s += '<polyline fill="none" stroke-width="2" style="stroke: var(--accent)" points="' + pts.map(function (p, i) { return x(i).toFixed(1) + "," + y(p[1]).toFixed(1); }).join(" ") + '"/>';
+    const i0 = pts.findIndex(function (p) { return p[0] === donnees.debut; });
+    if (i0 >= 0) s += '<line x1="' + x(i0) + '" y1="4" x2="' + x(i0) + '" y2="' + y(0) + '" stroke-dasharray="4 3" style="stroke: var(--danger)"/><text x="' + (x(i0) > L * 0.6 ? x(i0) - 5 : x(i0) + 5) + '" y="16" font-size="11" text-anchor="' + (x(i0) > L * 0.6 ? "end" : "start") + '" style="fill: var(--danger)">baisse probable : semaine du ' + donnees.debut.split("-").reverse().join("/") + "</text>";
+    s += '<text x="' + g + '" y="' + (H - 6) + '" font-size="11" style="fill: var(--texte)">' + pts[0][0].split("-").reverse().join("/") + '</text><text x="' + (L - d) + '" y="' + (H - 6) + '" text-anchor="end" font-size="11" style="fill: var(--texte)">' + pts[pts.length - 1][0].split("-").reverse().join("/") + "</text>";
+    svg.innerHTML = s;
+  });
+  // avancement d'un releve en cours
+  const bloc = document.getElementById("bg-etat"), texte = document.getElementById("bg-etat-texte");
+  let enCours = {{ 'true' if etat.en_cours else 'false' }};
+  function suivre() {
+    fetch("/suivi-goldunion/baisse/etat", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (e) {
+      if (e.message) { bloc.hidden = false; texte.textContent = e.message; }
+      if (e.en_cours) { setTimeout(suivre, 3000); } else if (enCours) { window.location.reload(); }
+    }).catch(function () { setTimeout(suivre, 8000); });
+  }
+  if (enCours) suivre();
+})();
+</script>
+{% endblock %}

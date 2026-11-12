@@ -152,3 +152,30 @@ def recuperer_mots_cles_recherche(identifiants, location_id: str, date_debut: da
 
     resultats.sort(key=lambda r: r["impressions"], reverse=True)
     return resultats[:limite] if limite else resultats
+
+
+def recuperer_statistiques_par_jour(identifiants, location_id: str, date_debut: date, date_fin: date) -> dict:
+    """
+    Comme recuperer_statistiques, mais jour par jour en UNE requete : {date: {libelle: valeur}}. Les jours sans valeur sont absents (Google ne renvoie rien
+    pour les derniers jours pas encore consolides ; l'historique remonte a 18 mois environ).
+    """
+    url = f"https://businessprofileperformance.googleapis.com/v1/locations/{location_id}:fetchMultiDailyMetricsTimeSeries"
+    params = [("dailyMetrics", metrique) for metrique in METRIQUES]
+    params += list(_params_date("dailyRange.start_date", date_debut).items())
+    params += list(_params_date("dailyRange.end_date", date_fin).items())
+    reponse = requests.get(url, headers={"Authorization": f"Bearer {identifiants.token}"}, params=params, timeout=60)
+    if reponse.status_code != 200:
+        raise RuntimeError(f"Echec de la recuperation des statistiques (code {reponse.status_code}) : {reponse.text[:200]}")
+    par_jour = {}
+    for groupe in reponse.json().get("multiDailyMetricTimeSeries", []):
+        for serie in groupe.get("dailyMetricTimeSeries", []):
+            metrique = serie.get("dailyMetric")
+            if metrique not in LIBELLES:
+                continue
+            for point in serie.get("timeSeries", {}).get("datedValues", []):
+                jour = point.get("date") or {}
+                if not jour.get("year"):
+                    continue
+                cle = date(int(jour["year"]), int(jour["month"]), int(jour["day"]))
+                par_jour.setdefault(cle, {})[LIBELLES[metrique]] = int(point.get("value", 0))
+    return par_jour

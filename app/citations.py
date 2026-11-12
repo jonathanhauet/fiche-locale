@@ -32,14 +32,23 @@ ANNUAIRES = [
 
 ANNUAIRES_PAR_ID = {a["id"]: a for a in ANNUAIRES}
 
+# Annuaires verifies par le suivi « Baisse Google » (suivi_goldunion / baisse_google.py), absents de la liste ci-dessus pour ne pas changer l'ecran des clients.
+ANNUAIRES_SUPPLEMENTAIRES = [
+    {"id": "trustpilot", "nom": "Trustpilot", "domaine": "trustpilot.com", "methode": "google_site"},
+    {"id": "paginas_amarillas", "nom": "Páginas Amarillas", "domaine": "paginasamarillas.es", "methode": "google_site"},
+    {"id": "pagine_gialle", "nom": "PagineGialle", "domaine": "paginegialle.it", "methode": "google_site"},
+]
+ANNUAIRES_PAR_ID.update({a["id"]: a for a in ANNUAIRES_SUPPLEMENTAIRES})
+
 # DataForSEO attend un nom de lieu present dans sa propre base (location_name)
 # - une simple ville (ex. "Ath") echoue si DataForSEO ne la reconnait pas telle
 # quelle. On cible donc toujours le PAYS (valeur sure, toujours reconnue) pour
 # ce parametre, et on laisse la ville faire son travail directement dans le
 # texte de la requete (voir _verifier_google_site/_verifier_bing_local_pack).
 PAYS_DATAFORSEO = {
-    "FR": "France", "BE": "Belgium", "CH": "Switzerland", "LU": "Luxembourg", "CA": "Canada",
+    "FR": "France", "BE": "Belgium", "CH": "Switzerland", "LU": "Luxembourg", "CA": "Canada", "ES": "Spain", "IT": "Italy",
 }
+LANGUES_PAYS = {"ES": "es", "IT": "it"}      # les autres pays restent en francais
 
 
 def nom_pays_dataforseo(code_pays: str) -> str:
@@ -64,12 +73,12 @@ def _appeler_dataforseo(url: str, corps: list[dict]) -> list[dict]:
     return (taches[0].get("result") or [{}])[0].get("items") or []
 
 
-def _verifier_google_site(domaine: str, nom_entreprise: str, ville: str, pays: str) -> dict:
+def _verifier_google_site(domaine: str, nom_entreprise: str, ville: str, pays: str, langue: str = "fr") -> dict:
     requete = f'site:{domaine} "{nom_entreprise}"' + (f" {ville}" if ville else "")
     corps = [{
         "keyword": requete,
         "location_name": pays,
-        "language_code": "fr",
+        "language_code": langue,
         "device": "desktop",
     }]
     items = _appeler_dataforseo(URL_GOOGLE_ORGANIC, corps)
@@ -87,12 +96,12 @@ def _verifier_google_site(domaine: str, nom_entreprise: str, ville: str, pays: s
     }
 
 
-def _verifier_bing_local_pack(nom_entreprise: str, ville: str, pays: str) -> dict:
+def _verifier_bing_local_pack(nom_entreprise: str, ville: str, pays: str, langue: str = "fr") -> dict:
     requete = f"{nom_entreprise} {ville}".strip()
     corps = [{
         "keyword": requete,
         "location_name": pays,
-        "language_code": "fr",
+        "language_code": langue,
         "device": "desktop",
     }]
     items = _appeler_dataforseo(URL_BING_ORGANIC, corps)
@@ -121,6 +130,7 @@ def verifier_citations(nom_entreprise: str, ville: str, code_pays: str, annuaire
         raise RuntimeError("DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD manquants dans plateforme_web/.env.")
 
     pays = nom_pays_dataforseo(code_pays)
+    langue = LANGUES_PAYS.get((code_pays or "").upper(), "fr")
     resultats = []
     for annuaire_id in annuaires_ids:
         annuaire = ANNUAIRES_PAR_ID.get(annuaire_id)
@@ -128,9 +138,9 @@ def verifier_citations(nom_entreprise: str, ville: str, code_pays: str, annuaire
             continue
         try:
             if annuaire["methode"] == "google_site":
-                verif = _verifier_google_site(annuaire["domaine"], nom_entreprise, ville, pays)
+                verif = _verifier_google_site(annuaire["domaine"], nom_entreprise, ville, pays, langue)
             else:
-                verif = _verifier_bing_local_pack(nom_entreprise, ville, pays)
+                verif = _verifier_bing_local_pack(nom_entreprise, ville, pays, langue)
             resultats.append({"id": annuaire["id"], "nom": annuaire["nom"], "erreur": None, **verif})
         except Exception as erreur:
             resultats.append({
