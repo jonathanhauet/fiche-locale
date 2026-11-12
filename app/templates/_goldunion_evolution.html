@@ -15,9 +15,7 @@
   .gu-evolution svg.ev-mini { width: 220px; height: 44px; display: block; }
   .gu-evolution svg.ev-grand { width: 100%; height: 230px; display: block; }
   .gu-evolution .ev-trait { stroke: var(--accent); fill: none; stroke-width: 2; }
-  .gu-evolution .ev-trait-an { stroke: var(--texte-discret); fill: none; stroke-width: 1.5; stroke-dasharray: 5 4; }
   .gu-evolution .ev-zone { fill: var(--accent); opacity: 0.1; }
-  .gu-evolution .ev-marque { stroke: var(--danger); stroke-dasharray: 4 3; }
   .gu-evolution .ev-txt { fill: var(--texte); font-size: 11px; }
   .gu-evolution .ev-txt-rouge { fill: var(--danger); font-size: 11px; }
   .gu-evolution .ev-lecture { min-height: 1.3rem; font-size: 0.85rem; margin: 0.2rem 0 0.6rem; color: var(--texte); }
@@ -32,10 +30,10 @@
   <details class="ev-regles">
     <summary>Comment lire cet onglet ?</summary>
     <ul>
-      <li>Chaque ligne est une fiche Google. La courbe montre ses <strong>{{ evo_baisse.agences[0].v|length if evo_baisse.agences else 76 }} dernières semaines</strong> ; la zone bleutée marque les <strong>13 dernières semaines</strong> (environ 3 mois), comparées aux <strong>13 semaines précédentes</strong> et à la <strong>même période l'an dernier</strong>.</li>
+      <li>Chaque ligne est une fiche Google. La courbe montre ses <strong>{{ evo_baisse.agences[0].v|length if evo_baisse.agences else 76 }} dernières semaines</strong> ; la zone bleutée marque les <strong>13 dernières semaines</strong> (environ 3 mois), comparées aux <strong>13 semaines précédentes</strong>.</li>
       <li><strong>Vues</strong> = fois où la fiche s'est affichée sur Google (Recherche et Maps, ordinateur et mobile). <strong>Appels</strong>, <strong>itinéraires</strong> et <strong>clics site</strong> = actions faites depuis la fiche.</li>
-      <li>Le trait pointillé rouge indique la <strong>semaine où la baisse commence probablement</strong> (estimation à vérifier sur la courbe). Un pourcentage calculé sur trop peu de vues est grisé : il ne veut rien dire.</li>
-      <li>Cliquez sur une ligne pour voir la courbe en grand (avec celle de l'an dernier en pointillés gris), le détail des chiffres, le rang sur « rachat or / compro oro / compra oro », et les alertes ou modifications de la fiche.</li>
+      <li>La colonne « Baisse depuis » donne la <strong>semaine où la baisse commence probablement</strong> (estimation à vérifier sur la courbe). Un pourcentage calculé sur trop peu de vues est grisé : il ne veut rien dire.</li>
+      <li>Cliquez sur une ligne pour voir la courbe en grand, le détail des chiffres, le rang sur « rachat or / compro oro / compra oro », et les alertes ou modifications de la fiche.</li>
       <li>Les statistiques de Google ont quelques jours de retard : la dernière semaine affichée est la dernière semaine complète.</li>
     </ul>
   </details>
@@ -54,7 +52,7 @@
   </div>
   <div class="ev-defilement">
     <table class="gu-tableau" id="ev-tableau">
-      <thead><tr><th>Agence</th><th>Courbe (hebdomadaire)</th><th>13 dernières semaines</th><th>13 précédentes</th><th>Évolution</th><th>Même période l'an dernier</th><th>Baisse depuis</th><th>Rang · alertes</th></tr></thead>
+      <thead><tr><th>Agence</th><th>Courbe (hebdomadaire)</th><th>13 dernières semaines</th><th>13 précédentes</th><th>Évolution</th><th>Baisse depuis</th><th>Rang · alertes</th></tr></thead>
       <tbody id="ev-corps"></tbody>
     </table>
   </div>
@@ -84,14 +82,13 @@
     const cls = peu ? "ev-peu" : v < 0 ? "gu-baisse" : v > 0 ? "gu-hausse" : "gu-stable";
     return '<span class="' + cls + '">' + (v > 0 ? "+" : v < 0 ? "−" : "") + String(Math.abs(v)).replace(".", ",") + " %</span>" + (peu ? ' <span class="ev-peu" title="Trop peu de données pour que ce pourcentage ait un sens">(peu de données)</span>' : "");
   }
-  // chiffres d'une agence pour un indicateur : 13 dernieres semaines, 13 precedentes, meme periode l'an dernier
+  // chiffres d'une agence pour un indicateur : 13 dernieres semaines et 13 precedentes
   function calculer(a, k) {
     const s = a[k], n = s.length;
     const act = somme(s, n - NB, n), prec = n >= 2 * NB ? somme(s, n - 2 * NB, n - NB) : null;
-    const an = n >= NB + 52 ? somme(s, n - NB - 52, n - 52) : null;
     return {
-      act: act, prec: prec, an: an, peu: prec != null && prec < MIN_BASE[k],
-      varPrec: prec ? pct((act - prec) / prec * 100) : null, varAn: an ? pct((act - an) / an * 100) : null, peuAn: an != null && an < MIN_BASE[k],
+      act: act, prec: prec, peu: prec != null && prec < MIN_BASE[k],
+      varPrec: prec ? pct((act - prec) / prec * 100) : null,
     };
   }
   function courbe(a, k, grand) {
@@ -104,11 +101,8 @@
       svg += '<line x1="' + gauche + '" y1="' + y(0) + '" x2="' + (L - droite) + '" y2="' + y(0) + '" style="stroke: var(--carte-bordure)"/>';
       svg += '<text class="ev-txt" x="2" y="' + (haut + 9) + '">' + fmt(max) + '</text><text class="ev-txt" x="2" y="' + y(0) + '">0</text>';
       for (let i = 0; i < n; i += 13) svg += '<text class="ev-txt" x="' + x(i) + '" y="' + (H - 6) + '">' + date(ajouterJours(a.d0, 7 * i)).slice(0, 5) + "/" + ajouterJours(a.d0, 7 * i).slice(2, 4) + "</text>";
-      if (n >= 53) svg += '<polyline class="ev-trait-an" points="' + s.slice(0, n - 52).map((v, i) => x(i + 52).toFixed(1) + "," + y(v).toFixed(1)).join(" ") + '"/>';
     }
     svg += '<polyline class="ev-trait" points="' + s.map((v, i) => x(i).toFixed(1) + "," + y(v).toFixed(1)).join(" ") + '"/>';
-    const i0 = (k === "v" && a.debut) ? Math.round((new Date(a.debut.date + "T12:00:00Z") - new Date(a.d0 + "T12:00:00Z")) / (7 * 86400000)) : -1;
-    if (i0 >= 0 && i0 < n) svg += '<line class="ev-marque" x1="' + x(i0) + '" y1="' + haut + '" x2="' + x(i0) + '" y2="' + y(0) + '"/>';
     if (grand) svg += '<line id="ev-curseur" x1="0" y1="' + haut + '" x2="0" y2="' + y(0) + '" style="stroke: var(--texte-discret); opacity: 0"/><rect class="ev-survol" x="' + gauche + '" y="0" width="' + (L - gauche - droite) + '" height="' + H + '" fill="transparent"/>';
     return svg + "</svg>";
   }
@@ -122,21 +116,21 @@
       const i = Math.max(0, Math.min(n - 1, Math.round((px - gauche) / (L - gauche - droite) * (n - 1))));
       const lundi = ajouterJours(a.d0, 7 * i), curseur = svg.querySelector("#ev-curseur"), cx = gauche + (L - gauche - droite) * i / Math.max(1, n - 1);
       curseur.setAttribute("x1", cx); curseur.setAttribute("x2", cx); curseur.style.opacity = 1;
-      sortie.textContent = "Semaine du " + date(lundi) + " : " + fmt(s[i]) + " " + NOMS[k].toLowerCase() + (i >= 52 ? " · l'an dernier (semaine du " + date(ajouterJours(lundi, -364)) + ") : " + fmt(s[i - 52]) : "");
+      sortie.textContent = "Semaine du " + date(lundi) + " : " + fmt(s[i]) + " " + NOMS[k].toLowerCase() + "";
     });
   }
   function detailAgence(a, k) {
     const lignes = ["v", "a", "i", "s"].map((cle) => {
       const c = calculer(a, cle);
-      return "<tr><td><strong>" + NOMS[cle] + "</strong></td><td>" + fmt(c.act) + "</td><td>" + (c.prec == null ? "—" : fmt(c.prec)) + "</td><td>" + texteVar(c.varPrec, c.peu) + "</td><td>" + (c.an == null ? "—" : fmt(c.an)) + "</td><td>" + texteVar(c.varAn, c.peuAn) + "</td></tr>";
+      return "<tr><td><strong>" + NOMS[cle] + "</strong></td><td>" + fmt(c.act) + "</td><td>" + (c.prec == null ? "—" : fmt(c.prec)) + "</td><td>" + texteVar(c.varPrec, c.peu) + "</td></tr>";
     }).join("");
     const rangs = a.rang.length ? '<ul class="gu-liste">' + a.rang.map((r) => "<li><strong>" + esc(r.r) + "</strong> : " + (r.p == null ? "hors des résultats" : "rang " + r.p) + (r.ap ? " (avant : " + (r.av == null ? "hors des résultats" : r.av) + ")" : "") + ' <span class="gu-puce ' + (r.t3 ? "gu-ok" : "gu-attention") + '">' + (r.t3 ? "top 3" : "hors top 3") + "</span></li>").join("") + "</ul>"
       : '<span class="gu-doux">Rang pas encore mesuré.</span>';
     const alertes = a.alertes.length ? a.alertes.map((x) => '<span class="gu-puce ' + (x[0] === "grave" ? "gu-alerte" : "gu-attention") + '">' + esc(x[1]) + "</span>").join(" ") : '<span class="gu-puce gu-ok">Rien à signaler sur la fiche</span>';
     const chg = a.chg.length ? '<ul class="gu-liste">' + a.chg.map((c) => "<li>" + esc(c.d) + " · <strong>" + esc(c.c) + "</strong> : " + esc(c.av) + " → " + esc(c.ap) + "</li>").join("") + "</ul>" : '<span class="gu-doux">Aucune modification constatée depuis la première lecture.</span>';
     const debut = k === "v" && a.debut ? '<p class="gu-doux">Baisse probable depuis la semaine du <strong>' + date(a.debut.date) + "</strong> (" + Math.round(a.debut.chute) + " % de vues en moins en moyenne depuis).</p>" : "";
-    return "<h4>" + NOMS[k] + " par semaine · trait plein : cette année · pointillés gris : l'année précédente</h4>" + debut + courbe(a, k, true) + '<div class="ev-lecture"></div>' +
-      '<div class="ev-grille"><div><h4>Les chiffres</h4><table class="ev-petit"><thead><tr><th></th><th>13 dernières sem.</th><th>13 précédentes</th><th>Évolution</th><th>L\'an dernier</th><th>Évolution</th></tr></thead><tbody>' + lignes + "</tbody></table></div>" +
+    return "<h4>" + NOMS[k] + " par semaine · zone bleutée : les 13 dernières semaines</h4>" + debut + courbe(a, k, true) + '<div class="ev-lecture"></div>' +
+      '<div class="ev-grille"><div><h4>Les chiffres</h4><table class="ev-petit"><thead><tr><th></th><th>13 dernières sem.</th><th>13 précédentes</th><th>Évolution</th></tr></thead><tbody>' + lignes + "</tbody></table></div>" +
       "<div><h4>Rang sur les requêtes clés</h4>" + rangs + "</div><div><h4>État de la fiche</h4>" + alertes + "<h4 style=\"margin-top:0.6rem\">Modifications constatées</h4>" + chg + "</div></div>" +
       '<p class="gu-doux">Statistiques lues le ' + esc(a.maj) + ".</p>";
   }
@@ -170,8 +164,8 @@
       const rang = a.rang.length ? a.rang.map((r) => '<div class="gu-doux">' + esc(r.r) + " : <strong>" + (r.p == null ? "hors résultats" : r.p) + "</strong>" + (r.ap && r.av != null && r.p !== r.av ? " (avant " + r.av + ")" : "") + "</div>").join("") : "";
       return '<tr class="ev-ligne" data-id="' + a.id + '"><td><span class="gu-nom">' + esc(a.nom) + '</span><div class="gu-doux">' + esc(a.ville) + (donnees.pays[a.pays] ? " · " + esc(donnees.pays[a.pays]) : a.pays !== "FR" ? " · " + esc(a.pays) : "") + "</div></td><td>" + courbe(a, k, false) + "</td>" +
         '<td><span class="gu-gros">' + fmt(c.act) + "</span></td><td>" + (c.prec == null ? "—" : fmt(c.prec)) + "</td><td>" + texteVar(c.varPrec, c.peu) + "</td>" +
-        "<td>" + (c.an == null ? "—" : fmt(c.an)) + "<div>" + texteVar(c.varAn, c.peuAn) + "</div></td><td>" + (k === "v" && a.debut ? "semaine du " + date(a.debut.date) : '<span class="gu-doux">—</span>') + "</td><td>" + rang + alertes + "</td></tr>";
-    }).join("") : '<tr><td colspan="8" class="gu-vide">Aucune fiche ne correspond.</td></tr>';
+        "<td>" + (k === "v" && a.debut ? "semaine du " + date(a.debut.date) : '<span class="gu-doux">—</span>') + "</td><td>" + rang + alertes + "</td></tr>";
+    }).join("") : '<tr><td colspan="7" class="gu-vide">Aucune fiche ne correspond.</td></tr>';
     if (ouvert != null) { const ligne = corps.querySelector('tr[data-id="' + ouvert + '"]'); if (ligne) ouvrir(ligne, true); else ouvert = null; }
   }
   function ouvrir(ligne, forcer) {
@@ -183,7 +177,7 @@
     const a = AGENCES.find((z) => z.id === id), k = selIndic.value;
     const detail = document.createElement("tr");
     detail.className = "ev-detail";
-    detail.innerHTML = '<td colspan="8">' + detailAgence(a, k) + "</td>";
+    detail.innerHTML = '<td colspan="7">' + detailAgence(a, k) + "</td>";
     ligne.after(detail);
     ligne.classList.add("ouverte");
     ouvert = id;

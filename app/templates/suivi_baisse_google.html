@@ -57,7 +57,7 @@
     <form class="bg-releve" method="post" action="/suivi-goldunion/baisse/lancer">
       <input type="hidden" name="tache" value="stats">
       <strong>1. Statistiques des fiches</strong>
-      <p>Vues, clics vers le site, appels et itinéraires, semaine par semaine sur 17 mois. Gratuit.</p>
+      <p>Vues, clics vers le site, appels et itinéraires, semaine par semaine sur 6 mois. Gratuit.</p>
       <button type="submit" class="bouton-secondaire" {{ 'disabled' if etat.en_cours else '' }}>Relire les statistiques</button>
     </form>
     <form class="bg-releve" method="post" action="/suivi-goldunion/baisse/lancer">
@@ -92,7 +92,7 @@
 </div>
 
 <h2 id="constat">1. Constat par pays : 13 dernières semaines contre les 13 précédentes</h2>
-<p class="texte-discret">Les statistiques de Google ont quelques jours de retard : la période se termine au dernier dimanche complet. La comparaison avec la même période de l'an dernier gomme la saisonnalité (quand l'historique le permet).</p>
+<p class="texte-discret">Les statistiques de Google ont quelques jours de retard : la période se termine au dernier dimanche complet.</p>
 {% if not synthese %}<p class="texte-discret">Aucune agence suivie.</p>{% endif %}
 {% for s in synthese %}
 <div class="bg-pays" id="pays-{{ s.code }}">
@@ -101,11 +101,10 @@
   {% set c = s.comparaison %}
   <p class="texte-discret">Du {{ bg.date_fr(c.du) }} au {{ bg.date_fr(c.au) }}, contre les 13 semaines précédentes (du {{ bg.date_fr(c.precedent_du) }} au {{ bg.date_fr(c.precedent_au) }}).</p>
   <div class="conteneur-tableau"><table class="tableau-historique">
-    <thead><tr><th>Indicateur</th><th>13 dernières semaines</th><th>13 semaines précédentes</th><th>Évolution</th><th>Même période l'an dernier</th><th>Évolution sur un an</th></tr></thead>
+    <thead><tr><th>Indicateur</th><th>13 dernières semaines</th><th>13 semaines précédentes</th><th>Évolution</th></tr></thead>
     <tbody>
     {% for k in ('vues', 'appels', 'itineraires', 'site') %}
-      <tr><td><strong>{{ bg.LIBELLES_INDICATEURS[k] }}</strong></td><td>{{ c.actuel[k] }}</td><td>{{ c.precedent[k] }}</td><td>{{ pct(c.var[k]) }}</td>
-        <td>{{ c.an_dernier[k] if c.an_dernier else '—' }}</td><td>{{ pct(c.var_an[k]) if c.var_an else '—' }}</td></tr>
+      <tr><td><strong>{{ bg.LIBELLES_INDICATEURS[k] }}</strong></td><td>{{ c.actuel[k] }}</td><td>{{ c.precedent[k] }}</td><td>{{ pct(c.var[k]) }}</td></tr>
     {% endfor %}
     </tbody></table></div>
   <p><strong>{{ s.nb_touchees }}</strong> agence(s) perdent {{ bg.SEUIL_BAISSE }} % de vues ou plus.
@@ -267,7 +266,6 @@
     s += '<line x1="' + g + '" y1="' + y(0) + '" x2="' + (L - d) + '" y2="' + y(0) + '" style="stroke: var(--carte-bordure)"/>';
     s += '<text x="2" y="14" font-size="11" style="fill: var(--texte)">' + max + '</text><text x="2" y="' + (y(0)) + '" font-size="11" style="fill: var(--texte)">0</text>';
     s += '<polyline fill="none" stroke-width="2" style="stroke: var(--accent)" points="' + pts.map(function (p, i) { return x(i).toFixed(1) + "," + y(p[1]).toFixed(1); }).join(" ") + '"/>';
-    const i0 = pts.findIndex(function (p) { return p[0] === donnees.debut; });
     if (i0 >= 0) s += '<line x1="' + x(i0) + '" y1="4" x2="' + x(i0) + '" y2="' + y(0) + '" stroke-dasharray="4 3" style="stroke: var(--danger)"/><text x="' + (x(i0) > L * 0.6 ? x(i0) - 5 : x(i0) + 5) + '" y="16" font-size="11" text-anchor="' + (x(i0) > L * 0.6 ? "end" : "start") + '" style="fill: var(--danger)">baisse probable : semaine du ' + donnees.debut.split("-").reverse().join("/") + "</text>";
     s += '<text x="' + g + '" y="' + (H - 6) + '" font-size="11" style="fill: var(--texte)">' + pts[0][0].split("-").reverse().join("/") + '</text><text x="' + (L - d) + '" y="' + (H - 6) + '" text-anchor="end" font-size="11" style="fill: var(--texte)">' + pts[pts.length - 1][0].split("-").reverse().join("/") + "</text>";
     svg.innerHTML = s;

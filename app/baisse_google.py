@@ -1,8 +1,7 @@
 """
 Analyse de la baisse de visibilite Google des agences (France, Espagne, Italie) : tout ce qu'il faut pour repondre a la Direction.
 
-1. Statistiques de la fiche (vues, clics site, appels, itineraires) : 13 dernieres semaines contre les 13 precedentes (et contre la meme periode de l'an
-   dernier), date probable du debut de la baisse, agences les plus touchees par pays. Lues semaine par semaine chez Google (18 mois d'historique).
+1. Statistiques de la fiche (vues, clics site, appels, itineraires) : 13 dernieres semaines contre les 13 precedentes, date probable du debut de la baisse, agences les plus touchees par pays. Lues semaine par semaine chez Google sur les 6 derniers mois.
 2. Etat de la fiche (suspendue, non validee, modifiee par Google, modifications en attente, doublon) et modifications constatees d'une lecture a l'autre
    (nom, adresse, telephone, site, categories, horaires, description). Rang de l'agence sur les requetes cles « rachat or / compro oro / compra oro + ville ».
 3. Presence de l'agence dans les reponses de ChatGPT, Gemini et du Mode IA de Google (releve sur un echantillon d'agences), avec les sites cites par l'IA.
@@ -82,7 +81,7 @@ def marque_depuis_nom(nom: str) -> str:
 
 # ---------- 1. statistiques de la fiche, semaine par semaine
 
-NB_SEMAINES = 76                                  # environ 17 mois : l'historique de Google est limite a 18 mois
+NB_SEMAINES = 26                                  # 6 mois : les 13 dernieres semaines et les 13 precedentes
 NB_SEMAINES_PERIODE = 13                          # « trois mois »
 DELAI_STATS_JOURS = 4                             # Google consolide ses chiffres avec quelques jours de retard
 INDICATEURS = ("vues", "appels", "itineraires", "site")
@@ -135,15 +134,13 @@ def variation(actuel, precedent):
 
 
 def comparer(semaines: list, nb: int = NB_SEMAINES_PERIODE):
-    """13 dernieres semaines contre les 13 precedentes, et contre les memes semaines un an plus tot (si l'historique le permet). None si pas assez de recul."""
+    """13 dernieres semaines contre les 13 precedentes. None si pas assez de recul."""
     if len(semaines) < 2 * nb:
         return None
     actuel, precedent = totaux_semaines(semaines[-nb:]), totaux_semaines(semaines[-2 * nb:-nb])
-    an = totaux_semaines(semaines[-nb - 52:-52]) if len(semaines) >= nb + 52 else None
     return {
-        "actuel": actuel, "precedent": precedent, "an_dernier": an,
+        "actuel": actuel, "precedent": precedent,
         "var": {k: variation(actuel[k], precedent[k]) for k in INDICATEURS},
-        "var_an": {k: variation(actuel[k], an[k]) for k in INDICATEURS} if an else None,
         "du": semaines[-nb]["debut"], "au": (date.fromisoformat(semaines[-1]["debut"]) + timedelta(days=6)).isoformat(),
         "precedent_du": semaines[-2 * nb]["debut"], "precedent_au": (date.fromisoformat(semaines[-nb]["debut"]) - timedelta(days=1)).isoformat(),
     }
@@ -578,7 +575,7 @@ def lignes_baisse(db, parametre) -> list:
         suivi, b = suivis.get(client.id), baisses.get(client.id)
         donnees = _json(suivi.donnees_json, {}) if suivi else {}
         stats = _json(b.stats_json, {}) if b else {}
-        semaines = stats.get("semaines") or []
+        semaines = (stats.get("semaines") or [])[-NB_SEMAINES:]          # les releves plus anciens (76 semaines) sont ecartes a l'affichage
         entrees.append({
             "client": client, "donnees": donnees, "pays": code_pays(donnees), "ville": donnees.get("ville", ""),
             "stats": stats, "semaines": semaines, "comparaison": comparer(semaines), "debut": date_debut_baisse(semaines) if semaines else None,
@@ -903,13 +900,13 @@ def generer_excel(entrees: list) -> bytes:
         f.freeze_panes = "B2"
         return f
 
-    f = feuille("Statistiques", ["Agence", "Pays", "Ville", "Vues (13 dernières sem.)", "Vues (13 sem. précédentes)", "Évolution vues", "Évolution vs an dernier", "Appels", "Évolution appels", "Itinéraires", "Évolution itinéraires", "Clics site", "Évolution clics", "Début probable de la baisse", "Perte au point de rupture"], premiere=True)
+    f = feuille("Statistiques", ["Agence", "Pays", "Ville", "Vues (13 dernières sem.)", "Vues (13 sem. précédentes)", "Évolution vues", "Appels", "Évolution appels", "Itinéraires", "Évolution itinéraires", "Clics site", "Évolution clics", "Début probable de la baisse", "Perte au point de rupture"], premiere=True)
     for e in sorted(entrees, key=lambda e: (e["pays"], e["client"].nom)):
         c = e["comparaison"]
         if not c:
             f.append([e["client"].nom, e["pays"], e["ville"], "Pas encore lu"])
             continue
-        f.append([e["client"].nom, e["pays"], e["ville"], c["actuel"]["vues"], c["precedent"]["vues"], _pct(c["var"]["vues"]), _pct((c["var_an"] or {}).get("vues")), c["actuel"]["appels"], _pct(c["var"]["appels"]),
+        f.append([e["client"].nom, e["pays"], e["ville"], c["actuel"]["vues"], c["precedent"]["vues"], _pct(c["var"]["vues"]), c["actuel"]["appels"], _pct(c["var"]["appels"]),
                   c["actuel"]["itineraires"], _pct(c["var"]["itineraires"]), c["actuel"]["site"], _pct(c["var"]["site"]), date_fr(e["debut"]["date"]) if e["debut"] else "", _pct(-e["debut"]["chute"]) if e["debut"] else ""])
     f = feuille("Fiches", ["Agence", "Pays", "Suspendue", "Validée", "Modifiée par Google", "Modifications en attente", "Doublon", "Statut d'ouverture", "Dernière lecture", "Changements constatés"])
     oui = lambda v: {True: "Oui", False: "Non"}.get(v, "")
