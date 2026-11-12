@@ -339,13 +339,13 @@ MOTEURS_IA = {"chatgpt": "ChatGPT", "gemini": "Gemini", "mode_ia": "Mode IA de G
 URL_MODE_IA = "https://api.dataforseo.com/v3/serp/google/ai_mode/live/advanced"
 NB_RELEVES_IA = 6
 NOMS_DATAFORSEO = {"FR": "France", "ES": "Spain", "IT": "Italy"}
-# Une IA ne comprend pas toujours une requete de mots-cles (« rachat or Lens ») : on pose aussi la question comme un client la formulerait.
+# Une IA ne comprend pas une requete de mots-cles (« rachat or Lens ») : on lui pose la question comme un client la formulerait, et seulement ainsi.
 PHRASES_IA = {"FR": ["entreprise de rachat d'or à {ville}"], "ES": ["empresa de compra de oro en {ville}"], "IT": ["azienda che compra oro a {ville}"]}
 
 
 def requetes_ia(pays: str, ville: str) -> list:
-    """Requetes posees aux IA : les requetes cles + ville, puis la question en langage naturel."""
-    return [f"{mot} {ville}" for mot in requetes_pays(pays)] + [p.format(ville=ville) for p in PHRASES_IA.get(pays, PHRASES_IA["FR"])]
+    """Questions posees aux IA : une phrase en langage naturel par pays (pas les requetes de mots-cles, reservees au rang dans Google Maps)."""
+    return [p.format(ville=ville) for p in PHRASES_IA.get(pays, PHRASES_IA["FR"])]
 
 
 def interroger_mode_ia(requete: str, pays: str) -> tuple:
