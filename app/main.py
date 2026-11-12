@@ -3765,6 +3765,7 @@ def _reponse_detail_client(
             "image_urls_deja_utilisees": {p.image_url for p in posts[:NB_POSTS_RECENTS_PHOTO] if p.image_url},
             "photos_en_preparation": photos_en_preparation,
             "google_connecte": google_oauth.google_est_connecte(db),
+            "titres_modifiables": _urls_titre_modifiable(db, [p.image_url for p in posts]),
             "fiches_google_libres": _fiches_google_libres_pour_client(db, client),
             "categories_photo": [
                 (valeur, google_business.LIBELLES_CATEGORIE_PHOTO.get(valeur, valeur))
@@ -13086,7 +13087,111 @@ async def publication_multi_titre_photo(client_id: int, request: Request, db: Se
         return JSONResponse({"erreur": f"Échec du dessin de l'image : {erreur}"}, status_code=500)
     if final:
         _archiver_creation(db, client_id, "carrousel" if len(resultat) > 1 else "visuel", "Titre sur photo", list(resultat), meta={"titre": str(donnees.get("titre") or "")[:200], "source": "titre_photo"})
+        _enregistrer_recettes_titre(db, client_id, list(resultat), commun, [
+            {"photo_url": str(p["url"]).strip(), "titre": " ".join(str(p.get("titre") or "").split())[:120] or commun["titre"], "numero": i + 1, "total": len(photos)} for i, p in a_dessiner
+        ])
     return JSONResponse({"images": resultat} if final else {"image": resultat})
+
+
+def _enregistrer_recettes_titre(db: Session, client_id: int, urls: list, commun: dict, images: list) -> None:
+    """Garde la recette de chaque image « titre sur photo » finale (photo d'origine + reglages) pour pouvoir en changer le titre ou le logo plus tard. Jamais bloquant."""
+    try:
+        for url, infos in zip(urls, images):
+            if not db.query(models.RecetteTitrePhoto).filter(models.RecetteTitrePhoto.url_image == url).first():
+                db.add(models.RecetteTitrePhoto(url_image=url, client_id=client_id, recette_json=json.dumps({"commun": commun, **infos}, ensure_ascii=False, default=str)))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _recette_titre_de(db: Session, url: str):
+    """(ligne, recette) du visuel « titre sur photo » dont l'image finale est `url`, ou (None, None)."""
+    ligne = db.query(models.RecetteTitrePhoto).filter(models.RecetteTitrePhoto.url_image == (url or "").strip()).first() if (url or "").strip() else None
+    if not ligne:
+        return None, None
+    try:
+        return ligne, json.loads(ligne.recette_json or "{}")
+    except ValueError:
+        return None, None
+
+
+def _urls_titre_modifiable(db: Session, urls) -> set:
+    """Parmi ces adresses d'images, celles dont on a gardé la recette : le titre et le logo peuvent encore être changés."""
+    urls = [u for u in set(urls) if u]
+    return {r.url_image for r in db.query(models.RecetteTitrePhoto.url_image).filter(models.RecetteTitrePhoto.url_image.in_(urls)).all()} if urls else set()
+
+
+@app.get("/titre-photo/recette")
+def lire_recette_titre_photo(request: Request, url: str = "", db: Session = Depends(obtenir_session)):
+    """Titre, sous-titre et logo actuels d'un visuel « titre sur photo » dont la recette est gardée (pour préremplir la fenêtre de modification)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne, recette = _recette_titre_de(db, url)
+    if not ligne:
+        return JSONResponse({"erreur": "Ce visuel a été créé avant que les réglages soient gardés : il ne peut pas être modifié, recréez-le depuis le composeur."}, status_code=404)
+    commun = recette.get("commun") or {}
+    client = db.get(models.Client, ligne.client_id) if ligne.client_id else None
+    return JSONResponse({"titre": recette.get("titre", ""), "sous_titre": commun.get("sous_titre", ""), "sans_logo": bool(commun.get("sans_logo")), "client_a_logo": bool(client and client.logo_url)})
+
+
+@app.post("/titre-photo/modifier")
+async def modifier_titre_photo(request: Request, db: Session = Depends(obtenir_session)):
+    """
+    Redessine un visuel « titre sur photo » avec un autre titre, sous-titre ou avec/sans logo, a partir de la photo d'origine et des reglages gardes.
+    mode « apercu » : image en base64 ; mode « final » : nouveau JPEG heberge, et l'image du post `post_id` (si fourni et si c'etait l'ancienne) est remplacee.
+    """
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    donnees = await request.json()
+    url = str(donnees.get("url") or "").strip()
+    ligne, recette = _recette_titre_de(db, url)
+    if not ligne:
+        return JSONResponse({"erreur": "Réglages introuvables pour ce visuel : recréez-le depuis le composeur."}, status_code=404)
+    client = db.get(models.Client, ligne.client_id) if ligne.client_id else None
+    if not client:
+        return JSONResponse({"erreur": "Client introuvable."}, status_code=404)
+    titre = " ".join(str(donnees.get("titre") or "").split())[:120]
+    if not titre:
+        return JSONResponse({"erreur": "Écrivez le titre à imprimer sur la photo."}, status_code=400)
+    sous_titre = " ".join(str(donnees.get("sous_titre") or "").split())[:40]
+    commun = {**(recette.get("commun") or {}), "sous_titre": sous_titre, "sans_logo": bool(donnees.get("sans_logo"))}
+    final = donnees.get("mode") == "final"
+
+    def fabriquer():
+        photo = _image_depuis_url_autorisee(str(recette.get("photo_url") or ""))
+        if photo is None:
+            raise ValueError("La photo d'origine n'est plus accessible : recréez le visuel depuis le composeur.")
+        logo = None if commun.get("sans_logo") else _image_depuis_url_publique(commun.get("logo_url") or "")
+        image = titre_photo.dessiner(
+            photo, titre, commun.get("sous_titre", ""), commun.get("couleur"), logo, commun.get("secondaires"), commun.get("reglages"), commun.get("nom", ""),
+            int(recette.get("numero") or 1), int(recette.get("total") or 1), commun.get("logo_position"), commun.get("logo_style"), commun.get("logo_couleur_fond"),
+        )
+        if not final:
+            image = image.resize((720, round(720 * image.height / image.width)), Image.LANCZOS)
+        tampon = io.BytesIO()
+        image.save(tampon, format="JPEG", quality=92 if final else 80, subsampling=0 if final else 2)
+        if not final:
+            return "data:image/jpeg;base64," + base64.b64encode(tampon.getvalue()).decode()
+        return ovh_upload.envoyer_octets(tampon.getvalue(), f"titre-{uuid.uuid4().hex[:8]}-{int(recette.get('numero') or 1)}.jpg")
+
+    try:
+        resultat = await run_in_threadpool(_avec_polices_client(client, fabriquer))
+    except ValueError as erreur:
+        return JSONResponse({"erreur": str(erreur)}, status_code=400)
+    except Exception as erreur:
+        return JSONResponse({"erreur": f"Échec du dessin de l'image : {erreur}"}, status_code=500)
+    if not final:
+        return JSONResponse({"image": resultat})
+    _enregistrer_recettes_titre(db, client.id, [resultat], commun, [{"photo_url": recette.get("photo_url"), "titre": titre, "numero": recette.get("numero", 1), "total": recette.get("total", 1)}])
+    _archiver_creation(db, client.id, "visuel", "Titre sur photo (modifié)", [resultat], meta={"titre": titre, "source": "titre_photo"})
+    try:
+        post = db.get(models.Post, int(donnees.get("post_id"))) if donnees.get("post_id") else None
+    except (TypeError, ValueError):
+        post = None
+    if post and post.client_id == client.id and post.image_url == url and post.statut == "BROUILLON":
+        post.image_url = resultat
+        db.commit()
+    return JSONResponse({"image": resultat, "post_mis_a_jour": bool(post and post.image_url == resultat)})
 
 
 @app.post("/publication-multi/{client_id}/pastilles-avant-apres")
@@ -15874,6 +15979,7 @@ def _reponse_post_detail(request: Request, db: Session, post: models.Post, erreu
             "types_post": google_publish.TYPES_POST,
             "erreur": erreur,
             "jours_occupes_json": _jours_occupes_client(db, post.client_id, posts_en_ligne=_posts_en_ligne_pour_client(db, post.client)),
+            "titres_modifiables": _urls_titre_modifiable(db, [post.image_url]),
         },
         status_code=code,
     )

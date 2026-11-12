@@ -1,0 +1,78 @@
+{# Fenetre « Modifier le titre » d'un visuel « titre sur photo » dont la recette est gardee (voir /titre-photo/modifier).
+   A inclure une fois par page ; les boutons .bouton-modifier-titre (data-url = image actuelle, data-post-id) l'ouvrent. #}
+<dialog id="dialogue-titre-photo" class="dialogue-titre-photo">
+  <form method="dialog" class="formulaire" id="formulaire-titre-photo">
+    <h3>Modifier le titre du visuel</h3>
+    <img id="apercu-titre-photo" alt="Aperçu du visuel" class="apercu-titre-photo">
+    <label>Titre
+      <input type="text" id="champ-titre-photo" maxlength="120" required>
+    </label>
+    <label>Sous-titre (étiquette, facultatif)
+      <input type="text" id="champ-sous-titre-photo" maxlength="40">
+    </label>
+    <label class="filtre-case">
+      <input type="checkbox" id="champ-logo-photo" checked> Afficher le logo
+    </label>
+    <p class="texte-discret" id="note-logo-photo" hidden>Ce client n'a pas de logo enregistré : rien ne sera affiché, quel que soit ce choix.</p>
+    <p class="texte-discret">La photo d'origine, la police, le style et les couleurs restent ceux du visuel : seul le texte (et le logo) change.</p>
+    <p class="message-erreur" id="erreur-titre-photo" hidden></p>
+    <div class="actions-avis">
+      <button type="button" class="bouton-secondaire" id="bouton-apercu-titre-photo">Aperçu</button>
+      <button type="button" class="bouton" id="bouton-enregistrer-titre-photo">Enregistrer sur le post</button>
+      <button type="button" class="bouton-secondaire" id="bouton-annuler-titre-photo">Annuler</button>
+    </div>
+  </form>
+</dialog>
+<style>
+  .dialogue-titre-photo { max-width: 34rem; width: calc(100% - 2rem); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); background: var(--carte); color: var(--texte); padding: 1rem 1.2rem; }
+  .dialogue-titre-photo::backdrop { background: rgba(0, 0, 0, 0.5); }
+  .apercu-titre-photo { width: 100%; border-radius: 8px; display: block; margin-bottom: 0.6rem; }
+</style>
+<script>
+(function () {
+  const dialogue = document.getElementById("dialogue-titre-photo");
+  if (!dialogue) return;
+  const $ = (id) => document.getElementById(id);
+  let courant = null, occupe = false;
+  function erreur(texte) { $("erreur-titre-photo").textContent = texte || ""; $("erreur-titre-photo").hidden = !texte; }
+  function bloquer(etat) { occupe = etat; ["bouton-apercu-titre-photo", "bouton-enregistrer-titre-photo"].forEach((id) => { $(id).disabled = etat; }); }
+  const corps = (mode) => JSON.stringify({ url: courant.url, post_id: courant.postId, mode: mode, titre: $("champ-titre-photo").value, sous_titre: $("champ-sous-titre-photo").value, sans_logo: !$("champ-logo-photo").checked });
+  async function envoyer(mode) {
+    const r = await fetch("/titre-photo/modifier", { method: "POST", headers: { "Content-Type": "application/json" }, body: corps(mode) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.erreur || "Échec (code " + r.status + ").");
+    return d;
+  }
+
+  document.addEventListener("click", async (e) => {
+    const bouton = e.target.closest(".bouton-modifier-titre");
+    if (!bouton) return;
+    courant = { url: bouton.dataset.url, postId: bouton.dataset.postId || "" };
+    erreur(""); $("apercu-titre-photo").src = courant.url;
+    $("champ-titre-photo").value = ""; $("champ-sous-titre-photo").value = ""; $("champ-logo-photo").checked = true; $("note-logo-photo").hidden = true;
+    bloquer(true); dialogue.showModal();
+    try {
+      const r = await fetch("/titre-photo/recette?url=" + encodeURIComponent(courant.url));
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.erreur || "Réglages introuvables.");
+      $("champ-titre-photo").value = d.titre; $("champ-sous-titre-photo").value = d.sous_titre; $("champ-logo-photo").checked = !d.sans_logo; $("note-logo-photo").hidden = d.client_a_logo;
+      bloquer(false);
+    } catch (x) { erreur(x.message); }
+  });
+  $("bouton-annuler-titre-photo").addEventListener("click", () => dialogue.close());
+  $("bouton-apercu-titre-photo").addEventListener("click", async () => {
+    if (occupe) return; erreur(""); bloquer(true); $("bouton-apercu-titre-photo").textContent = "⏳ Aperçu…";
+    try { $("apercu-titre-photo").src = (await envoyer("apercu")).image; } catch (x) { erreur(x.message); }
+    $("bouton-apercu-titre-photo").textContent = "Aperçu"; bloquer(false);
+  });
+  $("bouton-enregistrer-titre-photo").addEventListener("click", async () => {
+    if (occupe) return; if (!$("champ-titre-photo").value.trim()) { erreur("Écrivez le titre à imprimer sur la photo."); return; }
+    erreur(""); bloquer(true); $("bouton-enregistrer-titre-photo").textContent = "⏳ Enregistrement…";
+    try {
+      await envoyer("final");
+      if (courant.postId && document.getElementById("post-" + courant.postId)) window.location.hash = "post-" + courant.postId;
+      window.location.reload();
+    } catch (x) { erreur(x.message); $("bouton-enregistrer-titre-photo").textContent = "Enregistrer sur le post"; bloquer(false); }
+  });
+})();
+</script>

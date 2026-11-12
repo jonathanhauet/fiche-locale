@@ -1326,6 +1326,21 @@ class Creation(Base):
     cree_le = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class RecetteTitrePhoto(Base):
+    """
+    Recette d'un visuel « titre sur photo » : adresse de la photo d'origine et reglages du dessin, gardes pour pouvoir changer le titre, le sous-titre ou le logo
+    apres coup (le JPEG final, lui, a le texte fondu dans ses pixels). Une ligne par image finale ; recette_json = {"commun", "photo_url", "titre", "numero", "total"}.
+    """
+
+    __tablename__ = "recettes_titre_photo"
+
+    id = Column(Integer, primary_key=True)
+    url_image = Column(String, unique=True, index=True)          # adresse de l'image finale hebergee
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    recette_json = Column(Text, default="{}")
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
 class ParametreArchive(Base):
     """Reglage de l'archive des creations (voir creations.py) : duree de conservation avant suppression automatique. Une seule ligne attendue."""
 

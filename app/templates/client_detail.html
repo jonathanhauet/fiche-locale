@@ -1098,6 +1098,9 @@
       <button type="button" class="bouton-recadrer-image bouton-recadrer-post" data-post-id="{{ post.id }}" data-url="{{ post.image_url }}">🖉 Recadrer</button>
       {% endif %}
     </div>
+    {% if post.statut == "BROUILLON" and post.image_url in titres_modifiables %}
+    <div class="actions-avis"><button type="button" class="bouton-secondaire bouton-modifier-titre" data-post-id="{{ post.id }}" data-url="{{ post.image_url }}">✏️ Modifier le titre ou le logo</button></div>
+    {% endif %}
     {% endif %}
     <p class="texte-complet-post">{{ post.texte }}</p>
 
@@ -2142,4 +2145,5 @@ document.querySelectorAll(".bouton-image-ia").forEach((bouton) => {
   });
 });
 </script>
+{% include "_modifier_titre.html" %}
 {% endblock %}

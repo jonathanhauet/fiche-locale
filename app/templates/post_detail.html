@@ -125,6 +125,10 @@
         <button type="button" id="bouton-retirer-image" class="bouton-retirer-image" title="Retirer l'image">×</button>
         <button type="button" id="bouton-recadrer-image" class="bouton-recadrer-image">🖉 Recadrer</button>
       </div>
+      {% if post.statut == "BROUILLON" and post.image_url in titres_modifiables %}
+      <div class="actions-avis"><button type="button" class="bouton-secondaire bouton-modifier-titre" data-post-id="{{ post.id }}" data-url="{{ post.image_url }}">✏️ Modifier le titre ou le logo</button></div>
+      <p class="texte-discret">Les modifications non enregistrées de ce formulaire seront perdues : enregistrez d'abord si besoin.</p>
+      {% endif %}
 
       <label>
         URL de l'image
@@ -475,4 +479,5 @@ document.getElementById("bouton-image-ia").addEventListener("click", (evenement)
   window.genererImageIA({{ post.id }}, evenement.currentTarget, document.getElementById("statut-image-ia"), champ ? champ.value.trim() : "");
 });
 </script>
+{% include "_modifier_titre.html" %}
 {% endblock %}
