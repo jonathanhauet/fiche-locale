@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+{% if traitement %}<meta http-equiv="refresh" content="15">{% endif %}
 <title>{{ meta_titre }}</title>
 <meta property="og:title" content="{{ meta_titre }}">
 <meta property="og:type" content="video.other">
@@ -29,7 +30,10 @@
 <body>
 <main>
   {% if ligne.logo_url and disponible and debloque %}<img class="logo" src="{{ ligne.logo_url }}" alt="Logo">{% endif %}
-  {% if not disponible %}
+  {% if traitement %}
+    <h1>La vidéo est en cours de préparation</h1>
+    <p class="infos">Elle sera lisible dans quelques minutes : cette page se met à jour toute seule, vous n'avez rien à faire.</p>
+  {% elif not disponible %}
     <h1>Cette vidéo n'est plus disponible</h1>
     <p class="infos">Elle a été supprimée à la fin de sa durée de conservation, ou retirée par son auteur. Demandez-en une nouvelle copie à la personne qui vous a envoyé ce lien.</p>
   {% elif not debloque %}

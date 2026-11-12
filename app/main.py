@@ -204,6 +204,14 @@ def _migrer_vers_multi_comptes():
             if "mois_agence_recente" not in colonnes_suivi:
                 connexion.execute(text("ALTER TABLE parametre_suivi_goldunion ADD COLUMN mois_agence_recente INTEGER DEFAULT 6"))
 
+    if "enregistrements" in inspecteur.get_table_names():
+        colonnes_enregistrements = {c["name"] for c in inspecteur.get_columns("enregistrements")}
+        with engine.begin() as connexion:
+            if "progression" not in colonnes_enregistrements:
+                connexion.execute(text("ALTER TABLE enregistrements ADD COLUMN progression INTEGER DEFAULT 0"))
+            if "etape" not in colonnes_enregistrements:
+                connexion.execute(text("ALTER TABLE enregistrements ADD COLUMN etape VARCHAR DEFAULT ''"))
+
     with engine.begin() as connexion:
         if "compte_google_id" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN compte_google_id INTEGER"))
@@ -7497,7 +7505,7 @@ def page_enregistrer(request: Request, db: Session = Depends(obtenir_session)):
     clients = [c for c in db.query(models.Client).order_by(models.Client.nom).all() if _logo_client_enregistrement(c)]
     return templates.TemplateResponse(request, "enregistrer.html", {
         "page_actuelle": "enregistrer", "modes": enregistrements.MODES, "durees": [(j, enregistrements.LIBELLES_DUREE[j]) for j in enregistrements.DUREES_JOURS], "duree_defaut": enregistrements.DUREE_DEFAUT,
-        "duree_max": enregistrements.DUREE_MAX_SECONDES, "clients_logo": [{"id": c.id, "nom": c.nom} for c in clients],
+        "duree_max": enregistrements.DUREE_MAX_SECONDES, "clients_logo": [{"id": c.id, "nom": c.nom, "couleur": couleur_marque_client(c)} for c in clients],
         "enregistrements": [enregistrements.en_dict(l, _lien_enregistrement(request, l.token)) for l in lignes],
     })
 
@@ -7562,13 +7570,25 @@ async def recevoir_morceau_enregistrement(identifiant: int, request: Request, nu
 
 
 @app.post("/enregistrements/{identifiant}/finaliser")
-async def finaliser_enregistrement(identifiant: int, request: Request, nombre: int = Form(...), extension: str = Form("webm"), duree: float = Form(0), vignette: UploadFile = File(None), db: Session = Depends(obtenir_session)):
-    """Tous les morceaux sont envoyes : assemblage et envoi vers l'hebergement en arriere-plan (suivre l'etat avec /etat)."""
+async def finaliser_enregistrement(
+    identifiant: int, request: Request, nombre: int = Form(...), extension: str = Form("webm"), duree: float = Form(0), vignette: UploadFile = File(None),
+    titre: str = Form(None), jours: str = Form(None), mot_de_passe: str = Form(""), client_id: str = Form(""), logo_page: str = Form(""),
+    debut: float = Form(0), fin: float = Form(0), fin_active: str = Form(""), fin_couleur: str = Form(""), fin_texte: str = Form(""),
+    db: Session = Depends(obtenir_session),
+):
+    """
+    Tous les morceaux sont envoyes : reglages definitifs (titre, conservation, mot de passe, client), puis traitement en arriere-plan (decoupe de `debut` a `fin`,
+    sequence de fin animee avec le logo du client, conversion en MP4) et mise en ligne ; suivre l'etat avec /etat. Si des morceaux manquent, 409 avec `recus`
+    (nombre de morceaux d'affilee deja recus) pour que la page renvoie le reste.
+    """
     if not utilisateur_connecte(request):
         return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
     ligne = _enregistrement_en_envoi(db, identifiant)
     if not ligne:
         return JSONResponse({"erreur": "Enregistrement introuvable ou déjà envoyé."}, status_code=404)
+    recus = enregistrements.compter_morceaux(ligne.id)
+    if nombre < 1 or recus < nombre:
+        return JSONResponse({"erreur": "Des morceaux de la vidéo n'ont pas été reçus.", "recus": recus}, status_code=409)
     extension = extension if extension in enregistrements.EXTENSIONS else "webm"
     octets_vignette = None
     if vignette is not None and getattr(vignette, "filename", ""):
@@ -7577,7 +7597,56 @@ async def finaliser_enregistrement(identifiant: int, request: Request, nombre: i
             octets_vignette = _jpeg_normalise(brut, 640)
         except ValueError:
             octets_vignette = None
-    enregistrements.lancer_envoi(SessionLocal, ligne.id, int(nombre), extension, float(duree or 0), octets_vignette)
+    client = db.get(models.Client, int(client_id)) if str(client_id).isdigit() else None
+    if titre is not None:
+        ligne.titre = " ".join(titre.split())[:120]
+    if jours is not None:
+        ligne.jours_conservation = enregistrements.duree_valide(jours)
+    if mot_de_passe.strip():
+        ligne.mot_de_passe_hash = hacher_mot_de_passe(mot_de_passe[:100])
+    if client:
+        ligne.client_id = client.id
+        ligne.logo_url = _logo_client_enregistrement(client) if logo_page else ""
+    options = {"debut": max(0.0, float(debut or 0)), "fin": max(0.0, float(fin or 0))}
+    if fin_active:
+        logo = await run_in_threadpool(_image_depuis_url_publique, _logo_client_enregistrement(client)) if client and _logo_client_enregistrement(client) else None
+        defaut = (couleur_marque_client(client) if client else "") or enregistrements.COULEUR_FIN_DEFAUT
+        options["sequence_fin"] = {"couleur": enregistrements.couleur_valide(fin_couleur, defaut), "texte": " ".join(fin_texte.split())[:80], "logo": logo}
+    ligne.etat, ligne.progression, ligne.etape, ligne.erreur = "TRAITEMENT", 0, "En attente de traitement", ""
+    db.commit()
+    enregistrements.lancer_envoi(SessionLocal, ligne.id, int(nombre), extension, float(duree or 0), octets_vignette, options)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/enregistrements/apercu-fin")
+def apercu_sequence_fin(request: Request, client_id: str = "", couleur: str = "", texte: str = "", db: Session = Depends(obtenir_session)):
+    """Image finale de la sequence de fin (couleur, logo du client, texte) pour la voir avant d'enregistrer."""
+    if not utilisateur_connecte(request):
+        return Response(status_code=401)
+    client = db.get(models.Client, int(client_id)) if str(client_id).isdigit() else None
+    url = _logo_client_enregistrement(client)
+    logo = _image_depuis_url_publique(url) if url else None
+    defaut = (couleur_marque_client(client) if client else "") or enregistrements.COULEUR_FIN_DEFAUT
+    image = enregistrements.apercu_fin(960, 540, enregistrements.couleur_valide(couleur, defaut), logo, " ".join(texte.split())[:80])
+    tampon = io.BytesIO()
+    image.save(tampon, "PNG")
+    return Response(tampon.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/enregistrements/{identifiant}/recuperer")
+async def recuperer_enregistrement(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Enregistrement interrompu (onglet ferme, plantage) : publie ce qui avait deja ete envoye, sans decoupe ni sequence de fin."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = _enregistrement_en_envoi(db, identifiant)
+    if not ligne:
+        return JSONResponse({"erreur": "Enregistrement introuvable ou déjà envoyé."}, status_code=404)
+    nombre = enregistrements.compter_morceaux(ligne.id)
+    if nombre < 1:
+        return JSONResponse({"erreur": "Rien n'a été reçu pour cet enregistrement."}, status_code=400)
+    ligne.etat, ligne.progression, ligne.etape = "TRAITEMENT", 0, "En attente de traitement"
+    db.commit()
+    enregistrements.lancer_envoi(SessionLocal, ligne.id, nombre, enregistrements.extension_probable(ligne.id), 0.0, None, {})
     return JSONResponse({"ok": True})
 
 
@@ -7588,7 +7657,8 @@ def etat_enregistrement(identifiant: int, request: Request, db: Session = Depend
     ligne = db.get(models.Enregistrement, identifiant)
     if not ligne:
         return JSONResponse({"erreur": "Introuvable."}, status_code=404)
-    return JSONResponse({"etat": ligne.etat, "erreur": ligne.erreur or "", "lien": _lien_enregistrement(request, ligne.token), "taille_mo": round((ligne.taille or 0) / 1048576, 1)})
+    return JSONResponse({"etat": ligne.etat, "erreur": ligne.erreur or "", "lien": _lien_enregistrement(request, ligne.token), "taille_mo": round((ligne.taille or 0) / 1048576, 1),
+                         "progression": ligne.progression or 0, "etape": ligne.etape or "", "duree": int(ligne.duree or 0)})
 
 
 @app.post("/enregistrements/{identifiant}/prolonger")
@@ -7627,6 +7697,8 @@ def supprimer_enregistrement(identifiant: int, request: Request, db: Session = D
     ligne = db.get(models.Enregistrement, identifiant)
     if not ligne:
         return JSONResponse({"erreur": "Introuvable."}, status_code=404)
+    if ligne.etat == "TRAITEMENT":
+        return JSONResponse({"erreur": "La vidéo est en cours de traitement : attendez la fin pour la supprimer."}, status_code=409)
     enregistrements.supprimer(db, ligne)
     return JSONResponse({"ok": True})
 
@@ -7634,16 +7706,17 @@ def supprimer_enregistrement(identifiant: int, request: Request, db: Session = D
 def _page_enregistrement(request: Request, ligne, **supplement):
     """Page publique de visionnage : lecteur, ou formulaire de mot de passe, ou message « plus disponible »."""
     disponible = enregistrements.disponible(ligne)
+    traitement = ligne.etat == "TRAITEMENT"
     protege = bool(ligne.mot_de_passe_hash)
     debloque = (not protege) or utilisateur_connecte(request) or request.session.get("enreg_" + ligne.token) == "1"
     contexte = {
-        "ligne": ligne, "disponible": disponible, "protege": protege, "debloque": debloque, "erreur": "",
+        "ligne": ligne, "disponible": disponible, "traitement": traitement, "protege": protege, "debloque": debloque, "erreur": "",
         "expire_texte": ligne.expire_le.strftime("%d/%m/%Y") if (ligne.expire_le and disponible) else "",
         "lien": _lien_enregistrement(request, ligne.token), "extension": (ligne.url.rsplit(".", 1)[-1].lower() if ligne.url else "webm"),
         "meta_titre": (ligne.titre or "Vidéo") if (not protege) else "Vidéo protégée", "meta_image": ligne.url_vignette if (disponible and not protege) else "",
         **supplement,
     }
-    return templates.TemplateResponse(request, "enregistrement_public.html", contexte, status_code=200 if disponible else 410, headers=ENTETES_PAGE_PRIVEE)
+    return templates.TemplateResponse(request, "enregistrement_public.html", contexte, status_code=200 if (disponible or traitement) else 410, headers=ENTETES_PAGE_PRIVEE)
 
 
 @app.get("/v/{token}", response_class=HTMLResponse)

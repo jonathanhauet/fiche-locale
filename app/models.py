@@ -1329,7 +1329,7 @@ class Creation(Base):
 class Enregistrement(Base):
     """
     Video enregistree depuis le navigateur et partagee par un lien public `/v/<token>` (voir enregistrements.py). etat : ENVOI (morceaux en cours de reception ou
-    d'envoi vers OVH), PRET, ECHEC ou SUPPRIMEE (fichiers retires, la ligne reste pour que le lien affiche « plus disponible »). expire_le vide = conservee sans limite.
+    d'envoi vers OVH), TRAITEMENT (assemblage et conversion en MP4 en arriere-plan), PRET, ECHEC ou SUPPRIMEE (fichiers retires, la ligne reste pour que le lien affiche « plus disponible »). expire_le vide = conservee sans limite.
     """
 
     __tablename__ = "enregistrements"
@@ -1348,6 +1348,8 @@ class Enregistrement(Base):
     taille = Column(Integer, default=0)                          # octets
     jours_conservation = Column(Integer, default=7)              # 0 = illimitee
     mot_de_passe_hash = Column(String, default="")               # facultatif : protege la page de visionnage
+    progression = Column(Integer, default=0)                     # 0 a 100 pendant le traitement (decoupe, sequence de fin, conversion MP4)
+    etape = Column(String, default="")                           # etape en cours, affichee a l'utilisateur
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     logo_url = Column(String, default="")                        # logo affiche sur la page de visionnage (vide = aucun)
     cree_le = Column(DateTime, default=datetime.utcnow, index=True)

@@ -22,6 +22,10 @@
   .en-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.4rem; }
   .en-actions button, .en-actions select { width: auto; padding: 0.2rem 0.6rem; font-size: 0.82rem; }
   .en-ko { color: var(--danger); }
+  .en-trim label { display: flex; flex-direction: row !important; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin: 0.4rem 0; }
+  .en-trim input[type=range] { width: auto; flex: 1 1 14rem; max-width: 34rem; padding: 0; }
+  .en-trim strong { min-width: 3.6rem; font-variant-numeric: tabular-nums; }
+  .en-fin-apercu { width: 100%; max-width: 480px; border-radius: 8px; display: block; margin: 0.5rem 0; }
   .en-etiquette { display: inline-block; padding: 0 0.5rem; border-radius: 999px; background: var(--carte-bordure); color: var(--texte); font-size: 0.75rem; margin-left: 0.3rem; }
 </style>
 <div class="barre-titre"><h1>Enregistrer une vidéo</h1></div>
@@ -59,7 +63,7 @@
     <label>Logo d'un client (facultatif)
       <select id="en-client">
         <option value="">Aucun logo</option>
-        {% for c in clients_logo %}<option value="{{ c.id }}">{{ c.nom }}</option>{% endfor %}
+        {% for c in clients_logo %}<option value="{{ c.id }}" data-couleur="{{ c.couleur }}">{{ c.nom }}</option>{% endfor %}
       </select>
     </label>
     <label class="filtre-case"><input type="checkbox" id="en-logo-page" disabled> Sur la page de visionnage</label>
@@ -109,10 +113,45 @@
 </div>
 
 <div class="bloc-section" id="en-relecture-bloc" hidden>
-  <span class="choix-image-titre">5. Relire et partager</span>
+  <span class="choix-image-titre">5. Relire, ajuster et publier</span>
   <div class="en-scene"><video id="en-relecture" controls playsinline></video></div>
+  <p class="texte-discret" id="en-envoi-etat"></p>
+
+  <details class="bloc-repliable" open>
+    <summary>✂️ Couper le début et la fin</summary>
+    <div class="en-trim">
+      <label>Début <input type="range" id="en-trim-debut" min="0" max="1" step="0.1" value="0"> <strong id="en-trim-debut-t">0:00.0</strong></label>
+      <label>Fin <input type="range" id="en-trim-fin" min="0" max="1" step="0.1" value="1"> <strong id="en-trim-fin-t">0:00.0</strong></label>
+      <div class="en-boutons">
+        <button type="button" class="bouton-secondaire" id="en-trim-debut-ici">⏮ Début à l'image affichée</button>
+        <button type="button" class="bouton-secondaire" id="en-trim-fin-ici">Fin à l'image affichée ⏭</button>
+        <button type="button" class="bouton-secondaire" id="en-trim-voir">▶ Voir la sélection</button>
+        <button type="button" class="bouton-secondaire" id="en-trim-raz">Tout garder</button>
+      </div>
+      <p class="texte-discret" id="en-trim-resume"></p>
+    </div>
+    <p class="texte-discret">Déplacez les curseurs (la vidéo se positionne dessus) ou mettez la vidéo en pause sur l'image voulue et utilisez les boutons. La découpe est faite à la publication : rien n'est perdu tant que vous n'avez pas publié.</p>
+  </details>
+
+  <details class="bloc-repliable">
+    <summary>🎬 Séquence de fin animée (logo du client sur fond de couleur)</summary>
+    <label class="filtre-case"><input type="checkbox" id="en-fin-actif"> Ajouter une séquence de fin de 3 secondes à la suite de la vidéo</label>
+    <div class="formulaire-ligne" id="en-fin-champs" hidden>
+      <label>Couleur de fond
+        <input type="color" id="en-fin-couleur" value="#1f4e8c" style="width:3.4rem;padding:0.1rem;">
+      </label>
+      <label>Texte (facultatif)
+        <input type="text" id="en-fin-texte" maxlength="80" placeholder="ex. Prenez rendez-vous : 05 00 00 00 00" style="min-width:18rem">
+      </label>
+    </div>
+    <div id="en-fin-apercu-bloc" hidden>
+      <img id="en-fin-apercu" alt="Aperçu de la séquence de fin" class="en-fin-apercu">
+      <p class="texte-discret">Aperçu de l'image finale. En vidéo : un cercle de la couleur s'ouvre depuis le centre, le logo apparaît sur sa carte blanche en rebondissant, un filet se trace, puis le texte monte en fondu. Le logo est celui du client choisi dans les réglages (étape 2) ; sans client, la séquence ne montre que la couleur et le texte. Le texte se met tout seul en blanc ou en noir selon la couleur.</p>
+    </div>
+  </details>
+
   <div class="en-boutons">
-    <button type="button" class="bouton" id="en-envoyer">⬆ Envoyer et obtenir le lien</button>
+    <button type="button" class="bouton" id="en-envoyer">⬆ Publier et obtenir le lien</button>
     <button type="button" class="bouton-secondaire" id="en-recommencer">↺ Recommencer</button>
   </div>
   <div id="en-progression" class="conteneur-progression-avis" hidden>
@@ -120,7 +159,7 @@
     <span id="en-texte-progression" class="texte-progression-avis"></span>
   </div>
   <div id="en-resultat" hidden>
-    <p><strong>✅ Votre vidéo est prête.</strong> <span class="texte-discret" id="en-resultat-detail"></span></p>
+    <p><strong id="en-resultat-titre">✅ Lien créé.</strong> <span class="texte-discret" id="en-resultat-detail"></span></p>
     <div class="en-lien">
       <input type="text" id="en-lien" readonly>
       <button type="button" class="bouton" id="en-copier">Copier le lien</button>
@@ -134,17 +173,17 @@
   {% if not enregistrements %}<p class="texte-vide">Aucun enregistrement pour l'instant.</p>{% endif %}
   <div id="en-liste">
     {% for e in enregistrements %}
-    <div class="en-ligne" data-id="{{ e.id }}">
+    <div class="en-ligne" data-id="{{ e.id }}" data-etat="{{ e.etat }}">
       {% if e.vignette and e.etat == 'PRET' %}<img src="{{ e.vignette }}" alt="" loading="lazy">{% else %}<div class="en-vide">🎥</div>{% endif %}
       <div>
         <div><span class="en-titre">{{ e.titre }}</span>
           {% if e.protege %}<span class="en-etiquette">🔒 mot de passe</span>{% endif %}
-          {% if e.etat == 'ENVOI' %}<span class="en-etiquette">envoi en cours</span>{% elif e.etat == 'ECHEC' %}<span class="en-etiquette en-ko">échec</span>{% elif e.etat == 'SUPPRIMEE' %}<span class="en-etiquette">supprimée</span>{% endif %}
+          {% if e.etat == 'ENVOI' %}<span class="en-etiquette">envoi en cours</span>{% elif e.etat == 'TRAITEMENT' %}<span class="en-etiquette en-progression-ligne">traitement {{ e.progression }} %{% if e.etape %} · {{ e.etape }}{% endif %}</span>{% elif e.etat == 'ECHEC' %}<span class="en-etiquette en-ko">échec</span>{% elif e.etat == 'SUPPRIMEE' %}<span class="en-etiquette">supprimée</span>{% endif %}
         </div>
         <div class="texte-discret">
           {{ e.mode }} · {{ e.cree_le|heure_locale("%d/%m/%Y %H:%M") }}{% if e.duree %} · {{ (e.duree // 60)|int }} min {{ '%02d'|format((e.duree % 60)|int) }} s{% endif %}{% if e.taille_mo %} · {{ e.taille_mo }} Mo{% endif %}
           {% if e.etat == 'PRET' %} · {% if e.illimitee %}conservée sans limite{% else %}supprimée le {{ e.expire_le|heure_locale("%d/%m/%Y") }} ({{ e.jours_restants }} j){% endif %}{% endif %}
-          {% if e.etat == 'ECHEC' and e.erreur %}<span class="en-ko"> · {{ e.erreur }}</span>{% endif %}
+          {% if e.etat == 'ECHEC' and e.erreur %}<span class="en-ko"> · {{ e.erreur }}</span>{% elif e.etat == 'PRET' and e.erreur %}<span> · ⚠ {{ e.erreur }}</span>{% endif %}
         </div>
         {% if e.etat == 'PRET' %}
         <div class="en-actions">
@@ -156,8 +195,17 @@
           <button type="button" class="bouton-secondaire en-prolonger">Changer la conservation</button>
           <button type="button" class="bouton-secondaire en-supprimer">🗑 Supprimer</button>
         </div>
+        {% elif e.etat == 'TRAITEMENT' %}
+        <div class="en-actions">
+          <input type="text" readonly value="{{ e.lien }}" class="en-champ-lien" style="max-width:22rem">
+          <button type="button" class="bouton-secondaire en-copier-ligne">Copier le lien</button>
+          <span class="texte-discret">Le lien fonctionnera dès la fin du traitement.</span>
+        </div>
         {% elif e.etat in ('ECHEC', 'ENVOI') %}
-        <div class="en-actions"><button type="button" class="bouton-secondaire en-supprimer">🗑 Supprimer</button></div>
+        <div class="en-actions">
+          {% if e.recuperable %}<button type="button" class="bouton-secondaire en-recuperer" title="Publie ce qui avait déjà été envoyé avant l'interruption">♻ Récupérer ce qui a été envoyé</button>{% endif %}
+          <button type="button" class="bouton-secondaire en-supprimer">🗑 Supprimer</button>
+        </div>
         {% endif %}
       </div>
     </div>
@@ -169,9 +217,10 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const DUREE_MAX = {{ duree_max|tojson }};
-  const TAILLE_MORCEAU = 8 * 1024 * 1024;
+  const SEUIL_PART = 3 * 1024 * 1024;
   let etat = "repos", flux = null, sources = [], enregistreur = null, morceaux = [], extension = "webm", mimeChoisi = "";
   let debut = 0, cumule = 0, minuteur = null, travailleur = null, contexteAudio = null, vignette = null, blobFinal = null, dureeFinale = 0, urlRelecture = "";
+  let enreg = null, creation = null, parts = [], tampon = [], tailleTampon = 0, pompeActive = false, publie = false, couleurFinTouchee = false;
 
   const peutEcran = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
   if (!peutEcran) {
@@ -187,6 +236,9 @@
     const ok = !!$("en-client").value;
     $("en-logo-page").disabled = $("en-logo-video").disabled = !ok;
     $("en-logo-page").checked = ok; if (!ok) $("en-logo-video").checked = false;
+    const option = $("en-client").selectedOptions[0];
+    if (!couleurFinTouchee) $("en-fin-couleur").value = (option && option.dataset.couleur) || "#1f4e8c";
+    majApercuFin();
   });
 
   $("en-bandeau-actif").addEventListener("change", () => { $("en-bandeau-champs").hidden = !$("en-bandeau-actif").checked; });
@@ -330,8 +382,8 @@
     $("en-decompte").hidden = true;
     mimeChoisi = choisirMime(); extension = mimeChoisi.includes("mp4") ? "mp4" : "webm";
     enregistreur = new MediaRecorder(flux, mimeChoisi ? { mimeType: mimeChoisi, videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 } : {});
-    morceaux = []; vignette = null; cumule = 0;
-    enregistreur.ondataavailable = (e) => { if (e.data && e.data.size) morceaux.push(e.data); };
+    abandonner(); vignette = null; cumule = 0;
+    enregistreur.ondataavailable = (e) => { if (e.data && e.data.size) recevoir(e.data); };
     enregistreur.onstop = fin;
     enregistreur.start(1000);
     debut = performance.now(); etat = "enregistrement";
@@ -358,20 +410,25 @@
   function fin() {
     liberer(); $("en-temps").hidden = true; $("en-pause").hidden = true; $("en-arreter").hidden = true; $("en-demarrer").hidden = false; $("en-demarrer").disabled = false;
     etat = "repos";
-    if (!morceaux.length) { message("Rien n'a été enregistré.", true); return; }
-    blobFinal = new Blob(morceaux, { type: mimeChoisi || "video/webm" });
+    viderTampon();
+    if (!parts.length) { message("Rien n'a été enregistré.", true); return; }
+    blobFinal = new Blob(parts.map((p) => p.blob), { type: mimeChoisi || "video/webm" });
     if (urlRelecture) URL.revokeObjectURL(urlRelecture);
     urlRelecture = URL.createObjectURL(blobFinal); $("en-relecture").src = urlRelecture;
-    $("en-resultat").hidden = true; $("en-progression").hidden = true; $("en-envoyer").disabled = false;
+    initTrim(dureeFinale); majEnvoi();
+    $("en-resultat").hidden = true; $("en-progression").hidden = true; $("en-envoyer").disabled = false; publie = false;
     $("en-relecture-bloc").hidden = false; $("en-relecture-bloc").scrollIntoView({ behavior: "smooth", block: "start" });
   }
   $("en-demarrer").addEventListener("click", demarrer);
   $("en-pause").addEventListener("click", pause);
   $("en-arreter").addEventListener("click", () => arreter());
-  $("en-recommencer").addEventListener("click", () => { blobFinal = null; $("en-relecture").removeAttribute("src"); $("en-relecture-bloc").hidden = true; message(""); window.scrollTo({ top: 0, behavior: "smooth" }); });
-  window.addEventListener("beforeunload", (e) => { if (etat === "enregistrement" || etat === "pause" || (blobFinal && $("en-resultat").hidden)) { e.preventDefault(); e.returnValue = ""; } });
+  $("en-recommencer").addEventListener("click", () => {
+    if (blobFinal && !publie && !confirm("Recommencer efface cet enregistrement non publié. Continuer ?")) return;
+    abandonner(); blobFinal = null; $("en-relecture").removeAttribute("src"); $("en-relecture-bloc").hidden = true; message(""); window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  window.addEventListener("beforeunload", (e) => { if (etat === "enregistrement" || etat === "pause" || (blobFinal && !publie)) { e.preventDefault(); e.returnValue = ""; } });
 
-  // ---- envoi par morceaux puis suivi de l'hebergement
+  // ---- envoi PENDANT l'enregistrement : des parties de ~3 Mo partent au fur et a mesure (rien n'est perdu si l'onglet se ferme, et la publication est rapide)
   function progression(pourcent, texte) { $("en-progression").hidden = false; $("en-barre").style.width = pourcent + "%"; $("en-texte-progression").textContent = texte; }
   async function appeler(url, options, essais) {
     for (let i = 0; i < (essais || 3); i++) {
@@ -381,33 +438,126 @@
     }
     throw new Error("Échec de l'envoi.");
   }
+  function recevoir(blob) { tampon.push(blob); tailleTampon += blob.size; if (tailleTampon >= SEUIL_PART) viderTampon(); }
+  function viderTampon() {
+    if (!tampon.length) return;
+    parts.push({ blob: new Blob(tampon, { type: mimeChoisi || "video/webm" }), envoye: false, echecs: 0 });
+    tampon = []; tailleTampon = 0; pomper();
+  }
+  function majEnvoi() {
+    const n = parts.filter((p) => p.envoye).length;
+    $("en-envoi-etat").textContent = (parts.length && !publie) ? (n === parts.length ? "✔ Enregistrement déjà envoyé au serveur (" + parts.length + " parties)." : "Envoi en arrière-plan : " + n + " / " + parts.length + " parties.") : "";
+  }
+  async function pomper() {
+    if (pompeActive) return; pompeActive = true;
+    try {
+      if (!enreg) { try { creation = creation || appeler("/enregistrements/nouveau", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: modeChoisi() }) }, 3); enreg = await creation; } catch (e) { creation = null; return; } }
+      while (true) {
+        const i = parts.findIndex((p) => !p.envoye); if (i < 0) break;
+        const p = parts[i], fd = new FormData(); fd.append("numero", i); fd.append("fichier", p.blob, "morceau.part");
+        try { await appeler("/enregistrements/" + enreg.id + "/morceau", { method: "POST", body: fd }, 2); p.envoye = true; majEnvoi(); }
+        catch (e) { p.echecs += 1; if (p.echecs >= 3) break; await attendre(2500); }
+      }
+    } finally { pompeActive = false; majEnvoi(); }
+  }
+  async function toutEnvoyer() {
+    for (let tour = 0; tour < 6; tour++) {
+      parts.forEach((p) => { p.echecs = 0; }); pomper();
+      while (pompeActive) await attendre(250);
+      if (enreg && parts.every((p) => p.envoye)) return true;
+      progression(2, "Reprise de l'envoi…"); await attendre(1500);
+    }
+    return false;
+  }
+  function abandonner() {
+    if (enreg && !publie) fetch("/enregistrements/" + enreg.id + "/supprimer", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", keepalive: true }).catch(() => {});
+    enreg = null; creation = null; parts = []; tampon = []; tailleTampon = 0; publie = false; $("en-envoi-etat").textContent = "";
+  }
+
+  // ---- decoupe du debut et de la fin (reglable a la main)
+  const trim = { max: 1, debut: 0, fin: 1 }; let lectureSelection = false;
+  const horodatage = (x) => { x = Math.max(0, x); const m = Math.floor(x / 60); return m + ":" + (x - m * 60).toFixed(1).padStart(4, "0"); };
+  function initTrim(duree) {
+    trim.max = Math.max(1, duree);
+    ["en-trim-debut", "en-trim-fin"].forEach((id) => { $(id).max = trim.max.toFixed(1); });
+    $("en-trim-debut").value = 0; $("en-trim-fin").value = trim.max; majTrim();
+  }
+  function majTrim(source) {
+    let d = parseFloat($("en-trim-debut").value) || 0, f = parseFloat($("en-trim-fin").value) || trim.max;
+    if (source === "debut" && d > f - 0.5) d = Math.max(0, f - 0.5);
+    if (source === "fin" && f < d + 0.5) f = Math.min(trim.max, d + 0.5);
+    trim.debut = d; trim.fin = f; $("en-trim-debut").value = d; $("en-trim-fin").value = f;
+    $("en-trim-debut-t").textContent = horodatage(d); $("en-trim-fin-t").textContent = horodatage(f);
+    const gardee = f - d, coupe = d > 0.05 || f < trim.max - 0.05;
+    $("en-trim-resume").textContent = "Durée conservée : " + horodatage(gardee).replace(/\.\d$/, "") + (coupe ? " (sur " + horodatage(trim.max).replace(/\.\d$/, "") + " enregistrées)" : "") + ($("en-fin-actif").checked ? " + 3 s de séquence de fin" : "") + ".";
+  }
+  function positionner(t) { try { $("en-relecture").currentTime = t; } catch (e) { /* lecteur pas pret */ } }
+  $("en-trim-debut").addEventListener("input", () => { majTrim("debut"); positionner(trim.debut); });
+  $("en-trim-fin").addEventListener("input", () => { majTrim("fin"); positionner(Math.max(0, trim.fin - 0.3)); });
+  $("en-trim-debut-ici").addEventListener("click", () => { $("en-trim-debut").value = Math.min($("en-relecture").currentTime, trim.fin - 0.5); majTrim("debut"); });
+  $("en-trim-fin-ici").addEventListener("click", () => { $("en-trim-fin").value = Math.max($("en-relecture").currentTime, trim.debut + 0.5); majTrim("fin"); });
+  $("en-trim-raz").addEventListener("click", () => initTrim(trim.max));
+  $("en-trim-voir").addEventListener("click", () => { positionner(trim.debut); lectureSelection = true; $("en-relecture").play().catch(() => {}); });
+  $("en-relecture").addEventListener("timeupdate", () => { if (lectureSelection && $("en-relecture").currentTime >= trim.fin) { $("en-relecture").pause(); lectureSelection = false; } });
+  $("en-relecture").addEventListener("pause", () => { if ($("en-relecture").currentTime < trim.fin - 0.2) lectureSelection = false; });
+  // Un WebM enregistre dans le navigateur n'a pas de duree : le lecteur indique « infini » tant qu'on ne l'a pas fait aller a la fin une fois.
+  $("en-relecture").addEventListener("loadedmetadata", () => {
+    const v = $("en-relecture"); if (v.duration !== Infinity) return;
+    v.currentTime = 1e7; v.addEventListener("timeupdate", function retour() { v.removeEventListener("timeupdate", retour); v.currentTime = 0; });
+  });
+
+  // ---- sequence de fin : apercu de l'image finale
+  let minuteurApercu = null;
+  function majApercuFin() {
+    $("en-fin-champs").hidden = !$("en-fin-actif").checked; $("en-fin-apercu-bloc").hidden = !$("en-fin-actif").checked; majTrim();
+    if (!$("en-fin-actif").checked) return;
+    clearTimeout(minuteurApercu);
+    minuteurApercu = setTimeout(() => { $("en-fin-apercu").src = "/enregistrements/apercu-fin?" + new URLSearchParams({ client_id: $("en-client").value, couleur: $("en-fin-couleur").value, texte: $("en-fin-texte").value }); }, 350);
+  }
+  $("en-fin-actif").addEventListener("change", majApercuFin);
+  $("en-fin-texte").addEventListener("input", majApercuFin);
+  $("en-fin-couleur").addEventListener("input", () => { couleurFinTouchee = true; majApercuFin(); });
+
+  // ---- publication : reglages definitifs, traitement sur le serveur, suivi
+  function champsFinalisation() {
+    const fd = new FormData();
+    fd.append("nombre", parts.length); fd.append("extension", extension); fd.append("duree", dureeFinale.toFixed(1)); if (vignette) fd.append("vignette", vignette, "vignette.jpg");
+    fd.append("titre", $("en-titre").value); fd.append("jours", $("en-jours").value); fd.append("mot_de_passe", $("en-mdp").value); fd.append("client_id", $("en-client").value); fd.append("logo_page", $("en-logo-page").checked ? "1" : "");
+    fd.append("debut", trim.debut.toFixed(2)); fd.append("fin", trim.fin.toFixed(2));
+    if ($("en-fin-actif").checked) { fd.append("fin_active", "1"); fd.append("fin_couleur", $("en-fin-couleur").value); fd.append("fin_texte", $("en-fin-texte").value); }
+    return fd;
+  }
+  function montrerLien(lien) { $("en-resultat").hidden = false; $("en-lien").value = lien; $("en-ouvrir").href = lien; }
+  async function suivre() {
+    for (let i = 0; i < 1800; i++) {
+      await attendre(2000);
+      let e; try { e = await appeler("/enregistrements/" + enreg.id + "/etat", {}, 2); } catch (x) { continue; }
+      if (e.etat === "PRET") {
+        $("en-progression").hidden = true; $("en-resultat-titre").textContent = "✅ Votre vidéo est prête."; $("en-resultat-detail").textContent = e.taille_mo + " Mo";
+        setTimeout(() => window.location.reload(), 20000); return;
+      }
+      if (e.etat === "ECHEC") throw new Error(e.erreur || "Le traitement a échoué.");
+      progression(Math.max(5, e.progression || 0), (e.etape || "Traitement") + " : " + (e.progression || 0) + " %");
+    }
+    throw new Error("Le traitement prend trop de temps : suivez-le dans la liste ci-dessous.");
+  }
   $("en-envoyer").addEventListener("click", async () => {
-    if (!blobFinal) return;
+    if (!blobFinal || publie) return;
     $("en-envoyer").disabled = true; $("en-resultat").hidden = true;
     try {
-      progression(1, "Préparation…");
-      const cree = await appeler("/enregistrements/nouveau", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        titre: $("en-titre").value, mode: modeChoisi(), jours: $("en-jours").value, mot_de_passe: $("en-mdp").value, client_id: $("en-client").value, logo_page: $("en-logo-page").checked }) });
-      const n = Math.ceil(blobFinal.size / TAILLE_MORCEAU);
-      for (let i = 0; i < n; i++) {
-        const fd = new FormData(); fd.append("numero", i); fd.append("fichier", blobFinal.slice(i * TAILLE_MORCEAU, (i + 1) * TAILLE_MORCEAU), "morceau.part");
-        await appeler("/enregistrements/" + cree.id + "/morceau", { method: "POST", body: fd });
-        progression(Math.round(((i + 1) / n) * 90), "Envoi " + Math.round(((i + 1) / n) * 100) + " % (" + (blobFinal.size / 1048576).toFixed(1).replace(".", ",") + " Mo)");
+      progression(2, "Envoi des dernières parties…");
+      if (!(await toutEnvoyer())) throw new Error("Envoi impossible pour le moment : vérifiez votre connexion puis réessayez.");
+      let essais = 0;
+      while (true) {
+        const r = await fetch("/enregistrements/" + enreg.id + "/finaliser", { method: "POST", body: champsFinalisation() }), d = await r.json().catch(() => ({}));
+        if (r.ok) break;
+        if (r.status === 409 && essais++ < 2) { parts.forEach((p, i) => { if (i >= (d.recus || 0)) p.envoye = false; }); if (!(await toutEnvoyer())) throw new Error("Envoi impossible pour le moment."); continue; }
+        throw new Error(d.erreur || "Erreur " + r.status);
       }
-      const fd = new FormData(); fd.append("nombre", n); fd.append("extension", extension); fd.append("duree", dureeFinale.toFixed(1)); if (vignette) fd.append("vignette", vignette, "vignette.jpg");
-      await appeler("/enregistrements/" + cree.id + "/finaliser", { method: "POST", body: fd });
-      progression(92, "Mise en ligne de la vidéo…");
-      for (let i = 0; i < 450; i++) {
-        await attendre(2000);
-        const e = await appeler("/enregistrements/" + cree.id + "/etat", {}, 2);
-        if (e.etat === "PRET") {
-          $("en-progression").hidden = true; $("en-resultat").hidden = false; $("en-lien").value = e.lien; $("en-ouvrir").href = e.lien; $("en-resultat-detail").textContent = e.taille_mo + " Mo";
-          setTimeout(() => window.location.reload(), 30000); return;
-        }
-        if (e.etat === "ECHEC") throw new Error(e.erreur || "La mise en ligne a échoué.");
-      }
-      throw new Error("La mise en ligne prend trop de temps : vérifiez la liste ci-dessous dans un instant.");
-    } catch (e) { $("en-progression").hidden = true; $("en-envoyer").disabled = false; message("Échec : " + e.message, true); }
+      publie = true; majEnvoi();
+      montrerLien(enreg.lien); $("en-resultat-titre").textContent = "🔗 Lien créé."; $("en-resultat-detail").textContent = "Il fonctionnera dès la fin du traitement (quelques minutes) ; vous pouvez déjà le copier.";
+      progression(5, "Traitement : 0 %"); await suivre();
+    } catch (e) { $("en-progression").hidden = true; if (!publie) $("en-envoyer").disabled = false; message("Échec : " + e.message, true); }
   });
   $("en-copier").addEventListener("click", () => { $("en-lien").select(); navigator.clipboard.writeText($("en-lien").value).then(() => { $("en-copier").textContent = "Lien copié ✔"; setTimeout(() => { $("en-copier").textContent = "Copier le lien"; }, 2000); }); });
 
@@ -419,9 +569,22 @@
       if (e.target.closest(".en-copier-ligne")) { const champ = ligne.querySelector(".en-champ-lien"); await navigator.clipboard.writeText(champ.value); const b = e.target.closest("button"); b.textContent = "Copié ✔"; setTimeout(() => { b.textContent = "Copier le lien"; }, 1800); }
       else if (e.target.closest(".en-renommer")) { const t = prompt("Nouveau titre :", ligne.querySelector(".en-titre").textContent); if (t === null) return; const d = await poster("/enregistrements/" + id + "/titre", { titre: t }); ligne.querySelector(".en-titre").textContent = d.titre; }
       else if (e.target.closest(".en-prolonger")) { const jours = ligne.querySelector(".en-prolonger-duree").value; await poster("/enregistrements/" + id + "/prolonger", { jours: jours }); window.location.reload(); }
+      else if (e.target.closest(".en-recuperer")) { await poster("/enregistrements/" + id + "/recuperer"); window.location.reload(); }
       else if (e.target.closest(".en-supprimer")) { if (!confirm("Supprimer cette vidéo ? Le lien partagé ne fonctionnera plus et le fichier sera effacé. Action irréversible.")) return; await poster("/enregistrements/" + id + "/supprimer"); window.location.reload(); }
     } catch (x) { alert(x.message); }
   });
+  // Videos en cours de traitement : l'avancement se met a jour tout seul, et la page se recharge a la fin.
+  const enTraitement = Array.from(document.querySelectorAll('.en-ligne[data-etat="TRAITEMENT"]'));
+  if (enTraitement.length) setInterval(async () => {
+    for (const l of enTraitement) {
+      try {
+        const e = await fetch("/enregistrements/" + l.dataset.id + "/etat").then((r) => r.json());
+        const etiquette = l.querySelector(".en-progression-ligne"); if (etiquette) etiquette.textContent = "traitement " + (e.progression || 0) + " %" + (e.etape ? " · " + e.etape : "");
+        if (e.etat && e.etat !== "TRAITEMENT") { window.location.reload(); return; }
+      } catch (x) { /* au prochain passage */ }
+    }
+  }, 5000);
+  majApercuFin();
 })();
 </script>
 {% endblock %}
