@@ -84,14 +84,28 @@ def obtenir_userinfo(access_token: str) -> dict:
 
 
 def enregistrer_compte(db: Session, access_token: str, expire_le, userinfo: dict) -> "models.CompteLinkedIn":
-    """Flux additif, comme pour Google/Meta/Instagram : n'ecrase jamais un compte deja connecte."""
-    compte = models.CompteLinkedIn(
-        libelle=userinfo.get("name") or "(profil LinkedIn sans nom)",
-        identifiant_membre=userinfo["sub"],
-        access_token=access_token,
-        expire_le=expire_le,
+    """
+    Connexion d'un profil LinkedIn. Un profil deja connu (meme identifiant_membre) est RENOUVELE : nouveau jeton, nouvelle date d'expiration, meme ligne, donc ses
+    liens avec les clients et ses posts programmes sont conserves. S'il existe plusieurs lignes pour ce profil (anciennes reconnexions), la plus ancienne est
+    gardee et les autres sont fusionnees dedans (clients et posts programmes rattaches a la ligne gardee) puis supprimees. Un profil nouveau cree une ligne.
+    """
+    libelle = userinfo.get("name") or "(profil LinkedIn sans nom)"
+    existants = (
+        db.query(models.CompteLinkedIn).filter(models.CompteLinkedIn.identifiant_membre == userinfo["sub"])
+        .order_by(models.CompteLinkedIn.cree_le, models.CompteLinkedIn.id).all()
     )
-    db.add(compte)
+    if not existants:
+        compte = models.CompteLinkedIn(libelle=libelle, identifiant_membre=userinfo["sub"], access_token=access_token, expire_le=expire_le)
+        db.add(compte)
+        db.commit()
+        db.refresh(compte)
+        return compte
+    compte, doublons = existants[0], existants[1:]
+    compte.libelle, compte.access_token, compte.expire_le = libelle, access_token, expire_le
+    for doublon in doublons:
+        db.query(models.Client).filter(models.Client.compte_linkedin_id == doublon.id).update({"compte_linkedin_id": compte.id})
+        db.query(models.PostLinkedInProgramme).filter(models.PostLinkedInProgramme.compte_linkedin_id == doublon.id).update({"compte_linkedin_id": compte.id})
+        db.delete(doublon)
     db.commit()
     db.refresh(compte)
     return compte
