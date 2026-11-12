@@ -74,6 +74,10 @@ def date_fr(iso: str) -> str:
         return ""
 
 
+def _compact(texte: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", _sans_accents(texte))
+
+
 def marque_depuis_nom(nom: str) -> str:
     """« GoldUnion - Agen » -> « GoldUnion »."""
     return re.split(r"\s[-–—]\s", (nom or "").strip(), maxsplit=1)[0].strip()
@@ -390,14 +394,15 @@ def extraire_mode_ia(items: list) -> tuple:
 
 def analyser_citation(texte: str, marque: str, donnees: dict, sources: list = None) -> dict:
     """La marque est-elle citee dans le texte de la reponse ? L'agence elle-meme l'est-elle (marque a cote de la ville, ou telephone de l'agence) ? Les sources consultees sont gardees a part."""
-    brut = _sans_accents(texte)
-    cle = _sans_accents(marque)
+    # espaces, tirets et apostrophes ignores : « Gold Union Lens » (ecrit en deux mots par l'IA) vaut « GoldUnion » + « Lens »
+    brut = _compact(texte)
+    cle = _compact(marque)
     marque_citee = bool(cle) and cle in brut
-    ville = _sans_accents((donnees or {}).get("ville", ""))
+    ville = _compact((donnees or {}).get("ville", ""))
     agence = False
     if marque_citee and ville:
         for m in re.finditer(re.escape(cle), brut):
-            if ville in brut[max(0, m.start() - 250): m.end() + 250]:
+            if ville in brut[max(0, m.start() - 200): m.end() + 200]:
                 agence = True
                 break
     chiffres = re.sub(r"\D", "", (donnees or {}).get("telephone", ""))[-9:]
@@ -406,7 +411,12 @@ def analyser_citation(texte: str, marque: str, donnees: dict, sources: list = No
     return {"marque_citee": marque_citee, "agence_citee": agence}
 
 
-def interroger_moteur(moteur: str, requete: str, pays: str) -> tuple:
+MODELE_CHATGPT_RELEVE = "gpt-4.1"      # plus proche de ce que voit un client que le modele economique par defaut (qui ne cite presque aucun site)
+
+
+def interroger_moteur(moteur: str, requete: str, pays: str, ville: str = "") -> tuple:
+    if moteur == "chatgpt":
+        return ia_visibilite.interroger_chatgpt(requete, modele=MODELE_CHATGPT_RELEVE, lieu={"country": pays if len(pays) == 2 else "FR", "city": ville})
     if moteur == "mode_ia":
         return interroger_mode_ia(requete, pays)
     return ia_visibilite.INTERROGATEURS[moteur](requete)
@@ -425,7 +435,7 @@ def releve_ia_agence(donnees: dict, nom_client: str, moteurs: list, interrogateu
         for moteur in moteurs:
             cle = f"{moteur}|{requete}"
             try:
-                texte, sources = interrogateur(moteur, requete, pays)
+                texte, sources = interrogateur(moteur, requete, pays, ville)
             except Exception as erreur:
                 releve["resultats"][cle] = {"moteur": moteur, "requete": requete, "erreur": str(erreur)[:200]}
                 continue

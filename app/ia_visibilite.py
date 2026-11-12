@@ -65,14 +65,24 @@ def _ajouter_source(sources: list, titre: str, url: str) -> None:
         sources.append({"domaine": domaine, "url": url or "", "titre": titre or domaine})
 
 
-def interroger_chatgpt(requete: str) -> tuple:
-    """(texte, sources) : ChatGPT avec recherche web ; repli sur l'API classique (sans sources) si la recherche est refusee."""
+def outil_recherche_web(lieu: dict = None) -> dict:
+    outil = {"type": "web_search"}
+    if lieu and lieu.get("country"):
+        outil["user_location"] = {"type": "approximate", **{k: v for k, v in lieu.items() if k in ("country", "city", "region") and v}}
+    return outil
+
+
+def interroger_chatgpt(requete: str, modele: str = None, lieu: dict = None) -> tuple:
+    """
+    (texte, sources) : ChatGPT avec recherche web ; repli sur l'API classique (sans sources) si la recherche est refusee.
+    lieu : {"country": "FR", "city": "Lens"} pour poser la question « depuis » une ville, comme un client sur place (sans lui, ChatGPT repond comme depuis nulle part).
+    """
     if not CLE_OPENAI:
         raise RuntimeError("OPENAI_API_KEY manquant dans plateforme_web/.env.")
     entetes = {"Authorization": f"Bearer {CLE_OPENAI}"}
     reponse = requests.post(
         "https://api.openai.com/v1/responses", headers=entetes, timeout=90,
-        json={"model": MODELE_CHATGPT, "tools": [{"type": "web_search"}], "input": requete},
+        json={"model": modele or MODELE_CHATGPT, "tools": [outil_recherche_web(lieu)], "input": requete},
     )
     if reponse.status_code == 200:
         texte, sources = "", []
