@@ -158,6 +158,7 @@
   <div class="gu-onglets" role="tablist" aria-label="Vue">
     <button type="button" class="gu-onglet" role="tab" data-vue="visibilite">📍 Visibilité</button>
     <button type="button" class="gu-onglet" role="tab" data-vue="avis">★ Avis</button>
+    {% if evo_baisse and evo_baisse.agences %}<button type="button" class="gu-onglet" role="tab" data-vue="evolution">📉 Évolution</button>{% endif %}
     <button type="button" class="gu-onglet" role="tab" data-vue="tout">Toutes les infos</button>
   </div>
 
@@ -182,6 +183,8 @@
       {% for p in paliers %}<button type="button" class="gu-palier-bouton" data-groupe="palier" data-palier="{{ p.code }}"><span class="gu-pastille-palier p-{{ p.code }}"></span><strong>{{ p.nb }}</strong> {{ p.libelle }}</button>{% endfor %}
     </div>
   </div>
+
+  {% if evo_baisse and evo_baisse.agences %}{% include "_goldunion_evolution.html" %}{% endif %}
 
   <div class="gu-avis-bloc" data-vues="avis">
     <div class="gu-periode">

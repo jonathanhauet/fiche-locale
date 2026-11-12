@@ -1,0 +1,199 @@
+{# Onglet « Évolution » de la page des responsables GoldUnion : courbes hebdomadaires de chaque fiche (voir baisse_google.py). Inclus par suivi_goldunion_public.html. #}
+<style>
+  .gu:not([data-vue="evolution"]) .gu-evolution { display: none; }
+  .gu[data-vue="evolution"] > *:not(.gu-onglets):not(h1):not(.intro):not(form):not(.gu-evolution) { display: none !important; }
+  .gu-evolution .ev-regles { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); padding: 0.6rem 0.9rem; margin-bottom: 0.9rem; font-size: 0.86rem; color: var(--texte); }
+  .gu-evolution .ev-regles summary { cursor: pointer; font-weight: 700; }
+  .gu-evolution .ev-regles ul { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+  .gu-evolution .ev-regles li { margin-bottom: 0.3rem; }
+  .gu-evolution .ev-defilement { overflow-x: auto; }
+  .gu-evolution .ev-ligne { cursor: pointer; }
+  .gu-evolution .ev-ligne:hover td { background: rgba(79, 110, 247, 0.07); }
+  .gu-evolution .ev-ligne td:first-child::before { content: "▸ "; color: var(--texte-discret); }
+  .gu-evolution .ev-ligne.ouverte td:first-child::before { content: "▾ "; }
+  .gu-evolution .ev-detail td { background: var(--fond); padding: 0.8rem 1rem 1rem; }
+  .gu-evolution svg.ev-mini { width: 220px; height: 44px; display: block; }
+  .gu-evolution svg.ev-grand { width: 100%; height: 230px; display: block; }
+  .gu-evolution .ev-trait { stroke: var(--accent); fill: none; stroke-width: 2; }
+  .gu-evolution .ev-trait-an { stroke: var(--texte-discret); fill: none; stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .gu-evolution .ev-zone { fill: var(--accent); opacity: 0.1; }
+  .gu-evolution .ev-marque { stroke: var(--danger); stroke-dasharray: 4 3; }
+  .gu-evolution .ev-txt { fill: var(--texte); font-size: 11px; }
+  .gu-evolution .ev-txt-rouge { fill: var(--danger); font-size: 11px; }
+  .gu-evolution .ev-lecture { min-height: 1.3rem; font-size: 0.85rem; margin: 0.2rem 0 0.6rem; color: var(--texte); }
+  .gu-evolution .ev-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.9rem; margin-top: 0.8rem; }
+  .gu-evolution .ev-grille h4 { margin: 0 0 0.3rem; font-size: 0.85rem; }
+  .gu-evolution table.ev-petit { border-collapse: collapse; font-size: 0.82rem; width: 100%; }
+  .gu-evolution table.ev-petit th, .gu-evolution table.ev-petit td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--carte-bordure); text-align: left; position: static; background: none; text-transform: none; letter-spacing: 0; font-size: 0.82rem; color: var(--texte); }
+  .gu-evolution .ev-peu { color: var(--texte-discret); font-weight: 600; }
+</style>
+<div class="gu-evolution" id="gu-evolution">
+  <div class="gu-tuiles" id="ev-tuiles"></div>
+  <details class="ev-regles">
+    <summary>Comment lire cet onglet ?</summary>
+    <ul>
+      <li>Chaque ligne est une fiche Google. La courbe montre ses <strong>{{ evo_baisse.agences[0].v|length if evo_baisse.agences else 76 }} dernières semaines</strong> ; la zone bleutée marque les <strong>13 dernières semaines</strong> (environ 3 mois), comparées aux <strong>13 semaines précédentes</strong> et à la <strong>même période l'an dernier</strong>.</li>
+      <li><strong>Vues</strong> = fois où la fiche s'est affichée sur Google (Recherche et Maps, ordinateur et mobile). <strong>Appels</strong>, <strong>itinéraires</strong> et <strong>clics site</strong> = actions faites depuis la fiche.</li>
+      <li>Le trait pointillé rouge indique la <strong>semaine où la baisse commence probablement</strong> (estimation à vérifier sur la courbe). Un pourcentage calculé sur trop peu de vues est grisé : il ne veut rien dire.</li>
+      <li>Cliquez sur une ligne pour voir la courbe en grand (avec celle de l'an dernier en pointillés gris), le détail des chiffres, le rang sur « rachat or / compro oro / compra oro », et les alertes ou modifications de la fiche.</li>
+      <li>Les statistiques de Google ont quelques jours de retard : la dernière semaine affichée est la dernière semaine complète.</li>
+    </ul>
+  </details>
+  <div class="gu-barre">
+    <input type="search" id="ev-recherche" placeholder="Rechercher une agence ou une ville…" autocomplete="off">
+    <select id="ev-pays" aria-label="Pays"><option value="">Tous les pays</option></select>
+    <select id="ev-indic" aria-label="Indicateur">
+      <option value="v">Indicateur : vues</option><option value="a">Indicateur : appels</option><option value="i">Indicateur : itinéraires</option><option value="s">Indicateur : clics vers le site</option>
+    </select>
+    <select id="ev-tri" aria-label="Trier">
+      <option value="baisse">Trier : plus forte baisse d'abord</option><option value="hausse">Trier : plus forte hausse d'abord</option><option value="debut">Trier : baisse la plus ancienne</option>
+      <option value="volume">Trier : plus gros volume</option><option value="nom">Trier : ordre alphabétique</option>
+    </select>
+    <label><input type="checkbox" id="ev-seulement"> Seulement les fiches en baisse de {{ evo_baisse.seuil }} % ou plus</label>
+    <span class="gu-compte" id="ev-compte"></span>
+  </div>
+  <div class="ev-defilement">
+    <table class="gu-tableau" id="ev-tableau">
+      <thead><tr><th>Agence</th><th>Courbe (hebdomadaire)</th><th>13 dernières semaines</th><th>13 précédentes</th><th>Évolution</th><th>Même période l'an dernier</th><th>Baisse depuis</th><th>Rang · alertes</th></tr></thead>
+      <tbody id="ev-corps"></tbody>
+    </table>
+  </div>
+  <p class="gu-pied" id="ev-pied"></p>
+</div>
+<script type="application/json" id="ev-donnees">{{ evo_baisse|tojson }}</script>
+{% raw %}
+<script>
+(function () {
+  "use strict";
+  let donnees;
+  try { donnees = JSON.parse(document.getElementById("ev-donnees").textContent); } catch (e) { return; }
+  const AGENCES = donnees.agences, SEUIL = donnees.seuil, NB = 13;
+  const NOMS = { v: "Vues", a: "Appels", i: "Itinéraires", s: "Clics site" };
+  const MIN_BASE = { v: 100, a: 10, i: 10, s: 10 };
+  const corps = document.getElementById("ev-corps"), champRecherche = document.getElementById("ev-recherche"), selPays = document.getElementById("ev-pays"),
+    selIndic = document.getElementById("ev-indic"), selTri = document.getElementById("ev-tri"), caseSeulement = document.getElementById("ev-seulement"),
+    compte = document.getElementById("ev-compte"), tuiles = document.getElementById("ev-tuiles"), pied = document.getElementById("ev-pied");
+  const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const somme = (liste, a, b) => liste.slice(a, b).reduce((x, y) => x + y, 0);
+  const date = (iso) => iso ? iso.split("-").reverse().join("/") : "";
+  const ajouterJours = (iso, n) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const fmt = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  function pct(v) { return v == null ? null : Math.round((v) * 10) / 10; }
+  function texteVar(v, peu) {
+    if (v == null) return '<span class="ev-peu">—</span>';
+    const cls = peu ? "ev-peu" : v < 0 ? "gu-baisse" : v > 0 ? "gu-hausse" : "gu-stable";
+    return '<span class="' + cls + '">' + (v > 0 ? "+" : v < 0 ? "−" : "") + String(Math.abs(v)).replace(".", ",") + " %</span>" + (peu ? ' <span class="ev-peu" title="Trop peu de données pour que ce pourcentage ait un sens">(peu de données)</span>' : "");
+  }
+  // chiffres d'une agence pour un indicateur : 13 dernieres semaines, 13 precedentes, meme periode l'an dernier
+  function calculer(a, k) {
+    const s = a[k], n = s.length;
+    const act = somme(s, n - NB, n), prec = n >= 2 * NB ? somme(s, n - 2 * NB, n - NB) : null;
+    const an = n >= NB + 52 ? somme(s, n - NB - 52, n - 52) : null;
+    return {
+      act: act, prec: prec, an: an, peu: prec != null && prec < MIN_BASE[k],
+      varPrec: prec ? pct((act - prec) / prec * 100) : null, varAn: an ? pct((act - an) / an * 100) : null, peuAn: an != null && an < MIN_BASE[k],
+    };
+  }
+  function courbe(a, k, grand) {
+    const s = a[k], n = s.length, L = grand ? 900 : 220, H = grand ? 230 : 44, gauche = grand ? 40 : 2, droite = grand ? 8 : 2, haut = grand ? 8 : 3, bas = grand ? 24 : 3;
+    const max = Math.max(1, Math.max.apply(null, s));
+    const x = (i) => gauche + (L - gauche - droite) * i / Math.max(1, n - 1), y = (v) => H - bas - (H - bas - haut) * v / max;
+    let svg = '<svg class="' + (grand ? "ev-grand" : "ev-mini") + '" viewBox="0 0 ' + L + " " + H + '" ' + (grand ? 'preserveAspectRatio="none"' : "") + ' role="img" aria-label="' + esc(NOMS[k] + " par semaine, " + a.nom) + '">';
+    svg += '<rect class="ev-zone" x="' + x(n - NB) + '" y="' + haut + '" width="' + (x(n - 1) - x(n - NB)) + '" height="' + (H - bas - haut) + '"/>';
+    if (grand) {
+      svg += '<line x1="' + gauche + '" y1="' + y(0) + '" x2="' + (L - droite) + '" y2="' + y(0) + '" style="stroke: var(--carte-bordure)"/>';
+      svg += '<text class="ev-txt" x="2" y="' + (haut + 9) + '">' + fmt(max) + '</text><text class="ev-txt" x="2" y="' + y(0) + '">0</text>';
+      for (let i = 0; i < n; i += 13) svg += '<text class="ev-txt" x="' + x(i) + '" y="' + (H - 6) + '">' + date(ajouterJours(a.d0, 7 * i)).slice(0, 5) + "/" + ajouterJours(a.d0, 7 * i).slice(2, 4) + "</text>";
+      if (n >= 53) svg += '<polyline class="ev-trait-an" points="' + s.slice(0, n - 52).map((v, i) => x(i + 52).toFixed(1) + "," + y(v).toFixed(1)).join(" ") + '"/>';
+    }
+    svg += '<polyline class="ev-trait" points="' + s.map((v, i) => x(i).toFixed(1) + "," + y(v).toFixed(1)).join(" ") + '"/>';
+    const i0 = (k === "v" && a.debut) ? Math.round((new Date(a.debut.date + "T12:00:00Z") - new Date(a.d0 + "T12:00:00Z")) / (7 * 86400000)) : -1;
+    if (i0 >= 0 && i0 < n) svg += '<line class="ev-marque" x1="' + x(i0) + '" y1="' + haut + '" x2="' + x(i0) + '" y2="' + y(0) + '"/>';
+    if (grand) svg += '<line id="ev-curseur" x1="0" y1="' + haut + '" x2="0" y2="' + y(0) + '" style="stroke: var(--texte-discret); opacity: 0"/><rect class="ev-survol" x="' + gauche + '" y="0" width="' + (L - gauche - droite) + '" height="' + H + '" fill="transparent"/>';
+    return svg + "</svg>";
+  }
+  function lectureCourbe(a, k, detail) {
+    const svg = detail.querySelector("svg.ev-grand"), sortie = detail.querySelector(".ev-lecture");
+    if (!svg) return;
+    const s = a[k], n = s.length, L = 900, gauche = 40, droite = 8;
+    sortie.textContent = "Passez la souris sur la courbe pour lire une semaine.";
+    svg.addEventListener("mousemove", function (ev) {
+      const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * L;
+      const i = Math.max(0, Math.min(n - 1, Math.round((px - gauche) / (L - gauche - droite) * (n - 1))));
+      const lundi = ajouterJours(a.d0, 7 * i), curseur = svg.querySelector("#ev-curseur"), cx = gauche + (L - gauche - droite) * i / Math.max(1, n - 1);
+      curseur.setAttribute("x1", cx); curseur.setAttribute("x2", cx); curseur.style.opacity = 1;
+      sortie.textContent = "Semaine du " + date(lundi) + " : " + fmt(s[i]) + " " + NOMS[k].toLowerCase() + (i >= 52 ? " · l'an dernier (semaine du " + date(ajouterJours(lundi, -364)) + ") : " + fmt(s[i - 52]) : "");
+    });
+  }
+  function detailAgence(a, k) {
+    const lignes = ["v", "a", "i", "s"].map((cle) => {
+      const c = calculer(a, cle);
+      return "<tr><td><strong>" + NOMS[cle] + "</strong></td><td>" + fmt(c.act) + "</td><td>" + (c.prec == null ? "—" : fmt(c.prec)) + "</td><td>" + texteVar(c.varPrec, c.peu) + "</td><td>" + (c.an == null ? "—" : fmt(c.an)) + "</td><td>" + texteVar(c.varAn, c.peuAn) + "</td></tr>";
+    }).join("");
+    const rangs = a.rang.length ? '<ul class="gu-liste">' + a.rang.map((r) => "<li><strong>" + esc(r.r) + "</strong> : " + (r.p == null ? "hors des résultats" : "rang " + r.p) + (r.ap ? " (avant : " + (r.av == null ? "hors des résultats" : r.av) + ")" : "") + ' <span class="gu-puce ' + (r.t3 ? "gu-ok" : "gu-attention") + '">' + (r.t3 ? "top 3" : "hors top 3") + "</span></li>").join("") + "</ul>"
+      : '<span class="gu-doux">Rang pas encore mesuré.</span>';
+    const alertes = a.alertes.length ? a.alertes.map((x) => '<span class="gu-puce ' + (x[0] === "grave" ? "gu-alerte" : "gu-attention") + '">' + esc(x[1]) + "</span>").join(" ") : '<span class="gu-puce gu-ok">Rien à signaler sur la fiche</span>';
+    const chg = a.chg.length ? '<ul class="gu-liste">' + a.chg.map((c) => "<li>" + esc(c.d) + " · <strong>" + esc(c.c) + "</strong> : " + esc(c.av) + " → " + esc(c.ap) + "</li>").join("") + "</ul>" : '<span class="gu-doux">Aucune modification constatée depuis la première lecture.</span>';
+    const debut = k === "v" && a.debut ? '<p class="gu-doux">Baisse probable depuis la semaine du <strong>' + date(a.debut.date) + "</strong> (" + Math.round(a.debut.chute) + " % de vues en moins en moyenne depuis).</p>" : "";
+    return "<h4>" + NOMS[k] + " par semaine · trait plein : cette année · pointillés gris : l'année précédente</h4>" + debut + courbe(a, k, true) + '<div class="ev-lecture"></div>' +
+      '<div class="ev-grille"><div><h4>Les chiffres</h4><table class="ev-petit"><thead><tr><th></th><th>13 dernières sem.</th><th>13 précédentes</th><th>Évolution</th><th>L\'an dernier</th><th>Évolution</th></tr></thead><tbody>' + lignes + "</tbody></table></div>" +
+      "<div><h4>Rang sur les requêtes clés</h4>" + rangs + "</div><div><h4>État de la fiche</h4>" + alertes + "<h4 style=\"margin-top:0.6rem\">Modifications constatées</h4>" + chg + "</div></div>" +
+      '<p class="gu-doux">Statistiques lues le ' + esc(a.maj) + ".</p>";
+  }
+  let ouvert = null;
+  function afficher() {
+    const k = selIndic.value, q = champRecherche.value.trim().toLowerCase(), pays = selPays.value;
+    let liste = AGENCES.filter((a) => (!pays || a.pays === pays) && (!q || (a.nom + " " + a.ville).toLowerCase().includes(q))).map((a) => ({ a: a, c: calculer(a, k) }));
+    if (caseSeulement.checked) liste = liste.filter((x) => !x.c.peu && x.c.varPrec != null && x.c.varPrec <= -SEUIL);
+    const cle = selTri.value, valide = (x) => !x.c.peu && x.c.varPrec != null;
+    liste.sort((x, y) => {
+      if (cle === "nom") return x.a.nom.localeCompare(y.a.nom, "fr");
+      if (cle === "volume") return y.c.act - x.c.act;
+      if (cle === "debut") { const dx = x.a.debut ? x.a.debut.date : "9999", dy = y.a.debut ? y.a.debut.date : "9999"; return dx < dy ? -1 : dx > dy ? 1 : 0; }
+      if (valide(x) !== valide(y)) return valide(x) ? -1 : 1;
+      if (!valide(x)) return x.a.nom.localeCompare(y.a.nom, "fr");
+      return cle === "hausse" ? y.c.varPrec - x.c.varPrec : x.c.varPrec - y.c.varPrec;
+    });
+    // tuiles : synthese de la selection
+    const act = liste.reduce((s, x) => s + x.c.act, 0), prec = liste.reduce((s, x) => s + (x.c.prec || 0), 0);
+    const baisses = liste.filter((x) => !x.c.peu && x.c.varPrec != null && x.c.varPrec <= -SEUIL).length, alertes = liste.filter((x) => x.a.alertes.length).length;
+    const v = prec ? pct((act - prec) / prec * 100) : null;
+    tuiles.innerHTML = '<div class="gu-tuile"><strong>' + liste.length + "</strong><span>fiches affichées</span></div>" +
+      '<div class="gu-tuile ' + (v != null && v < 0 ? "alerte" : "") + '"><strong>' + (v == null ? "—" : (v > 0 ? "+" : "−") + String(Math.abs(v)).replace(".", ",") + " %") + "</strong><span>" + NOMS[k].toLowerCase() + " cumulées, 13 dernières semaines contre les 13 précédentes</span></div>" +
+      '<div class="gu-tuile ' + (baisses ? "alerte" : "") + '"><strong>' + baisses + "</strong><span>fiches en baisse de " + SEUIL + " % ou plus</span></div>" +
+      '<div class="gu-tuile ' + (alertes ? "alerte" : "") + '"><strong>' + alertes + "</strong><span>fiches avec une alerte (suspension, validation, modification…)</span></div>";
+    compte.textContent = liste.length + " fiche(s) affichée(s)";
+    pied.textContent = donnees.nb_total - AGENCES.length > 0 ? (donnees.nb_total - AGENCES.length) + " agence(s) suivie(s) n'ont pas encore de statistiques (relevé à lancer dans l'analyse de la baisse) ; elles ne figurent pas ici." : "";
+    corps.innerHTML = liste.length ? liste.map((x, j) => {
+      const a = x.a, c = x.c;
+      const alertes = a.alertes.length ? a.alertes.slice(0, 2).map((z) => '<span class="gu-puce ' + (z[0] === "grave" ? "gu-alerte" : "gu-attention") + '">' + esc(z[1]) + "</span>").join("") : "";
+      const rang = a.rang.length ? a.rang.map((r) => '<div class="gu-doux">' + esc(r.r) + " : <strong>" + (r.p == null ? "hors résultats" : r.p) + "</strong>" + (r.ap && r.av != null && r.p !== r.av ? " (avant " + r.av + ")" : "") + "</div>").join("") : "";
+      return '<tr class="ev-ligne" data-id="' + a.id + '"><td><span class="gu-nom">' + esc(a.nom) + '</span><div class="gu-doux">' + esc(a.ville) + (donnees.pays[a.pays] ? " · " + esc(donnees.pays[a.pays]) : a.pays !== "FR" ? " · " + esc(a.pays) : "") + "</div></td><td>" + courbe(a, k, false) + "</td>" +
+        '<td><span class="gu-gros">' + fmt(c.act) + "</span></td><td>" + (c.prec == null ? "—" : fmt(c.prec)) + "</td><td>" + texteVar(c.varPrec, c.peu) + "</td>" +
+        "<td>" + (c.an == null ? "—" : fmt(c.an)) + "<div>" + texteVar(c.varAn, c.peuAn) + "</div></td><td>" + (k === "v" && a.debut ? "semaine du " + date(a.debut.date) : '<span class="gu-doux">—</span>') + "</td><td>" + rang + alertes + "</td></tr>";
+    }).join("") : '<tr><td colspan="8" class="gu-vide">Aucune fiche ne correspond.</td></tr>';
+    if (ouvert != null) { const ligne = corps.querySelector('tr[data-id="' + ouvert + '"]'); if (ligne) ouvrir(ligne, true); else ouvert = null; }
+  }
+  function ouvrir(ligne, forcer) {
+    const id = Number(ligne.dataset.id), existant = ligne.nextElementSibling;
+    const etaitOuverte = existant && existant.classList.contains("ev-detail");
+    corps.querySelectorAll("tr.ev-detail").forEach((t) => t.remove());
+    corps.querySelectorAll("tr.ev-ligne.ouverte").forEach((t) => t.classList.remove("ouverte"));
+    if (etaitOuverte && !forcer) { ouvert = null; return; }
+    const a = AGENCES.find((z) => z.id === id), k = selIndic.value;
+    const detail = document.createElement("tr");
+    detail.className = "ev-detail";
+    detail.innerHTML = '<td colspan="8">' + detailAgence(a, k) + "</td>";
+    ligne.after(detail);
+    ligne.classList.add("ouverte");
+    ouvert = id;
+    lectureCourbe(a, k, detail);
+  }
+  corps.addEventListener("click", function (ev) { const ligne = ev.target.closest("tr.ev-ligne"); if (ligne) ouvrir(ligne, false); });
+  const pays = Array.from(new Set(AGENCES.map((a) => a.pays)));
+  pays.forEach((p) => { const o = document.createElement("option"); o.value = p; o.textContent = donnees.pays[p] || p; selPays.appendChild(o); });
+  [champRecherche, selPays, selIndic, selTri, caseSeulement].forEach((e) => e.addEventListener(e === champRecherche ? "input" : "change", afficher));
+  afficher();
+})();
+</script>
+{% endraw %}

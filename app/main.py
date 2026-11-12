@@ -8304,6 +8304,7 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
         "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "avec_mot_de_passe": suivi_goldunion.mot_de_passe_actif(parametre) and not utilisateur_connecte(request), "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "options_anciennete": options_anciennete, "mois_recente": n_mois, "options_reponses": options_reponses,
         "avis_page": suivi_goldunion.avis_pour_page(entrees), "nb_sans_detail_avis": sum(1 for e in entrees if e["donnees"].get("adresse") and (e["donnees"].get("avis") or {}).get("liste") is None), "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
         "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,
+        "evo_baisse": baisse_google.donnees_evolution(baisse_google.lignes_baisse(db, parametre)),
         "derniere_maj": heure_locale(parametre.derniere_maj) if parametre.derniere_maj else "", "positions_maj": heure_locale(parametre.positions_maj_le) if parametre.positions_maj_le else "",
     }, headers=ENTETES_PAGE_PRIVEE)
 

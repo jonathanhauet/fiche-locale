@@ -671,6 +671,27 @@ def synthese_annuaires(entrees: list) -> list:
     return [{"id": i, "nom": c["nom"], "pays": sorted(c["pays"]), "etats": c["etats"]} for i, c in compte.items()]
 
 
+def donnees_evolution(entrees: list) -> dict:
+    """
+    Donnees de l'onglet « Evolution » de la page des responsables : pour chaque agence, ses 4 courbes hebdomadaires (vues, appels, itineraires, clics site),
+    la comparaison 13 / 13 semaines, la date probable du debut de la baisse, ses rangs sur les requetes cles et les alertes de sa fiche.
+    """
+    agences = []
+    for e in entrees:
+        semaines = e["semaines"]
+        if not semaines:
+            continue
+        agences.append({
+            "id": e["client"].id, "nom": e["client"].nom, "ville": e["ville"], "pays": e["pays"], "d0": semaines[0]["debut"],
+            "v": [s["vues"] for s in semaines], "a": [s["appels"] for s in semaines], "i": [s["itineraires"] for s in semaines], "s": [s["site"] for s in semaines],
+            "c": e["comparaison"], "debut": e["debut"], "maj": date_fr(((e["stats"] or {}).get("maj")) or ""),
+            "rang": [{"r": l["requete"], "p": l["position"], "av": l["avant"], "ap": l["a_precedent"], "t3": l["top3"]} for l in evolution_rang(e["rang"])],
+            "alertes": [[g, texte] for g, texte in alertes_fiche((e["fiche"] or {}).get("actuel"))],
+            "chg": [{"d": date_fr(c["date"]), "c": c["champ"], "av": c["avant"], "ap": c["apres"]} for c in ((e["fiche"] or {}).get("changements") or [])[:5]],
+        })
+    return {"agences": agences, "nb_total": len(entrees), "seuil": SEUIL_BAISSE, "pays": NOMS_PAYS}
+
+
 # ---------- releves en tache de fond
 
 ETAT = {"en_cours": False, "tache": "", "message": "", "fait": 0, "total": 0, "debut": None, "fin": None, "erreurs": []}
