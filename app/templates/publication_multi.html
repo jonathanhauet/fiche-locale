@@ -574,6 +574,8 @@
           <span id="tp-position-photo"></span>
           <button type="button" id="tp-suivante" class="bouton-secondaire" aria-label="Photo suivante">▶</button>
         </div>
+        <label class="tp-case tp-sans-logo"><input type="checkbox" id="tp-sans-logo"> Sans logo sur ce visuel</label>
+        {% if not client.logo_url %}<p class="texte-discret">Ce client n'a pas de logo enregistré : rien n'est affiché, quel que soit ce choix.</p>{% endif %}
         <button type="button" id="tp-utiliser" class="bouton tp-utiliser">✅ Utiliser cette image</button>
         <p id="tp-statut" class="texte-vide" hidden></p>
       </div>
@@ -2646,6 +2648,7 @@
         if (r.picto !== "aucun") ajouts.push("picto");
         if (r.fleche) ajouts.push("flèche");
         if (r.signature) ajouts.push("signature");
+        if ($("tp-sans-logo").checked) ajouts.push("sans logo");
         $("tp-resume-ajouts").textContent = ajouts.length ? ajouts.join(", ") : "aucun";
         $("tp-utiliser").textContent = photos.length > 1 ? "✅ Utiliser ces " + photos.length + " images (carrousel)" : "✅ Utiliser cette image";
       }
@@ -2712,7 +2715,7 @@
           photos: photos.map((p) => ({ url: p.url, titre: p.titre })), index, mode, titre: $("tp-titre").value, sous_titre: $("tp-sous-titre").value,
           reglages: lireReglages(), couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
           logo_position: $("identite-logo-position").value, logo_style: $("identite-logo-style").value,
-          logo_couleur_fond: $("identite-logo-couleur-fond-hex").value,
+          logo_couleur_fond: $("identite-logo-couleur-fond-hex").value, sans_logo: $("tp-sans-logo").checked,
         });
       }
       function pret() { return photos.length && $("tp-titre").value.trim(); }
@@ -2739,7 +2742,7 @@
           const donnees = await appeler(base + "/styles", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ photo_url: photos[index].url, titre: photos[index].titre || $("tp-titre").value, sous_titre: $("tp-sous-titre").value,
-              reglages: lireReglages(), couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite() }),
+              reglages: lireReglages(), couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(), sans_logo: $("tp-sans-logo").checked }),
           });
           donnees.styles.forEach((s) => {
             const bouton = panneau.querySelector('.tp-style[data-style="' + s.style + '"] .tp-style-image');
@@ -2810,7 +2813,7 @@
       $("tp-titre").addEventListener("input", () => { afficherMots(); modifie(); });
       $("tp-sous-titre").addEventListener("input", () => modifie());
       panneau.querySelectorAll(".tp-style").forEach((b) => b.addEventListener("click", () => { style = b.dataset.style; marquerStyle(); modifie(true); }));
-      panneau.querySelectorAll('input[name="tp-position"], input[name="tp-format"], input[name="tp-surlignage"], #tp-police, #tp-majuscules, #tp-cadre, #tp-picto, #tp-fleche, #tp-signature, #tp-numeroter')
+      panneau.querySelectorAll('input[name="tp-position"], input[name="tp-format"], input[name="tp-surlignage"], #tp-police, #tp-majuscules, #tp-cadre, #tp-picto, #tp-fleche, #tp-signature, #tp-numeroter, #tp-sans-logo')
         .forEach((e) => e.addEventListener("change", () => modifie(true)));
       panneau.querySelectorAll("#tp-taille, #tp-taille-sous, #tp-voile, #tp-pastille, #tp-bouton").forEach((e) => e.addEventListener("input", () => modifie()));
       $("tp-etape-style").addEventListener("toggle", () => { if ($("tp-etape-style").open) demanderStyles(); });
