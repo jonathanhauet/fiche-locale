@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{ meta_titre }}</title>
+<meta property="og:title" content="{{ meta_titre }}">
+<meta property="og:type" content="video.other">
+{% if meta_image %}<meta property="og:image" content="{{ meta_image }}">{% endif %}
+<style>
+  :root { --fond: #f4f5f8; --carte: #ffffff; --texte: #1b1d24; --discret: #5b6270; --accent: #2f5bff; --sur-accent: #ffffff; --bordure: #dfe2ea; --danger: #c62828; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fond: #12141a; --carte: #1c1f27; --texte: #eceef4; --discret: #a3a9b8; --accent: #7d9bff; --sur-accent: #0b1020; --bordure: #2e323d; --danger: #ff8a80; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fond); color: var(--texte); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  .logo { display: block; max-height: 52px; max-width: 220px; margin: 0 0 16px; object-fit: contain; }
+  h1 { font-size: 1.4rem; margin: 0 0 12px; }
+  .lecteur { width: 100%; max-height: 78vh; background: #000; border-radius: 12px; display: block; }
+  .infos { color: var(--discret); font-size: 0.88rem; margin: 10px 0 0; }
+  .carte { background: var(--carte); border: 1px solid var(--bordure); border-radius: 12px; padding: 22px; max-width: 440px; }
+  .carte p { margin: 0 0 12px; }
+  label { display: block; font-size: 0.9rem; margin-bottom: 6px; }
+  input[type=password] { width: 100%; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 8px; background: var(--fond); color: var(--texte); font-size: 1rem; }
+  button { margin-top: 12px; padding: 10px 18px; border: 0; border-radius: 8px; background: var(--accent); color: var(--sur-accent); font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .erreur { color: var(--danger); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  {% if ligne.logo_url and disponible and debloque %}<img class="logo" src="{{ ligne.logo_url }}" alt="Logo">{% endif %}
+  {% if not disponible %}
+    <h1>Cette vidéo n'est plus disponible</h1>
+    <p class="infos">Elle a été supprimée à la fin de sa durée de conservation, ou retirée par son auteur. Demandez-en une nouvelle copie à la personne qui vous a envoyé ce lien.</p>
+  {% elif not debloque %}
+    <h1>Vidéo protégée</h1>
+    <div class="carte">
+      <form method="post" action="/v/{{ ligne.token }}/acces">
+        <p>Entrez le mot de passe qu'on vous a communiqué pour regarder cette vidéo.</p>
+        {% if erreur %}<p class="erreur">{{ erreur }}</p>{% endif %}
+        <label for="mot_de_passe">Mot de passe</label>
+        <input type="password" id="mot_de_passe" name="mot_de_passe" autocomplete="current-password" required autofocus>
+        <button type="submit">Voir la vidéo</button>
+      </form>
+    </div>
+  {% else %}
+    <h1>{{ ligne.titre or "Vidéo" }}</h1>
+    <video class="lecteur" controls playsinline preload="metadata"{% if ligne.url_vignette %} poster="{{ ligne.url_vignette }}"{% endif %}>
+      <source src="{{ ligne.url }}" type="video/{{ 'mp4' if extension == 'mp4' else 'webm' }}">
+      Votre navigateur ne sait pas lire cette vidéo. <a href="{{ ligne.url }}">Ouvrez-la directement</a>.
+    </video>
+    <p class="infos">
+      {% if ligne.duree %}Durée : {{ (ligne.duree // 60)|int }} min {{ '%02d'|format((ligne.duree % 60)|int) }} s · {% endif %}{% if expire_texte %}Disponible jusqu'au {{ expire_texte }}{% else %}Disponible sans limite de durée{% endif %}
+    </p>
+  {% endif %}
+</main>
+</body>
+</html>

@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% set page_actuelle = "enregistrer" %}
+{% block titre %}Enregistrer une vidéo — Fiche Locale{% endblock %}
+{% block contenu %}
+<style>
+  .en-modes { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.4rem 0; }
+  .en-modes label { cursor: pointer; }
+  .en-scene { position: relative; background: #000; border-radius: 12px; overflow: hidden; max-width: 760px; aspect-ratio: 16 / 9; }
+  .en-scene video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  .en-decompte { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 6rem; font-weight: 800; color: #fff; background: rgba(0, 0, 0, 0.45); }
+  .en-decompte[hidden] { display: none; }
+  .en-temps { position: absolute; top: 10px; left: 10px; padding: 3px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.7); color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .en-temps .point { color: #ff4d4d; }
+  .en-boutons { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.7rem 0; }
+  .en-boutons button { width: auto; }
+  .en-rec { background: #c62828; color: #fff; }
+  .en-lien { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
+  .en-lien input { flex: 1 1 18rem; min-width: 12rem; }
+  .en-ligne { display: grid; grid-template-columns: 110px 1fr; gap: 0.8rem; padding: 0.7rem 0; border-top: 1px solid var(--carte-bordure); }
+  .en-ligne img, .en-vide { width: 110px; height: 62px; object-fit: cover; border-radius: 6px; background: #20242d; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.4rem; }
+  .en-ligne .en-titre { font-weight: 700; }
+  .en-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.4rem; }
+  .en-actions button, .en-actions select { width: auto; padding: 0.2rem 0.6rem; font-size: 0.82rem; }
+  .en-ko { color: var(--danger); }
+  .en-etiquette { display: inline-block; padding: 0 0.5rem; border-radius: 999px; background: var(--carte-bordure); color: var(--texte); font-size: 0.75rem; margin-left: 0.3rem; }
+</style>
+<div class="barre-titre"><h1>Enregistrer une vidéo</h1></div>
+<p class="texte-discret">
+  Filmez-vous (caméra seule), partagez votre écran, ou les deux avec votre caméra en rond dans un coin. La vidéo est envoyée sur l'hébergement puis partagée par un lien
+  que n'importe qui peut ouvrir (sans compte). Elle est supprimée automatiquement à la fin de la durée de conservation choisie.
+</p>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">1. Que voulez-vous enregistrer ?</span>
+  <div class="en-modes" id="en-modes">
+    {% for cle, libelle in modes.items() %}
+    <label class="etiquette-chip-case"><input type="radio" name="mode" value="{{ cle }}" {{ 'checked' if cle == 'camera' else '' }}> {{ {'camera': '📷', 'ecran_camera': '🖥️📷', 'ecran': '🖥️'}[cle] }} {{ libelle }}</label>
+    {% endfor %}
+  </div>
+  <p class="texte-discret" id="en-note-ecran" hidden>Le partage d'écran n'est pas disponible sur cet appareil (téléphone ou navigateur non compatible) : seule la caméra est proposée.</p>
+</div>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">2. Réglages</span>
+  <div class="formulaire-ligne">
+    <label>Titre (facultatif)
+      <input type="text" id="en-titre" maxlength="120" placeholder="ex. Présentation du suivi de vos avis" style="min-width:18rem">
+    </label>
+    <label>Conservation
+      <select id="en-jours">
+        {% for jours, libelle in durees %}<option value="{{ jours }}" {{ 'selected' if jours == duree_defaut else '' }}>{{ libelle }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Mot de passe (facultatif)
+      <input type="text" id="en-mdp" maxlength="100" autocomplete="off" placeholder="aucun">
+    </label>
+  </div>
+  <div class="formulaire-ligne">
+    <label>Logo d'un client (facultatif)
+      <select id="en-client">
+        <option value="">Aucun logo</option>
+        {% for c in clients_logo %}<option value="{{ c.id }}">{{ c.nom }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="filtre-case"><input type="checkbox" id="en-logo-page" disabled> Sur la page de visionnage</label>
+    <label class="filtre-case"><input type="checkbox" id="en-logo-video" disabled> Incrusté dans la vidéo (coin haut droit)</label>
+  </div>
+  <p class="texte-discret">Le logo incrusté se choisit avant de démarrer ; il est alors dessiné dans la vidéo elle-même. Seuls les clients qui ont un logo enregistré sont proposés. Un mot de passe protège la page de visionnage ; sans lui, toute personne qui a le lien peut regarder.</p>
+</div>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">3. Enregistrement</span>
+  <div class="en-scene" id="en-scene">
+    <video id="en-apercu" muted playsinline></video>
+    <div class="en-temps" id="en-temps" hidden><span class="point">●</span> <span id="en-chrono">00:00</span></div>
+    <div class="en-decompte" id="en-decompte" hidden></div>
+  </div>
+  <div class="en-boutons" id="en-boutons-rec">
+    <button type="button" class="en-rec" id="en-demarrer">● Démarrer l'enregistrement</button>
+    <button type="button" class="bouton-secondaire" id="en-pause" hidden>⏸ Pause</button>
+    <button type="button" class="bouton" id="en-arreter" hidden>■ Terminer</button>
+  </div>
+  <p class="texte-discret" id="en-message" hidden></p>
+  <p class="texte-discret">Durée maximale : {{ (duree_max // 60) }} minutes. Pour l'écran, le navigateur vous demande quelle fenêtre ou quel onglet partager ; pensez à cocher « partager l'audio » si vous voulez le son de l'écran.</p>
+</div>
+
+<div class="bloc-section" id="en-relecture-bloc" hidden>
+  <span class="choix-image-titre">4. Relire et partager</span>
+  <div class="en-scene"><video id="en-relecture" controls playsinline></video></div>
+  <div class="en-boutons">
+    <button type="button" class="bouton" id="en-envoyer">⬆ Envoyer et obtenir le lien</button>
+    <button type="button" class="bouton-secondaire" id="en-recommencer">↺ Recommencer</button>
+  </div>
+  <div id="en-progression" class="conteneur-progression-avis" hidden>
+    <div class="barre-progression-fond"><div id="en-barre" class="barre-progression-remplissage"></div></div>
+    <span id="en-texte-progression" class="texte-progression-avis"></span>
+  </div>
+  <div id="en-resultat" hidden>
+    <p><strong>✅ Votre vidéo est prête.</strong> <span class="texte-discret" id="en-resultat-detail"></span></p>
+    <div class="en-lien">
+      <input type="text" id="en-lien" readonly>
+      <button type="button" class="bouton" id="en-copier">Copier le lien</button>
+      <a class="bouton-secondaire" id="en-ouvrir" href="#" target="_blank" rel="noopener">Ouvrir</a>
+    </div>
+  </div>
+</div>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">Mes enregistrements</span>
+  {% if not enregistrements %}<p class="texte-vide">Aucun enregistrement pour l'instant.</p>{% endif %}
+  <div id="en-liste">
+    {% for e in enregistrements %}
+    <div class="en-ligne" data-id="{{ e.id }}">
+      {% if e.vignette and e.etat == 'PRET' %}<img src="{{ e.vignette }}" alt="" loading="lazy">{% else %}<div class="en-vide">🎥</div>{% endif %}
+      <div>
+        <div><span class="en-titre">{{ e.titre }}</span>
+          {% if e.protege %}<span class="en-etiquette">🔒 mot de passe</span>{% endif %}
+          {% if e.etat == 'ENVOI' %}<span class="en-etiquette">envoi en cours</span>{% elif e.etat == 'ECHEC' %}<span class="en-etiquette en-ko">échec</span>{% elif e.etat == 'SUPPRIMEE' %}<span class="en-etiquette">supprimée</span>{% endif %}
+        </div>
+        <div class="texte-discret">
+          {{ e.mode }} · {{ e.cree_le|heure_locale("%d/%m/%Y %H:%M") }}{% if e.duree %} · {{ (e.duree // 60)|int }} min {{ '%02d'|format((e.duree % 60)|int) }} s{% endif %}{% if e.taille_mo %} · {{ e.taille_mo }} Mo{% endif %}
+          {% if e.etat == 'PRET' %} · {% if e.illimitee %}conservée sans limite{% else %}supprimée le {{ e.expire_le|heure_locale("%d/%m/%Y") }} ({{ e.jours_restants }} j){% endif %}{% endif %}
+          {% if e.etat == 'ECHEC' and e.erreur %}<span class="en-ko"> · {{ e.erreur }}</span>{% endif %}
+        </div>
+        {% if e.etat == 'PRET' %}
+        <div class="en-actions">
+          <input type="text" readonly value="{{ e.lien }}" class="en-champ-lien" style="max-width:22rem">
+          <button type="button" class="bouton-secondaire en-copier-ligne">Copier le lien</button>
+          <a class="bouton-secondaire" href="{{ e.lien }}" target="_blank" rel="noopener">Ouvrir</a>
+          <button type="button" class="bouton-secondaire en-renommer">Renommer</button>
+          <select class="en-prolonger-duree" aria-label="Nouvelle durée de conservation">{% for jours, libelle in durees %}<option value="{{ jours }}">{{ libelle }}</option>{% endfor %}</select>
+          <button type="button" class="bouton-secondaire en-prolonger">Changer la conservation</button>
+          <button type="button" class="bouton-secondaire en-supprimer">🗑 Supprimer</button>
+        </div>
+        {% elif e.etat in ('ECHEC', 'ENVOI') %}
+        <div class="en-actions"><button type="button" class="bouton-secondaire en-supprimer">🗑 Supprimer</button></div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const DUREE_MAX = {{ duree_max|tojson }};
+  const TAILLE_MORCEAU = 8 * 1024 * 1024;
+  let etat = "repos", flux = null, sources = [], enregistreur = null, morceaux = [], extension = "webm", mimeChoisi = "";
+  let debut = 0, cumule = 0, minuteur = null, travailleur = null, contexteAudio = null, vignette = null, blobFinal = null, dureeFinale = 0, urlRelecture = "";
+
+  const peutEcran = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  if (!peutEcran) {
+    document.querySelectorAll('input[name="mode"]').forEach((r) => { if (r.value !== "camera") { r.disabled = true; r.closest("label").style.opacity = "0.5"; } });
+    $("en-note-ecran").hidden = false;
+  }
+  const modeChoisi = () => document.querySelector('input[name="mode"]:checked').value;
+  function message(texte, erreur) { $("en-message").textContent = texte || ""; $("en-message").hidden = !texte; $("en-message").classList.toggle("en-ko", !!erreur); }
+  const attendre = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+  // ---- logo du client : choix et incrustation
+  $("en-client").addEventListener("change", () => {
+    const ok = !!$("en-client").value;
+    $("en-logo-page").disabled = $("en-logo-video").disabled = !ok;
+    $("en-logo-page").checked = ok; if (!ok) $("en-logo-video").checked = false;
+  });
+
+  // ---- chrono
+  const ecoule = () => cumule + (etat === "enregistrement" ? (performance.now() - debut) / 1000 : 0);
+  function majChrono() {
+    const s = Math.floor(ecoule()); $("en-chrono").textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    if (s >= DUREE_MAX && etat === "enregistrement") arreter("Durée maximale atteinte : l'enregistrement s'est arrêté.");
+  }
+
+  function choisirMime() {
+    const essais = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+    return window.MediaRecorder ? (essais.find((t) => MediaRecorder.isTypeSupported(t)) || "") : "";
+  }
+  function melanger(flux1, flux2) {
+    contexteAudio = new (window.AudioContext || window.webkitAudioContext)();
+    const destination = contexteAudio.createMediaStreamDestination();
+    [flux1, flux2].forEach((f) => { if (f && f.getAudioTracks().length) contexteAudio.createMediaStreamSource(new MediaStream([f.getAudioTracks()[0]])).connect(destination); });
+    return destination.stream.getAudioTracks()[0];
+  }
+  async function video(fluxVideo) {
+    const v = document.createElement("video"); v.srcObject = new MediaStream(fluxVideo.getVideoTracks()); v.muted = true; v.playsInline = true; await v.play(); return v;
+  }
+
+  // ---- preparation du flux a enregistrer
+  async function preparer(mode, logoClient) {
+    let camera = null, ecran = null, micro = null;
+    if (mode !== "ecran") camera = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" } });
+    else micro = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).catch(() => null);
+    if (mode !== "camera") ecran = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true });
+    sources = [camera, ecran, micro].filter(Boolean);
+    const sonMicro = camera || micro;
+    const piste = (ecran && ecran.getAudioTracks().length) ? melanger(sonMicro, ecran) : (sonMicro && sonMicro.getAudioTracks()[0]);
+    const pistes = [];
+    if (piste) pistes.push(piste);
+
+    const composer = mode === "ecran_camera" || !!logoClient;
+    if (!composer) { pistes.unshift((mode === "camera" ? camera : ecran).getVideoTracks()[0]); return new MediaStream(pistes); }
+
+    // composition sur un canevas : ecran (ou camera) en fond, camera en rond, logo en haut a droite
+    const fond = await video(mode === "camera" ? camera : ecran);
+    const bulle = mode === "ecran_camera" ? await video(camera) : null;
+    let L = fond.videoWidth || 1280, H = fond.videoHeight || 720;
+    if (L > 1920) { H = Math.round(H * 1920 / L); L = 1920; }
+    const canevas = document.createElement("canvas"); canevas.width = L; canevas.height = H; const c = canevas.getContext("2d");
+    let logo = null;
+    if (logoClient) { logo = new Image(); logo.src = "/enregistrements/logo/" + logoClient; try { await logo.decode(); } catch (e) { logo = null; } }
+    function dessiner() {
+      c.fillStyle = "#000"; c.fillRect(0, 0, L, H);
+      const w = fond.videoWidth, h = fond.videoHeight;
+      if (w && h) { const k = mode === "camera" ? Math.max(L / w, H / h) : Math.min(L / w, H / h); const dw = w * k, dh = h * k; c.drawImage(fond, (L - dw) / 2, (H - dh) / 2, dw, dh); }
+      if (bulle && bulle.videoWidth) {
+        const d = Math.round(H * 0.28), m = Math.round(H * 0.03), x = m, y = H - d - m, cote = Math.min(bulle.videoWidth, bulle.videoHeight);
+        c.save(); c.beginPath(); c.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); c.clip();
+        c.drawImage(bulle, (bulle.videoWidth - cote) / 2, (bulle.videoHeight - cote) / 2, cote, cote, x, y, d, d); c.restore();
+        c.lineWidth = Math.max(4, H * 0.006); c.strokeStyle = "#fff"; c.beginPath(); c.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); c.stroke();
+      }
+      if (logo && logo.naturalWidth) {
+        const hl = Math.round(H * 0.09), wl = Math.round(hl * logo.naturalWidth / logo.naturalHeight), m = Math.round(H * 0.025), p = Math.round(hl * 0.18);
+        c.fillStyle = "rgba(255,255,255,0.88)"; c.beginPath(); if (c.roundRect) c.roundRect(L - m - wl - 2 * p, m, wl + 2 * p, hl + 2 * p, p); else c.rect(L - m - wl - 2 * p, m, wl + 2 * p, hl + 2 * p); c.fill();
+        c.drawImage(logo, L - m - wl - p, m + p, wl, hl);
+      }
+    }
+    // Un minuteur de « worker » n'est pas ralenti quand l'onglet passe en arriere-plan (on partage souvent une autre fenetre) : l'image ne gele pas.
+    travailleur = new Worker(URL.createObjectURL(new Blob(["setInterval(function(){postMessage(0)},33)"], { type: "text/javascript" })));
+    travailleur.onmessage = dessiner; dessiner();
+    pistes.unshift(canevas.captureStream(30).getVideoTracks()[0]);
+    return new MediaStream(pistes);
+  }
+
+  function liberer() {
+    sources.forEach((s) => s.getTracks().forEach((p) => p.stop())); sources = [];
+    if (travailleur) { travailleur.terminate(); travailleur = null; }
+    if (contexteAudio) { contexteAudio.close().catch(() => {}); contexteAudio = null; }
+    $("en-apercu").srcObject = null; flux = null;
+  }
+
+  // ---- demarrer / pause / arreter
+  async function demarrer() {
+    if (!window.MediaRecorder) { message("Ce navigateur ne sait pas enregistrer : utilisez Chrome, Edge ou Firefox.", true); return; }
+    if (etat !== "repos") return;
+    message(""); $("en-demarrer").disabled = true;
+    const mode = modeChoisi(), logoClient = $("en-logo-video").checked ? $("en-client").value : "";
+    try { flux = await preparer(mode, logoClient); }
+    catch (e) { liberer(); $("en-demarrer").disabled = false; message(e && e.name === "NotAllowedError" ? "Accès refusé : autorisez la caméra, le micro ou le partage d'écran dans votre navigateur." : "Impossible de démarrer : " + (e && e.message ? e.message : e), true); return; }
+    const apercu = $("en-apercu"); apercu.srcObject = new MediaStream(flux.getVideoTracks()); await apercu.play().catch(() => {});
+    const piste = flux.getVideoTracks()[0]; piste.addEventListener("ended", () => { if (etat === "enregistrement" || etat === "pause") arreter("Le partage d'écran a été arrêté : l'enregistrement est terminé."); });
+    sources.forEach((s) => s.getVideoTracks().forEach((p) => p.addEventListener("ended", () => { if (etat === "enregistrement" || etat === "pause") arreter("Le partage a été arrêté : l'enregistrement est terminé."); })));
+    $("en-decompte").hidden = false;
+    for (const n of [3, 2, 1]) { $("en-decompte").textContent = n; await attendre(1000); if (!flux) return; }
+    $("en-decompte").hidden = true;
+    mimeChoisi = choisirMime(); extension = mimeChoisi.includes("mp4") ? "mp4" : "webm";
+    enregistreur = new MediaRecorder(flux, mimeChoisi ? { mimeType: mimeChoisi, videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 } : {});
+    morceaux = []; vignette = null; cumule = 0;
+    enregistreur.ondataavailable = (e) => { if (e.data && e.data.size) morceaux.push(e.data); };
+    enregistreur.onstop = fin;
+    enregistreur.start(1000);
+    debut = performance.now(); etat = "enregistrement";
+    $("en-temps").hidden = false; $("en-demarrer").hidden = true; $("en-pause").hidden = false; $("en-arreter").hidden = false; $("en-pause").textContent = "⏸ Pause";
+    minuteur = setInterval(majChrono, 250); majChrono();
+    setTimeout(prendreVignette, 1800);
+  }
+  function prendreVignette() {
+    const v = $("en-apercu"); if (!v.videoWidth || vignette) return;
+    const c = document.createElement("canvas"); c.width = 640; c.height = Math.round(640 * v.videoHeight / v.videoWidth); c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    c.toBlob((b) => { vignette = b; }, "image/jpeg", 0.8);
+  }
+  function pause() {
+    if (etat === "enregistrement") { enregistreur.pause(); cumule += (performance.now() - debut) / 1000; etat = "pause"; $("en-pause").textContent = "▶ Reprendre"; }
+    else if (etat === "pause") { enregistreur.resume(); debut = performance.now(); etat = "enregistrement"; $("en-pause").textContent = "⏸ Pause"; }
+  }
+  function arreter(texte) {
+    if (etat !== "enregistrement" && etat !== "pause") return;
+    if (etat === "enregistrement") cumule += (performance.now() - debut) / 1000;
+    dureeFinale = cumule; etat = "arret"; clearInterval(minuteur);
+    if (enregistreur && enregistreur.state !== "inactive") enregistreur.stop();
+    if (texte) message(texte);
+  }
+  function fin() {
+    liberer(); $("en-temps").hidden = true; $("en-pause").hidden = true; $("en-arreter").hidden = true; $("en-demarrer").hidden = false; $("en-demarrer").disabled = false;
+    etat = "repos";
+    if (!morceaux.length) { message("Rien n'a été enregistré.", true); return; }
+    blobFinal = new Blob(morceaux, { type: mimeChoisi || "video/webm" });
+    if (urlRelecture) URL.revokeObjectURL(urlRelecture);
+    urlRelecture = URL.createObjectURL(blobFinal); $("en-relecture").src = urlRelecture;
+    $("en-resultat").hidden = true; $("en-progression").hidden = true; $("en-envoyer").disabled = false;
+    $("en-relecture-bloc").hidden = false; $("en-relecture-bloc").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  $("en-demarrer").addEventListener("click", demarrer);
+  $("en-pause").addEventListener("click", pause);
+  $("en-arreter").addEventListener("click", () => arreter());
+  $("en-recommencer").addEventListener("click", () => { blobFinal = null; $("en-relecture").removeAttribute("src"); $("en-relecture-bloc").hidden = true; message(""); window.scrollTo({ top: 0, behavior: "smooth" }); });
+  window.addEventListener("beforeunload", (e) => { if (etat === "enregistrement" || etat === "pause" || (blobFinal && $("en-resultat").hidden)) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ---- envoi par morceaux puis suivi de l'hebergement
+  function progression(pourcent, texte) { $("en-progression").hidden = false; $("en-barre").style.width = pourcent + "%"; $("en-texte-progression").textContent = texte; }
+  async function appeler(url, options, essais) {
+    for (let i = 0; i < (essais || 3); i++) {
+      try { const r = await fetch(url, options); const d = await r.json().catch(() => ({})); if (r.ok) return d; if (r.status < 500) throw new Error(d.erreur || "Erreur " + r.status); }
+      catch (e) { if (i === (essais || 3) - 1 || /Session expirée/.test(e.message)) throw e; }
+      await attendre(1200);
+    }
+    throw new Error("Échec de l'envoi.");
+  }
+  $("en-envoyer").addEventListener("click", async () => {
+    if (!blobFinal) return;
+    $("en-envoyer").disabled = true; $("en-resultat").hidden = true;
+    try {
+      progression(1, "Préparation…");
+      const cree = await appeler("/enregistrements/nouveau", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        titre: $("en-titre").value, mode: modeChoisi(), jours: $("en-jours").value, mot_de_passe: $("en-mdp").value, client_id: $("en-client").value, logo_page: $("en-logo-page").checked }) });
+      const n = Math.ceil(blobFinal.size / TAILLE_MORCEAU);
+      for (let i = 0; i < n; i++) {
+        const fd = new FormData(); fd.append("numero", i); fd.append("fichier", blobFinal.slice(i * TAILLE_MORCEAU, (i + 1) * TAILLE_MORCEAU), "morceau.part");
+        await appeler("/enregistrements/" + cree.id + "/morceau", { method: "POST", body: fd });
+        progression(Math.round(((i + 1) / n) * 90), "Envoi " + Math.round(((i + 1) / n) * 100) + " % (" + (blobFinal.size / 1048576).toFixed(1).replace(".", ",") + " Mo)");
+      }
+      const fd = new FormData(); fd.append("nombre", n); fd.append("extension", extension); fd.append("duree", dureeFinale.toFixed(1)); if (vignette) fd.append("vignette", vignette, "vignette.jpg");
+      await appeler("/enregistrements/" + cree.id + "/finaliser", { method: "POST", body: fd });
+      progression(92, "Mise en ligne de la vidéo…");
+      for (let i = 0; i < 450; i++) {
+        await attendre(2000);
+        const e = await appeler("/enregistrements/" + cree.id + "/etat", {}, 2);
+        if (e.etat === "PRET") {
+          $("en-progression").hidden = true; $("en-resultat").hidden = false; $("en-lien").value = e.lien; $("en-ouvrir").href = e.lien; $("en-resultat-detail").textContent = e.taille_mo + " Mo";
+          setTimeout(() => window.location.reload(), 30000); return;
+        }
+        if (e.etat === "ECHEC") throw new Error(e.erreur || "La mise en ligne a échoué.");
+      }
+      throw new Error("La mise en ligne prend trop de temps : vérifiez la liste ci-dessous dans un instant.");
+    } catch (e) { $("en-progression").hidden = true; $("en-envoyer").disabled = false; message("Échec : " + e.message, true); }
+  });
+  $("en-copier").addEventListener("click", () => { $("en-lien").select(); navigator.clipboard.writeText($("en-lien").value).then(() => { $("en-copier").textContent = "Lien copié ✔"; setTimeout(() => { $("en-copier").textContent = "Copier le lien"; }, 2000); }); });
+
+  // ---- liste : copier, renommer, changer la conservation, supprimer
+  const poster = (url, corps) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps || {}) }).then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.erreur || "Erreur " + r.status); return d; });
+  $("en-liste").addEventListener("click", async (e) => {
+    const ligne = e.target.closest(".en-ligne"); if (!ligne) return; const id = ligne.dataset.id;
+    try {
+      if (e.target.closest(".en-copier-ligne")) { const champ = ligne.querySelector(".en-champ-lien"); await navigator.clipboard.writeText(champ.value); const b = e.target.closest("button"); b.textContent = "Copié ✔"; setTimeout(() => { b.textContent = "Copier le lien"; }, 1800); }
+      else if (e.target.closest(".en-renommer")) { const t = prompt("Nouveau titre :", ligne.querySelector(".en-titre").textContent); if (t === null) return; const d = await poster("/enregistrements/" + id + "/titre", { titre: t }); ligne.querySelector(".en-titre").textContent = d.titre; }
+      else if (e.target.closest(".en-prolonger")) { const jours = ligne.querySelector(".en-prolonger-duree").value; await poster("/enregistrements/" + id + "/prolonger", { jours: jours }); window.location.reload(); }
+      else if (e.target.closest(".en-supprimer")) { if (!confirm("Supprimer cette vidéo ? Le lien partagé ne fonctionnera plus et le fichier sera effacé. Action irréversible.")) return; await poster("/enregistrements/" + id + "/supprimer"); window.location.reload(); }
+    } catch (x) { alert(x.message); }
+  });
+})();
+</script>
+{% endblock %}

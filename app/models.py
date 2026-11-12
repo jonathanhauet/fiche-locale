@@ -1326,6 +1326,34 @@ class Creation(Base):
     cree_le = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class Enregistrement(Base):
+    """
+    Video enregistree depuis le navigateur et partagee par un lien public `/v/<token>` (voir enregistrements.py). etat : ENVOI (morceaux en cours de reception ou
+    d'envoi vers OVH), PRET, ECHEC ou SUPPRIMEE (fichiers retires, la ligne reste pour que le lien affiche « plus disponible »). expire_le vide = conservee sans limite.
+    """
+
+    __tablename__ = "enregistrements"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, unique=True, index=True)
+    titre = Column(String, default="")
+    mode = Column(String, default="camera")                      # camera / ecran_camera / ecran
+    etat = Column(String, default="ENVOI", index=True)
+    erreur = Column(String, default="")
+    nom_fichier = Column(String, default="")
+    url = Column(String, default="")
+    nom_vignette = Column(String, default="")
+    url_vignette = Column(String, default="")
+    duree = Column(Float, default=0.0)                           # secondes
+    taille = Column(Integer, default=0)                          # octets
+    jours_conservation = Column(Integer, default=7)              # 0 = illimitee
+    mot_de_passe_hash = Column(String, default="")               # facultatif : protege la page de visionnage
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    logo_url = Column(String, default="")                        # logo affiche sur la page de visionnage (vide = aucun)
+    cree_le = Column(DateTime, default=datetime.utcnow, index=True)
+    expire_le = Column(DateTime, nullable=True, index=True)
+
+
 class RecetteTitrePhoto(Base):
     """
     Recette d'un visuel « titre sur photo » : adresse de la photo d'origine et reglages du dessin, gardes pour pouvoir changer le titre, le sous-titre ou le logo

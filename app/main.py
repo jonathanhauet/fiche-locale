@@ -95,6 +95,7 @@ from . import (
     cartes_montage,
     charte_montage,
     creations,
+    enregistrements,
     modeles_visuels,
     montage_parole,
     style_reference,
@@ -7469,6 +7470,219 @@ def medias_complets_fiche(client_id: int, request: Request, db: Session = Depend
     except Exception as erreur:
         return JSONResponse({"erreur": str(erreur)[:200]}, status_code=502)
     return JSONResponse({"nom": client.nom, "medias": medias, "tronque": bool(jeton)})
+
+
+# ---------------------------------------------------------------------------
+# Enregistrements video partageables (facon Loom) : voir enregistrements.py
+# ---------------------------------------------------------------------------
+
+
+def _lien_enregistrement(request: Request, token: str) -> str:
+    protocole = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return f"{protocole}://{request.headers.get('host') or request.url.netloc}/v/{token}"
+
+
+def _logo_client_enregistrement(client) -> str:
+    """Logo du client pour la page de visionnage : celui de son identite visuelle, sinon celui de sa fiche Google, sinon rien."""
+    return (getattr(client, "logo_url", "") or getattr(client, "logo_google_url", "") or "") if client else ""
+
+
+@app.get("/enregistrer", response_class=HTMLResponse)
+def page_enregistrer(request: Request, db: Session = Depends(obtenir_session)):
+    """Enregistrer une video (camera, ecran, ou ecran + camera), la partager par lien et choisir sa duree de conservation."""
+    redirection = rediriger_si_non_connecte(request)
+    if redirection:
+        return redirection
+    lignes = db.query(models.Enregistrement).order_by(models.Enregistrement.id.desc()).limit(100).all()
+    clients = [c for c in db.query(models.Client).order_by(models.Client.nom).all() if _logo_client_enregistrement(c)]
+    return templates.TemplateResponse(request, "enregistrer.html", {
+        "page_actuelle": "enregistrer", "modes": enregistrements.MODES, "durees": [(j, enregistrements.LIBELLES_DUREE[j]) for j in enregistrements.DUREES_JOURS], "duree_defaut": enregistrements.DUREE_DEFAUT,
+        "duree_max": enregistrements.DUREE_MAX_SECONDES, "clients_logo": [{"id": c.id, "nom": c.nom} for c in clients],
+        "enregistrements": [enregistrements.en_dict(l, _lien_enregistrement(request, l.token)) for l in lignes],
+    })
+
+
+@app.get("/enregistrements/logo/{client_id}")
+def logo_pour_enregistrement(client_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Logo du client servi depuis la plateforme (meme origine) pour pouvoir l'incruster dans la video enregistree sans bloquer le navigateur."""
+    if not utilisateur_connecte(request):
+        return Response(status_code=401)
+    client = db.get(models.Client, client_id)
+    url = _logo_client_enregistrement(client)
+    image = _image_depuis_url_publique(url) if url else None
+    if image is None:
+        return Response(status_code=404)
+    image = image.convert("RGBA")
+    image.thumbnail((500, 500))
+    tampon = io.BytesIO()
+    image.save(tampon, "PNG")
+    return Response(tampon.getvalue(), media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@app.post("/enregistrements/nouveau")
+async def nouvel_enregistrement(request: Request, db: Session = Depends(obtenir_session)):
+    """Cree l'enregistrement (avant l'envoi des morceaux) : titre, mode, duree de conservation, mot de passe et client (pour le logo) facultatifs."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    try:
+        donnees = await request.json()
+    except Exception:
+        return JSONResponse({"erreur": "Requête invalide."}, status_code=400)
+    mode = donnees.get("mode") if donnees.get("mode") in enregistrements.MODES else "camera"
+    client = db.get(models.Client, int(donnees["client_id"])) if str(donnees.get("client_id") or "").isdigit() else None
+    mot_de_passe = str(donnees.get("mot_de_passe") or "")
+    ligne = models.Enregistrement(
+        token=enregistrements.nouveau_jeton(), titre=" ".join(str(donnees.get("titre") or "").split())[:120], mode=mode, etat="ENVOI",
+        jours_conservation=enregistrements.duree_valide(donnees.get("jours")), mot_de_passe_hash=hacher_mot_de_passe(mot_de_passe[:100]) if mot_de_passe.strip() else "",
+        client_id=client.id if client else None, logo_url=_logo_client_enregistrement(client) if (client and donnees.get("logo_page")) else "",
+    )
+    db.add(ligne)
+    db.commit()
+    return JSONResponse({"id": ligne.id, "token": ligne.token, "lien": _lien_enregistrement(request, ligne.token)})
+
+
+def _enregistrement_en_envoi(db: Session, identifiant: int):
+    ligne = db.get(models.Enregistrement, identifiant)
+    return ligne if ligne and ligne.etat == "ENVOI" else None
+
+
+@app.post("/enregistrements/{identifiant}/morceau")
+async def recevoir_morceau_enregistrement(identifiant: int, request: Request, numero: int = Form(...), fichier: UploadFile = File(...), db: Session = Depends(obtenir_session)):
+    """Recoit un morceau (jusqu'a 16 Mo) de la video : l'envoi en plusieurs petites requetes evite les delais d'une seule grosse requete."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    if not _enregistrement_en_envoi(db, identifiant):
+        return JSONResponse({"erreur": "Enregistrement introuvable ou déjà envoyé."}, status_code=404)
+    octets = await fichier.read(enregistrements.TAILLE_MORCEAU_MAX + 1)
+    try:
+        await run_in_threadpool(enregistrements.enregistrer_morceau, identifiant, numero, octets)
+    except ValueError:
+        return JSONResponse({"erreur": "Morceau invalide ou trop gros."}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/enregistrements/{identifiant}/finaliser")
+async def finaliser_enregistrement(identifiant: int, request: Request, nombre: int = Form(...), extension: str = Form("webm"), duree: float = Form(0), vignette: UploadFile = File(None), db: Session = Depends(obtenir_session)):
+    """Tous les morceaux sont envoyes : assemblage et envoi vers l'hebergement en arriere-plan (suivre l'etat avec /etat)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = _enregistrement_en_envoi(db, identifiant)
+    if not ligne:
+        return JSONResponse({"erreur": "Enregistrement introuvable ou déjà envoyé."}, status_code=404)
+    extension = extension if extension in enregistrements.EXTENSIONS else "webm"
+    octets_vignette = None
+    if vignette is not None and getattr(vignette, "filename", ""):
+        brut = await vignette.read(3 * 1024 * 1024)
+        try:
+            octets_vignette = _jpeg_normalise(brut, 640)
+        except ValueError:
+            octets_vignette = None
+    enregistrements.lancer_envoi(SessionLocal, ligne.id, int(nombre), extension, float(duree or 0), octets_vignette)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/enregistrements/{identifiant}/etat")
+def etat_enregistrement(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Enregistrement, identifiant)
+    if not ligne:
+        return JSONResponse({"erreur": "Introuvable."}, status_code=404)
+    return JSONResponse({"etat": ligne.etat, "erreur": ligne.erreur or "", "lien": _lien_enregistrement(request, ligne.token), "taille_mo": round((ligne.taille or 0) / 1048576, 1)})
+
+
+@app.post("/enregistrements/{identifiant}/prolonger")
+async def prolonger_enregistrement(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Nouvelle duree de conservation, comptee a partir de maintenant (0 = illimitee)."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Enregistrement, identifiant)
+    if not ligne or ligne.etat != "PRET":
+        return JSONResponse({"erreur": "Seule une vidéo disponible peut être prolongée."}, status_code=404)
+    donnees = await request.json()
+    ligne.jours_conservation = enregistrements.duree_valide(donnees.get("jours"))
+    ligne.expire_le = enregistrements.expiration(ligne.jours_conservation)
+    db.commit()
+    return JSONResponse({"ok": True, "illimitee": ligne.expire_le is None, "expire_le": ligne.expire_le.strftime("%d/%m/%Y") if ligne.expire_le else ""})
+
+
+@app.post("/enregistrements/{identifiant}/titre")
+async def renommer_enregistrement(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Enregistrement, identifiant)
+    if not ligne:
+        return JSONResponse({"erreur": "Introuvable."}, status_code=404)
+    donnees = await request.json()
+    ligne.titre = " ".join(str(donnees.get("titre") or "").split())[:120]
+    db.commit()
+    return JSONResponse({"ok": True, "titre": ligne.titre or "Sans titre"})
+
+
+@app.post("/enregistrements/{identifiant}/supprimer")
+def supprimer_enregistrement(identifiant: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Supprime la video et sa vignette de l'hebergement tout de suite ; le lien partage affichera « plus disponible »."""
+    if not utilisateur_connecte(request):
+        return JSONResponse({"erreur": "Session expirée, merci de recharger la page."}, status_code=401)
+    ligne = db.get(models.Enregistrement, identifiant)
+    if not ligne:
+        return JSONResponse({"erreur": "Introuvable."}, status_code=404)
+    enregistrements.supprimer(db, ligne)
+    return JSONResponse({"ok": True})
+
+
+def _page_enregistrement(request: Request, ligne, **supplement):
+    """Page publique de visionnage : lecteur, ou formulaire de mot de passe, ou message « plus disponible »."""
+    disponible = enregistrements.disponible(ligne)
+    protege = bool(ligne.mot_de_passe_hash)
+    debloque = (not protege) or utilisateur_connecte(request) or request.session.get("enreg_" + ligne.token) == "1"
+    contexte = {
+        "ligne": ligne, "disponible": disponible, "protege": protege, "debloque": debloque, "erreur": "",
+        "expire_texte": ligne.expire_le.strftime("%d/%m/%Y") if (ligne.expire_le and disponible) else "",
+        "lien": _lien_enregistrement(request, ligne.token), "extension": (ligne.url.rsplit(".", 1)[-1].lower() if ligne.url else "webm"),
+        "meta_titre": (ligne.titre or "Vidéo") if (not protege) else "Vidéo protégée", "meta_image": ligne.url_vignette if (disponible and not protege) else "",
+        **supplement,
+    }
+    return templates.TemplateResponse(request, "enregistrement_public.html", contexte, status_code=200 if disponible else 410, headers=ENTETES_PAGE_PRIVEE)
+
+
+@app.get("/v/{token}", response_class=HTMLResponse)
+def voir_enregistrement(token: str, request: Request, db: Session = Depends(obtenir_session)):
+    ligne = db.query(models.Enregistrement).filter(models.Enregistrement.token == token).first()
+    if not ligne or ligne.etat in ("ENVOI", "ECHEC"):
+        return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    return _page_enregistrement(request, ligne)
+
+
+@app.post("/v/{token}/acces", response_class=HTMLResponse)
+async def acces_enregistrement(token: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Mot de passe d'une video protegee (limite d'essais par adresse, comme la page des responsables)."""
+    ligne = db.query(models.Enregistrement).filter(models.Enregistrement.token == token).first()
+    if not ligne or ligne.etat in ("ENVOI", "ECHEC") or not ligne.mot_de_passe_hash:
+        return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PAGE_PRIVEE)
+    adresse = _adresse_visiteur(request)
+    if suivi_goldunion.acces_bloque(adresse):
+        return _page_enregistrement(request, ligne, erreur="Trop de tentatives. Réessayez dans quelques minutes.")
+    formulaire = await request.form()
+    if not verifier_mot_de_passe(str(formulaire.get("mot_de_passe", ""))[:100], ligne.mot_de_passe_hash):
+        suivi_goldunion.noter_echec(adresse)
+        return _page_enregistrement(request, ligne, erreur="Mot de passe incorrect.")
+    request.session["enreg_" + ligne.token] = "1"
+    return RedirectResponse(f"/v/{token}", status_code=303, headers=ENTETES_PAGE_PRIVEE)
+
+
+def _purge_enregistrements_quotidienne():
+    """Chaque nuit : supprime les enregistrements arrives a echeance (fichiers OVH compris) et abandonne les envois jamais termines."""
+    session = SessionLocal()
+    try:
+        enregistrements.purger(session)
+    except Exception:
+        session.rollback()
+    finally:
+        session.close()
+
+
+planificateur.add_job(_purge_enregistrements_quotidienne, "cron", hour=3, minute=40, timezone="Europe/Brussels", id="purge_enregistrements", replace_existing=True)
 
 
 @app.get("/photos-fiches", response_class=HTMLResponse)
