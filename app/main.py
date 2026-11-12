@@ -15309,6 +15309,8 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
 
     a_video = bool(getattr(post, "video_url", None) or getattr(post, "video_donnees", None))
     nouveaux_fichiers = [f for f in formulaire.getlist("image") if getattr(f, "filename", "")]
+    base_hebergement = (ovh_upload.URL_PUBLIQUE_BASE or "").rstrip("/")
+    images_ia = [u for u in dict.fromkeys(formulaire.getlist("garder_image_ia")) if base_hebergement and str(u).startswith(base_hebergement + "/")]    # images generees depuis cette page : seulement celles de NOTRE hebergement
     gerer_images = bool(formulaire.get("images_gerees"))
     images_finales = None        # Facebook / Instagram : liste d'URL
     nouvelle_image_linkedin = "inchangee"   # LinkedIn : octets, None (supprimer) ou "inchangee"
@@ -15342,6 +15344,8 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
         try:
             if nouveaux_fichiers:
                 nouvelle_image_linkedin = _jpeg_normalise(await nouveaux_fichiers[0].read())
+            elif images_ia:                                      # LinkedIn n'a qu'une image : la premiere image IA gardee remplace l'actuelle
+                nouvelle_image_linkedin = _jpeg_normalise(await run_in_threadpool(lambda: requests.get(images_ia[0], timeout=30).content))
             elif formulaire.get("supprimer_image"):
                 nouvelle_image_linkedin = None
         except ValueError as erreur_image:
@@ -15349,17 +15353,17 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
     elif gerer_images:
         a_garder = set(formulaire.getlist("garder_image"))
         gardees = [url for url in meta_publish.urls_depuis_champ(post.image_url) if url in a_garder]
-        if len(gardees) + len(nouveaux_fichiers) > NB_MAX_IMAGES_PUBLICATION:
+        if len(gardees) + len(images_ia) + len(nouveaux_fichiers) > NB_MAX_IMAGES_PUBLICATION:
             return _reponse_modifier_post_programme(
                 request, reseau, post, client, erreur=f"{NB_MAX_IMAGES_PUBLICATION} images maximum par publication.", code=400,
             )
-        if reseau == "instagram" and not gardees and not nouveaux_fichiers:
+        if reseau == "instagram" and not gardees and not images_ia and not nouveaux_fichiers:
             return _reponse_modifier_post_programme(request, reseau, post, client, erreur="Instagram nécessite au moins une image.", code=400)
         try:
             ajoutees = [_televerser_image_publication(await f.read(), "multi") for f in nouveaux_fichiers]
         except ValueError as erreur_image:
             return _reponse_modifier_post_programme(request, reseau, post, client, erreur=f"Image refusée : {erreur_image}", code=400)
-        images_finales = gardees + ajoutees
+        images_finales = gardees + images_ia + ajoutees
 
     post.texte = texte
     post.publier_le = publier_le

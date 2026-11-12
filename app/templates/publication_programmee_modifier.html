@@ -104,6 +104,23 @@
   </p>
   {% endif %}
 
+  {% if not a_video %}
+  <div class="bloc-section" id="bloc-image-ia">
+    <span class="choix-image-titre">✨ Générer une image (IA)</span>
+    <label>Description de l'image (facultatif : sinon l'IA part du texte du post)
+      <textarea id="ia-description" rows="2" maxlength="600" placeholder="ex. Une propriétaire souriante remet les clés à un voyageur devant un appartement"></textarea>
+    </label>
+    {% set client_oia = client %}{% set oia_ouvert = true %}{% include "_options_image_ia.html" %}
+    <div class="actions-avis"><button type="button" class="bouton-secondaire" id="ia-generer">✨ Générer l'image</button></div>
+    <p class="texte-discret" id="ia-statut" hidden></p>
+    <div class="grille-images-edition" id="ia-resultats"></div>
+    <p class="texte-discret">
+      L'image est créée au format carré, puis ajoutée aux images de ce post lorsque vous cliquez sur Enregistrer ; décochez « Garder » pour l'écarter. Vous pouvez en générer plusieurs.
+      {% if reseau == "linkedin" %}LinkedIn n'accepte qu'une image : la première image IA gardée remplacera l'actuelle.{% endif %}
+    </p>
+  </div>
+  {% endif %}
+
   <p class="message-info-modif" id="note-modifs-images" hidden>{{ "La vidéo marquée" if a_video else "Les images marquées" }} "Sera retirée" ou "Sera supprimée" ne {{ "disparaît" if a_video else "disparaissent" }} qu'au clic sur Enregistrer.</p>
 
   <div class="actions-avis">
@@ -135,6 +152,42 @@
     carte.querySelector("input[type=checkbox]").addEventListener("change", actualiser);
   });
   actualiser();
+})();
+(function () {
+  var bouton = document.getElementById("ia-generer");
+  if (!bouton) return;
+  var statut = document.getElementById("ia-statut"), zone = document.getElementById("ia-resultats");
+  function afficherStatut(texte) { statut.textContent = texte; statut.hidden = !texte; }
+  bouton.addEventListener("click", async function () {
+    var options = window.optionsImageIA ? window.optionsImageIA() : {};
+    var corps = {
+      options: options, inclure_reference: ["moi", "moi_client", "lieu_reference"].indexOf(options.personnes) >= 0,
+      prompt_image: document.getElementById("ia-description").value.trim(), texte_post: document.querySelector('textarea[name="texte"]').value,
+    };
+    var libelle = bouton.textContent;
+    bouton.disabled = true; bouton.textContent = "⏳ Génération en cours…"; afficherStatut("Génération de l'image (une trentaine de secondes)…");
+    try {
+      var reponse = await fetch("/publication-multi/{{ client.id }}/generer_image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      var donnees = {};
+      try { donnees = await reponse.json(); } catch (e) { /* reponse non JSON */ }
+      if (!reponse.ok) { afficherStatut(donnees.erreur || "Échec de la génération de l'image."); return; }
+      var carte = document.createElement("div"); carte.className = "carte-image-edition";
+      var vignette = document.createElement("div"); vignette.className = "vignette-image-edition";
+      var image = document.createElement("img"); image.src = donnees.url; image.alt = "Image générée par l'IA";
+      var voile = document.createElement("span"); voile.className = "voile-image-retiree"; voile.textContent = "Sera écartée";
+      vignette.append(image, voile);
+      var etiquette = document.createElement("label"); etiquette.className = "filtre-case";
+      var coche = document.createElement("input"); coche.type = "checkbox"; coche.name = "garder_image_ia"; coche.value = donnees.url; coche.checked = true;
+      coche.addEventListener("change", function () { carte.classList.toggle("retiree", !coche.checked); });
+      etiquette.append(coche, document.createTextNode(" Garder (nouvelle image IA)"));
+      carte.append(vignette, etiquette); zone.append(carte);
+      afficherStatut((donnees.avertissement ? donnees.avertissement + " " : "") + "Image créée : elle sera ajoutée au post à l'enregistrement.");
+    } catch (e) {
+      afficherStatut("Génération impossible pour le moment : réessayez dans un instant.");
+    } finally {
+      bouton.disabled = false; bouton.textContent = libelle;
+    }
+  });
 })();
 (function () {
   var formulaire = document.querySelector('form[action$="/modifier"]');
