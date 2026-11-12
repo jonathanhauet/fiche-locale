@@ -26,15 +26,19 @@ def identifiants_configures() -> bool:
 def envoyer_email(
     destinataire_email: str, destinataire_nom: str, sujet: str, contenu_html: str,
     pieces_jointes: list[tuple[str, bytes]] = None, nom_expediteur: str = None, reponse_a: str = None,
+    email_expediteur: str = None, cle_api: str = None,
 ) -> None:
     """pieces_jointes : [(nom_fichier, octets), ...], optionnel (ex. PDF d'audit joint).
-    nom_expediteur : remplace le nom affiche (l'adresse reste BREVO_EMAIL_EXPEDITEUR, validee chez Brevo) ;
+    nom_expediteur : remplace le nom affiche ; email_expediteur : remplace l'adresse d'envoi (elle doit etre validee
+    dans le compte Brevo utilise) ; cle_api : envoie avec un autre compte Brevo que celui de la plateforme ;
     reponse_a : adresse qui recoit les reponses du destinataire."""
-    if not identifiants_configures():
+    cle = cle_api or BREVO_API_KEY
+    expediteur = email_expediteur or BREVO_EMAIL_EXPEDITEUR
+    if not (cle and expediteur):
         raise RuntimeError("BREVO_API_KEY / BREVO_EMAIL_EXPEDITEUR manquants dans plateforme_web/.env.")
 
     corps = {
-        "sender": {"name": nom_expediteur or BREVO_NOM_EXPEDITEUR, "email": BREVO_EMAIL_EXPEDITEUR},
+        "sender": {"name": nom_expediteur or BREVO_NOM_EXPEDITEUR, "email": expediteur},
         "to": [{"email": destinataire_email, "name": destinataire_nom}],
         "subject": sujet,
         "htmlContent": contenu_html,
@@ -49,7 +53,7 @@ def envoyer_email(
 
     reponse = requests.post(
         URL_ENVOI,
-        headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json", "Accept": "application/json"},
+        headers={"api-key": cle, "Content-Type": "application/json", "Accept": "application/json"},
         json=corps,
         timeout=30,
     )

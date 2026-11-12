@@ -22,6 +22,8 @@
 <div class="cadre">
   <h1>Inscrits à la checklist de la conférence d’Alès</h1>
   <p class="chiffres">{{ inscrits|length }} inscrits · {{ nb_confirmes }} e-mails confirmés · {{ nb_conseils }} acceptent les conseils · page publique : <a href="/ales">/ales</a></p>
+  <p class="chiffres">E-mails envoyés au nom de « Jonathan Hauët » depuis <strong>{{ expediteur_prevu }}</strong> ({{ compte_brevo }}).</p>
+  {% if etat_expediteur.secours %}<p class="chiffres non">Dernier envoi : Brevo a refusé {{ expediteur_prevu }}, l’e-mail est parti depuis {{ etat_expediteur.email }}. Validez cette adresse dans Brevo (Expéditeurs et domaines) ou renseignez CHECKLIST_BREVO_API_KEY sur Railway. Détail : {{ etat_expediteur.erreur }}</p>{% endif %}
   <a class="bouton" href="/ales/inscrits.csv">Exporter en CSV</a>
   <table>
     <tr><th>Inscrit le</th><th>Personne</th><th>E-mail</th><th>Établissement</th><th>Activité</th><th>Conseils</th><th>E-mail confirmé</th></tr>

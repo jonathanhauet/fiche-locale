@@ -147,6 +147,19 @@ def _propre(valeur) -> str:
     return " ".join(str(valeur or "").split())[:LONGUEUR_MAX]
 
 
+ETAT_EXPEDITEUR = {"email": "", "secours": False, "erreur": ""}     # dernier envoi : adresse reellement utilisee, affichee sur /ales/inscrits
+
+
+def _expediteur_checklist():
+    """Adresse d'envoi de la checklist : CHECKLIST_EXPEDITEUR_EMAIL, sinon l'adresse de contact de Jonathan (EMAIL_NOTIFICATION_LEADS)."""
+    return (os.getenv("CHECKLIST_EXPEDITEUR_EMAIL") or os.getenv("EMAIL_NOTIFICATION_LEADS") or "").strip() or None
+
+
+def _cle_checklist():
+    """Cle d'un autre compte Brevo (celui de Jonathan Hauet) si elle est fournie ; sinon le compte de la plateforme."""
+    return os.getenv("CHECKLIST_BREVO_API_KEY", "").strip() or None
+
+
 def _url_publique(request: Request) -> str:
     return (os.getenv("URL_PUBLIQUE_CHECKLIST") or str(request.base_url)).rstrip("/")
 
@@ -173,11 +186,23 @@ def _envoyer_lien(inscription: InscriptionChecklistAles, request: Request) -> No
     if len(recents) >= MAX_ENVOIS_PAR_HEURE:
         return                                                    # deja envoye plusieurs fois : on n'insiste pas, la page reste la meme
     lien = f"{_url_publique(request)}/ales/checklist/{inscription.jeton}"
-    brevo_email.envoyer_email(
-        inscription.email, " ".join(p for p in (inscription.prenom, inscription.nom) if p) or inscription.email,
-        "Votre checklist « Dominer Google Maps »", _contenu_email(inscription.prenom, lien), nom_expediteur=NOM_EXPEDITEUR,
-        reponse_a=os.getenv("EMAIL_NOTIFICATION_LEADS") or None,
+    expediteur, cle = _expediteur_checklist(), _cle_checklist()
+    message = dict(
+        destinataire_email=inscription.email,
+        destinataire_nom=" ".join(p for p in (inscription.prenom, inscription.nom) if p) or inscription.email,
+        sujet="Votre checklist « Dominer Google Maps »", contenu_html=_contenu_email(inscription.prenom, lien),
+        nom_expediteur=NOM_EXPEDITEUR, reponse_a=os.getenv("EMAIL_NOTIFICATION_LEADS") or None,
     )
+    try:
+        brevo_email.envoyer_email(**message, email_expediteur=expediteur, cle_api=cle)
+        ETAT_EXPEDITEUR.update(email=expediteur or brevo_email.BREVO_EMAIL_EXPEDITEUR or "", secours=False, erreur="")
+    except RuntimeError as erreur:
+        if not (expediteur or cle):
+            raise
+        # Adresse de Jonathan refusee par Brevo (non validee dans ce compte, cle invalide...) : on envoie quand meme
+        # depuis l'adresse de la plateforme, pour que le participant recoive sa checklist, et on le signale sur /ales/inscrits.
+        brevo_email.envoyer_email(**message)
+        ETAT_EXPEDITEUR.update(email=brevo_email.BREVO_EMAIL_EXPEDITEUR or "", secours=True, erreur=str(erreur)[:300])
     recents.append(maintenant.isoformat())
     inscription.envois_heure_json = ",".join(recents)
     inscription.nb_envois = (inscription.nb_envois or 0) + 1
@@ -187,12 +212,13 @@ def _envoyer_lien(inscription: InscriptionChecklistAles, request: Request) -> No
 
 def _ajouter_liste_brevo(inscription: InscriptionChecklistAles) -> None:
     liste = os.getenv("CHECKLIST_BREVO_LISTE_ID", "").strip()
-    if not (liste.isdigit() and inscription.accepte_conseils and brevo_email.BREVO_API_KEY) or inscription.ajoute_liste_brevo:
+    cle = _cle_checklist() or brevo_email.BREVO_API_KEY
+    if not (liste.isdigit() and inscription.accepte_conseils and cle) or inscription.ajoute_liste_brevo:
         return
     try:
         reponse = requests.post(
             "https://api.brevo.com/v3/contacts",
-            headers={"api-key": brevo_email.BREVO_API_KEY, "Content-Type": "application/json", "Accept": "application/json"},
+            headers={"api-key": cle,"Content-Type": "application/json", "Accept": "application/json"},
             json={"email": inscription.email, "listIds": [int(liste)], "updateEnabled": True,
                   "attributes": {"PRENOM": inscription.prenom, "NOM": inscription.nom}},
             timeout=20,
@@ -342,6 +368,9 @@ def liste_inscrits(request: Request, db: Session = Depends(obtenir_session)):
     return _templates.TemplateResponse(request, "checklist_ales_inscrits.html", {
         "inscrits": inscrits, "nb_confirmes": sum(1 for i in inscrits if i.confirme_le),
         "nb_conseils": sum(1 for i in inscrits if i.confirme_le and i.accepte_conseils),
+        "expediteur_prevu": _expediteur_checklist() or brevo_email.BREVO_EMAIL_EXPEDITEUR or "(aucune)",
+        "compte_brevo": "compte Brevo dédié (CHECKLIST_BREVO_API_KEY)" if _cle_checklist() else "compte Brevo de la plateforme",
+        "etat_expediteur": ETAT_EXPEDITEUR,
     }, headers=ENTETES)
 
 
