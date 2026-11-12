@@ -25,18 +25,22 @@ def identifiants_configures() -> bool:
 
 def envoyer_email(
     destinataire_email: str, destinataire_nom: str, sujet: str, contenu_html: str,
-    pieces_jointes: list[tuple[str, bytes]] = None,
+    pieces_jointes: list[tuple[str, bytes]] = None, nom_expediteur: str = None, reponse_a: str = None,
 ) -> None:
-    """pieces_jointes : [(nom_fichier, octets), ...], optionnel (ex. PDF d'audit joint)."""
+    """pieces_jointes : [(nom_fichier, octets), ...], optionnel (ex. PDF d'audit joint).
+    nom_expediteur : remplace le nom affiche (l'adresse reste BREVO_EMAIL_EXPEDITEUR, validee chez Brevo) ;
+    reponse_a : adresse qui recoit les reponses du destinataire."""
     if not identifiants_configures():
         raise RuntimeError("BREVO_API_KEY / BREVO_EMAIL_EXPEDITEUR manquants dans plateforme_web/.env.")
 
     corps = {
-        "sender": {"name": BREVO_NOM_EXPEDITEUR, "email": BREVO_EMAIL_EXPEDITEUR},
+        "sender": {"name": nom_expediteur or BREVO_NOM_EXPEDITEUR, "email": BREVO_EMAIL_EXPEDITEUR},
         "to": [{"email": destinataire_email, "name": destinataire_nom}],
         "subject": sujet,
         "htmlContent": contenu_html,
     }
+    if reponse_a:
+        corps["replyTo"] = {"email": reponse_a, "name": nom_expediteur or BREVO_NOM_EXPEDITEUR}
     if pieces_jointes:
         corps["attachment"] = [
             {"name": nom_fichier, "content": base64.b64encode(octets).decode()}
