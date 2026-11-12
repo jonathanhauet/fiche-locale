@@ -124,7 +124,7 @@ def _televerser_document(access_token: str, identifiant_membre: str, octets_pdf:
     return urn
 
 
-def publier_post(
+def _publier_post(
     access_token: str, identifiant_membre: str, texte: str, octets_image: bytes = None, octets_video: bytes = None,
     octets_document: bytes = None, titre_document: str = "", octets_images: list = None,
 ) -> str:
@@ -182,3 +182,28 @@ def publier_post(
         raise RuntimeError(f"Echec de la publication LinkedIn (code {reponse.status_code}) : {reponse.text}")
 
     return reponse.headers.get("x-restli-id", "")
+
+
+MESSAGE_JETON_EXPIRE = (
+    "Le jeton de connexion LinkedIn a expiré ou a été révoqué (il dure environ 60 jours et ne se renouvelle pas tout seul). "
+    "Reconnectez le profil LinkedIn : menu Comptes & sécurité → Comptes LinkedIn, bouton de connexion, puis relancez la publication."
+)
+
+
+def message_lisible(erreur) -> str:
+    """Erreur LinkedIn en français clair : un jeton expiré (code 401, EXPIRED_ACCESS_TOKEN) donne la marche a suivre au lieu du JSON brut de l'API."""
+    texte = str(erreur)
+    if "EXPIRED_ACCESS_TOKEN" in texte or "REVOKED_ACCESS_TOKEN" in texte or "65602" in texte or "(code 401)" in texte:
+        return MESSAGE_JETON_EXPIRE
+    return texte
+
+
+def publier_post(*args, **kwargs) -> str:
+    """Publie un post (voir _publier_post) ; une erreur de jeton expire est remplacee par un message qui explique quoi faire."""
+    try:
+        return _publier_post(*args, **kwargs)
+    except RuntimeError as erreur:
+        lisible = message_lisible(erreur)
+        if lisible is MESSAGE_JETON_EXPIRE:
+            raise RuntimeError(lisible) from erreur
+        raise
