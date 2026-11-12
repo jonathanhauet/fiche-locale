@@ -65,11 +65,35 @@
     <label class="filtre-case"><input type="checkbox" id="en-logo-page" disabled> Sur la page de visionnage</label>
     <label class="filtre-case"><input type="checkbox" id="en-logo-video" disabled> Incrusté dans la vidéo (coin haut droit)</label>
   </div>
-  <p class="texte-discret">Le logo incrusté se choisit avant de démarrer ; il est alors dessiné dans la vidéo elle-même. Seuls les clients qui ont un logo enregistré sont proposés. Un mot de passe protège la page de visionnage ; sans lui, toute personne qui a le lien peut regarder.</p>
+  <p class="texte-discret">Le logo incrusté apparaît en animation en haut à droite ; il se choisit avant de démarrer et il est dessiné dans la vidéo elle-même. Seuls les clients qui ont un logo enregistré sont proposés. Un mot de passe protège la page de visionnage ; sans lui, toute personne qui a le lien peut regarder.</p>
 </div>
 
 <div class="bloc-section">
-  <span class="choix-image-titre">3. Enregistrement</span>
+  <span class="choix-image-titre">3. Titre et sous-titre animés dans la vidéo (facultatif)</span>
+  <label class="filtre-case"><input type="checkbox" id="en-bandeau-actif"> Incruster un titre et un sous-titre animés en bas de la vidéo</label>
+  <div class="formulaire-ligne" id="en-bandeau-champs" hidden>
+    <label>Titre du bandeau
+      <input type="text" id="en-bandeau-titre" maxlength="80" placeholder="(par défaut : le titre ci-dessus)" style="min-width:16rem">
+    </label>
+    <label>Sous-titre
+      <input type="text" id="en-bandeau-sous" maxlength="80" placeholder="ex. Jonathan Hauët, GoldUnion" style="min-width:16rem">
+    </label>
+    <label>Couleur des bandeaux
+      <input type="color" id="en-bandeau-couleur" value="#1f4e8c" style="width:3.4rem;padding:0.1rem;">
+    </label>
+    <label>Affichage
+      <select id="en-bandeau-duree">
+        <option value="0">Jusqu'à la fin de la vidéo</option>
+        <option value="10">10 secondes puis il disparaît</option>
+        <option value="6">6 secondes puis il disparaît</option>
+      </select>
+    </label>
+  </div>
+  <p class="texte-discret">Le bandeau glisse depuis la gauche une seconde après le début, le texte apparaît dans la foulée, puis il ressort en glissant s'il a une durée. Le texte se met tout seul en blanc ou en noir selon la couleur choisie. Avec la caméra en rond, le bandeau se place à sa droite. Le logo incrusté (choisi plus haut) apparaît lui aussi en animation, en haut à droite. Ces éléments sont dessinés <strong>dans</strong> la vidéo : ils se choisissent avant de démarrer et ne peuvent plus être retirés ensuite.</p>
+</div>
+
+<div class="bloc-section">
+  <span class="choix-image-titre">4. Enregistrement</span>
   <div class="en-scene" id="en-scene">
     <video id="en-apercu" muted playsinline></video>
     <div class="en-temps" id="en-temps" hidden><span class="point">●</span> <span id="en-chrono">00:00</span></div>
@@ -85,7 +109,7 @@
 </div>
 
 <div class="bloc-section" id="en-relecture-bloc" hidden>
-  <span class="choix-image-titre">4. Relire et partager</span>
+  <span class="choix-image-titre">5. Relire et partager</span>
   <div class="en-scene"><video id="en-relecture" controls playsinline></video></div>
   <div class="en-boutons">
     <button type="button" class="bouton" id="en-envoyer">⬆ Envoyer et obtenir le lien</button>
@@ -165,6 +189,8 @@
     $("en-logo-page").checked = ok; if (!ok) $("en-logo-video").checked = false;
   });
 
+  $("en-bandeau-actif").addEventListener("change", () => { $("en-bandeau-champs").hidden = !$("en-bandeau-actif").checked; });
+
   // ---- chrono
   const ecoule = () => cumule + (etat === "enregistrement" ? (performance.now() - debut) / 1000 : 0);
   function majChrono() {
@@ -186,8 +212,53 @@
     const v = document.createElement("video"); v.srcObject = new MediaStream(fluxVideo.getVideoTracks()); v.muted = true; v.playsInline = true; await v.play(); return v;
   }
 
+
+  // ---- animations incrustees : logo (apparition en haut a droite) et bandeaux titre / sous-titre (glissement depuis la gauche)
+  const borne = (x) => Math.max(0, Math.min(1, x));
+  const facile = { sortie: (x) => 1 - Math.pow(1 - borne(x), 3), rebond: (x) => { x = borne(x); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); } };
+  function composantes(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function texteSur(hex) { const [r, g, b] = composantes(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.6 ? "#111111" : "#ffffff"; }
+  function assombrir(hex, k) { return "#" + composantes(hex).map((v) => Math.round(v * (1 - k)).toString(16).padStart(2, "0")).join(""); }
+  function rectArrondi(c, x, y, w, h, rayons) { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, rayons); else c.rect(x, y, w, h); c.fill(); }
+  // Temps d'animation : celui de l'enregistrement ; avant le depart (apercu, compte a rebours) on montre le resultat final pour voir la mise en page.
+  function tempsAnim(bandeau) { return (etat === "enregistrement" || etat === "pause") ? ecoule() : (bandeau && bandeau.fin ? Math.max(0, bandeau.fin - 1) : 10); }
+
+  function dessinerLogo(c, L, H, t, logo) {
+    const hl = Math.round(H * 0.105), wl = Math.round(hl * logo.naturalWidth / logo.naturalHeight), m = Math.round(H * 0.025), p = Math.round(hl * 0.18);
+    const avance = (t - 0.5) / 0.9, a = borne((t - 0.5) / 0.45), echelle = 0.55 + 0.45 * facile.rebond(avance), decalage = -(1 - facile.sortie(avance)) * hl * 1.4;
+    if (a <= 0) return;
+    const w = wl + 2 * p, h = hl + 2 * p, cx = L - m - w / 2, cy = m + h / 2 + decalage;
+    c.save(); c.globalAlpha = a; c.translate(cx, cy); c.scale(echelle, echelle);
+    c.shadowColor = "rgba(0,0,0,0.35)"; c.shadowBlur = h * 0.18; c.shadowOffsetY = h * 0.05;
+    c.fillStyle = "rgba(255,255,255,0.92)"; rectArrondi(c, -w / 2, -h / 2, w, h, p);
+    c.shadowColor = "transparent"; c.drawImage(logo, -w / 2 + p, -h / 2 + p, wl, hl); c.restore();
+  }
+  function dessinerBandeau(c, L, H, t, bandeau, xMin) {
+    const marge = Math.round(H * 0.04), x0 = xMin, maxL = L - x0 - marge, couleur = bandeau.couleur;
+    let tailleT = Math.round(H * 0.064), tailleS = Math.round(H * 0.041);
+    const police = (px) => '700 ' + px + 'px system-ui, "Segoe UI", Roboto, sans-serif';
+    function mesure(texte, px) { c.font = police(px); return c.measureText(texte).width; }
+    for (let i = 0; i < 10 && bandeau.titre && mesure(bandeau.titre, tailleT) + tailleT > maxL; i++) tailleT = Math.round(tailleT * 0.92);
+    for (let i = 0; i < 10 && bandeau.sous && mesure(bandeau.sous, tailleS) + tailleS > maxL; i++) tailleS = Math.round(tailleS * 0.92);
+    const barres = [];
+    if (bandeau.titre) barres.push({ texte: bandeau.titre, px: tailleT, h: Math.round(tailleT * 1.7), fond: couleur, retard: 1.0 });
+    if (bandeau.sous) barres.push({ texte: bandeau.sous, px: tailleS, h: Math.round(tailleS * 1.8), fond: bandeau.titre ? assombrir(couleur, 0.3) : couleur, retard: bandeau.titre ? 1.25 : 1.0 });
+    let y = H - marge;
+    for (const b of barres.slice().reverse()) {                       // le sous-titre est la barre du bas, le titre est au-dessus
+      y -= b.h;
+      const pad = Math.round(b.px * 0.55), w = Math.round(mesure(b.texte, b.px) + 2 * pad), r = Math.round(b.h * 0.22);
+      const entree = facile.sortie((t - b.retard) / 0.6), sortie = bandeau.fin ? facile.sortie((t - bandeau.fin) / 0.5) : 0;
+      const decalage = -(x0 + w + 20) * (1 - entree + sortie);
+      if (entree <= 0 || sortie >= 1) continue;
+      c.save(); c.shadowColor = "rgba(0,0,0,0.3)"; c.shadowBlur = b.h * 0.25; c.shadowOffsetY = b.h * 0.06;
+      c.fillStyle = b.fond; rectArrondi(c, x0 + decalage, y, w, b.h, [0, r, r, 0]); c.restore();
+      c.save(); c.globalAlpha = borne((t - b.retard - 0.25) / 0.35) * (1 - borne(sortie * 2)); c.font = police(b.px); c.textBaseline = "middle"; c.fillStyle = texteSur(b.fond);
+      c.fillText(b.texte, x0 + decalage + pad, y + b.h / 2 + b.px * 0.04); c.restore();
+    }
+  }
+
   // ---- preparation du flux a enregistrer
-  async function preparer(mode, logoClient) {
+  async function preparer(mode, logoClient, bandeau) {
     let camera = null, ecran = null, micro = null;
     if (mode !== "ecran") camera = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" } });
     else micro = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).catch(() => null);
@@ -198,7 +269,7 @@
     const pistes = [];
     if (piste) pistes.push(piste);
 
-    const composer = mode === "ecran_camera" || !!logoClient;
+    const composer = mode === "ecran_camera" || !!logoClient || !!bandeau;
     if (!composer) { pistes.unshift((mode === "camera" ? camera : ecran).getVideoTracks()[0]); return new MediaStream(pistes); }
 
     // composition sur un canevas : ecran (ou camera) en fond, camera en rond, logo en haut a droite
@@ -219,11 +290,9 @@
         c.drawImage(bulle, (bulle.videoWidth - cote) / 2, (bulle.videoHeight - cote) / 2, cote, cote, x, y, d, d); c.restore();
         c.lineWidth = Math.max(4, H * 0.006); c.strokeStyle = "#fff"; c.beginPath(); c.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); c.stroke();
       }
-      if (logo && logo.naturalWidth) {
-        const hl = Math.round(H * 0.09), wl = Math.round(hl * logo.naturalWidth / logo.naturalHeight), m = Math.round(H * 0.025), p = Math.round(hl * 0.18);
-        c.fillStyle = "rgba(255,255,255,0.88)"; c.beginPath(); if (c.roundRect) c.roundRect(L - m - wl - 2 * p, m, wl + 2 * p, hl + 2 * p, p); else c.rect(L - m - wl - 2 * p, m, wl + 2 * p, hl + 2 * p); c.fill();
-        c.drawImage(logo, L - m - wl - p, m + p, wl, hl);
-      }
+      const t = tempsAnim(bandeau);
+      if (logo && logo.naturalWidth) dessinerLogo(c, L, H, t, logo);
+      if (bandeau) dessinerBandeau(c, L, H, t, bandeau, bulle ? Math.round(H * 0.03) * 2 + Math.round(H * 0.28) : Math.round(H * 0.04));
     }
     // Un minuteur de « worker » n'est pas ralenti quand l'onglet passe en arriere-plan (on partage souvent une autre fenetre) : l'image ne gele pas.
     travailleur = new Worker(URL.createObjectURL(new Blob(["setInterval(function(){postMessage(0)},33)"], { type: "text/javascript" })));
@@ -245,7 +314,13 @@
     if (etat !== "repos") return;
     message(""); $("en-demarrer").disabled = true;
     const mode = modeChoisi(), logoClient = $("en-logo-video").checked ? $("en-client").value : "";
-    try { flux = await preparer(mode, logoClient); }
+    let bandeau = null;
+    if ($("en-bandeau-actif").checked) {
+      bandeau = { titre: $("en-bandeau-titre").value.trim() || $("en-titre").value.trim(), sous: $("en-bandeau-sous").value.trim(), couleur: $("en-bandeau-couleur").value, fin: 0 };
+      const duree = parseFloat($("en-bandeau-duree").value) || 0; if (duree) bandeau.fin = 1.25 + duree;
+      if (!bandeau.titre && !bandeau.sous) { $("en-demarrer").disabled = false; message("Écrivez un titre ou un sous-titre pour le bandeau (ou décochez l'incrustation).", true); return; }
+    }
+    try { flux = await preparer(mode, logoClient, bandeau); }
     catch (e) { liberer(); $("en-demarrer").disabled = false; message(e && e.name === "NotAllowedError" ? "Accès refusé : autorisez la caméra, le micro ou le partage d'écran dans votre navigateur." : "Impossible de démarrer : " + (e && e.message ? e.message : e), true); return; }
     const apercu = $("en-apercu"); apercu.srcObject = new MediaStream(flux.getVideoTracks()); await apercu.play().catch(() => {});
     const piste = flux.getVideoTracks()[0]; piste.addEventListener("ended", () => { if (etat === "enregistrement" || etat === "pause") arreter("Le partage d'écran a été arrêté : l'enregistrement est terminé."); });
