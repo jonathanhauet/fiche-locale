@@ -26,6 +26,7 @@ CLE_PERPLEXITY = os.getenv("PERPLEXITY_API_KEY")
 
 MODELE_CHATGPT = "gpt-4o-mini"
 MODELE_GEMINI = "gemini-flash-latest"
+MODELE_GEMINI_SECOURS = "gemini-3.5-flash"
 MODELE_PERPLEXITY = "sonar"
 MODELE_CLAUDE = "claude-sonnet-5"
 
@@ -101,11 +102,20 @@ def interroger_gemini(requete: str) -> tuple:
         raise RuntimeError("GEMINI_API_KEY manquant dans plateforme_web/.env.")
     from google.genai import types
 
-    client = genai.Client(api_key=CLE_GEMINI)
-    reponse = client.models.generate_content(
-        model=MODELE_GEMINI, contents=requete,
-        config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())]),
-    )
+    # « gemini-flash-latest » n'existe que dans l'API v1beta : selon la version de la bibliotheque installee, la version par defaut est v1 (erreur 404),
+    # donc on la fixe, et on retombe sur un modele fixe si l'alias est refuse.
+    client = genai.Client(api_key=CLE_GEMINI, http_options=types.HttpOptions(api_version="v1beta"))
+    reponse = None
+    for modele in (MODELE_GEMINI, MODELE_GEMINI_SECOURS):
+        try:
+            reponse = client.models.generate_content(
+                model=modele, contents=requete,
+                config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())]),
+            )
+            break
+        except Exception as erreur:
+            if modele == MODELE_GEMINI_SECOURS or "404" not in str(erreur):
+                raise
     sources = []
     try:
         metadonnees = reponse.candidates[0].grounding_metadata
