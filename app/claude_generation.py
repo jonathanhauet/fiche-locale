@@ -2464,6 +2464,27 @@ PERSONNES_SANS_REFERENCE = {"mains", "personne", "equipe"}
 REFERENCE_LIEU = {"lieu_reference"}
 
 
+MAX_PERSONNES_VISUEL = 6
+
+
+def nettoyer_distribution(valeur) -> list:
+    """
+    Distribution demandee des personnes sur l'image : liste (6 au plus) de {"genre": "femme"|"homme"|"", "age": texte libre, "detail": texte libre
+    (expression, attitude, tenue)}. Une entree = une personne, meme sans detail. Tout ce qui n'est pas une liste de dictionnaires est ignore.
+    """
+    if not isinstance(valeur, list):
+        return []
+    resultat = []
+    for personne in valeur[:MAX_PERSONNES_VISUEL]:
+        personne = personne if isinstance(personne, dict) else {}
+
+        def propre(cle, limite):
+            return " ".join(str(personne.get(cle) or "").replace('"', "'").split())[:limite]
+        genre = personne.get("genre") if personne.get("genre") in ("femme", "homme") else ""
+        resultat.append({"genre": genre, "age": propre("age", 30), "detail": propre("detail", 100)})
+    return resultat
+
+
 def _index_options(groupe: str) -> dict:
     return {i: (libelle, consigne) for i, libelle, consigne in OPTIONS_VISUEL[groupe]}
 
@@ -2521,9 +2542,16 @@ def choisir_options_visuel(options: dict, varier: bool = False, hasard=None) -> 
         choix["type"] = "illustration"  # choisir un style d'illustration revient a choisir le type "illustration"
     if choix["type"] != "illustration":
         choix["illustration"] = None
+    choix["distribution"] = nettoyer_distribution(options.get("distribution"))
+    if choix["distribution"]:
+        # Des personnes precises sont demandees : elles l'emportent sur « Personne / Mains / Equipe » et sur les types qui n'en montrent pas.
+        if choix["personnes"] in PERSONNES_SANS_REFERENCE:
+            choix["personnes"] = None
+        if choix["type"] in TYPES_SANS_VISAGE or (choix["type"] == "illustration" and choix["illustration"] in ILLUSTRATIONS_SANS_VISAGE):
+            choix["type"], choix["illustration"] = None, None
     if varier:
         if not choix["type"]:
-            choix["type"] = hasard.choice([i for i in connus["type"] if i != "illustration"])
+            choix["type"] = hasard.choice([i for i in connus["type"] if i != "illustration" and not (choix["distribution"] and i in TYPES_SANS_VISAGE)])
             choix["aleatoires"].append(("type", choix["type"]))
         type_choisi = choix["type"]
         if type_choisi == "illustration" and not choix["illustration"]:
@@ -2544,7 +2572,7 @@ def choisir_options_visuel(options: dict, varier: bool = False, hasard=None) -> 
 
 def options_visuel_actives(choix: dict, couleur_marque: bool = False, varier: bool = False) -> bool:
     return bool(
-        choix["type"] or choix["cadrages"] or choix["decors"] or choix["lumieres"] or choix["personnes"]
+        choix["type"] or choix["cadrages"] or choix["decors"] or choix["lumieres"] or choix["personnes"] or choix.get("distribution")
         or couleur_marque or varier
     )
 
@@ -2621,6 +2649,20 @@ def prompt_image_avec_options(
         )
     elif personnes:
         lignes.append(f"- People: {_index_options('personnes')[personnes][1]}.")
+    distribution = choix.get("distribution") or []
+    if distribution:
+        avec_personne_reference = bool(avec_reference and personnes in PERSONNES_AVEC_REFERENCE)
+        descriptions = []
+        for numero, p in enumerate(distribution, 1):
+            if avec_personne_reference and numero == 1:
+                morceaux = ["the person from the reference photos (do NOT describe or change their face, age or gender)"] + ([f"expression/attitude: {p['detail']}"] if p["detail"] else [])
+            else:
+                morceaux = [{"femme": "a woman", "homme": "a man"}.get(p["genre"], "a person")] + ([f"age: {p['age']}"] if p["age"] else []) + ([f"expression/attitude/outfit: {p['detail']}"] if p["detail"] else [])
+            descriptions.append(f"Person {numero}: " + ", ".join(morceaux))
+        lignes.append(
+            f"- Cast: exactly {len(distribution)} {'person' if len(distribution) == 1 else 'people'} visible in the image, no more and no fewer. " + " | ".join(descriptions)
+            + ". These descriptions are written in French (age, expression, outfit): translate them faithfully, make each person clearly distinct, and state the exact number of people in the prompt you write."
+        )
     nom = nom_couleur(couleur)
     if couleur and nom:
         lignes.append(

@@ -2663,7 +2663,7 @@ NB_MAX_REFERENCES_LOT = 10          # Gemini accepte 14 images de reference au m
 NB_MAX_FICHIERS_REFERENCE_LOT = 8
 # Options du visuel permises avec des photos d'ambiance : pas de « mots voulus » dans l'image, ni de couleurs de marque, ni de « qui apparait » (voir _generer_image_ia_pour_client) ;
 # « prudent » : aucun texte ni logo dans l'image, avec controle automatique (sinon, texte et logos sont permis)
-CLES_OPTIONS_AMBIANCE = ("type", "illustration", "cadrage", "decor", "lumiere", "varier", "prudent")
+CLES_OPTIONS_AMBIANCE = ("type", "illustration", "cadrage", "decor", "lumiere", "varier", "prudent", "distribution")
 def _securite_image(options: dict) -> str:
     """« prudent » si la case du mode prudent est cochee (aucun texte ni logo, avec controle automatique), « libre » sinon."""
     return "prudent" if isinstance(options, dict) and options.get("prudent") is True else "libre"

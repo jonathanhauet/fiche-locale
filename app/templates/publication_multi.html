@@ -237,6 +237,7 @@
     </fieldset>
     {% endif %}
     {% endfor %}
+    {% set dp_id = "dist-composeur" %}{% include "_distribution_personnes.html" %}
     <div class="groupe-options-visuel">
       <label class="etiquette-chip-case">
         <input type="checkbox" id="visuel-texte-fr">
@@ -1766,6 +1767,7 @@
     champPromptImage.addEventListener("input", () => { promptImageAuto = false; });
     document.getElementById("visuel-effacer").addEventListener("click", () => {
       document.querySelectorAll("#options-visuel input").forEach((c) => { c.checked = false; });
+      window.distributionPersonnes?.["dist-composeur"]?.effacer();
     });
     function lireOptionsVisuel() {
       const options = {};
@@ -1777,6 +1779,8 @@
       if (document.getElementById("visuel-texte-fr").checked) options.texte_fr = true;
       const couleur = document.getElementById("visuel-couleur-marque");
       if (couleur.checked && !couleur.disabled) options.couleur_marque = true;
+      const distribution = window.distributionPersonnes?.["dist-composeur"]?.lire() || [];
+      if (distribution.length) options.distribution = distribution;
       return options;
     }
     boutonGenererImage.addEventListener("click", async () => {

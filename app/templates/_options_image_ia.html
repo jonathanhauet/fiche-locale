@@ -20,6 +20,7 @@
   </fieldset>
   {% endif %}
   {% endfor %}
+  {% set dp_id = "dist" ~ sfx %}{% include "_distribution_personnes.html" %}
   <div class="groupe-options-visuel">
     {% if not oia_masse and (client_oia.photos_ambiance or client_oia.photos_reference) %}
     <label class="etiquette-chip-case">
@@ -68,6 +69,7 @@
   panneau.querySelectorAll('input[name="oia-type' + sfx + '"]').forEach((r) => r.addEventListener("change", majIllustration));
   document.getElementById("oia-effacer" + sfx).addEventListener("click", () => {
     panneau.querySelectorAll("input").forEach((c) => { c.checked = false; });
+    window.distributionPersonnes?.["dist" + sfx]?.effacer();
     majIllustration();
   });
 
@@ -82,6 +84,8 @@
     const texteFr = document.getElementById("oia-texte-fr" + sfx), couleur = document.getElementById("oia-couleur-marque" + sfx);       // absents pour des posts en masse
     if (texteFr && texteFr.checked) options.texte_fr = true;
     if (couleur && couleur.checked && !couleur.disabled) options.couleur_marque = true;
+    const distribution = window.distributionPersonnes?.["dist" + sfx]?.lire() || [];
+    if (distribution.length) options.distribution = distribution;
     return options;
   }
 

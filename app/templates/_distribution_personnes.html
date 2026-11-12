@@ -1,0 +1,50 @@
+{# Nombre de personnes sur l'image IA et description de chacune (genre, age, expression). A inclure avec « dp_id » (identifiant unique du bloc dans la page).
+   Expose window.distributionPersonnes[dp_id] = { lire() : liste a envoyer dans options.distribution, effacer() }. #}
+{% set dpid = dp_id|default("dist") %}
+<fieldset class="groupe-options-visuel" id="{{ dpid }}" data-distribution>
+  <legend>Personnes sur l'image <span class="texte-discret">(facultatif)</span></legend>
+  <label class="dp-nombre">Nombre de personnes
+    <select data-role="nb">
+      <option value="0">Au choix de l'IA</option>
+      {% for n in range(1, 7) %}<option value="{{ n }}">{{ n }} personne{{ 's' if n > 1 else '' }}</option>{% endfor %}
+    </select>
+  </label>
+  <div data-role="lignes">
+    {% for n in range(1, 7) %}
+    <div class="dp-ligne" data-numero="{{ n }}" hidden>
+      <strong class="dp-titre">Personne {{ n }}</strong>
+      <select data-role="genre" aria-label="Genre de la personne {{ n }}">
+        <option value="">Genre : au choix</option><option value="femme">Femme</option><option value="homme">Homme</option>
+      </select>
+      <input type="text" data-role="age" maxlength="30" placeholder="Âge (ex. 30 ans, 50-60 ans)" aria-label="Âge de la personne {{ n }}">
+      <input type="text" data-role="detail" maxlength="100" placeholder="Expression, attitude, tenue (ex. souriante, concentré)" aria-label="Détails de la personne {{ n }}">
+    </div>
+    {% endfor %}
+  </div>
+  <p class="texte-discret">Chaque ligne décrit une personne ; laissez vide ce qui est indifférent. Ces personnes remplacent les choix « Personne », « Mains seulement » et « Une équipe », et les types sans visage (détail, lieu). Si vous utilisez vos photos de référence (« Moi… »), la personne 1 est vous : seuls son expression et son attitude comptent.</p>
+</fieldset>
+<style>
+  .dp-nombre { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .dp-nombre select { width: auto; }
+  .dp-ligne { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
+  .dp-ligne[hidden] { display: none; }
+  .dp-ligne .dp-titre { min-width: 6.5rem; }
+  .dp-ligne select { width: auto; }
+  .dp-ligne input[data-role="age"] { width: 13rem; }
+  .dp-ligne input[data-role="detail"] { flex: 1 1 16rem; min-width: 12rem; }
+</style>
+<script>
+(function () {
+  const racine = document.getElementById({{ dpid|tojson }});
+  if (!racine) return;
+  const nb = racine.querySelector('[data-role="nb"]'), lignes = Array.from(racine.querySelectorAll(".dp-ligne"));
+  const champ = (ligne, role) => ligne.querySelector('[data-role="' + role + '"]');
+  function afficher() { const n = parseInt(nb.value, 10) || 0; lignes.forEach((l, i) => { l.hidden = i >= n; }); }
+  nb.addEventListener("change", afficher); afficher();
+  window.distributionPersonnes = window.distributionPersonnes || {};
+  window.distributionPersonnes[{{ dpid|tojson }}] = {
+    lire: () => lignes.slice(0, parseInt(nb.value, 10) || 0).map((l) => ({ genre: champ(l, "genre").value, age: champ(l, "age").value.trim(), detail: champ(l, "detail").value.trim() })),
+    effacer: () => { nb.value = "0"; lignes.forEach((l) => { champ(l, "genre").value = ""; champ(l, "age").value = ""; champ(l, "detail").value = ""; }); afficher(); },
+  };
+})();
+</script>
