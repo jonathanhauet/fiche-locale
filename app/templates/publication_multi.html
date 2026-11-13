@@ -52,11 +52,16 @@
   <div id="bloc-photos-texte" class="photos-texte">
     <div class="ligne-champs">
       <button type="button" id="bouton-photos-texte" class="bouton-secondaire">📷 Ajouter des photos</button>
+      <button type="button" id="bouton-video-texte" class="bouton-secondaire">🎞️ Ajouter une vidéo</button>
       <label class="filtre-case" id="case-ia-photos" hidden>
         <input type="checkbox" id="ia-regarde-photos" checked> L'IA regarde ces photos pour écrire le texte
       </label>
     </div>
     <div id="apercu-photos-texte" class="images-choisies" hidden></div>
+    <p id="etat-video-texte" class="texte-discret" hidden>
+      🎞️ <strong id="nom-video-texte"></strong> — vidéo MP4 ou MOV (200 Mo maximum) : elle remplace les images sur Facebook, Instagram (Reel), LinkedIn et YouTube. Google n'accepte que des images.
+      <button type="button" id="retirer-video-texte" class="bouton-secondaire">Retirer la vidéo</button>
+    </p>
     <p class="texte-discret">Des photos reçues avec un petit texte (« Avant et après »...) ? Ajoutez-les ici et écrivez l'idée dans « Sujet / thème » : l'IA regarde les photos pour comprendre de quoi il s'agit et rédige le post. Ces photos sont aussi les images du post (étape 2).</p>
   </div>
   <label class="filtre-case" title="Pour un compte partagé par plusieurs agences : le texte ne cite aucune ville ni agence">
@@ -1281,6 +1286,20 @@
 
     // Photos de l'etape 1 : meme liste que les images du post (etape 2), montrees ici en petit pour que l'IA les regarde au moment d'ecrire le texte.
     document.getElementById("bouton-photos-texte").addEventListener("click", () => champImagePartagee.click());
+    // Video : meme champ que « Video » de l'etape 2, accessible aussi depuis l'etape 1.
+    (function () {
+      const champ = document.getElementById("video-partagee"), etat = document.getElementById("etat-video-texte"), nom = document.getElementById("nom-video-texte");
+      if (!champ || !etat) return;
+      function afficher() {
+        const f = champ.files && champ.files[0];
+        etat.hidden = !f;
+        if (f) nom.textContent = f.name + " (" + (f.size / 1048576).toFixed(1).replace(".", ",") + " Mo)";
+      }
+      document.getElementById("bouton-video-texte").addEventListener("click", () => champ.click());
+      document.getElementById("retirer-video-texte").addEventListener("click", () => { champ.value = ""; afficher(); champ.dispatchEvent(new Event("change", { bubbles: true })); });
+      champ.addEventListener("change", afficher);
+      afficher();
+    })();
     function majPhotosTexte() {
       const zone = document.getElementById("apercu-photos-texte"), caseIA = document.getElementById("case-ia-photos");
       if (!zone) return;
