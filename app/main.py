@@ -1690,6 +1690,7 @@ def _publications_multi_reseaux(
                 "images": [] if post.video_url else meta_publish.urls_depuis_champ(post.image_url),
                 "image_url": None if post.video_url else (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
                 "video": bool(post.video_url),
+                "video_url": post.video_url or "",   # URL publique (hebergement) : sa premiere image sert de vignette
                 "date": post.publier_le.date(),
                 "heure": post.publier_le.strftime("%H:%M"),
                 "id": post.id,
@@ -1736,9 +1737,12 @@ def _publications_multi_reseaux(
     # les articles WordPress ci-dessus - pas de table locale "EN_ATTENTE" a gerer, juste une trace pour l'affichage.
     for video in db.query(models.PostYouTube).filter_by(client_id=client.id).all():
         a_venir = bool(video.programme and video.publier_le > maintenant_local)
+        # Vignette servie par YouTube a partir de l'identifiant de la video (a defaut, lu dans le lien watch?v= / youtu.be/ / shorts/).
+        id_youtube = video.video_id or next(iter(re.findall(r"(?:v=|youtu\.be/|shorts/)([\w-]{11})", video.lien or "")), "")
+        vignette_youtube = f"https://i.ytimg.com/vi/{id_youtube}/mqdefault.jpg" if id_youtube else None
         lignes.append({
             "reseau": "youtube", "titre": video.titre[:60] + ("…" if len(video.titre) > 60 else ""),
-            "texte": video.texte or "", "images": [], "image_url": None, "video": True,
+            "texte": video.texte or "", "images": [vignette_youtube] if vignette_youtube else [], "image_url": vignette_youtube, "video": True,
             "date": video.publier_le.date(), "heure": video.publier_le.strftime("%H:%M"),
             "id": video.id, "a_venir": a_venir, "statut_brut": "EN_ATTENTE" if a_venir else "PUBLIE",
             "statut_libelle": "Programmé" if a_venir else "Publié", "url": video.lien,
