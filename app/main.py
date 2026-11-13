@@ -1342,11 +1342,34 @@ def deconnexion(request: Request):
 # --- Historique des publications --------------------------------------------
 
 
+FILTRES_HISTORIQUE = {
+    "echecs": ("ECHEC_PUBLICATION", "Publications en échec"),
+    "refuses": ("PUBLIE_REJECTED", "Posts refusés par Google"),
+}
+JOURS_FILTRES_HISTORIQUE = 14       # meme fenetre que la carte « A faire » de la liste des clients
+
+
+def _posts_a_traiter_historique(db: Session, statut: str):
+    """Posts dont l'etat actuel est `statut` (echec, refus...) sur les 14 derniers jours : exactement ceux que compte la carte « A faire »."""
+    depuis = date.today() - timedelta(days=JOURS_FILTRES_HISTORIQUE)
+    return db.query(models.Post).join(models.Client).filter(models.Post.statut == statut, models.Post.date_prevue >= depuis).order_by(models.Post.date_prevue.desc())
+
+
 @app.get("/historique", response_class=HTMLResponse)
-def historique(request: Request, db: Session = Depends(obtenir_session)):
+def historique(request: Request, filtre: str = "", db: Session = Depends(obtenir_session)):
     redirection = rediriger_si_non_connecte(request)
     if redirection:
         return redirection
+
+    nombres = {code: _posts_a_traiter_historique(db, statut).count() for code, (statut, _) in FILTRES_HISTORIQUE.items()}
+    if filtre in FILTRES_HISTORIQUE:
+        # un post par ligne, avec son dernier evenement : c'est le post qui est a reprendre, pas chaque tentative
+        posts = _posts_a_traiter_historique(db, FILTRES_HISTORIQUE[filtre][0]).all()
+        derniers = {}
+        for e in db.query(models.EvenementPublication).filter(models.EvenementPublication.post_id.in_([p.id for p in posts] or [0])).order_by(models.EvenementPublication.horodatage).all():
+            derniers[e.post_id] = e
+        lignes = [{"post": p, "evenement": derniers.get(p.id)} for p in posts]
+        return templates.TemplateResponse(request, "historique.html", {"evenements": [], "lignes": lignes, "filtre": filtre, "filtres": FILTRES_HISTORIQUE, "nombres": nombres, "jours": JOURS_FILTRES_HISTORIQUE})
 
     evenements = (
         db.query(models.EvenementPublication)
@@ -1356,7 +1379,7 @@ def historique(request: Request, db: Session = Depends(obtenir_session)):
         .all()
     )
 
-    return templates.TemplateResponse(request, "historique.html", {"evenements": evenements})
+    return templates.TemplateResponse(request, "historique.html", {"evenements": evenements, "lignes": None, "filtre": "", "filtres": FILTRES_HISTORIQUE, "nombres": nombres, "jours": JOURS_FILTRES_HISTORIQUE})
 
 
 STATUTS_POST_GOOGLE_RESUME = {
@@ -2945,10 +2968,10 @@ def _a_faire_aujourdhui(db: Session, ids_clients: set, nb_sans_post: int) -> lis
     elements = []
     echecs = compter("ECHEC_PUBLICATION", depuis)
     if echecs:
-        elements.append({"icone": "⚠️", "ton": "danger", "texte": f"{echecs} publication{'s' if echecs > 1 else ''} en échec (14 derniers jours)", "lien": "/historique"})
+        elements.append({"icone": "⚠️", "ton": "danger", "texte": f"{echecs} publication{'s' if echecs > 1 else ''} en échec (14 derniers jours)", "lien": "/historique?filtre=echecs"})
     rejetes = compter("PUBLIE_REJECTED", depuis)
     if rejetes:
-        elements.append({"icone": "🚫", "ton": "danger", "texte": f"{rejetes} post{'s' if rejetes > 1 else ''} refusé{'s' if rejetes > 1 else ''} par Google (14 derniers jours)", "lien": "/historique"})
+        elements.append({"icone": "🚫", "ton": "danger", "texte": f"{rejetes} post{'s' if rejetes > 1 else ''} refusé{'s' if rejetes > 1 else ''} par Google (14 derniers jours)", "lien": "/historique?filtre=refuses"})
     suspects = _nb_changements_suspects()
     if suspects:
         elements.append({"icone": "🔔", "ton": "attention", "texte": f"{suspects} changement{'s' if suspects > 1 else ''} suspect{'s' if suspects > 1 else ''} à valider", "lien": "/alertes"})

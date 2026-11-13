@@ -5,7 +5,36 @@
 <p class="fil-retour"><a href="/">&larr; Retour à la liste des clients</a></p>
 <h1>Historique des publications</h1>
 
-{% if evenements %}
+<div class="filtres-historique" role="group" aria-label="Filtrer l'historique">
+  <a class="filtre-historique {{ 'actif' if not filtre else '' }}" href="/historique">Toutes les publications</a>
+  {% for code, (statut, libelle) in filtres.items() %}
+  <a class="filtre-historique filtre-historique-danger {{ 'actif' if filtre == code else '' }}" href="/historique?filtre={{ code }}">{{ libelle }} <span class="filtre-historique-nb">{{ nombres[code] }}</span></a>
+  {% endfor %}
+</div>
+
+{% if lignes is not none %}
+<p class="texte-discret">{{ filtres[filtre][1] }} sur les {{ jours }} derniers jours : un post par ligne, avec sa dernière tentative. Ouvrez le post pour le corriger ou le reprogrammer.</p>
+{% if lignes %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Date prévue</th><th>Client</th><th>Post</th><th>Dernière tentative</th><th>État</th></tr></thead>
+    <tbody>
+      {% for l in lignes %}
+      <tr class="ligne-historique-danger">
+        <td>{{ l.post.date_prevue.strftime("%d/%m/%Y") if l.post.date_prevue else "" }}</td>
+        <td>{{ l.post.client.nom }}</td>
+        <td><a href="/posts/{{ l.post.id }}">{{ l.post.titre }}</a></td>
+        <td>{{ l.evenement.horodatage | heure_locale("%d/%m/%Y %H:%M") if l.evenement else "—" }}</td>
+        <td><span class="etiquette-statut etiquette-{{ l.post.statut|lower }}">{{ l.post.statut }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="etat-vide-carte"><span class="badge-icone-vide">✓</span><p class="texte-vide">Rien à traiter sur les {{ jours }} derniers jours.</p></div>
+{% endif %}
+{% elif evenements %}
 <div class="conteneur-tableau">
   <table class="tableau-historique">
     <thead>
@@ -18,7 +47,7 @@
     </thead>
     <tbody>
       {% for evenement in evenements %}
-      <tr>
+      <tr class="{{ 'ligne-historique-danger' if evenement.etat in ('ECHEC_PUBLICATION', 'PUBLIE_REJECTED') else '' }}">
         <td>{{ evenement.horodatage | heure_locale("%Y-%m-%d %H:%M") }}</td>
         <td>{{ evenement.post.client.nom }}</td>
         <td><a href="/posts/{{ evenement.post.id }}">{{ evenement.post.titre }}</a></td>

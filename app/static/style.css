@@ -3457,3 +3457,12 @@ html { -webkit-text-size-adjust: 100%; }
   table.table-cartes td[data-label=""]::before { display: none; }
   .conteneur-tableau { overflow-x: visible; }
 }
+
+/* Historique des publications : filtres (echecs, refus) et lignes a traiter */
+.filtres-historique { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0 1rem; }
+.filtre-historique { border: 1px solid var(--carte-bordure); border-radius: 999px; padding: 0.35rem 0.9rem; text-decoration: none; color: var(--texte); background: var(--carte); font-weight: 600; font-size: 0.9rem; }
+.filtre-historique:hover { border-color: var(--accent); }
+.filtre-historique.actif { background: var(--accent); border-color: var(--accent); color: #fff; }
+.filtre-historique-nb { background: var(--danger-clair); color: var(--danger); border-radius: 999px; padding: 0 0.45rem; margin-left: 0.25rem; font-size: 0.8rem; }
+.filtre-historique.actif .filtre-historique-nb { background: #fff; color: #b01919; }
+.tableau-historique tr.ligne-historique-danger td { background: var(--danger-clair); }
