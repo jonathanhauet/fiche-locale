@@ -484,7 +484,22 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("DROP TABLE config_google"))
 
 
+def _reparer_liens_instagram(connexion) -> int:
+    """Clients lies a un compte Instagram (compte_instagram_id) dont l'identifiant a ete efface par la liaison d'une Page Facebook : on le retablit d'apres le compte."""
+    if "comptes_instagram" not in inspect(connexion).get_table_names():
+        return 0
+    resultat = connexion.execute(text(
+        "UPDATE clients SET instagram_id_meta = (SELECT identifiant_instagram FROM comptes_instagram WHERE comptes_instagram.id = clients.compte_instagram_id), "
+        "instagram_nom_meta = (SELECT libelle FROM comptes_instagram WHERE comptes_instagram.id = clients.compte_instagram_id) "
+        "WHERE compte_instagram_id IS NOT NULL AND (instagram_id_meta IS NULL OR instagram_id_meta = '') "
+        "AND EXISTS (SELECT 1 FROM comptes_instagram WHERE comptes_instagram.id = clients.compte_instagram_id)"
+    ))
+    return resultat.rowcount or 0
+
+
 _migrer_vers_multi_comptes()
+with engine.begin() as _connexion_reparation:
+    _reparer_liens_instagram(_connexion_reparation)
 with engine.begin() as _connexion_nettoyage:
     suivi_goldunion.nettoyer_ancienne_mesure(_connexion_nettoyage)
     suivi_goldunion.liberer_mise_a_jour_interrompue(_connexion_nettoyage)
@@ -9389,8 +9404,9 @@ def meta_lier_page(
         client.page_id_meta = page_id
         client.page_nom_meta = page_nom
         client.token_page_meta = token_page
-        client.instagram_id_meta = instagram_id
-        client.instagram_nom_meta = instagram_nom
+        if not client.compte_instagram_id:      # Instagram connecte separement (/instagram/comptes) : la Page Facebook n'y touche pas
+            client.instagram_id_meta = instagram_id
+            client.instagram_nom_meta = instagram_nom
         db.commit()
 
     return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
@@ -9414,8 +9430,9 @@ def meta_delier_page(compte_id: int, request: Request, client_id: int = Form(...
         client.page_id_meta = ""
         client.page_nom_meta = ""
         client.token_page_meta = ""
-        client.instagram_id_meta = ""
-        client.instagram_nom_meta = ""
+        if not client.compte_instagram_id:      # idem : seul l'Instagram lie via la Page est retire
+            client.instagram_id_meta = ""
+            client.instagram_nom_meta = ""
         db.commit()
 
     return RedirectResponse(f"/meta/comptes/{compte_id}/pages", status_code=303)
