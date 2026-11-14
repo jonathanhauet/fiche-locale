@@ -123,6 +123,8 @@ from . import (
     reporting_mensuel,
     suivi_goldunion,
     baisse_google,
+    pdf_outils,
+    pdf_routes,
     suivi_ads,
     suivi_assorh,
     reporting_sheet,
@@ -784,6 +786,8 @@ planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal), "cron", 
 planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal, seulement_positions=True), "cron", day=1, hour=6, minute=0, timezone="Europe/Brussels", id="suivi_goldunion_positions")
 # Baisse Google : statistiques des fiches et etat des fiches (gratuits) relus chaque lundi ; les releves payants (rangs, IA, annuaires) restent lances a la main.
 planificateur.add_job(lambda: baisse_google.releve_hebdomadaire(SessionLocal), "cron", day_of_week="mon", hour=7, minute=0, timezone="Europe/Brussels", id="suivi_baisse_google")
+# Outils PDF : les documents ouverts (dossier temporaire) sont effaces au bout de quelques heures.
+planificateur.add_job(pdf_outils.purger, "interval", minutes=30, id="purge_outils_pdf")
 planificateur.start()
 
 
@@ -8200,6 +8204,10 @@ async def lire_pubs_suivi(request: Request, db: Session = Depends(obtenir_sessio
     db.commit()
     t = resultat["total"]
     return RedirectResponse("/suivi-goldunion/pubs?message=" + quote_plus(f"{t['campagnes']} campagne(s) lue(s), dont {t['actives']} active(s)."), status_code=303)
+
+
+# --- Outils PDF (voir pdf_outils.py et pdf_routes.py) ----------------------------------------------------------------------------------------------
+app.include_router(pdf_routes.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request)))
 
 
 # --- Baisse de visibilite Google (France, Espagne, Italie) : statistiques, fiches, rangs, reponses des IA, annuaires -------------------------------

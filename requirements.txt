@@ -25,3 +25,4 @@ google-ads
 staticmap
 tzdata
 imageio-ffmpeg
+pymupdf

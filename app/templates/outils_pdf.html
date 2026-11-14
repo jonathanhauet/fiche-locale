@@ -1,0 +1,547 @@
+{% extends "base.html" %}
+{% set page_actuelle = "outils_pdf" %}
+{% block titre %}Outils PDF — Fiche Locale{% endblock %}
+{% block tete_supplementaire %}
+<style>
+  .pdf-depot { border: 2px dashed var(--carte-bordure); border-radius: 14px; padding: 2rem 1rem; text-align: center; background: var(--carte); color: var(--texte); margin: 1rem 0; }
+  .pdf-depot.survol { border-color: var(--accent); background: rgba(79, 110, 247, 0.08); }
+  .pdf-depot p { margin: 0.3rem 0; }
+  .pdf-depot .ligne-mdp { margin-top: 0.8rem; display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+  .pdf-depot .ligne-mdp input { max-width: 240px; }
+  .pdf-barre { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin: 0.6rem 0; }
+  .pdf-barre strong { font-size: 1.05rem; word-break: break-all; }
+  .pdf-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-left: auto; }
+  .pdf-message { margin: 0.4rem 0; padding: 0.55rem 0.85rem; border-radius: 10px; font-size: 0.92rem; border: 1px solid var(--carte-bordure); background: var(--carte); color: var(--texte); }
+  .pdf-message.erreur { border-color: var(--danger); background: rgba(220, 38, 38, 0.1); color: var(--danger); font-weight: 600; }
+  .pdf-message.ok { border-color: #1a7f45; background: rgba(34, 160, 90, 0.12); }
+  .pdf-corps { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 1rem; align-items: start; }
+  .pdf-colonne { position: sticky; top: 0.5rem; max-height: calc(100vh - 2rem); display: flex; flex-direction: column; gap: 0.5rem; }
+  .pdf-selection { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .pdf-selection button { font-size: 0.78rem; padding: 0.25rem 0.5rem; }
+  .pdf-vignettes { overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; padding-right: 0.3rem; }
+  .pdf-vig { position: relative; border: 2px solid var(--carte-bordure); border-radius: 8px; background: var(--carte); padding: 0.35rem; cursor: pointer; color: var(--texte); }
+  .pdf-vig.courante { border-color: var(--accent); }
+  .pdf-vig.depot-avant { box-shadow: 0 -4px 0 var(--accent); }
+  .pdf-vig img { width: 100%; display: block; background: #fff; border-radius: 3px; }
+  .pdf-vig .vig-pied { display: flex; align-items: center; justify-content: space-between; gap: 0.2rem; margin-top: 0.25rem; font-size: 0.8rem; }
+  .pdf-vig .vig-pied label { display: inline-flex; flex-direction: row; align-items: center; gap: 0.25rem; width: auto; margin: 0; }
+  .pdf-vig input[type="checkbox"] { width: auto; margin: 0; }
+  .pdf-vig .vig-boutons button { padding: 0 0.3rem; font-size: 0.95rem; line-height: 1.4; background: transparent; border: 1px solid transparent; color: var(--texte); cursor: pointer; border-radius: 6px; }
+  .pdf-vig .vig-boutons button:hover { border-color: var(--accent); }
+  .pdf-centre { min-width: 0; }
+  .pdf-outils { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-bottom: 0.5rem; }
+  .pdf-outils button.outil { background: var(--carte); color: var(--texte); border: 1px solid var(--carte-bordure); border-radius: 999px; padding: 0.4rem 0.9rem; font: inherit; font-weight: 600; cursor: pointer; }
+  .pdf-outils button.outil.actif { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pdf-options { display: flex; flex-wrap: wrap; gap: 0.5rem 0.9rem; align-items: center; margin-bottom: 0.4rem; font-size: 0.88rem; }
+  .pdf-options label { display: inline-flex; flex-direction: row; align-items: center; gap: 0.35rem; width: auto; margin: 0; }
+  .pdf-options input[type="color"] { width: 2.4rem; height: 1.8rem; padding: 0; }
+  .pdf-aide { font-size: 0.86rem; color: var(--texte-discret); margin: 0.2rem 0 0.6rem; }
+  .pdf-zone { overflow: auto; max-height: calc(100vh - 14rem); min-height: 300px; background: rgba(120, 120, 120, 0.15); border-radius: 10px; padding: 0.8rem; }
+  .pdf-page { position: relative; width: fit-content; margin: 0 auto; box-shadow: 0 4px 22px rgba(0, 0, 0, 0.35); line-height: 0; }
+  .pdf-page img { display: block; max-width: 100%; height: auto; background: #fff; user-select: none; -webkit-user-drag: none; }
+  .pdf-overlay { position: absolute; inset: 0; }
+  .pdf-overlay.crayon { cursor: crosshair; }
+  .pdf-ligne { position: absolute; cursor: text; border-radius: 2px; }
+  .pdf-ligne:hover { outline: 2px solid var(--accent); background: rgba(79, 110, 247, 0.14); }
+  .pdf-rect { position: absolute; border: 2px dashed var(--accent); background: rgba(79, 110, 247, 0.15); pointer-events: none; }
+  .pdf-pop { position: absolute; z-index: 20; width: min(340px, 92vw); background: var(--carte); color: var(--texte); border: 1px solid var(--accent); border-radius: 12px; padding: 0.7rem; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); line-height: 1.35; }
+  .pdf-pop[hidden] { display: none; }
+  .pdf-pop textarea { width: 100%; min-height: 3.2rem; resize: vertical; font: inherit; }
+  .pdf-pop .ligne { display: flex; flex-wrap: wrap; gap: 0.4rem 0.7rem; align-items: center; margin: 0.45rem 0; font-size: 0.85rem; }
+  .pdf-pop label { display: inline-flex; flex-direction: row; align-items: center; gap: 0.3rem; width: auto; margin: 0; }
+  .pdf-pop input[type="number"] { width: 4.2rem; }
+  .pdf-pop input[type="color"] { width: 2.2rem; height: 1.7rem; padding: 0; }
+  .pdf-pop .note { font-size: 0.78rem; color: var(--texte-discret); margin: 0.2rem 0; }
+  .pdf-pop .boutons { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; }
+  dialog.pdf-dialogue { border: 1px solid var(--carte-bordure); border-radius: 14px; background: var(--carte); color: var(--texte); padding: 1.1rem 1.2rem; width: min(480px, 94vw); }
+  dialog.pdf-dialogue::backdrop { background: rgba(0, 0, 0, 0.55); }
+  dialog.pdf-dialogue h2 { margin: 0 0 0.6rem; font-size: 1.1rem; }
+  dialog.pdf-dialogue .champ { display: flex; flex-direction: column; gap: 0.2rem; margin: 0.6rem 0; font-size: 0.9rem; }
+  dialog.pdf-dialogue .choix { display: flex; flex-direction: row; align-items: flex-start; gap: 0.5rem; margin: 0.45rem 0; width: auto; font-size: 0.92rem; }
+  dialog.pdf-dialogue .choix input { width: auto; margin-top: 0.25rem; }
+  dialog.pdf-dialogue .sous { margin-left: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  dialog.pdf-dialogue .boutons { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+  dialog.pdf-dialogue .texte-discret { font-size: 0.82rem; }
+  @media (max-width: 800px) {
+    .pdf-corps { grid-template-columns: 1fr; }
+    .pdf-colonne { position: static; max-height: none; }
+    .pdf-vignettes { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding-bottom: 0.4rem; }
+    .pdf-vig { min-width: 110px; width: 110px; }
+    .pdf-actions { margin-left: 0; }
+    .pdf-zone { max-height: none; }
+  }
+</style>
+{% endblock %}
+{% block contenu %}
+<div class="barre-titre"><h1>Outils PDF</h1></div>
+<p class="texte-discret">
+  Modifiez un PDF proprement : corriger un texte à sa place, ajouter du texte, une image, un surlignage ou un caviardage, réorganiser, pivoter, supprimer, fusionner ou découper des pages,
+  numéroter, ajouter un filigrane, compresser, protéger par mot de passe ou convertir en images. Rien n'est enregistré sur la plateforme : le fichier est effacé à la fermeture, ou au bout de {{ duree_heures }} heures.
+</p>
+
+<div class="pdf-depot" id="pdf-depot" data-taille-max="{{ taille_max }}">
+  <p><strong>Déposez un PDF ici</strong> (ou plusieurs PDF à fusionner, ou des images à convertir en PDF)</p>
+  <p><button type="button" id="pdf-choisir">Choisir un fichier…</button></p>
+  <p class="texte-discret">PDF, JPG ou PNG · {{ taille_max }} Mo maximum par fichier · {{ pages_max }} pages maximum</p>
+  <div class="ligne-mdp" id="pdf-ligne-mdp" hidden>
+    <input type="password" id="pdf-mdp" placeholder="Mot de passe du PDF" autocomplete="off">
+    <button type="button" id="pdf-mdp-ok">Ouvrir</button>
+  </div>
+  <input type="file" id="pdf-fichiers" accept=".pdf,application/pdf,image/jpeg,image/png,.jpg,.jpeg,.png" multiple hidden>
+</div>
+
+<div id="pdf-editeur" hidden>
+  <div class="pdf-barre">
+    <strong id="pdf-nom"></strong><span class="texte-discret" id="pdf-infos"></span>
+    <div class="pdf-actions">
+      <button type="button" class="bouton-secondaire" id="pdf-annuler" disabled>↶ Annuler</button>
+      <button type="button" class="bouton-secondaire" id="pdf-fusion">➕ Ajouter un PDF</button>
+      <button type="button" class="bouton-secondaire" id="pdf-numeros">№ Numéroter</button>
+      <button type="button" class="bouton-secondaire" id="pdf-filigrane">💧 Filigrane</button>
+      <button type="button" class="bouton-secondaire" id="pdf-compresser">🗜️ Compresser</button>
+      <button type="button" id="pdf-exporter">⬇️ Exporter…</button>
+      <button type="button" class="bouton-secondaire" id="pdf-fermer">✕ Fermer</button>
+    </div>
+  </div>
+  <div class="pdf-message" id="pdf-message" role="status" hidden></div>
+  <div class="pdf-corps">
+    <div class="pdf-colonne">
+      <div class="pdf-selection" id="pdf-selection">
+        <button type="button" class="bouton-secondaire" id="pdf-sel-tout">Tout cocher</button>
+        <button type="button" class="bouton-secondaire" id="pdf-sel-pivoter" disabled>↻ Pivoter</button>
+        <button type="button" class="bouton-secondaire bouton-danger" id="pdf-sel-supprimer" disabled>🗑 Supprimer</button>
+        <button type="button" class="bouton-secondaire" id="pdf-sel-extraire" disabled>⬇ Extraire</button>
+      </div>
+      <div class="pdf-vignettes" id="pdf-vignettes"></div>
+    </div>
+    <section class="pdf-centre">
+      <div class="pdf-outils" role="toolbar" aria-label="Outils de modification">
+        <button type="button" class="outil actif" data-outil="texte">✏️ Modifier un texte</button>
+        <button type="button" class="outil" data-outil="ajout">🅣 Ajouter du texte</button>
+        <button type="button" class="outil" data-outil="image">🖼️ Image / logo / signature</button>
+        <button type="button" class="outil" data-outil="surligner">🖍️ Surligner</button>
+        <button type="button" class="outil" data-outil="caviarder">⬛ Caviarder</button>
+      </div>
+      <div class="pdf-options" id="pdf-options"></div>
+      <p class="pdf-aide" id="pdf-aide"></p>
+      <div class="pdf-zone" id="pdf-zone">
+        <div class="pdf-page" id="pdf-page">
+          <img id="pdf-img" alt="Page du PDF" draggable="false">
+          <div class="pdf-overlay" id="pdf-overlay"></div>
+          <div class="pdf-pop" id="pdf-pop" hidden>
+            <textarea id="pop-texte" rows="2" maxlength="2000"></textarea>
+            <div class="ligne">
+              <select id="pop-police" aria-label="Police">{% for code, libelle in polices.items() %}<option value="{{ code }}">{{ libelle }}</option>{% endfor %}</select>
+              <label>Taille <input type="number" id="pop-taille" min="4" max="200" step="0.5"></label>
+              <label><input type="color" id="pop-couleur" aria-label="Couleur"></label>
+              <label><input type="checkbox" id="pop-gras"> <strong>G</strong></label>
+              <label><input type="checkbox" id="pop-italique"> <em>I</em></label>
+            </div>
+            <p class="note" id="pop-note"></p>
+            <div class="boutons">
+              <button type="button" class="bouton-secondaire bouton-danger" id="pop-supprimer">Supprimer ce texte</button>
+              <button type="button" class="bouton-secondaire" id="pop-annuler">Annuler</button>
+              <button type="button" id="pop-appliquer">Appliquer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<dialog class="pdf-dialogue" id="dlg-exporter">
+  <h2>Exporter</h2>
+  <label class="choix"><input type="radio" name="exp" value="pdf" checked> <span>Le PDF complet</span></label>
+  <label class="choix"><input type="radio" name="exp" value="pages"> <span>Seulement les pages cochées (<span id="exp-nb">0</span>)</span></label>
+  <label class="choix"><input type="radio" name="exp" value="protege"> <span>Le PDF protégé par un mot de passe d'ouverture</span></label>
+  <div class="sous" id="exp-sous-mdp" hidden><input type="password" id="exp-mdp" placeholder="Mot de passe (4 caractères minimum)" autocomplete="new-password"></div>
+  <label class="choix"><input type="radio" name="exp" value="images"> <span>Les pages en images (fichier ZIP)</span></label>
+  <div class="sous" id="exp-sous-images" hidden>
+    <select id="exp-format"><option value="png">PNG (qualité maximale)</option><option value="jpg">JPG (plus léger)</option></select>
+    <select id="exp-dpi"><option value="100">100 dpi (écran)</option><option value="150" selected>150 dpi</option><option value="300">300 dpi (impression)</option></select>
+  </div>
+  <label class="choix"><input type="radio" name="exp" value="decoupe"> <span>Découper en plusieurs PDF (fichier ZIP)</span></label>
+  <div class="sous" id="exp-sous-decoupe" hidden><input type="text" id="exp-plages" placeholder="Ex. 1-3, 4-6, 7" maxlength="200"></div>
+  <p class="texte-discret" id="exp-aide"></p>
+  <div class="boutons"><button type="button" class="bouton-secondaire" data-fermer>Annuler</button><button type="button" id="exp-go">Télécharger</button></div>
+</dialog>
+
+<dialog class="pdf-dialogue" id="dlg-numeros">
+  <h2>Numéroter les pages</h2>
+  <div class="champ"><label for="num-emplacement">Emplacement</label>
+    <select id="num-emplacement"><option value="bas-centre">En bas, au centre</option><option value="bas-droite">En bas, à droite</option><option value="bas-gauche">En bas, à gauche</option><option value="haut-centre">En haut, au centre</option><option value="haut-droite">En haut, à droite</option><option value="haut-gauche">En haut, à gauche</option></select></div>
+  <div class="champ"><label for="num-format">Texte (<code>{n}</code> = numéro, <code>{total}</code> = nombre de pages)</label><input type="text" id="num-format" value="Page {n} / {total}" maxlength="60"></div>
+  <div class="champ"><label for="num-debut">Premier numéro</label><input type="number" id="num-debut" value="1" min="0" max="9999"></div>
+  <div class="boutons"><button type="button" class="bouton-secondaire" data-fermer>Annuler</button><button type="button" id="num-go">Numéroter</button></div>
+</dialog>
+
+<dialog class="pdf-dialogue" id="dlg-filigrane">
+  <h2>Ajouter un filigrane</h2>
+  <div class="champ"><label for="fil-texte">Texte</label><input type="text" id="fil-texte" value="CONFIDENTIEL" maxlength="60"></div>
+  <div class="champ"><label for="fil-opacite">Intensité</label><select id="fil-opacite"><option value="0.1">Très discret</option><option value="0.18" selected>Discret</option><option value="0.35">Marqué</option></select></div>
+  <div class="champ"><label for="fil-angle">Inclinaison</label><select id="fil-angle"><option value="45" selected>En diagonale</option><option value="0">À l'horizontale</option></select></div>
+  <div class="champ"><label for="fil-couleur">Couleur</label><input type="color" id="fil-couleur" value="#888888"></div>
+  <div class="boutons"><button type="button" class="bouton-secondaire" data-fermer>Annuler</button><button type="button" id="fil-go">Ajouter</button></div>
+</dialog>
+
+<dialog class="pdf-dialogue" id="dlg-compresser">
+  <h2>Compresser</h2>
+  <p class="texte-discret">Taille actuelle : <strong id="cmp-taille"></strong>. Les images sont réduites ; le texte reste net. Annulable.</p>
+  {% for code, libelle, detail in [('legere', 'Légère', 'perte de qualité à peine visible'), ('forte', 'Forte (recommandée)', 'très bon compromis pour l\'envoi par mail'), ('maximale', 'Maximale', 'fichier le plus léger, images moins nettes')] %}
+  <label class="choix"><input type="radio" name="cmp" value="{{ code }}" {{ 'checked' if code == 'forte' else '' }}> <span><strong>{{ libelle }}</strong> — {{ detail }}</span></label>
+  {% endfor %}
+  <div class="boutons"><button type="button" class="bouton-secondaire" data-fermer>Annuler</button><button type="button" id="cmp-go">Compresser</button></div>
+</dialog>
+
+<dialog class="pdf-dialogue" id="dlg-fusion">
+  <h2>Ajouter un PDF</h2>
+  <div class="champ"><label for="fus-fichier">PDF à ajouter</label><input type="file" id="fus-fichier" accept=".pdf,application/pdf"></div>
+  <label class="choix"><input type="radio" name="fus" value="fin" checked> <span>À la fin du document</span></label>
+  <label class="choix"><input type="radio" name="fus" value="apres"> <span>Après la page affichée (page <span id="fus-page">1</span>)</span></label>
+  <div class="boutons"><button type="button" class="bouton-secondaire" data-fermer>Annuler</button><button type="button" id="fus-go">Ajouter</button></div>
+</dialog>
+
+<input type="file" id="pdf-image-fichier" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden>
+{% raw %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const S = { id: null, etat: null, page: 0, outil: "texte", cochees: new Set(), lignes: [], image: null, pop: null, glisse: null };
+  const depot = $("pdf-depot"), editeur = $("pdf-editeur"), img = $("pdf-img"), overlay = $("pdf-overlay"), pop = $("pdf-pop");
+  const AIDES = {
+    texte: "Cliquez sur un texte du document pour le corriger : il est remplacé à sa place, l'ancien texte est vraiment supprimé du fichier. La police d'origine est remplacée par la plus proche (Helvetica, Times ou Courier).",
+    ajout: "Cliquez à l'endroit où le texte doit commencer, puis saisissez-le. Vous pouvez choisir la police, la taille et la couleur.",
+    image: "Choisissez une image (logo, signature, tampon…), puis dessinez le rectangle où la placer en maintenant le clic. Une image PNG transparente garde sa transparence.",
+    surligner: "Dessinez un rectangle sur le texte à surligner en maintenant le clic.",
+    caviarder: "Dessinez un rectangle sur ce qui doit disparaître : le texte et les images dessous sont définitivement supprimés du fichier (utile pour masquer un prix, un nom, un numéro).",
+  };
+
+  // ---------- messages et appels
+  function message(texte, genre) {
+    const m = $("pdf-message");
+    m.textContent = texte; m.className = "pdf-message" + (genre ? " " + genre : ""); m.hidden = !texte;
+    if (texte && genre !== "erreur") { clearTimeout(message.t); message.t = setTimeout(() => { if (m.textContent === texte) m.hidden = true; }, 7000); }
+  }
+  async function appel(url, options) {
+    let r;
+    try { r = await fetch(url, Object.assign({ credentials: "same-origin" }, options || {})); }
+    catch (e) { throw new Error("Connexion impossible : réessayez."); }
+    if (!r.ok) {
+      let texte = "Erreur " + r.status;
+      try { texte = (await r.json()).erreur || texte; } catch (e) { /* corps non JSON */ }
+      const e = new Error(texte); e.statut = r.status; throw e;
+    }
+    return r;
+  }
+  const json = (corps) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+  const taille = (o) => o >= 1048576 ? (o / 1048576).toFixed(1).replace(".", ",") + " Mo" : Math.max(1, Math.round(o / 1024)) + " Ko";
+
+  // ---------- ouverture
+  let fichiersEnAttente = null;
+  async function ouvrir(fichiers) {
+    const lot = Array.from(fichiers);
+    if (!lot.length) return;
+    const trop = lot.find((f) => f.size > Number(depot.dataset.tailleMax) * 1048576);
+    if (trop) { message("« " + trop.name + " » dépasse " + depot.dataset.tailleMax + " Mo.", "erreur"); return; }
+    const corps = new FormData();
+    lot.forEach((f) => corps.append("fichiers", f));
+    if ($("pdf-mdp").value) corps.append("mot_de_passe", $("pdf-mdp").value);
+    message("Ouverture…");
+    try {
+      const etat = await (await appel("/outils-pdf/ouvrir", { method: "POST", body: corps })).json();
+      if (S.id) fermerSilencieux(S.id);
+      fichiersEnAttente = null; $("pdf-ligne-mdp").hidden = true; $("pdf-mdp").value = "";
+      demarrer(etat);
+      message(lot.length > 1 ? lot.length + " fichiers ouverts." : "", "ok");
+    } catch (e) {
+      if (/mot de passe/i.test(e.message)) { fichiersEnAttente = lot; $("pdf-ligne-mdp").hidden = false; $("pdf-mdp").focus(); }
+      message(e.message, "erreur");
+    }
+  }
+  $("pdf-choisir").addEventListener("click", () => $("pdf-fichiers").click());
+  $("pdf-fichiers").addEventListener("change", (e) => { ouvrir(e.target.files); e.target.value = ""; });
+  $("pdf-mdp-ok").addEventListener("click", () => { if (fichiersEnAttente) ouvrir(fichiersEnAttente); });
+  ["dragenter", "dragover"].forEach((t) => depot.addEventListener(t, (e) => { e.preventDefault(); depot.classList.add("survol"); }));
+  ["dragleave", "drop"].forEach((t) => depot.addEventListener(t, (e) => { e.preventDefault(); depot.classList.remove("survol"); }));
+  depot.addEventListener("drop", (e) => ouvrir(e.dataTransfer.files));
+
+  function demarrer(etat) {
+    S.id = etat.id; S.page = 0; S.cochees = new Set(); S.pop = null;
+    depot.hidden = true; editeur.hidden = false;
+    majEtat(etat, true);
+    choisirOutil("texte");
+  }
+  function fermerSilencieux(id) { try { fetch("/outils-pdf/" + id + "/fermer", { method: "POST", credentials: "same-origin", keepalive: true }); } catch (e) { /* sans importance : purge automatique */ } }
+  $("pdf-fermer").addEventListener("click", () => {
+    if (!confirm("Fermer ce document ? Les modifications non téléchargées seront perdues.")) return;
+    fermerSilencieux(S.id); S.id = null; S.etat = null; editeur.hidden = true; depot.hidden = false; message("");
+  });
+  window.addEventListener("beforeunload", (e) => { if (S.id && S.etat && S.etat.version > 0) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ---------- etat, vignettes, page
+  function majEtat(etat, premiere) {
+    const avantPages = S.etat ? S.etat.pages.length : 0;
+    S.etat = etat;
+    if (S.page >= etat.pages.length) S.page = etat.pages.length - 1;
+    S.cochees = new Set(Array.from(S.cochees).filter((i) => i < etat.pages.length));
+    $("pdf-nom").textContent = etat.nom;
+    $("pdf-infos").textContent = etat.pages.length + " page" + (etat.pages.length > 1 ? "s" : "") + " · " + taille(etat.taille) + (etat.version ? " · " + etat.version + " modification" + (etat.version > 1 ? "s" : "") : "");
+    $("pdf-annuler").disabled = !etat.annulable;
+    dessinerVignettes();
+    dessinerPage();
+    if (premiere && !etat.texte_possible) message("Ce PDF ne contient pas de texte sélectionnable (scan ou images) : on ne peut pas modifier son texte, mais vous pouvez ajouter du contenu, caviarder et organiser les pages.", "");
+  }
+  function majSelection() {
+    const n = S.cochees.size;
+    ["pdf-sel-pivoter", "pdf-sel-supprimer", "pdf-sel-extraire"].forEach((id) => { $(id).disabled = n === 0; });
+    $("pdf-sel-tout").textContent = n === S.etat.pages.length ? "Tout décocher" : "Tout cocher";
+  }
+  function dessinerVignettes() {
+    const zone = $("pdf-vignettes");
+    zone.innerHTML = "";
+    S.etat.pages.forEach((p, i) => {
+      const d = document.createElement("div");
+      d.className = "pdf-vig" + (i === S.page ? " courante" : ""); d.draggable = true; d.dataset.i = i;
+      d.innerHTML = '<img loading="lazy" alt="Page ' + (i + 1) + '" src="/outils-pdf/' + S.id + "/vignette/" + i + ".jpg?v=" + S.etat.version + '">' +
+        '<div class="vig-pied"><label><input type="checkbox" ' + (S.cochees.has(i) ? "checked" : "") + "> " + (i + 1) + '</label><span class="vig-boutons">' +
+        '<button type="button" data-a="pivoter" title="Pivoter de 90°">↻</button><button type="button" data-a="dupliquer" title="Dupliquer la page">⧉</button><button type="button" data-a="supprimer" title="Supprimer la page">🗑</button></span></div>';
+      d.addEventListener("click", (e) => {
+        const bouton = e.target.closest("button[data-a]");
+        if (e.target.matches("input[type=checkbox]")) { e.target.checked ? S.cochees.add(i) : S.cochees.delete(i); majSelection(); return; }
+        if (bouton) { actionVignette(bouton.dataset.a, i); return; }
+        if (e.target.closest("label")) return;
+        S.page = i; fermerPop(); dessinerPage(); zone.querySelectorAll(".pdf-vig").forEach((v) => v.classList.toggle("courante", Number(v.dataset.i) === i));
+      });
+      d.addEventListener("dragstart", (e) => { S.glisse = i; e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(i)); } catch (x) { /* ignore */ } });
+      d.addEventListener("dragover", (e) => { if (S.glisse == null) return; e.preventDefault(); d.classList.add("depot-avant"); });
+      d.addEventListener("dragleave", () => d.classList.remove("depot-avant"));
+      d.addEventListener("drop", (e) => { e.preventDefault(); d.classList.remove("depot-avant"); deplacer(S.glisse, i); S.glisse = null; });
+      d.addEventListener("dragend", () => { S.glisse = null; zone.querySelectorAll(".depot-avant").forEach((v) => v.classList.remove("depot-avant")); });
+      zone.appendChild(d);
+    });
+    majSelection();
+  }
+  function ordreActuel() { return S.etat.pages.map((_, i) => i); }
+  function deplacer(de, vers) {
+    if (de == null || de === vers) return;
+    const ordre = ordreActuel(); ordre.splice(de, 1); ordre.splice(vers, 0, de);
+    S.page = vers;
+    action({ op: "ordre", ordre: ordre });
+  }
+  function actionVignette(a, i) {
+    if (a === "pivoter") action({ op: "pivoter", pages: [i], angle: 90 });
+    else if (a === "dupliquer") { const o = ordreActuel(); o.splice(i + 1, 0, i); S.page = i + 1; action({ op: "ordre", ordre: o }); }
+    else if (a === "supprimer") {
+      if (S.etat.pages.length === 1) { message("Impossible de supprimer la dernière page.", "erreur"); return; }
+      const o = ordreActuel().filter((x) => x !== i); S.page = Math.min(S.page, o.length - 1); action({ op: "ordre", ordre: o });
+    }
+  }
+  $("pdf-sel-tout").addEventListener("click", () => { if (S.cochees.size === S.etat.pages.length) S.cochees.clear(); else S.etat.pages.forEach((_, i) => S.cochees.add(i)); dessinerVignettes(); });
+  $("pdf-sel-pivoter").addEventListener("click", () => action({ op: "pivoter", pages: Array.from(S.cochees), angle: 90 }));
+  $("pdf-sel-supprimer").addEventListener("click", () => {
+    const o = ordreActuel().filter((x) => !S.cochees.has(x));
+    if (!o.length) { message("Impossible de supprimer toutes les pages.", "erreur"); return; }
+    if (!confirm("Supprimer " + S.cochees.size + " page(s) ? Vous pourrez annuler.")) return;
+    S.cochees.clear(); S.page = 0; action({ op: "ordre", ordre: o });
+  });
+  $("pdf-sel-extraire").addEventListener("click", () => telecharger({ mode: "pdf", pages: Array.from(S.cochees).sort((a, b) => a - b).map((i) => i + 1) }));
+
+  function dessinerPage() {
+    fermerPop();
+    const p = S.etat.pages[S.page];
+    const largeurZone = $("pdf-zone").clientWidth - 24;
+    const zoom = Math.min(3, Math.max(1.2, (Math.min(largeurZone, 900) * (window.devicePixelRatio || 1)) / p.l));
+    img.onload = () => { dessinerCalque(); };
+    img.src = "/outils-pdf/" + S.id + "/page/" + S.page + ".jpg?zoom=" + zoom.toFixed(2) + "&v=" + S.etat.version;
+    if (img.complete && img.naturalWidth) dessinerCalque();
+    S.lignes = []; chargerLignes();
+  }
+  async function chargerLignes() {
+    const page = S.page, version = S.etat.version;
+    if (S.outil !== "texte") return;
+    try {
+      const l = await (await appel("/outils-pdf/" + S.id + "/texte/" + page)).json();
+      if (page === S.page && version === S.etat.version) { S.lignes = l; dessinerCalque(); }
+    } catch (e) { /* le texte n'est qu'une aide : la page reste utilisable */ }
+  }
+  const echelle = () => img.clientWidth / S.etat.pages[S.page].l;
+  function dessinerCalque() {
+    overlay.innerHTML = "";
+    overlay.classList.toggle("crayon", S.outil !== "texte");
+    if (S.outil !== "texte") return;
+    const k = echelle();
+    S.lignes.forEach((l) => {
+      const d = document.createElement("div");
+      d.className = "pdf-ligne"; d.title = l.t;
+      d.style.left = l.b[0] * k - 1 + "px"; d.style.top = l.b[1] * k - 1 + "px"; d.style.width = (l.b[2] - l.b[0]) * k + 2 + "px"; d.style.height = (l.b[3] - l.b[1]) * k + 2 + "px";
+      d.addEventListener("click", (e) => { e.stopPropagation(); ouvrirPop({ mode: "modifier", ligne: l, x: l.b[0] * k, y: l.b[3] * k + 6 }); });
+      overlay.appendChild(d);
+    });
+  }
+  window.addEventListener("resize", () => { if (S.etat) dessinerCalque(); });
+
+  // ---------- outils
+  function choisirOutil(o) {
+    S.outil = o; fermerPop();
+    document.querySelectorAll(".pdf-outils .outil").forEach((b) => b.classList.toggle("actif", b.dataset.outil === o));
+    $("pdf-aide").textContent = AIDES[o];
+    const zone = $("pdf-options");
+    zone.innerHTML = "";
+    if (o === "image") zone.innerHTML = '<button type="button" class="bouton-secondaire" id="opt-image">Choisir l\'image…</button><span id="opt-image-nom" class="texte-discret">' + (S.image ? S.image.name : "aucune image choisie") + "</span>";
+    if (o === "surligner") zone.innerHTML = '<label>Couleur <input type="color" id="opt-surligner" value="#ffe600"></label>';
+    if (o === "caviarder") zone.innerHTML = '<label>Remplir avec <select id="opt-caviarder"><option value="#000000">Noir</option><option value="#ffffff">Blanc (effacer)</option></select></label>';
+    const b = $("opt-image");
+    if (b) b.addEventListener("click", () => $("pdf-image-fichier").click());
+    if (S.etat) { S.lignes = []; dessinerCalque(); if (o === "texte") chargerLignes(); }
+  }
+  document.querySelectorAll(".pdf-outils .outil").forEach((b) => b.addEventListener("click", () => choisirOutil(b.dataset.outil)));
+  $("pdf-image-fichier").addEventListener("change", (e) => {
+    S.image = e.target.files[0] || null; e.target.value = "";
+    if (S.outil === "image") { $("opt-image-nom").textContent = S.image ? S.image.name : "aucune image choisie"; if (S.image) message("Dessinez maintenant le rectangle où placer l'image."); }
+  });
+
+  // dessin d'un rectangle (image, surlignage, caviardage) ou clic (ajout de texte)
+  let dessin = null;
+  overlay.addEventListener("pointerdown", (e) => {
+    if (S.outil === "texte" || e.target !== overlay) return;
+    const r = overlay.getBoundingClientRect();
+    dessin = { x: e.clientX - r.left, y: e.clientY - r.top, rect: null };
+    overlay.setPointerCapture(e.pointerId);
+    if (S.outil !== "ajout") { dessin.rect = document.createElement("div"); dessin.rect.className = "pdf-rect"; overlay.appendChild(dessin.rect); }
+    e.preventDefault();
+  });
+  overlay.addEventListener("pointermove", (e) => {
+    if (!dessin || !dessin.rect) return;
+    const r = overlay.getBoundingClientRect(), x = Math.max(0, Math.min(e.clientX - r.left, r.width)), y = Math.max(0, Math.min(e.clientY - r.top, r.height));
+    Object.assign(dessin.rect.style, { left: Math.min(x, dessin.x) + "px", top: Math.min(y, dessin.y) + "px", width: Math.abs(x - dessin.x) + "px", height: Math.abs(y - dessin.y) + "px" });
+  });
+  overlay.addEventListener("pointerup", async (e) => {
+    if (!dessin) return;
+    const d = dessin; dessin = null;
+    const r = overlay.getBoundingClientRect(), k = echelle();
+    const x = Math.max(0, Math.min(e.clientX - r.left, r.width)), y = Math.max(0, Math.min(e.clientY - r.top, r.height));
+    if (S.outil === "ajout") { ouvrirPop({ mode: "ajouter", x: d.x, y: d.y + 8, pt: [d.x / k, d.y / k] }); return; }
+    if (d.rect) d.rect.remove();
+    const bbox = [Math.min(x, d.x) / k, Math.min(y, d.y) / k, Math.max(x, d.x) / k, Math.max(y, d.y) / k].map((v) => Math.round(v * 100) / 100);
+    if (Math.abs(x - d.x) < 6 || Math.abs(y - d.y) < 6) { message("Dessinez un rectangle en maintenant le clic.", "erreur"); return; }
+    if (S.outil === "surligner") action({ op: "surligner", page: S.page, bbox: bbox, couleur: $("opt-surligner").value });
+    else if (S.outil === "caviarder") {
+      if (!confirm("Caviarder cette zone ? Le texte et les images dessous seront définitivement supprimés du fichier (vous pourrez annuler tant que le document est ouvert).")) return;
+      action({ op: "caviarder", page: S.page, bbox: bbox, couleur: $("opt-caviarder").value });
+    } else if (S.outil === "image") {
+      if (!S.image) { message("Choisissez d'abord une image.", "erreur"); return; }
+      actionFichier("image", { page: S.page, bbox: bbox }, S.image);
+    }
+  });
+
+  // ---------- fenetre de saisie du texte
+  function ouvrirPop(contexte) {
+    S.pop = contexte; const l = contexte.ligne;
+    $("pop-texte").value = l ? l.t : "";
+    $("pop-police").value = l ? l.police : "sans"; $("pop-taille").value = l ? l.taille : 14; $("pop-couleur").value = l ? l.couleur : "#000000";
+    $("pop-gras").checked = l ? l.gras : false; $("pop-italique").checked = l ? l.italique : false;
+    $("pop-supprimer").hidden = !l; $("pop-appliquer").textContent = "Appliquer";
+    $("pop-note").textContent = l ? "Police d'origine : " + l.police_pdf + " — remplacée par la police la plus proche. Réglez-la ici si besoin." : "";
+    pop.hidden = false;
+    const largeurPage = $("pdf-page").clientWidth;
+    pop.style.left = Math.max(0, Math.min(contexte.x, largeurPage - 340)) + "px"; pop.style.top = contexte.y + "px";
+    pop.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    setTimeout(() => { $("pop-texte").focus(); if (l) $("pop-texte").select(); }, 30);
+  }
+  function fermerPop() { S.pop = null; pop.hidden = true; }
+  $("pop-annuler").addEventListener("click", fermerPop);
+  $("pop-texte").addEventListener("keydown", (e) => { if (e.key === "Escape") fermerPop(); if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("pop-appliquer").click(); });
+  function styleSaisi() {
+    return { police: $("pop-police").value, taille: Number($("pop-taille").value) || 12, couleur: $("pop-couleur").value, gras: $("pop-gras").checked, italique: $("pop-italique").checked };
+  }
+  $("pop-appliquer").addEventListener("click", () => {
+    const c = S.pop; if (!c) return;
+    const texte = $("pop-texte").value;
+    if (c.mode === "modifier") action(Object.assign({ op: "texte_modifier", page: S.page, bbox: c.ligne.b, origine: c.ligne.origine, texte: texte }, styleSaisi()));
+    else { if (!texte.trim()) { message("Saisissez un texte.", "erreur"); return; } action(Object.assign({ op: "texte_ajouter", page: S.page, x: c.pt[0], y: c.pt[1], texte: texte }, styleSaisi())); }
+  });
+  $("pop-supprimer").addEventListener("click", () => {
+    const c = S.pop; if (!c || !confirm("Supprimer ce texte du document ?")) return;
+    action(Object.assign({ op: "texte_modifier", page: S.page, bbox: c.ligne.b, origine: c.ligne.origine, texte: "" }, styleSaisi()));
+  });
+
+  // ---------- actions sur le document
+  let occupe = false;
+  async function executer(promesse, texteOk) {
+    if (occupe) { message("Une opération est déjà en cours.", "erreur"); return; }
+    occupe = true; document.body.style.cursor = "progress";
+    try {
+      const r = await (await promesse()).json();
+      fermerPop();
+      majEtat(r.etat, false);
+      message(r.message || texteOk || "", r.message || texteOk ? "ok" : "");
+    } catch (e) {
+      message(e.message, "erreur");
+      if (e.statut === 404 || e.statut === 400 && /introuvable|expir/i.test(e.message)) { /* document perdu : l'utilisateur doit le rouvrir */ }
+    } finally { occupe = false; document.body.style.cursor = ""; }
+  }
+  const action = (corps) => executer(() => appel("/outils-pdf/" + S.id + "/action", json(corps)));
+  function actionFichier(op, params, fichier) {
+    const f = new FormData(); f.append("op", op); f.append("params", JSON.stringify(params)); f.append("fichier", fichier);
+    return executer(() => appel("/outils-pdf/" + S.id + "/action-fichier", { method: "POST", body: f }));
+  }
+  $("pdf-annuler").addEventListener("click", () => executer(() => appel("/outils-pdf/" + S.id + "/annuler", { method: "POST" })));
+  document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "z" && S.id && !e.target.matches("input, textarea") && !$("pdf-annuler").disabled) { e.preventDefault(); $("pdf-annuler").click(); } });
+
+  // ---------- boites de dialogue
+  document.querySelectorAll("dialog [data-fermer]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
+  $("pdf-numeros").addEventListener("click", () => $("dlg-numeros").showModal());
+  $("num-go").addEventListener("click", () => { $("dlg-numeros").close(); action({ op: "numeroter", emplacement: $("num-emplacement").value, format: $("num-format").value, debut: Number($("num-debut").value) || 1 }); });
+  $("pdf-filigrane").addEventListener("click", () => $("dlg-filigrane").showModal());
+  $("fil-go").addEventListener("click", () => { $("dlg-filigrane").close(); action({ op: "filigrane", texte: $("fil-texte").value, opacite: Number($("fil-opacite").value), angle: Number($("fil-angle").value), couleur: $("fil-couleur").value }); });
+  $("pdf-compresser").addEventListener("click", () => { $("cmp-taille").textContent = taille(S.etat.taille); $("dlg-compresser").showModal(); });
+  $("cmp-go").addEventListener("click", () => { $("dlg-compresser").close(); action({ op: "compresser", niveau: document.querySelector("input[name=cmp]:checked").value }); });
+  $("pdf-fusion").addEventListener("click", () => { $("fus-page").textContent = S.page + 1; $("dlg-fusion").showModal(); });
+  $("fus-go").addEventListener("click", () => {
+    const f = $("fus-fichier").files[0];
+    if (!f) { message("Choisissez le PDF à ajouter.", "erreur"); return; }
+    $("dlg-fusion").close();
+    actionFichier("fusionner", { apres: document.querySelector("input[name=fus]:checked").value === "apres" ? S.page : null }, f);
+    $("fus-fichier").value = "";
+  });
+
+  // ---------- export
+  $("pdf-exporter").addEventListener("click", () => { $("exp-nb").textContent = S.cochees.size; majSousExport(); $("dlg-exporter").showModal(); });
+  function modeExport() { return document.querySelector("input[name=exp]:checked").value; }
+  function majSousExport() {
+    const m = modeExport();
+    $("exp-sous-mdp").hidden = m !== "protege"; $("exp-sous-images").hidden = m !== "images"; $("exp-sous-decoupe").hidden = m !== "decoupe";
+    $("exp-aide").textContent = m === "pages" && !S.cochees.size ? "Cochez d'abord des pages dans la colonne de gauche." : m === "protege" ? "Le mot de passe sera demandé à l'ouverture du fichier. Il n'est pas conservé : notez-le." : "";
+  }
+  document.querySelectorAll("input[name=exp]").forEach((r) => r.addEventListener("change", majSousExport));
+  $("exp-go").addEventListener("click", async () => {
+    const m = modeExport();
+    const pagesCochees = Array.from(S.cochees).sort((a, b) => a - b).map((i) => i + 1);
+    let corps;
+    if (m === "pdf") corps = { mode: "pdf" };
+    else if (m === "pages") { if (!pagesCochees.length) { majSousExport(); return; } corps = { mode: "pdf", pages: pagesCochees }; }
+    else if (m === "protege") corps = { mode: "pdf", mot_de_passe: $("exp-mdp").value };
+    else if (m === "images") corps = { mode: "images", format: $("exp-format").value, dpi: Number($("exp-dpi").value), pages: pagesCochees.length ? pagesCochees : undefined };
+    else corps = { mode: "decoupe", plages: $("exp-plages").value };
+    if (await telecharger(corps)) { $("dlg-exporter").close(); $("exp-mdp").value = ""; }
+  });
+  async function telecharger(corps) {
+    try {
+      const r = await appel("/outils-pdf/" + S.id + "/telecharger", json(corps));
+      const blob = await r.blob();
+      let nom = "document.pdf";
+      try { nom = decodeURIComponent(r.headers.get("X-Nom-Fichier") || nom); } catch (e) { /* nom par defaut */ }
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nom; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+      message("« " + nom + " » téléchargé (" + taille(blob.size) + ").", "ok");
+      return true;
+    } catch (e) { message(e.message, "erreur"); $("exp-aide").textContent = e.message; return false; }
+  }
+
+  choisirOutil("texte");
+})();
+</script>
+{% endraw %}
+{% endblock %}
