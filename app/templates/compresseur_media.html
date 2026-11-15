@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+{% set page_actuelle = "compresseur_media" %}
+{% block titre %}Compresseur photos et vidéos — Fiche Locale{% endblock %}
+{% block tete_supplementaire %}
+<style>
+  .cm-depot { border: 2px dashed var(--carte-bordure); border-radius: 14px; padding: 1.6rem 1rem; text-align: center; background: var(--carte); color: var(--texte); margin: 1rem 0; }
+  .cm-depot.survol { border-color: var(--accent); background: rgba(79, 110, 247, 0.08); }
+  .cm-depot p { margin: 0.3rem 0; }
+  .cm-message { margin: 0.5rem 0; padding: 0.55rem 0.85rem; border-radius: 10px; font-size: 0.92rem; border: 1px solid var(--carte-bordure); background: var(--carte); color: var(--texte); }
+  .cm-message.erreur { border-color: var(--danger); background: rgba(220, 38, 38, 0.1); color: var(--danger); font-weight: 600; }
+  .cm-message.ok { border-color: #1a7f45; background: rgba(34, 160, 90, 0.12); }
+  .cm-presets { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0 0.8rem; align-items: center; }
+  .cm-presets button { background: var(--carte); color: var(--texte); border: 1px solid var(--carte-bordure); border-radius: 999px; padding: 0.35rem 0.85rem; font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+  .cm-presets button:hover { border-color: var(--accent); }
+  .cm-reglages { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 1rem; margin: 0.6rem 0 1rem; }
+  .cm-carte { background: var(--carte); color: var(--texte); border: 1px solid var(--carte-bordure); border-radius: 12px; padding: 0.9rem 1rem; }
+  .cm-carte h2 { margin: 0 0 0.6rem; font-size: 1.05rem; }
+  .cm-carte[hidden] { display: none; }
+  .cm-champ { display: flex; flex-direction: column; gap: 0.2rem; margin: 0.55rem 0; font-size: 0.9rem; }
+  .cm-champ > span { font-weight: 600; }
+  .cm-taille { border: 1px solid var(--carte-bordure); border-radius: 10px; padding: 0.4rem 0.7rem; margin: 0.6rem 0; }
+  .cm-taille legend { font-weight: 600; font-size: 0.9rem; padding: 0 0.3rem; }
+  .cm-option { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; margin: 0.35rem 0; width: auto; font-size: 0.9rem; flex-wrap: wrap; }
+  .cm-option input[type="radio"], .cm-option input[type="checkbox"] { width: auto; margin: 0; }
+  .cm-option input[type="number"] { width: 6rem; }
+  .cm-option input[type="range"] { width: 9rem; }
+  .cm-option select { width: auto; }
+  .cm-option.inactive { opacity: 0.5; }
+  .cm-aide { font-size: 0.8rem; color: var(--texte-discret); margin: 0.2rem 0 0; }
+  .cm-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
+  .cm-bilan { font-size: 1rem; margin: 0.5rem 0; }
+  .cm-liste { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.6rem 0; }
+  .cm-ligne { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 0.7rem; align-items: center; background: var(--carte); color: var(--texte); border: 1px solid var(--carte-bordure); border-radius: 10px; padding: 0.5rem 0.7rem; }
+  .cm-ligne.erreur { border-color: var(--danger); }
+  .cm-mini { width: 64px; height: 48px; border-radius: 6px; background: rgba(120, 120, 120, 0.2); object-fit: cover; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+  .cm-nom { font-weight: 700; word-break: break-all; }
+  .cm-detail { font-size: 0.82rem; color: var(--texte-discret); }
+  .cm-barre { height: 7px; border-radius: 999px; background: rgba(120, 120, 120, 0.25); overflow: hidden; margin-top: 0.3rem; }
+  .cm-barre > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+  .cm-resultat { font-weight: 700; }
+  .cm-gain { color: #1a7f45; }
+  .cm-erreur { color: var(--danger); font-weight: 600; }
+  .cm-droite { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .cm-droite a, .cm-droite button { font-size: 0.85rem; padding: 0.3rem 0.7rem; }
+  @media (max-width: 700px) { .cm-ligne { grid-template-columns: 48px minmax(0, 1fr); } .cm-droite { grid-column: 1 / -1; justify-content: flex-start; } .cm-mini { width: 48px; height: 40px; } }
+</style>
+{% endblock %}
+{% block contenu %}
+<div class="barre-titre"><h1>Compresseur photos et vidéos</h1></div>
+<p class="texte-discret">
+  Réduisez le poids de vos photos et de vos vidéos pour un e-mail, WhatsApp, un site ou les réseaux sociaux. Déposez autant de fichiers que vous voulez (jusqu'à {{ max_fichiers }}), choisissez le format de sortie
+  et la taille voulue : un poids maximum (ex. 500 Ko, 20 Mo), un pourcentage de l'original, ou une qualité fixe. Rien n'est enregistré sur la plateforme : les fichiers sont effacés à la fermeture, ou au bout de {{ duree_heures }} heures.
+</p>
+
+<div class="cm-depot" id="cm-depot">
+  <p><strong>Déposez vos photos et vos vidéos ici</strong></p>
+  <p><button type="button" id="cm-choisir">Choisir des fichiers…</button></p>
+  <p class="texte-discret">Photos : JPG, PNG, WebP, GIF, BMP, TIFF, AVIF{{ ', HEIC (iPhone)' if heic else '' }} · {{ taille_max_photo }} Mo maximum chacune<br>
+    Vidéos : MP4, MOV, MKV, AVI, WebM, WMV, 3GP… · {{ taille_max_video }} Mo maximum chacune · {{ max_lot }} Go au total</p>
+  <input type="file" id="cm-fichiers" multiple hidden accept="image/*,video/*,.heic,.heif,.mkv,.avi,.wmv,.flv,.3gp,.mts,.m2ts,.ts,.mpg,.mpeg">
+</div>
+<div class="cm-message" id="cm-message" role="status" hidden></div>
+
+<div id="cm-liste" class="cm-liste"></div>
+
+<div id="cm-zone-reglages" hidden>
+  <div class="cm-presets" role="group" aria-label="Réglages rapides">
+    <strong>Réglages rapides :</strong>
+    <button type="button" data-preset="email">✉️ E-mail (≤ 10 Mo)</button>
+    <button type="button" data-preset="whatsapp">💬 WhatsApp (≤ 16 Mo)</button>
+    <button type="button" data-preset="reseaux">📱 Réseaux sociaux</button>
+    <button type="button" data-preset="site">🌐 Site web (léger)</button>
+    <button type="button" data-preset="qualite">⭐ Qualité maximale</button>
+  </div>
+  <div class="cm-reglages">
+    <section class="cm-carte" id="cm-carte-photo" hidden>
+      <h2>📷 Photos</h2>
+      <label class="cm-champ"><span>Format de sortie</span>
+        <select id="p-format">
+          <option value="origine">Le même que l'original</option>
+          {% for code, libelle in formats_photo.items() %}<option value="{{ code }}" {{ 'selected' if code == 'jpg' else '' }}>{{ libelle }}</option>{% endfor %}
+        </select></label>
+      <fieldset class="cm-taille"><legend>Taille de sortie</legend>
+        <label class="cm-option"><input type="radio" name="p-mode" value="taille" checked> Poids maximum par photo
+          <input type="number" id="p-cible" value="500" min="5" step="any"> <select id="p-unite"><option value="Ko" selected>Ko</option><option value="Mo">Mo</option></select></label>
+        <label class="cm-option"><input type="radio" name="p-mode" value="pourcentage"> Pourcentage du poids d'origine
+          <input type="number" id="p-pct" value="30" min="1" max="95"> %</label>
+        <label class="cm-option"><input type="radio" name="p-mode" value="qualite"> Qualité fixe
+          <input type="range" id="p-qualite" min="10" max="100" value="75"> <strong id="p-qualite-val">75</strong></label>
+        <p class="cm-aide">Avec un poids ou un pourcentage, la plus haute qualité qui tient dans la taille est choisie ; si elle ne suffit pas, les dimensions sont réduites.</p>
+      </fieldset>
+      <label class="cm-champ"><span>Dimensions maximales (côté le plus grand)</span>
+        <select id="p-cote"><option value="0">Dimensions d'origine</option>{% for c in cotes %}<option value="{{ c }}">{{ c }} pixels</option>{% endfor %}</select></label>
+      <label class="cm-option"><input type="checkbox" id="p-meta"> Conserver les métadonnées (date, appareil, position GPS)</label>
+    </section>
+    <section class="cm-carte" id="cm-carte-video" hidden>
+      <h2>🎬 Vidéos</h2>
+      <label class="cm-champ"><span>Format de sortie</span>
+        <select id="v-format">{% for code, libelle in formats_video.items() %}<option value="{{ code }}" {{ 'selected' if code == 'mp4' else '' }}>{{ libelle }}</option>{% endfor %}</select></label>
+      <fieldset class="cm-taille"><legend>Taille de sortie</legend>
+        <label class="cm-option"><input type="radio" name="v-mode" value="taille" checked> Poids maximum par vidéo
+          <input type="number" id="v-cible" value="20" min="0.1" step="any"> <select id="v-unite"><option value="Ko">Ko</option><option value="Mo" selected>Mo</option></select></label>
+        <label class="cm-option"><input type="radio" name="v-mode" value="pourcentage"> Pourcentage du poids d'origine
+          <input type="number" id="v-pct" value="30" min="1" max="95"> %</label>
+        <label class="cm-option"><input type="radio" name="v-mode" value="qualite"> Qualité fixe
+          <select id="v-niveau"><option value="haute">Haute (fichier plus lourd)</option><option value="equilibree" selected>Équilibrée</option><option value="legere">Légère (fichier léger)</option></select></label>
+        <p class="cm-aide">Avec un poids, la vidéo est encodée en deux passes pour s'en approcher au plus près ; quand le poids est très bas, la définition est réduite automatiquement pour que l'image reste nette.</p>
+      </fieldset>
+      <label class="cm-champ"><span>Définition maximale</span>
+        <select id="v-hauteur"><option value="-1" selected>Automatique (selon le poids voulu)</option><option value="0">Définition d'origine</option>{% for h in hauteurs %}<option value="{{ h }}">{{ h }} p{{ ' (4K)' if h == 2160 else ' (Full HD)' if h == 1080 else ' (HD)' if h == 720 else '' }}</option>{% endfor %}</select></label>
+      <label class="cm-champ"><span>Son</span><select id="v-son"><option value="garder" selected>Conserver le son</option><option value="retirer">Supprimer le son (plus léger)</option></select></label>
+      <label class="cm-champ"><span>Vitesse d'encodage</span>
+        <select id="v-vitesse"><option value="rapide">Rapide</option><option value="equilibre" selected>Équilibrée</option><option value="lent">Lente (fichier plus petit à qualité égale)</option></select></label>
+    </section>
+  </div>
+  <div class="cm-actions">
+    <button type="button" id="cm-lancer">Compresser</button>
+    <button type="button" class="bouton-secondaire" id="cm-annuler" hidden>Annuler</button>
+    <button type="button" class="bouton-secondaire" id="cm-vider">Tout retirer</button>
+    <a class="bouton-secondaire" id="cm-zip" href="#" hidden>⬇️ Tout télécharger (ZIP)</a>
+  </div>
+  <div class="cm-bilan" id="cm-bilan" hidden></div>
+  <div class="cm-barre" id="cm-barre-globale" hidden><span></span></div>
+</div>
+{% raw %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const S = { lot: null, fichiers: [], envois: 0, file: [], enCours: false, miniatures: {} };
+  const EXT_VIDEO = /\.(mp4|mov|m4v|mkv|avi|webm|wmv|flv|3gp|mts|m2ts|mpg|mpeg|ogv|ts)$/i, EXT_PHOTO = /\.(jpe?g|png|webp|gif|bmp|tiff?|avif|heic|heif)$/i;
+  const octets = (o) => o >= 1048576 ? (o / 1048576).toFixed(o >= 10485760 ? 0 : 1).replace(".", ",") + " Mo" : Math.max(1, Math.round(o / 1024)) + " Ko";
+  const duree = (s) => s >= 3600 ? Math.floor(s / 3600) + " h " + String(Math.floor(s % 3600 / 60)).padStart(2, "0") + " min" : Math.floor(s / 60) + " min " + String(Math.round(s % 60)).padStart(2, "0") + " s";
+  const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function message(texte, genre) {
+    const m = $("cm-message");
+    m.textContent = texte; m.className = "cm-message" + (genre ? " " + genre : ""); m.hidden = !texte;
+    if (texte && genre === "ok") { clearTimeout(message.t); message.t = setTimeout(() => { if (m.textContent === texte) m.hidden = true; }, 7000); }
+  }
+  async function appel(url, options) {
+    let r;
+    try { r = await fetch(url, Object.assign({ credentials: "same-origin" }, options || {})); } catch (e) { throw new Error("Connexion impossible : réessayez."); }
+    if (!r.ok) { let t = "Erreur " + r.status; try { t = (await r.json()).erreur || t; } catch (e) { /* corps non JSON */ } const err = new Error(t); err.statut = r.status; throw err; }
+    return r.json();
+  }
+
+  // ---------- reglages (gardes dans le navigateur)
+  const CHAMPS = ["p-format", "p-cible", "p-unite", "p-pct", "p-qualite", "p-cote", "v-format", "v-cible", "v-unite", "v-pct", "v-niveau", "v-hauteur", "v-son", "v-vitesse"];
+  function lireReglages() {
+    const mode = (nom) => document.querySelector("input[name=" + nom + "]:checked").value;
+    const cible = (id, unite) => Math.round(Number($(id).value) * (($(unite).value === "Mo") ? 1048576 : 1024));
+    return {
+      photo: { format: $("p-format").value, mode: mode("p-mode"), cible_octets: cible("p-cible", "p-unite"), pourcentage: Number($("p-pct").value), qualite: Number($("p-qualite").value), cote_max: Number($("p-cote").value), metadonnees: $("p-meta").checked },
+      video: { format: $("v-format").value, mode: mode("v-mode"), cible_octets: cible("v-cible", "v-unite"), pourcentage: Number($("v-pct").value), niveau: $("v-niveau").value, hauteur_max: Number($("v-hauteur").value), son: $("v-son").value, vitesse: $("v-vitesse").value },
+    };
+  }
+  function appliquerReglages(r) {
+    if (!r) return;
+    const p = r.photo || {}, v = r.video || {};
+    const fixer = (id, val) => {
+      const e = $(id);
+      if (!e || val == null) return;
+      if (e.tagName === "SELECT") { if (Array.from(e.options).some((o) => o.value === String(val))) e.value = val; } else e.value = val;
+    };
+    fixer("p-format", p.format); fixer("p-pct", p.pourcentage); fixer("p-qualite", p.qualite); fixer("p-cote", p.cote_max);
+    fixer("v-format", v.format); fixer("v-pct", v.pourcentage); fixer("v-niveau", v.niveau); fixer("v-hauteur", v.hauteur_max); fixer("v-son", v.son); fixer("v-vitesse", v.vitesse);
+    if (p.cible_octets) { const mo = p.cible_octets >= 1048576 && p.cible_octets % 1048576 === 0; $("p-unite").value = mo ? "Mo" : "Ko"; $("p-cible").value = mo ? p.cible_octets / 1048576 : Math.round(p.cible_octets / 1024); }
+    if (v.cible_octets) { const ko = v.cible_octets < 1048576; $("v-unite").value = ko ? "Ko" : "Mo"; $("v-cible").value = ko ? Math.round(v.cible_octets / 1024) : Math.round(v.cible_octets / 1048576 * 10) / 10; }
+    if (p.mode) document.querySelector("input[name=p-mode][value=" + p.mode + "]").checked = true;
+    if (v.mode) document.querySelector("input[name=v-mode][value=" + v.mode + "]").checked = true;
+    $("p-meta").checked = !!p.metadonnees;
+    majAffichageReglages();
+  }
+  function majAffichageReglages() {
+    $("p-qualite-val").textContent = $("p-qualite").value;
+    [["p-mode", { taille: ["p-cible", "p-unite"], pourcentage: ["p-pct"], qualite: ["p-qualite"] }], ["v-mode", { taille: ["v-cible", "v-unite"], pourcentage: ["v-pct"], qualite: ["v-niveau"] }]].forEach(([nom, champs]) => {
+      const mode = document.querySelector("input[name=" + nom + "]:checked").value;
+      Object.keys(champs).forEach((m) => champs[m].forEach((id) => { $(id).disabled = m !== mode; $(id).closest(".cm-option").classList.toggle("inactive", m !== mode); }));
+    });
+  }
+  document.querySelectorAll(".cm-carte input, .cm-carte select").forEach((e) => e.addEventListener("input", () => { majAffichageReglages(); try { localStorage.setItem("cm-reglages", JSON.stringify(lireReglages())); } catch (x) { /* sans importance */ } }));
+  const PRESETS = {
+    email: { photo: { format: "jpg", mode: "taille", cible_octets: 1024 * 1024, cote_max: 1600 }, video: { format: "mp4", mode: "taille", cible_octets: 10 * 1048576, hauteur_max: -1 } },
+    whatsapp: { photo: { format: "jpg", mode: "taille", cible_octets: 800 * 1024, cote_max: 1600 }, video: { format: "mp4", mode: "taille", cible_octets: 16 * 1048576, hauteur_max: -1 } },
+    reseaux: { photo: { format: "jpg", mode: "qualite", qualite: 82, cote_max: 2560 }, video: { format: "mp4", mode: "qualite", niveau: "equilibree", hauteur_max: 1080 } },
+    site: { photo: { format: "webp", mode: "taille", cible_octets: 200 * 1024, cote_max: 1920 }, video: { format: "mp4", mode: "taille", cible_octets: 8 * 1048576, hauteur_max: 720 } },
+    qualite: { photo: { format: "jpg", mode: "qualite", qualite: 92, cote_max: 0 }, video: { format: "mp4", mode: "qualite", niveau: "haute", hauteur_max: 0 } },
+  };
+  document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => {
+    const p = PRESETS[b.dataset.preset];
+    const base = lireReglages(); appliquerReglages({ photo: Object.assign({}, base.photo, p.photo), video: Object.assign({}, base.video, p.video) });
+    try { localStorage.setItem("cm-reglages", JSON.stringify(lireReglages())); } catch (x) { /* sans importance */ }
+    message("Réglages « " + b.textContent.replace(/^\S+\s/, "") + " » appliqués.", "ok");
+  }));
+  try { appliquerReglages(JSON.parse(localStorage.getItem("cm-reglages") || "null")); } catch (e) { /* reglages par defaut */ }
+  majAffichageReglages();
+
+  // ---------- envoi des fichiers (un par un, avec l'avancement)
+  const depot = $("cm-depot");
+  $("cm-choisir").addEventListener("click", () => $("cm-fichiers").click());
+  $("cm-fichiers").addEventListener("change", (e) => { ajouter(e.target.files); e.target.value = ""; });
+  ["dragenter", "dragover"].forEach((t) => depot.addEventListener(t, (e) => { e.preventDefault(); depot.classList.add("survol"); }));
+  ["dragleave", "drop"].forEach((t) => depot.addEventListener(t, (e) => { e.preventDefault(); depot.classList.remove("survol"); }));
+  depot.addEventListener("drop", (e) => ajouter(e.dataTransfer.files));
+
+  function ajouter(fichiers) {
+    if (S.enCours) { message("Une compression est en cours : attendez la fin pour ajouter des fichiers.", "erreur"); return; }
+    const lot = Array.from(fichiers);
+    const inconnus = lot.filter((f) => !EXT_VIDEO.test(f.name) && !EXT_PHOTO.test(f.name) && !/^(image|video)\//.test(f.type));
+    if (inconnus.length) message("Format non pris en charge : " + inconnus.map((f) => f.name).join(", "), "erreur");
+    lot.filter((f) => !inconnus.includes(f)).forEach((f) => S.file.push({ fichier: f, id: "t" + Math.random().toString(36).slice(2), etat: "attente", pct: 0, erreur: "" }));
+    dessiner();
+    envoyerSuivant();
+  }
+  async function envoyerSuivant() {
+    if (S.envois) return;
+    const suivant = S.file.find((e) => e.etat === "attente");
+    if (!suivant) return;
+    S.envois++; suivant.etat = "envoi";
+    try {
+      if (!S.lot) S.lot = (await appel("/compresseur-media/lot", { method: "POST" })).id;
+      suivant.resultat = await envoyer(suivant);
+      suivant.etat = "pret"; S.fichiers.push(suivant.resultat); S.miniatures[suivant.resultat.n] = /^image\//.test(suivant.fichier.type) || EXT_PHOTO.test(suivant.fichier.name) ? URL.createObjectURL(suivant.fichier) : null;
+    } catch (e) { suivant.etat = "refus"; suivant.erreur = e.message; }
+    S.envois--;
+    dessiner();
+    envoyerSuivant();
+  }
+  function envoyer(entree) {
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest(), f = new FormData();
+      f.append("fichier", entree.fichier);
+      x.open("POST", "/compresseur-media/" + S.lot + "/fichier");
+      x.upload.onprogress = (e) => { if (e.lengthComputable) { entree.pct = e.loaded / e.total; majLigneEnvoi(entree); } };
+      x.onload = () => { let r = {}; try { r = JSON.parse(x.responseText); } catch (e) { /* ignore */ } x.status === 200 ? resolve(r) : reject(new Error(r.erreur || "Erreur " + x.status)); };
+      x.onerror = () => reject(new Error("Connexion interrompue pendant l'envoi."));
+      x.send(f);
+    });
+  }
+  function majLigneEnvoi(e) {
+    const barre = document.querySelector('[data-envoi="' + e.id + '"] .cm-barre > span');
+    if (barre) barre.style.width = Math.round(e.pct * 100) + "%";
+  }
+
+  // ---------- affichage
+  function dessiner() {
+    const liste = $("cm-liste");
+    const lignes = [];
+    const serveur = S.fichiers.slice();
+    S.file.forEach((e) => {
+      if (e.etat === "pret") return;
+      lignes.push('<div class="cm-ligne' + (e.etat === "refus" ? " erreur" : "") + '" data-envoi="' + e.id + '"><div class="cm-mini">' + (EXT_VIDEO.test(e.fichier.name) ? "🎬" : "📷") + '</div><div><div class="cm-nom">' + esc(e.fichier.name) + '</div><div class="cm-detail">' + octets(e.fichier.size) + " · " +
+        (e.etat === "refus" ? '<span class="cm-erreur">' + esc(e.erreur) + "</span>" : e.etat === "envoi" ? "envoi en cours…" : "en attente d'envoi") + '</div><div class="cm-barre"><span style="width:' + Math.round(e.pct * 100) + '%"></span></div></div><div class="cm-droite">' +
+        (e.etat === "refus" ? '<button type="button" class="bouton-secondaire" data-oubli="' + e.id + '">Retirer</button>' : "") + "</div></div>");
+    });
+    serveur.forEach((f) => {
+      const mini = f.type === "photo" ? '<img class="cm-mini" alt="" src="' + (f.sortie ? "/compresseur-media/" + S.lot + "/miniature/" + f.n + ".jpg?t=" + f.sortie.taille : (S.miniatures[f.n] || "/compresseur-media/" + S.lot + "/miniature/" + f.n + ".jpg?source=1")) + '">' : '<div class="cm-mini">🎬</div>';
+      const dims = (f.largeur ? f.largeur + "×" + f.hauteur : "") + (f.duree ? " · " + duree(f.duree) : "");
+      let etat = "";
+      if (f.statut === "ok") {
+        const gain = Math.round((1 - f.sortie.taille / f.taille) * 100);
+        etat = '<span class="cm-resultat">✔ ' + octets(f.taille) + " → " + octets(f.sortie.taille) + "</span> " + (gain > 0 ? '<span class="cm-gain">(−' + gain + " %)</span>" : '<span class="cm-detail">(pas plus petit)</span>') + ' <span class="cm-detail">· ' + f.sortie.format + " " + f.sortie.largeur + "×" + f.sortie.hauteur + "</span>";
+      } else if (f.statut === "erreur") etat = '<span class="cm-erreur">✖ ' + esc(f.message) + "</span>";
+      else if (f.statut === "annule") etat = '<span class="cm-detail">Annulé</span>';
+      else if (f.statut === "en_cours") etat = "Compression… " + Math.round(f.progression * 100) + " %";
+      else etat = S.enCours ? "En attente de son tour…" : "Prêt";
+      const note = f.statut === "ok" && f.message ? '<div class="cm-detail">ℹ️ ' + esc(f.message) + "</div>" : "";
+      lignes.push('<div class="cm-ligne' + (f.statut === "erreur" ? " erreur" : "") + '" data-n="' + f.n + '">' + mini + '<div><div class="cm-nom">' + esc(f.nom) + '</div><div class="cm-detail">' + (f.type === "photo" ? "Photo" : "Vidéo") + " · " + octets(f.taille) + (dims ? " · " + dims : "") + "</div><div>" + etat + "</div>" + note +
+        (f.statut === "en_cours" ? '<div class="cm-barre"><span style="width:' + Math.round(f.progression * 100) + '%"></span></div>' : "") + '</div><div class="cm-droite">' +
+        (f.sortie ? '<a class="bouton-secondaire" href="/compresseur-media/' + S.lot + "/fichier/" + f.n + '">⬇️ Télécharger</a>' : "") + (S.enCours ? "" : '<button type="button" class="bouton-secondaire" data-retirer="' + f.n + '" title="Retirer ce fichier">✕</button>') + "</div></div>");
+    });
+    liste.innerHTML = lignes.join("");
+    const genres = new Set(serveur.map((f) => f.type));
+    $("cm-carte-photo").hidden = !genres.has("photo"); $("cm-carte-video").hidden = !genres.has("video");
+    $("cm-zone-reglages").hidden = serveur.length === 0;
+    const pret = serveur.length > 0 && !S.envois && !S.file.some((e) => e.etat === "attente");
+    $("cm-lancer").disabled = !pret || S.enCours; $("cm-lancer").textContent = serveur.some((f) => f.sortie) ? "Compresser de nouveau" : "Compresser " + serveur.length + " fichier" + (serveur.length > 1 ? "s" : "");
+    $("cm-annuler").hidden = !S.enCours; $("cm-vider").disabled = S.enCours;
+    const ok = serveur.filter((f) => f.sortie);
+    $("cm-zip").hidden = ok.length === 0 || S.enCours; if (S.lot) $("cm-zip").href = "/compresseur-media/" + S.lot + "/zip";
+    const avant = ok.reduce((s, f) => s + f.taille, 0), apres = ok.reduce((s, f) => s + f.sortie.taille, 0);
+    $("cm-bilan").hidden = ok.length === 0; $("cm-bilan").innerHTML = ok.length ? "<strong>Total : " + octets(avant) + " → " + octets(apres) + "</strong>" + (apres < avant ? ' <span class="cm-gain">(−' + Math.round((1 - apres / avant) * 100) + " %)</span>" : "") + " sur " + ok.length + " fichier" + (ok.length > 1 ? "s" : "") : "";
+  }
+  $("cm-liste").addEventListener("click", async (e) => {
+    const retirer = e.target.closest("[data-retirer]"), oubli = e.target.closest("[data-oubli]");
+    if (oubli) { S.file = S.file.filter((x) => x.id !== oubli.dataset.oubli); dessiner(); return; }
+    if (!retirer) return;
+    try { const r = await appel("/compresseur-media/" + S.lot + "/retirer/" + retirer.dataset.retirer, { method: "POST" }); S.file = S.file.filter((x) => !(x.resultat && x.resultat.n === Number(retirer.dataset.retirer))); majServeur(r); } catch (x) { message(x.message, "erreur"); }
+  });
+  function majServeur(etat) { S.fichiers = etat.fichiers; S.enCours = etat.en_cours; dessiner(); const g = $("cm-barre-globale"); g.hidden = !etat.en_cours; g.firstElementChild.style.width = Math.round(etat.avancement * 100) + "%"; }
+  $("cm-vider").addEventListener("click", () => {
+    if (!confirm("Retirer tous les fichiers ?")) return;
+    if (S.lot) fetch("/compresseur-media/" + S.lot + "/fermer", { method: "POST", credentials: "same-origin" });
+    S.lot = null; S.fichiers = []; S.file = []; S.miniatures = {}; message(""); dessiner();
+  });
+
+  // ---------- compression
+  $("cm-lancer").addEventListener("click", async () => {
+    const r = lireReglages();
+    if (r.photo.mode === "taille" && !(r.photo.cible_octets >= 5120)) { message("Poids maximum des photos : 5 Ko au minimum.", "erreur"); return; }
+    if (r.video.mode === "taille" && !(r.video.cible_octets >= 51200)) { message("Poids maximum des vidéos : 50 Ko au minimum.", "erreur"); return; }
+    message("");
+    try {
+      majServeur(await appel("/compresseur-media/" + S.lot + "/lancer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) }));
+      suivre();
+    } catch (e) { message(e.message, "erreur"); }
+  });
+  $("cm-annuler").addEventListener("click", async () => { try { majServeur(await appel("/compresseur-media/" + S.lot + "/annuler", { method: "POST" })); } catch (e) { message(e.message, "erreur"); } });
+  async function suivre() {
+    try {
+      const e = await appel("/compresseur-media/" + S.lot + "/etat");
+      majServeur(e);
+      if (e.en_cours) { setTimeout(suivre, 900); return; }
+      const erreurs = e.fichiers.filter((f) => f.statut === "erreur").length;
+      message(e.ok + " fichier" + (e.ok > 1 ? "s" : "") + " compressé" + (e.ok > 1 ? "s" : "") + (erreurs ? ", " + erreurs + " en échec" : "") + ".", erreurs ? "erreur" : "ok");
+    } catch (x) { message(x.message, "erreur"); }
+  }
+  window.addEventListener("beforeunload", (e) => { if (S.enCours || S.fichiers.length) { e.preventDefault(); e.returnValue = ""; } });
+  dessiner();
+})();
+</script>
+{% endraw %}
+{% endblock %}

@@ -26,3 +26,4 @@ staticmap
 tzdata
 imageio-ffmpeg
 pymupdf
+pillow-heif

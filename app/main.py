@@ -125,6 +125,8 @@ from . import (
     baisse_google,
     pdf_outils,
     pdf_routes,
+    compression_media,
+    compression_routes,
     suivi_ads,
     suivi_assorh,
     reporting_sheet,
@@ -788,6 +790,8 @@ planificateur.add_job(lambda: suivi_goldunion.rafraichir(SessionLocal, seulement
 planificateur.add_job(lambda: baisse_google.releve_hebdomadaire(SessionLocal), "cron", day_of_week="mon", hour=7, minute=0, timezone="Europe/Brussels", id="suivi_baisse_google")
 # Outils PDF : les documents ouverts (dossier temporaire) sont effaces au bout de quelques heures.
 planificateur.add_job(pdf_outils.purger, "interval", minutes=30, id="purge_outils_pdf")
+# Compresseur photos / videos : lots effaces au bout de quelques heures.
+planificateur.add_job(compression_media.purger, "interval", minutes=30, id="purge_compresseur_media")
 planificateur.start()
 
 
@@ -8208,6 +8212,7 @@ async def lire_pubs_suivi(request: Request, db: Session = Depends(obtenir_sessio
 
 # --- Outils PDF (voir pdf_outils.py et pdf_routes.py) ----------------------------------------------------------------------------------------------
 app.include_router(pdf_routes.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request)))
+app.include_router(compression_routes.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request)))
 
 
 # --- Baisse de visibilite Google (France, Espagne, Italie) : statistiques, fiches, rangs, reponses des IA, annuaires -------------------------------
