@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% set page_actuelle = "audits" %}
+{% block titre %}Audit {{ audit.nom }} — Fiche Locale{% endblock %}
+{% block tete_supplementaire %}
+<style>
+  .af-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem auto 1rem; max-width: 1040px; }
+  .af-actions form { display: inline; margin: 0; }
+  .af-lien { display: flex; gap: 0.4rem; flex: 1 1 320px; align-items: center; min-width: 0; }
+  .af-lien input { flex: 1; min-width: 0; font-size: 0.85rem; }
+  .af-encours { max-width: 640px; margin: 2rem auto; text-align: center; background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1.6rem; color: var(--texte); }
+  .af-encours .barre { height: 10px; border-radius: 999px; background: var(--carte-bordure); overflow: hidden; margin: 1rem 0 0.6rem; }
+  .af-encours .barre > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s; }
+  .af-erreur { max-width: 640px; margin: 2rem auto; background: rgba(220, 38, 38, 0.1); border: 1px solid var(--danger); border-radius: 14px; padding: 1.2rem; color: var(--danger); font-weight: 600; }
+</style>
+{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/audits">&larr; Tous les audits</a></p>
+{% if audit.statut == "EN_COURS" %}
+<div class="af-encours" id="af-encours">
+  <h1>Analyse de « {{ audit.nom }} »</h1>
+  <p class="texte-discret">Position sur la carte, site web, annuaires et réponses des IA : environ une minute.</p>
+  <div class="barre"><span id="af-barre" style="width: {{ audit.progression or 0 }}%"></span></div>
+  <p id="af-message">{{ audit.message }}</p>
+</div>
+<script>
+(function () {
+  const barre = document.getElementById("af-barre"), message = document.getElementById("af-message");
+  function suivre() {
+    fetch("/audits/{{ audit.id }}/etat", { credentials: "same-origin", cache: "no-store" }).then((r) => r.json()).then((e) => {
+      barre.style.width = (e.progression || 0) + "%"; message.textContent = e.message || "";
+      if (e.statut === "EN_COURS") setTimeout(suivre, 1500); else location.reload();
+    }).catch(() => setTimeout(suivre, 4000));
+  }
+  setTimeout(suivre, 1500);
+})();
+</script>
+{% elif audit.statut == "ERREUR" %}
+<div class="af-erreur">⚠️ {{ audit.message }}
+  <form method="post" action="/audits/{{ audit.id }}/relancer" style="margin-top: 0.8rem;"><button type="submit">Relancer l'audit</button></form>
+</div>
+{% else %}
+<div class="af-actions af-pas-impression">
+  {% if audit.partage_actif %}
+  <div class="af-lien"><input type="text" id="af-lien" value="{{ lien_public }}" readonly aria-label="Lien à partager avec le prospect"><button type="button" class="bouton-secondaire" id="af-copier">Copier le lien</button></div>
+  <a class="bouton-secondaire" href="{{ lien_public }}" target="_blank" rel="noopener">Voir la page du prospect</a>
+  {% else %}<span class="texte-discret">Le lien public est désactivé.</span>{% endif %}
+  <a class="bouton-secondaire" href="/audits/{{ audit.id }}/pdf">📄 PDF</a>
+  <form method="post" action="/audits/{{ audit.id }}/partage"><input type="hidden" name="action" value="{{ 'couper' if audit.partage_actif else 'activer' }}"><button type="submit" class="bouton-secondaire">{{ 'Couper le lien' if audit.partage_actif else 'Réactiver le lien' }}</button></form>
+  {% if audit.partage_actif %}<form method="post" action="/audits/{{ audit.id }}/partage" onsubmit="return confirm('Créer un nouveau lien ? L\'ancien cessera de fonctionner.');"><input type="hidden" name="action" value="renouveler"><button type="submit" class="bouton-secondaire">Nouveau lien</button></form>{% endif %}
+  <form method="post" action="/audits/{{ audit.id }}/relancer" onsubmit="return confirm('Refaire l\'analyse ? Cela consomme à nouveau des requêtes payantes.');"><button type="submit" class="bouton-secondaire">↻ Relancer</button></form>
+  <form method="post" action="/audits/{{ audit.id }}/supprimer" onsubmit="return confirm('Supprimer cet audit et son lien public ?');"><button type="submit" class="bouton-secondaire bouton-danger">Supprimer</button></form>
+</div>
+{% include "_audit_fiche_corps.html" %}
+<script>
+(function () {
+  const b = document.getElementById("af-copier"), champ = document.getElementById("af-lien");
+  if (!b) return;
+  b.addEventListener("click", () => { champ.select(); try { navigator.clipboard.writeText(champ.value); } catch (e) { document.execCommand("copy"); } b.textContent = "Lien copié ✓"; setTimeout(() => { b.textContent = "Copier le lien"; }, 2500); });
+})();
+</script>
+{% endif %}
+{% endblock %}

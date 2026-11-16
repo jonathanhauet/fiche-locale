@@ -1433,6 +1433,28 @@ class SuiviAgence(Base):
     client = relationship("Client", back_populates="suivi_agence")
 
 
+class AuditFiche(Base):
+    """Audit complet d'une fiche Google de prospect (voir audit_fiche.py) : donnees collectees et resultat (score, themes, priorites) en JSON, lien public secret."""
+
+    __tablename__ = "audits_fiche"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, unique=True, nullable=False, index=True)       # lien a partager avec le prospect
+    nom = Column(String, default="")
+    ville = Column(String, default="")
+    statut = Column(String, default="EN_COURS")                          # EN_COURS, PRET, ERREUR
+    message = Column(String, default="")
+    progression = Column(Integer, default=0)
+    score = Column(Integer, nullable=True)
+    options_json = Column(Text, default="")
+    donnees_json = Column(Text, default="")
+    resultat_json = Column(Text, default="")
+    lead_id = Column(Integer, nullable=True)
+    partage_actif = Column(Boolean, default=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+    maj_le = Column(DateTime, default=datetime.utcnow)
+
+
 class SuiviBaisse(Base):
     """Analyse de la baisse de visibilite Google d'une agence (voir baisse_google.py) : statistiques par semaine, etat et modifications de la fiche, rangs sur les requetes cles, presence dans les reponses IA, annuaires. Tout en JSON."""
 

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titre %}Audit de la fiche Google de {{ audit.nom }}{% endblock %}
+{% block tete_supplementaire %}
+<meta name="robots" content="noindex, nofollow">
+<style>
+  .afp { padding: 1.2rem max(1rem, env(safe-area-inset-left)) 3rem; }
+  .afp-entete { max-width: 1040px; margin: 0 auto 1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; flex-wrap: wrap; color: var(--texte); }
+  .afp-entete strong { font-size: 1.05rem; }
+  .afp-encours { max-width: 640px; margin: 3rem auto; text-align: center; background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1.6rem; color: var(--texte); }
+  .afp-encours .barre { height: 10px; border-radius: 999px; background: var(--carte-bordure); overflow: hidden; margin: 1rem 0 0.6rem; }
+  .afp-encours .barre > span { display: block; height: 100%; background: var(--accent); }
+</style>
+{% endblock %}
+{% block corps %}
+<main class="afp">
+  {% if audit.statut == "PRET" %}
+  <div class="afp-entete af-pas-impression"><strong>Audit de votre fiche Google</strong>
+    <span><a class="bouton-secondaire" href="/audit/{{ audit.token }}/pdf">📄 Télécharger en PDF</a></span></div>
+  {% include "_audit_fiche_corps.html" %}
+  {% elif audit.statut == "EN_COURS" %}
+  <div class="afp-encours"><h1>Votre audit est en cours de préparation</h1><div class="barre"><span style="width: {{ audit.progression or 0 }}%"></span></div><p>{{ audit.message }}</p><p class="texte-discret">Cette page se met à jour toute seule.</p></div>
+  <script>setTimeout(() => location.reload(), 4000);</script>
+  {% else %}
+  <div class="afp-encours"><h1>Audit indisponible</h1><p>Cet audit n'a pas pu être finalisé. Merci de revenir vers la personne qui vous l'a envoyé.</p></div>
+  {% endif %}
+</main>
+{% endblock %}

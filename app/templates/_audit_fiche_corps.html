@@ -1,0 +1,229 @@
+{# Corps de l'audit complet : partage entre la page connectee et la page publique. Variables : audit, resultat, donnees, fiche, af, public. #}
+{% macro pastille(statut) %}<span class="af-pastille af-{{ statut }}" aria-hidden="true"></span>{% endmacro %}
+{% set score = resultat.score %}
+{% set rayon = 52 %}
+<style>
+  .af { max-width: 1040px; margin: 0 auto; color: var(--texte); line-height: 1.5; }
+  .af h2 { font-size: 1.25rem; margin: 2rem 0 0.2rem; }
+  .af h3 { font-size: 1.02rem; margin: 0; }
+  .af .af-sous { color: var(--texte-discret); font-size: 0.9rem; margin: 0 0 0.8rem; }
+  .af-carte { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1rem 1.2rem; box-shadow: var(--ombre); color: var(--texte); }
+  .af-hero { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 1.2rem; align-items: center; }
+  .af-hero h1 { font-size: 1.6rem; margin: 0 0 0.3rem; word-break: break-word; }
+  .af-meta { color: var(--texte-discret); font-size: 0.92rem; margin: 0.15rem 0; }
+  .af-note { font-weight: 700; color: var(--texte); }
+  .af-note .af-etoile { color: #d98a06; }
+  .af-anneau { position: relative; width: 170px; height: 170px; justify-self: center; }
+  .af-anneau svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .af-anneau .fond { stroke: var(--carte-bordure); }
+  .af-anneau .valeur { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .af-anneau .valeur strong { font-size: 2.6rem; line-height: 1; }
+  .af-anneau .valeur span { font-size: 0.85rem; font-weight: 700; }
+  .af-themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.7rem; margin-top: 1rem; }
+  .af-theme { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 12px; padding: 0.7rem 0.9rem; color: var(--texte); text-decoration: none; display: block; }
+  .af-theme:hover { border-color: var(--accent); }
+  .af-theme .nom { font-size: 0.88rem; font-weight: 600; display: block; }
+  .af-theme .pct { display: block; font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+  .af-barre { display: block; height: 7px; border-radius: 999px; background: var(--carte-bordure); overflow: hidden; margin-top: 0.35rem; }
+  .af-barre > span { display: block; height: 100%; border-radius: 999px; }
+  .af-pastille { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; flex: none; }
+  .af-ok { background: #16a34a; } .af-attention { background: #d98a06; } .af-probleme { background: #dc2626; } .af-inconnu { background: #6b7280; }
+  .af-resume p { margin: 0 0 0.6rem; font-size: 1.02rem; }
+  .af-idees { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.7rem; margin-top: 0.7rem; }
+  .af-idee { border: 1px solid var(--carte-bordure); border-radius: 10px; padding: 0.6rem 0.8rem; background: var(--fond); color: var(--texte); }
+  .af-idee strong { display: block; margin-bottom: 0.2rem; }
+  .af-priorites { display: flex; flex-direction: column; gap: 0.7rem; }
+  .af-prio { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); gap: 0.8rem; }
+  .af-rang { width: 2.2rem; height: 2.2rem; border-radius: 50%; color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .af-rang.af-ok { background: #15803d; } .af-rang.af-attention { background: #b45309; } .af-rang.af-probleme { background: #b91c1c; }
+  .af-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.35rem 0; }
+  .af-badge { font-size: 0.76rem; font-weight: 700; border-radius: 999px; padding: 0.12rem 0.6rem; background: rgba(120, 120, 120, 0.22); color: var(--texte); }
+  .af-badge.gain { background: #dcfce7; color: #14532d; }
+  .af-constat { font-size: 0.9rem; color: var(--texte-discret); margin: 0.2rem 0; }
+  .af-prio details { margin-top: 0.3rem; font-size: 0.92rem; }
+  .af-prio summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .af-prio dl { margin: 0.4rem 0 0; }
+  .af-prio dt { font-weight: 700; margin-top: 0.4rem; }
+  .af-prio dd { margin: 0.1rem 0 0; }
+  .af-forts { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .af-fort { background: #dcfce7; color: #14532d; border-radius: 999px; padding: 0.25rem 0.8rem; font-size: 0.88rem; font-weight: 600; }
+  .af-detail summary { cursor: pointer; display: flex; align-items: center; gap: 0.6rem; font-weight: 700; padding: 0.2rem 0; }
+  .af-detail summary .pct { margin-left: auto; }
+  .af-detail { margin-bottom: 0.5rem; }
+  .af-controles { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.9rem; }
+  .af-controles td { padding: 0.45rem 0.4rem; border-top: 1px solid var(--carte-bordure); vertical-align: top; color: var(--texte); }
+  .af-controles td:first-child { width: 1.4rem; }
+  .af-controles .lib { font-weight: 600; white-space: nowrap; }
+  .af-controles .det { color: var(--texte-discret); }
+  .af-controles .pts { text-align: right; white-space: nowrap; font-weight: 700; }
+  .af-carte-pos { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+  .af-grille { display: inline-grid; gap: 4px; }
+  .af-cellule { width: 2.6rem; height: 2.6rem; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; font-size: 0.95rem; }
+  .af-cellule.v { background: #15803d; } .af-cellule.o { background: #b45309; } .af-cellule.r { background: #b91c1c; } .af-cellule.g { background: #6b7280; }
+  .af-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .af-table th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--texte-discret); padding: 0.3rem 0.4rem; }
+  .af-table td { padding: 0.4rem; border-top: 1px solid var(--carte-bordure); color: var(--texte); }
+  .af-ia { display: grid; gap: 0.7rem; }
+  .af-reponse { border: 1px solid var(--carte-bordure); border-radius: 10px; padding: 0.6rem 0.8rem; background: var(--fond); color: var(--texte); }
+  .af-reponse .tete { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-weight: 700; }
+  .af-oui { color: #14532d; background: #dcfce7; } .af-non { color: #7f1d1d; background: #fee2e2; }
+  .af-etiquette { font-size: 0.78rem; font-weight: 800; border-radius: 999px; padding: 0.1rem 0.6rem; }
+  .af-reponse details { font-size: 0.88rem; margin-top: 0.3rem; }
+  .af-reponse summary { cursor: pointer; color: var(--accent); }
+  .af-puces { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.3rem; }
+  .af-puce { font-size: 0.8rem; border: 1px solid var(--carte-bordure); border-radius: 999px; padding: 0.1rem 0.6rem; color: var(--texte); background: var(--carte); }
+  .af-liste { margin: 0.3rem 0 0; padding-left: 1.1rem; }
+  .af-liste li { margin-bottom: 0.4rem; }
+  .af-cta { text-align: center; background: var(--carte); border: 1px solid var(--accent); border-radius: 14px; padding: 1.4rem 1rem; margin-top: 2rem; color: var(--texte); }
+  .af-cta h2 { margin-top: 0; }
+  .af-pied { font-size: 0.82rem; color: var(--texte-discret); margin: 1.5rem 0 0; }
+  @media (max-width: 720px) { .af-hero { grid-template-columns: 1fr; } .af-carte-pos { grid-template-columns: 1fr; } .af-controles .lib { white-space: normal; } }
+  @media print { .af-pas-impression { display: none !important; } }
+</style>
+
+<div class="af">
+  <section class="af-carte af-hero">
+    <div>
+      <h1>{{ audit.nom }}</h1>
+      {% if fiche.categorie %}<p class="af-meta">{{ fiche.categorie }}{% if fiche.categories_secondaires %} · {{ fiche.categories_secondaires[:2]|join(' · ') }}{% endif %}</p>{% endif %}
+      {% if fiche.adresse %}<p class="af-meta">📍 {{ fiche.adresse }}</p>{% endif %}
+      {% if fiche.note %}<p class="af-meta"><span class="af-note"><span class="af-etoile">★</span> {{ ('%.1f'|format(fiche.note)).replace('.', ',') }}</span> · {{ fiche.nombre_avis or 0 }} avis{% if fiche.total_photos is not none %} · {{ fiche.total_photos }} photos{% endif %}</p>{% endif %}
+      {% if fiche.site_web %}<p class="af-meta">🌐 {{ fiche.site_web }}</p>{% endif %}
+      <p class="af-meta">Audit réalisé le {{ date_audit }}, à partir de données publiques.</p>
+    </div>
+    {% if score is not none %}
+    <div class="af-anneau" role="img" aria-label="Score global : {{ score }} sur 100, {{ resultat.libelle }}">
+      <svg viewBox="0 0 120 120"><circle class="fond" cx="60" cy="60" r="{{ rayon }}" fill="none" stroke-width="12"/><circle cx="60" cy="60" r="{{ rayon }}" fill="none" stroke-width="12" stroke-linecap="round" stroke="{{ resultat.couleur }}" stroke-dasharray="{{ (score * 2 * 3.14159 * rayon / 100)|round(1) }} {{ (2 * 3.14159 * rayon)|round(1) }}"/></svg>
+      <div class="valeur"><strong>{{ score }}</strong><span style="color: {{ resultat.couleur }}">{{ resultat.libelle }}</span></div>
+    </div>
+    {% endif %}
+  </section>
+
+  <div class="af-themes">
+    {% for t in resultat.themes %}
+    <a class="af-theme" href="#theme-{{ t.code }}">
+      <span class="nom"><span>{{ t.icone }} {{ t.nom }}</span></span>
+      <span class="pct">{% if t.score is not none %}{{ t.score }}<small>/100</small>{% else %}<small>non évalué</small>{% endif %}</span>
+      <span class="af-barre"><span style="width: {{ t.score or 0 }}%; background: {{ af.etiquette_score(t.score)[1] }}"></span></span>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if resultat.synthese and resultat.synthese.resume %}
+  <h2>En bref</h2>
+  <section class="af-carte af-resume">
+    <p>{{ resultat.synthese.resume }}</p>
+    {% if resultat.synthese.opportunites %}
+    <div class="af-idees">{% for o in resultat.synthese.opportunites %}<div class="af-idee"><strong>💡 {{ o.titre }}</strong>{{ o.texte }}</div>{% endfor %}</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <h2>À corriger en priorité</h2>
+  <p class="af-sous">Classé par gain de score possible, impact et effort : en commençant par le haut, ce sont les actions les plus rentables.</p>
+  {% if resultat.priorites %}
+  <div class="af-priorites">
+    {% for p in resultat.priorites[:8] %}
+    <article class="af-carte af-prio">
+      <div class="af-rang af-{{ p.statut }}">{{ loop.index }}</div>
+      <div>
+        <h3>{{ p.titre }}</h3>
+        <div class="af-badges"><span class="af-badge gain">+{{ ('%.1f'|format(p.gain)).replace('.', ',') }} points</span><span class="af-badge">Impact {{ af.IMPACTS[p.impact]|lower }}</span><span class="af-badge">Effort {{ af.EFFORTS[p.effort]|lower }}</span><span class="af-badge">{{ af.ICONES_THEME[p.theme] }} {{ af.NOMS_THEME[p.theme] }}</span></div>
+        <p class="af-constat">{{ p.constat }}</p>
+        <details><summary>Pourquoi et comment</summary><dl><dt>Pourquoi c'est important</dt><dd>{{ p.pourquoi }}</dd><dt>Comment faire</dt><dd>{{ p.comment }}</dd></dl></details>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}<section class="af-carte">✅ Aucun point bloquant relevé : la fiche est solide sur tout ce que l'on peut vérifier publiquement.</section>{% endif %}
+
+  {% if resultat.points_forts %}
+  <h2>Ce qui est déjà bien</h2>
+  <div class="af-forts">{% for p in resultat.points_forts %}<span class="af-fort" title="{{ p.detail }}">✓ {{ p.libelle }}</span>{% endfor %}</div>
+  {% endif %}
+
+  <h2>Détail des contrôles</h2>
+  <p class="af-sous">Chaque point est noté ; un contrôle impossible à faire (donnée non disponible) n'est pas compté dans le score.</p>
+  {% for t in resultat.themes %}{% if t.controles %}
+  <details class="af-carte af-detail" id="theme-{{ t.code }}" {{ 'open' if t.score is not none and t.score < 70 else '' }}>
+    <summary><span>{{ t.icone }} {{ t.nom }}</span><span class="pct" style="color: {{ af.etiquette_score(t.score)[1] }}">{% if t.score is not none %}{{ t.score }}/100{% else %}non évalué{% endif %}</span></summary>
+    <table class="af-controles">
+      {% for c in t.controles %}
+      <tr><td>{{ pastille(c.statut) }}</td><td class="lib">{{ c.libelle }}</td><td class="det">{{ c.detail }}</td><td class="pts">{% if c.fraction is not none %}{{ ('%.1f'|format(c.points)).replace('.', ',') }} / {{ ('%.1f'|format(c.points_max)).replace('.', ',') }}{% else %}—{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}{% endfor %}
+
+  {% set releves = (donnees.positions or {}).releves or [] %}
+  {% if releves %}
+  <h2>Visibilité sur la carte</h2>
+  <p class="af-sous">Pour chaque recherche, on interroge Google Maps depuis plusieurs points autour de l'adresse (le nord est en haut) : vert = dans les 3 premiers, orange = dans les 10 premiers, rouge = plus loin, gris = absent.</p>
+  {% for r in releves %}
+  {% set taille = (r.points|length) ** 0.5 %}
+  {% set taille = taille|round|int %}
+  <section class="af-carte" style="margin-bottom: 0.8rem;">
+    <h3>« {{ r.mot_cle }} »</h3>
+    <p class="af-sous">Visible sur {{ r.resume.pourcentage_couverture }} % de la zone testée{% if r.resume.position_moyenne %}, position moyenne {{ r.resume.position_moyenne }}{% endif %}.</p>
+    <div class="af-carte-pos">
+      <div class="af-grille" style="grid-template-columns: repeat({{ taille }}, 2.6rem);" aria-label="Positions par point de la zone">
+        {% for ligne in range(taille - 1, -1, -1) %}{% for col in range(taille) %}
+        {% set p = r.points[ligne * taille + col].position %}
+        <span class="af-cellule {{ 'g' if p is none else 'v' if p <= 3 else 'o' if p <= 10 else 'r' }}">{{ p if p is not none else '–' }}</span>
+        {% endfor %}{% endfor %}
+      </div>
+      <div>
+        {% if r.concurrents %}
+        <table class="af-table"><thead><tr><th>Ressort devant elle</th><th>Position moy.</th><th>Note</th><th>Avis</th></tr></thead>
+          <tbody>{% for c in r.concurrents %}<tr><td>{{ c.nom }}</td><td>{{ c.position_moyenne }}</td><td>{{ c.note if c.note else '—' }}</td><td>{{ c.nombre_avis if c.nombre_avis else '—' }}</td></tr>{% endfor %}</tbody></table>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+  {% endif %}
+
+  {% set ia = donnees.ia %}
+  {% if ia and ia.questions %}
+  <h2>Visibilité dans les assistants IA</h2>
+  <p class="af-sous">De plus en plus de clients demandent directement à ChatGPT ou Gemini. On leur pose la question comme un client le ferait, avec la ville.</p>
+  <div class="af-ia">
+    {% for q in ia.questions %}
+    <section class="af-carte">
+      <h3>« {{ q.question }} »</h3>
+      {% for moteur, nom in (('chatgpt', 'ChatGPT'), ('gemini', 'Gemini')) %}{% set r = q.moteurs.get(moteur) %}{% if r %}
+      <div class="af-reponse" style="margin-top: 0.5rem;">
+        <div class="tete">{{ nom }}
+          {% if r.erreur %}<span class="af-etiquette">indisponible</span>
+          {% elif r.citee %}<span class="af-etiquette af-oui">✓ entreprise citée</span>
+          {% else %}<span class="af-etiquette af-non">✗ entreprise absente de la réponse</span>{% endif %}</div>
+        {% if r.concurrents and not r.citee %}<p class="af-constat">L'IA recommande à sa place : <strong>{{ r.concurrents[:5]|join(', ') }}</strong></p>{% endif %}
+        {% if r.extrait %}<details><summary>Voir un extrait de la réponse</summary><p>{{ r.extrait }}{% if r.extrait|length >= 900 %}…{% endif %}</p></details>{% endif %}
+      </div>
+      {% endif %}{% endfor %}
+    </section>
+    {% endfor %}
+    {% if ia.domaines %}
+    <section class="af-carte"><h3>Sites que les IA ont consultés pour répondre</h3><p class="af-sous">Pour être cité, il faut être présent et cohérent sur ces sources.</p>
+      <div class="af-puces">{% for d in ia.domaines[:12] %}<span class="af-puce">{{ d.domaine }}{% if d.nb > 1 %} ×{{ d.nb }}{% endif %}</span>{% endfor %}</div></section>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h2>Idées propres à votre activité</h2>
+  <section class="af-carte"><ul class="af-liste">{% for c in resultat.conseils %}<li><strong>{{ c.titre }}.</strong> {{ c.texte }}</li>{% endfor %}</ul></section>
+
+  <h2>Ce que cet audit ne peut pas voir</h2>
+  <p class="af-sous">Il s'appuie sur des données publiques, sans accès à la fiche : ces points se vérifient avec le propriétaire (et font partie d'un audit approfondi).</p>
+  <section class="af-carte"><ul class="af-liste">{% for v in resultat.a_verifier %}<li><strong>{{ v.titre }}.</strong> {{ v.detail }}</li>{% endfor %}</ul></section>
+
+  {% if public %}
+  <section class="af-cta af-pas-impression">
+    <h2>On corrige tout ça ensemble ?</h2>
+    <p>Cet audit montre où votre fiche perd des clients. Je peux m'en occuper : mise à jour de la fiche, avis, présence dans les annuaires et dans les IA.</p>
+    <p><a class="bouton" href="mailto:hello@jonathanhauet.fr?subject=Audit%20de%20ma%20fiche%20Google%20-%20{{ audit.nom|urlencode }}">✉️ Me contacter</a>
+      <a class="bouton-secondaire" href="https://www.jonathanhauet.com" target="_blank" rel="noopener">Voir le site</a></p>
+  </section>
+  {% endif %}
+  <p class="af-pied">Audit généré automatiquement à partir de données publiques (Google Maps, site web, annuaires, assistants IA). Les résultats des IA varient d'un jour à l'autre ; le score est un indicateur, pas une garantie.</p>
+</div>

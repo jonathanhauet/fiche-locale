@@ -127,6 +127,8 @@ from . import (
     pdf_routes,
     compression_media,
     compression_routes,
+    audit_fiche,
+    audit_fiche_routes,
     suivi_ads,
     suivi_assorh,
     reporting_sheet,
@@ -8213,6 +8215,7 @@ async def lire_pubs_suivi(request: Request, db: Session = Depends(obtenir_sessio
 # --- Outils PDF (voir pdf_outils.py et pdf_routes.py) ----------------------------------------------------------------------------------------------
 app.include_router(pdf_routes.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request)))
 app.include_router(compression_routes.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request)))
+app.include_router(audit_fiche_routes.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request), lambda: SessionLocal()))
 
 
 # --- Baisse de visibilite Google (France, Espagne, Italie) : statistiques, fiches, rangs, reponses des IA, annuaires -------------------------------

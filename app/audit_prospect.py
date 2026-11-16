@@ -81,7 +81,26 @@ def _item_vers_fiche(item: dict) -> dict:
         "total_photos": item.get("total_photos") or 0,
         "a_horaires": bool(item.get("work_hours")),
         "a_categorie_secondaire": bool(item.get("additional_categories")),
+        # Champs supplementaires pour l'audit complet (audit_fiche.py) : tous lus defensivement, absents = « inconnu » et non « mauvais ».
+        "est_revendiquee": item.get("is_claimed"),
+        "categories_secondaires": [c for c in (item.get("additional_categories") or []) if isinstance(c, str)],
+        "jours_ouverts": _jours_ouverts(item.get("work_hours")),
+        "lien_rdv": item.get("book_online_url") or "",
+        "lien_contact": item.get("contact_url") or "",
+        "photo_principale": item.get("main_image") or "",
+        "repartition_avis": note.get("rating_distribution") or item.get("rating_distribution") or {},
+        "domaine": item.get("domain") or "",
+        "place_id": item.get("place_id") or "",
+        "ville_fiche": ((item.get("address_info") or {}).get("city") or ""),
     }
+
+
+def _jours_ouverts(horaires):
+    """Nombre de jours ou la fiche indique des horaires (None si l'information n'existe pas)."""
+    planning = (horaires or {}).get("timetable") if isinstance(horaires, dict) else None
+    if not isinstance(planning, dict):
+        return None
+    return sum(1 for creneaux in planning.values() if creneaux)
 
 
 def rechercher_candidats_fiche(nom_entreprise: str, ville: str) -> list[dict]:

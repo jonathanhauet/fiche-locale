@@ -28,6 +28,7 @@
       </span>
     </div>
     <div class="actions-avis">
+      <a class="bouton-secondaire" href="/audits?nom={{ lead.entreprise_nom|urlencode }}&ville={{ lead.ville|urlencode }}&lead_id={{ lead.id }}">🏁 Audit complet (score + IA)</a>
       {% if lead.envoye_le %}
       <span class="etiquette-statut etiquette-publie_live">✓ Envoyé le {{ lead.envoye_le | heure_locale("%d/%m/%Y") }}</span>
       <a class="bouton-secondaire" href="/leads/{{ lead.id }}/pdf">📥 PDF</a>

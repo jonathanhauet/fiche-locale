@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% set page_actuelle = "audits" %}
+{% block titre %}Audits de fiches — Fiche Locale{% endblock %}
+{% block tete_supplementaire %}
+<style>
+  .au-carte { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1rem 1.2rem; margin: 1rem 0; color: var(--texte); }
+  .au-ligne { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; }
+  .au-ligne label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.88rem; font-weight: 600; flex: 1 1 220px; min-width: 0; }
+  .au-candidats { display: grid; gap: 0.6rem; margin: 0.8rem 0; }
+  .au-candidat { display: flex; gap: 0.7rem; align-items: flex-start; border: 2px solid var(--carte-bordure); border-radius: 12px; padding: 0.7rem 0.9rem; cursor: pointer; background: var(--fond); color: var(--texte); }
+  .au-candidat:has(input:checked) { border-color: var(--accent); background: rgba(79, 110, 247, 0.1); }
+  .au-candidat input { width: auto; margin-top: 0.3rem; }
+  .au-candidat strong { display: block; }
+  .au-candidat .detail { font-size: 0.86rem; color: var(--texte-discret); }
+  .au-options { display: grid; gap: 0.6rem; margin: 0.8rem 0; }
+  .au-options label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.88rem; font-weight: 600; }
+  .au-options label.case { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 500; }
+  .au-options label.case input { width: auto; margin: 0; }
+  .au-message { margin: 0.6rem 0; padding: 0.55rem 0.85rem; border-radius: 10px; font-size: 0.92rem; border: 1px solid var(--carte-bordure); background: var(--carte); }
+  .au-message.erreur { border-color: var(--danger); background: rgba(220, 38, 38, 0.1); color: var(--danger); font-weight: 600; }
+  .au-score { display: inline-block; min-width: 2.6rem; text-align: center; font-weight: 800; border-radius: 999px; padding: 0.1rem 0.6rem; color: #fff; }
+  .au-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  .au-table th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--texte-discret); padding: 0.4rem; }
+  .au-table td { padding: 0.55rem 0.4rem; border-top: 1px solid var(--carte-bordure); color: var(--texte); }
+</style>
+{% endblock %}
+{% block contenu %}
+<div class="barre-titre"><h1>Audits de fiches</h1></div>
+<p class="texte-discret">
+  Un audit complet d'une fiche Google à partir de ses données publiques : score sur 100 par thème (fiche, photos, avis, visibilité sur la carte, site, annuaires, <strong>visibilité dans ChatGPT et Gemini</strong>),
+  actions classées par priorité, page à envoyer au prospect et PDF. Pour un audit à partir du seul PDF, voir aussi <a href="/prospection">Prospection</a>.
+</p>
+
+<section class="au-carte" id="au-nouveau" data-lead="{{ lead_id or '' }}">
+  <h2 style="margin-top:0">Nouvel audit</h2>
+  <div class="au-ligne">
+    <label>Nom de l'entreprise<input type="text" id="au-nom" value="{{ nom }}" maxlength="120" placeholder="Ex. Plomberie Durand" autocomplete="off"></label>
+    <label>Ville<input type="text" id="au-ville" value="{{ ville }}" maxlength="80" placeholder="Ex. Lens" autocomplete="off"></label>
+    <button type="button" id="au-chercher">Rechercher la fiche</button>
+  </div>
+  <div class="au-message" id="au-message" hidden></div>
+  <div class="au-candidats" id="au-candidats"></div>
+  <div id="au-suite" hidden>
+    <div class="au-options">
+      <label>Recherches testées sur la carte (1 ou 2, séparées par une virgule)<input type="text" id="au-mots" maxlength="170" placeholder="Ex. plombier lens, dépannage plomberie lens"></label>
+      <label>Précision de la carte
+        <select id="au-grille"><option value="3" selected>3 × 3 points (recommandé)</option><option value="5">5 × 5 points (plus précis, plus long)</option></select></label>
+      <label class="case"><input type="checkbox" id="au-ia" checked> Interroger ChatGPT et Gemini (visibilité dans les IA, environ 0,40 $)</label>
+    </div>
+    <p class="texte-discret" id="au-cout"></p>
+    <button type="button" id="au-lancer">Lancer l'audit</button>
+  </div>
+</section>
+
+<h2>Audits réalisés</h2>
+{% if audits %}
+<div class="conteneur-tableau"><table class="au-table">
+  <thead><tr><th>Entreprise</th><th>Ville</th><th>Date</th><th>Score</th><th>État</th><th></th></tr></thead>
+  <tbody>{% for a in audits %}
+    <tr><td><a href="/audits/{{ a.id }}"><strong>{{ a.nom }}</strong></a></td><td>{{ a.ville }}</td><td>{{ a.date }}</td>
+      <td>{% if a.score is not none %}<span class="au-score" style="background: {{ a.etiquette[1] }}">{{ a.score }}</span> <span class="texte-discret">{{ a.etiquette[0] }}</span>{% else %}—{% endif %}</td>
+      <td>{{ 'Terminé' if a.statut == 'PRET' else 'En cours…' if a.statut == 'EN_COURS' else 'Échec' }}</td>
+      <td><a class="bouton-secondaire" href="/audits/{{ a.id }}">Ouvrir</a></td></tr>
+  {% endfor %}</tbody></table></div>
+{% else %}<p class="texte-discret">Aucun audit pour l'instant.</p>{% endif %}
+
+{% raw %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  let candidats = [], choisi = null;
+  const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function message(t, genre) { const m = $("au-message"); m.textContent = t || ""; m.hidden = !t; m.className = "au-message" + (genre ? " " + genre : ""); }
+  async function appel(url, corps) {
+    const r = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+    let j = {}; try { j = await r.json(); } catch (e) { /* corps non JSON */ }
+    if (!r.ok) throw new Error(j.erreur || "Erreur " + r.status);
+    return j;
+  }
+  function majCout() {
+    const mots = Math.max(1, $("au-mots").value.split(",").filter((m) => m.trim()).slice(0, 2).length), t = Number($("au-grille").value);
+    const base = 0.04 + 0.002 * t * t * mots, ia = $("au-ia").checked ? 0.4 : 0;
+    $("au-cout").textContent = "Coût estimé de l'analyse : environ " + (base + ia).toFixed(2).replace(".", ",") + " $ (requêtes DataForSEO" + (ia ? ", ChatGPT, Gemini et Claude" : "") + ").";
+  }
+  ["au-mots", "au-grille", "au-ia"].forEach((id) => $(id).addEventListener("input", majCout));
+  async function chercher() {
+    message(""); $("au-candidats").innerHTML = ""; $("au-suite").hidden = true; choisi = null;
+    const nom = $("au-nom").value.trim(), ville = $("au-ville").value.trim();
+    if (!nom || !ville) { message("Indiquez le nom de l'entreprise et la ville.", "erreur"); return; }
+    $("au-chercher").disabled = true; message("Recherche de la fiche…");
+    try {
+      const r = await appel("/audits/rechercher", { nom: nom, ville: ville });
+      candidats = r.candidats || [];
+      if (!candidats.length) { message("Aucune fiche trouvée : essayez avec un nom plus court ou une autre ville.", "erreur"); return; }
+      message("Choisissez la bonne fiche :");
+      $("au-candidats").innerHTML = candidats.map((c, i) => '<label class="au-candidat"><input type="radio" name="au-fiche" value="' + i + '"' + (i === 0 ? " checked" : "") + '><span><strong>' + esc(c.titre) + '</strong><span class="detail">' + esc(c.categorie || "") + (c.adresse ? " · " + esc(c.adresse) : "") + (c.note ? " · ★ " + String(c.note).replace(".", ",") + " (" + (c.nombre_avis || 0) + " avis)" : "") + (c.total_photos != null ? " · " + c.total_photos + " photos" : "") + "</span></span></label>").join("");
+      document.querySelectorAll("input[name=au-fiche]").forEach((x) => x.addEventListener("change", choisir));
+      choisir();
+      $("au-suite").hidden = false;
+    } catch (e) { message(e.message, "erreur"); } finally { $("au-chercher").disabled = false; }
+  }
+  function choisir() {
+    const sel = document.querySelector("input[name=au-fiche]:checked");
+    choisi = sel ? candidats[Number(sel.value)] : null;
+    if (choisi) { const ville = $("au-ville").value.trim(), act = (choisi.categorie || "").toLowerCase(); $("au-mots").value = act ? act + " " + ville.toLowerCase() : ""; }
+    majCout();
+  }
+  $("au-chercher").addEventListener("click", chercher);
+  [$("au-nom"), $("au-ville")].forEach((e) => e.addEventListener("keydown", (ev) => { if (ev.key === "Enter") chercher(); }));
+  $("au-lancer").addEventListener("click", async () => {
+    if (!choisi) { message("Choisissez une fiche.", "erreur"); return; }
+    $("au-lancer").disabled = true; message("Lancement…");
+    try {
+      const r = await appel("/audits/lancer", { fiche: choisi, ville: $("au-ville").value.trim(), mots_cles: $("au-mots").value.split(",").map((m) => m.trim()).filter(Boolean).slice(0, 2), taille_grille: Number($("au-grille").value), ia: $("au-ia").checked, lead_id: Number($("au-nouveau").dataset.lead) || null });
+      location.href = "/audits/" + r.id;
+    } catch (e) { message(e.message, "erreur"); $("au-lancer").disabled = false; }
+  });
+  majCout();
+  if ($("au-nom").value && $("au-ville").value) chercher();
+})();
+</script>
+{% endraw %}
+{% endblock %}
