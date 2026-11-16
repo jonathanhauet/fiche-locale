@@ -75,6 +75,17 @@ select { font: inherit; font-size: .85rem; color: var(--ink); background: var(--
 button { font: inherit; font-weight: 700; color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
 .generale { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 12px; scroll-margin-top: 16px; }
 .generale > p { margin: 0; color: var(--muted); }
+.afaire { background: var(--surface); color: var(--ink); border: 2px solid var(--accent); border-radius: 12px; padding: 18px 20px; display: grid; gap: 12px; scroll-margin-top: 16px; }
+.afaire > p { margin: 0; color: var(--muted); font-size: .9rem; }
+.taches { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.taches form { margin: 0; display: block; }
+button.tache { width: 100%; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: start; text-align: left; font-weight: 500; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+button.tache:hover { border-color: var(--accent); }
+.case { grid-row: span 2; width: 22px; height: 22px; border: 2px solid var(--accent); border-radius: 6px; display: grid; place-items: center; color: var(--accent-ink); background: var(--surface); font-weight: 700; line-height: 1; margin-top: 1px; }
+button.tache.faite .case { background: var(--accent); }
+.tache-texte { overflow-wrap: anywhere; }
+.tache-date { font-size: .8rem; color: var(--muted); }
+button.tache.faite .tache-texte { text-decoration: line-through; color: var(--muted); }
 .etat { color: var(--muted); padding: 18px 20px; border: 1px dashed var(--line); border-radius: 12px; margin: 0; }
 footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
 @media (max-width: 480px) {
@@ -92,6 +103,26 @@ footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--lin
     <p>Franck, voici ce que j'ai fait pour AssoRH, jour par jour. Tu peux laisser une remarque ou une question sous chaque journée. Jonathan</p>
     {% if maj %}<span class="maj">Dernière mise à jour : {{ maj }}</span>{% endif %}
   </header>
+
+  {% if taches %}
+  <section class="afaire" id="a-faire" aria-labelledby="t-afaire">
+    <h2 id="t-afaire">À faire de ton côté{% if nb_a_faire %} ({{ nb_a_faire }}){% endif %}</h2>
+    <ul class="taches">
+      {% for t in taches %}
+      <li>
+        <form method="post" action="/assorh/{{ jeton }}/tache/{{ t.id }}">
+          <button type="submit" class="tache{% if t.faite %} faite{% endif %}" aria-pressed="{{ 'true' if t.faite else 'false' }}">
+            <span class="case" aria-hidden="true">{% if t.faite %}✓{% endif %}</span>
+            <span class="tache-texte">{{ t.texte }}</span>
+            <span class="tache-date">{{ t.libelle }}{% if t.faite %} · fait le {{ t.faite_quand }}{% endif %}</span>
+          </button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    <p>Clique sur une tâche pour la cocher quand c'est fait.</p>
+  </section>
+  {% endif %}
 
   <section aria-labelledby="t-journal">
     <h2 id="t-journal">Journal, jour par jour</h2>

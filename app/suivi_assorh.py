@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import Session
 
 from .database import Base, obtenir_session
@@ -63,6 +63,19 @@ class RemarqueSuiviAssoRH(Base):
     jour = Column(String(10), default="")
     auteur = Column(String, default="Franck")
     texte = Column(Text, nullable=False)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class TacheSuiviAssoRH(Base):
+    """Petite tache confiee a Franck (ajoutee par l'API a la demande de Jonathan) : Franck la coche sur la page quand c'est fait."""
+
+    __tablename__ = "suivi_assorh_taches"
+
+    id = Column(Integer, primary_key=True)
+    jour = Column(String(10), default="")                      # journee a laquelle la demande a ete faite
+    texte = Column(Text, nullable=False)
+    faite = Column(Boolean, default=False)
+    faite_le = Column(DateTime, nullable=True)
     cree_le = Column(DateTime, default=datetime.utcnow)
 
 
@@ -110,6 +123,22 @@ def _remarque_json(r: RemarqueSuiviAssoRH) -> dict:
     return {"id": r.id, "jour": r.jour or "", "auteur": r.auteur, "texte": r.texte, "cree_le": r.cree_le.isoformat() if r.cree_le else ""}
 
 
+def _tache_json(t: TacheSuiviAssoRH) -> dict:
+    return {"id": t.id, "jour": t.jour or "", "texte": t.texte, "faite": bool(t.faite),
+            "faite_le": t.faite_le.isoformat() if t.faite_le else "", "cree_le": t.cree_le.isoformat() if t.cree_le else ""}
+
+
+def taches_pour_page(db: Session) -> list:
+    """Taches a faire d'abord (les plus anciennes en premier), puis les 10 dernieres faites."""
+    a_faire = db.query(TacheSuiviAssoRH).filter(TacheSuiviAssoRH.faite.isnot(True)).order_by(TacheSuiviAssoRH.cree_le, TacheSuiviAssoRH.id).all()
+    faites = db.query(TacheSuiviAssoRH).filter(TacheSuiviAssoRH.faite.is_(True)).order_by(TacheSuiviAssoRH.faite_le.desc(), TacheSuiviAssoRH.id.desc()).limit(10).all()
+    return [{
+        "id": t.id, "texte": t.texte, "faite": bool(t.faite),
+        "libelle": f"Demandé le {libelle_jour(t.jour).lower()}" if _date_valide(t.jour or "") else "",
+        "faite_quand": libelle_moment(t.faite_le) if t.faite_le else "",
+    } for t in a_faire + faites]
+
+
 def _introuvable():
     return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES)
 
@@ -127,10 +156,24 @@ def page_suivi(jeton: str, request: Request, db: Session = Depends(obtenir_sessi
     jours = [{
         "date": j.date, "libelle": libelle_jour(j.date), "resume": j.resume or "", "actions": _actions(j), "remarques": remarques.get(j.date, []),
     } for j in db.query(JourSuiviAssoRH).order_by(JourSuiviAssoRH.date.desc()).all()]
+    taches = taches_pour_page(db)
     return _templates.TemplateResponse(request, "suivi_assorh.html", {
         "jeton": jeton, "jours": jours, "generales": remarques.get("", []), "auteurs": AUTEURS,
-        "maj": jours[0]["libelle"] if jours else "",
+        "maj": jours[0]["libelle"] if jours else "", "taches": taches, "nb_a_faire": sum(1 for t in taches if not t["faite"]),
     }, headers=ENTETES)
+
+
+@routeur.post("/assorh/{jeton}/tache/{tache_id}")
+def cocher_tache(jeton: str, tache_id: int, db: Session = Depends(obtenir_session)):
+    """Franck coche (ou decoche) une tache."""
+    if not _correspond(jeton, EMPREINTE_JETON):
+        return _introuvable()
+    tache = db.get(TacheSuiviAssoRH, tache_id)
+    if tache:
+        tache.faite = not tache.faite
+        tache.faite_le = datetime.utcnow() if tache.faite else None
+        db.commit()
+    return RedirectResponse(f"/assorh/{jeton}#a-faire", status_code=303, headers=ENTETES)
 
 
 @routeur.post("/assorh/{jeton}/remarque")
@@ -165,7 +208,36 @@ def api_journal(request: Request, db: Session = Depends(obtenir_session)):
         return _refus()
     jours = [{"date": j.date, "resume": j.resume or "", "actions": _actions(j)} for j in db.query(JourSuiviAssoRH).order_by(JourSuiviAssoRH.date.desc()).all()]
     remarques = [_remarque_json(r) for r in db.query(RemarqueSuiviAssoRH).order_by(RemarqueSuiviAssoRH.cree_le, RemarqueSuiviAssoRH.id).all()]
-    return JSONResponse({"jours": jours, "remarques": remarques}, headers=ENTETES)
+    taches = [_tache_json(t) for t in db.query(TacheSuiviAssoRH).order_by(TacheSuiviAssoRH.cree_le, TacheSuiviAssoRH.id).all()]
+    return JSONResponse({"jours": jours, "remarques": remarques, "taches": taches}, headers=ENTETES)
+
+
+@routeur.post("/api/assorh/taches")
+async def api_ajouter_tache(request: Request, db: Session = Depends(obtenir_session)):
+    """Tache pour Franck : {"texte": "...", "jour": "AAAA-MM-JJ"} (jour de la demande, aujourd'hui par defaut)."""
+    if not _cle_valide(request):
+        return _refus()
+    try:
+        corps = await request.json()
+    except ValueError:
+        return JSONResponse({"erreur": "corps JSON attendu"}, status_code=400)
+    texte = str((corps or {}).get("texte") or "").strip()[:600] if isinstance(corps, dict) else ""
+    if not texte:
+        return JSONResponse({"erreur": "texte vide"}, status_code=400)
+    jour = corps.get("jour") if _date_valide(corps.get("jour") or "") else date.today().isoformat()
+    tache = TacheSuiviAssoRH(jour=jour, texte=texte)
+    db.add(tache)
+    db.commit()
+    return JSONResponse({"ok": True, "tache": _tache_json(tache)}, headers=ENTETES)
+
+
+@routeur.delete("/api/assorh/taches/{tache_id}")
+def api_supprimer_tache(tache_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    if not _cle_valide(request):
+        return _refus()
+    nb = db.query(TacheSuiviAssoRH).filter_by(id=tache_id).delete()
+    db.commit()
+    return JSONResponse({"ok": True, "supprimes": nb}, headers=ENTETES)
 
 
 @routeur.put("/api/assorh/jours/{date_jour}")
