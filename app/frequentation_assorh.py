@@ -28,7 +28,7 @@ from . import google_oauth, search_console
 from .database import Base, SessionLocal
 
 SITE_SC = "sc-domain:assorh.fr"
-PROPRIETE_GA4 = os.getenv("ASSORH_GA4_PROPRIETE", "")           # identifiant numerique de la propriete GA4 « assorh.fr » (pas le G-…)
+PROPRIETE_GA4 = os.getenv("ASSORH_GA4_PROPRIETE", "564468213")  # identifiant numerique de la propriete GA4 « assorh.fr » (pas le G-…)
 NB_JOURS = 28
 DUREE_CACHE = timedelta(hours=6)
 URL_GA4 = "https://analyticsdata.googleapis.com/v1beta/properties/{}:runReport"
