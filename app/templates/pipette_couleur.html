@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% set page_actuelle = "pipette" %}
+{% block titre %}Pipette à couleurs — Fiche Locale{% endblock %}
+{% block tete_supplementaire %}
+<style>
+  .pp { max-width: 980px; }
+  .pp-grille { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+  .pp-carte { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: 14px; padding: 1rem 1.1rem; color: var(--texte); margin-bottom: 1rem; }
+  .pp-carte h2 { font-size: 1.05rem; margin: 0 0 0.6rem; }
+  .pp-pastille { height: 120px; border-radius: 12px; border: 1px solid var(--carte-bordure); margin-bottom: 0.7rem; display: flex; align-items: flex-end; justify-content: space-between; padding: 0.5rem 0.7rem; font-weight: 800; font-size: 1.1rem; }
+  .pp-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.4rem; }
+  .pp-actions button { font-size: 0.95rem; }
+  .pp-valeur { display: grid; grid-template-columns: 4.2rem minmax(0, 1fr) auto; gap: 0.4rem; align-items: center; margin: 0.35rem 0; }
+  .pp-valeur span { font-size: 0.82rem; font-weight: 700; color: var(--texte-discret); }
+  .pp-valeur input { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.95rem; width: 100%; min-width: 0; }
+  .pp-valeur button { font-size: 0.82rem; padding: 0.3rem 0.6rem; }
+  .pp-copie { color: #14532d; font-weight: 700; font-size: 0.85rem; min-height: 1.2rem; }
+  .pp-contraste { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+  .pp-echantillon { border-radius: 10px; padding: 0.7rem; text-align: center; border: 1px solid var(--carte-bordure); }
+  .pp-echantillon strong { display: block; font-size: 1.1rem; }
+  .pp-echantillon small { font-size: 0.78rem; font-weight: 700; }
+  .pp-zone { border: 2px dashed var(--carte-bordure); border-radius: 12px; padding: 1rem; text-align: center; background: var(--fond); color: var(--texte); }
+  .pp-zone.survol { border-color: var(--accent); background: rgba(79, 110, 247, 0.08); }
+  .pp-zone p { margin: 0.2rem 0; }
+  .pp-canvas-bloc { position: relative; margin-top: 0.8rem; overflow: auto; max-height: 560px; border-radius: 10px; border: 1px solid var(--carte-bordure); background: repeating-conic-gradient(#d4d4d4 0% 25%, #fff 0% 50%) 50% / 16px 16px; }
+  .pp-canvas-bloc canvas { display: block; max-width: 100%; cursor: crosshair; }
+  .pp-loupe { position: fixed; z-index: 50; width: 132px; height: 132px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px #111, 0 6px 18px rgba(0, 0, 0, 0.5); pointer-events: none; overflow: hidden; display: none; image-rendering: pixelated; }
+  .pp-loupe canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+  .pp-loupe .viseur { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 2px solid #fff; outline: 1px solid #111; box-sizing: border-box; }
+  .pp-loupe .code { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font: 700 11px ui-monospace, Consolas, monospace; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+  .pp-historique { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .pp-historique button { width: 2.3rem; height: 2.3rem; border-radius: 8px; border: 2px solid var(--carte-bordure); cursor: pointer; padding: 0; }
+  .pp-historique button:hover, .pp-historique button.actif { border-color: var(--accent); }
+  .pp-note { font-size: 0.84rem; color: var(--texte-discret); margin: 0.3rem 0 0; }
+  .pp-erreur { color: var(--danger); font-weight: 600; font-size: 0.9rem; }
+  @media (max-width: 800px) { .pp-grille { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block contenu %}
+<div class="barre-titre"><h1>Pipette à couleurs</h1></div>
+<p class="texte-discret">Cliquez sur la pipette puis sur n'importe quelle couleur de votre écran (sur ce site comme dans une autre fenêtre) : le code hexadécimal s'affiche, prêt à copier. Vous pouvez aussi déposer une image ou une capture d'écran et cliquer dessus.</p>
+
+<div class="pp">
+  <div class="pp-grille">
+    <div>
+      <section class="pp-carte">
+        <div class="pp-pastille" id="pp-pastille"><span id="pp-pastille-hex">#4F6EF7</span><span id="pp-pastille-nom"></span></div>
+        <div class="pp-actions">
+          <button type="button" id="pp-pipette" class="pipette-propre">💧 Pipette sur l'écran</button>
+          <input type="color" id="pp-choix" value="#4f6ef7" title="Choisir une couleur dans la palette" aria-label="Choisir une couleur dans la palette" style="width:3rem; height:2.4rem; padding:2px; cursor:pointer;">
+        </div>
+        <p class="pp-note" id="pp-support"></p>
+        <div class="pp-valeur"><span>HEX</span><input type="text" id="pp-hex" value="#4F6EF7" maxlength="7" spellcheck="false" aria-label="Code hexadécimal"><button type="button" class="bouton-secondaire" data-copie="pp-hex">Copier</button></div>
+        <div class="pp-valeur"><span>RGB</span><input type="text" id="pp-rgb" readonly aria-label="RGB"><button type="button" class="bouton-secondaire" data-copie="pp-rgb">Copier</button></div>
+        <div class="pp-valeur"><span>HSL</span><input type="text" id="pp-hsl" readonly aria-label="HSL"><button type="button" class="bouton-secondaire" data-copie="pp-hsl">Copier</button></div>
+        <div class="pp-valeur"><span>HEX sans #</span><input type="text" id="pp-hex-nu" readonly aria-label="Hexadécimal sans dièse"><button type="button" class="bouton-secondaire" data-copie="pp-hex-nu">Copier</button></div>
+        <div class="pp-copie" id="pp-copie" role="status"></div>
+      </section>
+      <section class="pp-carte">
+        <h2>Lisibilité du texte sur cette couleur</h2>
+        <div class="pp-contraste">
+          <div class="pp-echantillon" id="pp-ech-blanc" style="color:#fff"><strong>Texte blanc</strong><small id="pp-ratio-blanc"></small></div>
+          <div class="pp-echantillon" id="pp-ech-noir" style="color:#000"><strong>Texte noir</strong><small id="pp-ratio-noir"></small></div>
+        </div>
+        <p class="pp-note">Contraste recommandé : 4,5 minimum pour un texte courant (AA), 7 pour un excellent confort (AAA).</p>
+      </section>
+    </div>
+    <div>
+      <section class="pp-carte">
+        <h2>Prélever sur une image</h2>
+        <div class="pp-zone" id="pp-zone">
+          <p><strong>Déposez une image ici</strong>, collez une capture d'écran (Ctrl+V), ou</p>
+          <p><button type="button" class="bouton-secondaire" id="pp-fichier-bouton">Choisir une image…</button></p>
+          <input type="file" id="pp-fichier" accept="image/*" hidden>
+        </div>
+        <div class="pp-canvas-bloc" id="pp-bloc" hidden><canvas id="pp-canvas" aria-label="Image : cliquez pour prélever une couleur"></canvas></div>
+        <p class="pp-note" id="pp-image-note" hidden>Survolez l'image pour voir la loupe, cliquez pour prélever la couleur du pixel.</p>
+        <div class="pp-erreur" id="pp-erreur" role="alert"></div>
+      </section>
+      <section class="pp-carte">
+        <h2>Couleurs prélevées</h2>
+        <div class="pp-historique" id="pp-historique"></div>
+        <p class="pp-note" id="pp-vide">Les couleurs que vous prélevez s'affichent ici (gardées dans ce navigateur).</p>
+        <div class="pp-actions" style="margin-top:0.6rem"><button type="button" class="bouton-secondaire" id="pp-copier-tout" hidden>Copier tous les codes</button><button type="button" class="bouton-secondaire bouton-danger" id="pp-effacer" hidden>Vider</button></div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="pp-loupe" id="pp-loupe" aria-hidden="true"><canvas id="pp-loupe-canvas" width="11" height="11"></canvas><div class="viseur"></div><div class="code" id="pp-loupe-code"></div></div>
+
+{% raw %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  let courante = "#4F6EF7";
+
+  // ---------- conversions
+  function normaliser(texte) {
+    let t = String(texte || "").trim().replace(/^#/, "");
+    if (/^[0-9a-f]{3}$/i.test(t)) t = t.split("").map((c) => c + c).join("");
+    return /^[0-9a-f]{6}$/i.test(t) ? "#" + t.toUpperCase() : null;
+  }
+  const versRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const versHex = (r, g, b) => "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("").toUpperCase();
+  function versHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, l = (max + min) / 2;
+    let h = 0, s = 0;
+    if (d) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h = Math.round(h * 60); if (h < 0) h += 360;
+    }
+    return [h, Math.round(s * 100), Math.round(l * 100)];
+  }
+  function luminance(r, g, b) {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  }
+  const contraste = (l1, l2) => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  const verdict = (ratio) => ratio >= 7 ? "AAA · excellent" : ratio >= 4.5 ? "AA · lisible" : ratio >= 3 ? "Gros texte seulement" : "Illisible";
+
+  // ---------- affichage
+  function afficher(hex, depuisSaisie) {
+    courante = hex;
+    const [r, g, b] = versRgb(hex), [h, s, l] = versHsl(r, g, b), lum = luminance(r, g, b);
+    $("pp-pastille").style.background = hex;
+    const texte = contraste(lum, 1) >= contraste(lum, 0) ? "#fff" : "#000";
+    $("pp-pastille").style.color = texte;
+    $("pp-pastille-hex").textContent = hex;
+    if (!depuisSaisie) { $("pp-hex").value = hex; $("pp-hex").style.outline = ""; }
+    $("pp-hex-nu").value = hex.slice(1);
+    $("pp-rgb").value = "rgb(" + r + ", " + g + ", " + b + ")";
+    $("pp-hsl").value = "hsl(" + h + ", " + s + "%, " + l + "%)";
+    $("pp-choix").value = hex.toLowerCase();
+    $("pp-ech-blanc").style.background = hex; $("pp-ech-noir").style.background = hex;
+    const cb = contraste(lum, 1), cn = contraste(lum, 0);
+    $("pp-ratio-blanc").textContent = cb.toFixed(2).replace(".", ",") + " : 1 · " + verdict(cb);
+    $("pp-ratio-noir").textContent = cn.toFixed(2).replace(".", ",") + " : 1 · " + verdict(cn);
+    document.querySelectorAll(".pp-historique button").forEach((b) => b.classList.toggle("actif", b.dataset.hex === hex));
+  }
+
+  // ---------- historique (garde dans le navigateur)
+  let historique = [];
+  try { historique = (JSON.parse(localStorage.getItem("pipette-historique") || "[]") || []).filter(normaliser).slice(0, 30); } catch (e) { historique = []; }
+  function sauver() { try { localStorage.setItem("pipette-historique", JSON.stringify(historique)); } catch (e) { /* stockage indisponible : sans importance */ } }
+  function dessinerHistorique() {
+    const zone = $("pp-historique");
+    zone.innerHTML = "";
+    historique.forEach((hex) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.hex = hex; b.style.background = hex; b.title = hex; b.setAttribute("aria-label", "Couleur " + hex);
+      b.addEventListener("click", () => afficher(hex));
+      zone.appendChild(b);
+    });
+    $("pp-vide").hidden = historique.length > 0; $("pp-copier-tout").hidden = !historique.length; $("pp-effacer").hidden = !historique.length;
+  }
+  function prelever(hex) {
+    historique = [hex].concat(historique.filter((h) => h !== hex)).slice(0, 30);
+    sauver(); dessinerHistorique(); afficher(hex);
+  }
+  $("pp-effacer").addEventListener("click", () => { historique = []; sauver(); dessinerHistorique(); });
+
+  // ---------- copie
+  function copier(texte, libelle) {
+    const fin = () => { $("pp-copie").textContent = "✓ " + libelle + " copié : " + texte; clearTimeout(copier.t); copier.t = setTimeout(() => { $("pp-copie").textContent = ""; }, 3500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(texte).then(fin, () => repli(texte, fin));
+    else repli(texte, fin);
+  }
+  function repli(texte, fin) {
+    const t = document.createElement("textarea"); t.value = texte; t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); fin(); } catch (e) { $("pp-copie").textContent = "Copie impossible : sélectionnez le code et faites Ctrl+C."; }
+    t.remove();
+  }
+  document.querySelectorAll("[data-copie]").forEach((b) => b.addEventListener("click", () => { const c = $(b.dataset.copie); copier(c.value, b.parentElement.firstElementChild.textContent); }));
+  $("pp-copier-tout").addEventListener("click", () => copier(historique.join(", "), "Liste"));
+
+  // ---------- saisie et selecteur natif
+  $("pp-hex").addEventListener("input", () => { const h = normaliser($("pp-hex").value); $("pp-hex").style.outline = h || !$("pp-hex").value.replace("#", "") ? "" : "2px solid var(--danger)"; if (h) afficher(h, true); });
+  $("pp-hex").addEventListener("change", () => { const h = normaliser($("pp-hex").value); if (h) prelever(h); else { $("pp-hex").value = courante; $("pp-hex").style.outline = ""; } });
+  $("pp-choix").addEventListener("change", () => prelever($("pp-choix").value.toUpperCase()));
+  $("pp-choix").addEventListener("input", () => afficher($("pp-choix").value.toUpperCase()));
+
+  // ---------- pipette sur l'ecran (Chrome, Edge, Opera)
+  const pipette = $("pp-pipette");
+  if ("EyeDropper" in window) {
+    $("pp-support").textContent = "Après le clic, déplacez la souris sur n'importe quel endroit de l'écran (même hors de cette fenêtre) et cliquez ; Échap pour annuler.";
+    pipette.addEventListener("click", async () => {
+      $("pp-erreur").textContent = "";
+      try { const r = await new window.EyeDropper().open(); const h = normaliser(r.sRGBHex); if (h) prelever(h); }
+      catch (e) { if (e && e.name !== "AbortError") $("pp-erreur").textContent = "La pipette n'a pas pu démarrer : " + (e.message || e.name); }
+    });
+  } else {
+    pipette.disabled = true;
+    $("pp-support").textContent = "Votre navigateur n'a pas de pipette d'écran (elle existe sur Chrome, Edge et Opera). Faites une capture d'écran, puis collez-la (Ctrl+V) ou déposez-la dans la zone « Prélever sur une image ».";
+  }
+
+  // ---------- prelevement sur une image
+  const canvas = $("pp-canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true }), loupe = $("pp-loupe"), loupeCanvas = $("pp-loupe-canvas"), lctx = loupeCanvas.getContext("2d");
+  let imageCharge = false;
+  function charger(fichier) {
+    $("pp-erreur").textContent = "";
+    if (!fichier || !/^image\//.test(fichier.type)) { $("pp-erreur").textContent = "Ce fichier n'est pas une image."; return; }
+    if (fichier.size > 40 * 1024 * 1024) { $("pp-erreur").textContent = "Image trop lourde (40 Mo maximum)."; return; }
+    const url = URL.createObjectURL(fichier), img = new Image();
+    img.onload = () => {
+      if (img.width * img.height > 60e6) { $("pp-erreur").textContent = "Image trop grande."; URL.revokeObjectURL(url); return; }
+      canvas.width = img.width; canvas.height = img.height; ctx.clearRect(0, 0, img.width, img.height); ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url); imageCharge = true; $("pp-bloc").hidden = false; $("pp-image-note").hidden = false;
+    };
+    img.onerror = () => { $("pp-erreur").textContent = "Image illisible."; URL.revokeObjectURL(url); };
+    img.src = url;
+  }
+  function pixelSous(e) {
+    const r = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) * canvas.width / r.width), y = Math.floor((e.clientY - r.top) * canvas.height / r.height);
+    if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return null;
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    return { x: x, y: y, hex: versHex(d[0], d[1], d[2]), alpha: d[3] };
+  }
+  canvas.addEventListener("mousemove", (e) => {
+    if (!imageCharge) return;
+    const p = pixelSous(e);
+    if (!p) { loupe.style.display = "none"; return; }
+    const demi = 5, sx = Math.max(0, Math.min(canvas.width - 11, p.x - demi)), sy = Math.max(0, Math.min(canvas.height - 11, p.y - demi));
+    lctx.imageSmoothingEnabled = false; lctx.clearRect(0, 0, 11, 11); lctx.drawImage(canvas, sx, sy, 11, 11, 0, 0, 11, 11);
+    loupe.style.display = "block"; loupe.style.left = Math.min(e.clientX + 18, window.innerWidth - 140) + "px"; loupe.style.top = Math.min(e.clientY + 18, window.innerHeight - 140) + "px";
+    $("pp-loupe-code").textContent = p.hex;
+  });
+  canvas.addEventListener("mouseleave", () => { loupe.style.display = "none"; });
+  canvas.addEventListener("click", (e) => {
+    const p = pixelSous(e);
+    if (p) { prelever(p.hex); if (p.alpha < 255) $("pp-erreur").textContent = "Ce pixel est " + (p.alpha ? "semi-transparent" : "transparent") + " : la couleur affichée ignore la transparence."; else $("pp-erreur").textContent = ""; }
+  });
+  $("pp-fichier-bouton").addEventListener("click", () => $("pp-fichier").click());
+  $("pp-fichier").addEventListener("change", (e) => { charger(e.target.files[0]); e.target.value = ""; });
+  const zone = $("pp-zone");
+  ["dragenter", "dragover"].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.add("survol"); }));
+  ["dragleave", "drop"].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.remove("survol"); }));
+  zone.addEventListener("drop", (e) => charger(e.dataTransfer.files[0]));
+  document.addEventListener("paste", (e) => {
+    const item = Array.from((e.clipboardData || {}).items || []).find((i) => /^image\//.test(i.type));
+    if (item) { e.preventDefault(); charger(item.getAsFile()); }
+  });
+
+  dessinerHistorique();
+  afficher(historique[0] || courante);
+})();
+</script>
+{% endraw %}
+{% endblock %}
