@@ -15,7 +15,7 @@
 <main class="afp">
   {% if audit.statut == "PRET" %}
   <div class="afp-entete af-pas-impression"><strong>Audit de votre fiche Google</strong>
-    <span><a class="bouton-secondaire" href="/audit/{{ audit.token }}/pdf">📄 Télécharger en PDF</a></span></div>
+    <span><a class="bouton-secondaire" href="/audit/{{ audit.token }}/synthese.pdf">📄 Synthèse (1 page)</a> <a class="bouton-secondaire" href="/audit/{{ audit.token }}/pdf">📄 Rapport complet (PDF)</a></span></div>
   {% include "_audit_fiche_corps.html" %}
   {% elif audit.statut == "EN_COURS" %}
   <div class="afp-encours"><h1>Votre audit est en cours de préparation</h1><div class="barre"><span style="width: {{ audit.progression or 0 }}%"></span></div><p>{{ audit.message }}</p><p class="texte-discret">Cette page se met à jour toute seule.</p></div>

@@ -44,7 +44,8 @@
   <div class="af-lien"><input type="text" id="af-lien" value="{{ lien_public }}" readonly aria-label="Lien à partager avec le prospect"><button type="button" class="bouton-secondaire" id="af-copier">Copier le lien</button></div>
   <a class="bouton-secondaire" href="{{ lien_public }}" target="_blank" rel="noopener">Voir la page du prospect</a>
   {% else %}<span class="texte-discret">Le lien public est désactivé.</span>{% endif %}
-  <a class="bouton-secondaire" href="/audits/{{ audit.id }}/pdf">📄 PDF</a>
+  <a class="bouton-secondaire" href="/audits/{{ audit.id }}/synthese.pdf" title="Une seule page A4 : score, priorités, IA, carte">📄 Synthèse 1 page</a>
+  <a class="bouton-secondaire" href="/audits/{{ audit.id }}/pdf">📄 PDF complet</a>
   <form method="post" action="/audits/{{ audit.id }}/partage"><input type="hidden" name="action" value="{{ 'couper' if audit.partage_actif else 'activer' }}"><button type="submit" class="bouton-secondaire">{{ 'Couper le lien' if audit.partage_actif else 'Réactiver le lien' }}</button></form>
   {% if audit.partage_actif %}<form method="post" action="/audits/{{ audit.id }}/partage" onsubmit="return confirm('Créer un nouveau lien ? L\'ancien cessera de fonctionner.');"><input type="hidden" name="action" value="renouveler"><button type="submit" class="bouton-secondaire">Nouveau lien</button></form>{% endif %}
   <form method="post" action="/audits/{{ audit.id }}/relancer" onsubmit="return confirm('Refaire l\'analyse ? Cela consomme à nouveau des requêtes payantes.');"><button type="submit" class="bouton-secondaire">↻ Relancer</button></form>

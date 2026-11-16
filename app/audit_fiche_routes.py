@@ -190,17 +190,34 @@ def creer_routeur(templates, utilisateur_connecte, rediriger_si_non_connecte, se
         audit = lire(audit_id)
         return _reponse_pdf(audit)
 
-    def _reponse_pdf(audit):
+    def _reponse_pdf(audit, synthese: bool = False, lien: str = ""):
         if not audit or audit.statut != "PRET":
             return HTMLResponse("Audit indisponible.", status_code=404)
         contexte = contexte_audit(audit)
         try:
-            octets = audit_fiche_pdf.generer_audit_fiche_pdf(audit.nom, audit.ville, contexte["donnees"], contexte["resultat"])
+            if synthese:
+                octets = audit_fiche_pdf.generer_synthese_pdf(audit.nom, audit.ville, contexte["donnees"], contexte["resultat"], lien)
+            else:
+                octets = audit_fiche_pdf.generer_audit_fiche_pdf(audit.nom, audit.ville, contexte["donnees"], contexte["resultat"])
         except Exception:
             journal.exception("PDF de l'audit")
             return HTMLResponse("Le PDF n'a pas pu être généré.", status_code=500)
-        nom_fichier = "audit_" + re.sub(r"[^a-z0-9]+", "_", audit.nom.lower())[:50].strip("_") + ".pdf"
+        nom_fichier = ("synthese_" if synthese else "audit_") + re.sub(r"[^a-z0-9]+", "_", audit.nom.lower())[:50].strip("_") + ".pdf"
         return Response(octets, media_type="application/pdf", headers={**ENTETES_PRIVES, "Content-Disposition": f'attachment; filename="{nom_fichier}"'})
+
+    def _lien_public(request: Request, audit) -> str:
+        if not audit.partage_actif:
+            return ""
+        return f"{request.headers.get('x-forwarded-proto') or request.url.scheme}://{request.headers.get('host') or request.url.netloc}/audit/{audit.token}"
+
+    @routeur.get("/audits/{audit_id}/synthese.pdf")
+    def synthese_pdf(audit_id: int, request: Request):
+        """Synthese de l'audit sur une seule page A4."""
+        redirection = rediriger_si_non_connecte(request)
+        if redirection:
+            return redirection
+        audit = lire(audit_id)
+        return _reponse_pdf(audit, True, _lien_public(request, audit) if audit else "")
 
     @routeur.post("/audits/{audit_id}/relancer")
     async def relancer(audit_id: int, request: Request):
@@ -286,6 +303,13 @@ def creer_routeur(templates, utilisateur_connecte, rediriger_si_non_connecte, se
         if not audit or not audit.partage_actif:
             return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PRIVES)
         return _reponse_pdf(audit)
+
+    @routeur.get("/audit/{token}/synthese.pdf")
+    def publique_synthese(token: str, request: Request):
+        audit = lire(token=token) if re.fullmatch(r"[A-Za-z0-9_-]{16,64}", token or "") else None
+        if not audit or not audit.partage_actif:
+            return HTMLResponse("Page introuvable.", status_code=404, headers=ENTETES_PRIVES)
+        return _reponse_pdf(audit, True, _lien_public(request, audit))
 
     @routeur.get("/audit/{token}/etat")
     def publique_etat(token: str):
