@@ -447,9 +447,9 @@ def questions_ia(fiche: dict, ville: str) -> list:
     return [f"{activite} à {ville}", f"Quel est le meilleur {activite} à {ville} ?"]
 
 
-def collecter_ia(fiche: dict, ville: str, outils: dict) -> dict:
-    """Pose les questions a ChatGPT et Gemini ; l'entreprise est-elle citee, et qui l'IA recommande-t-elle a sa place ?"""
-    questions = questions_ia(fiche, ville)
+def collecter_ia(fiche: dict, ville: str, outils: dict, questions: list = None) -> dict:
+    """Pose les questions a ChatGPT et Gemini (celles choisies d'apres le site, sinon les questions par defaut) ; l'entreprise est-elle citee, et qui l'IA recommande-t-elle a sa place ?"""
+    questions = [q for q in (questions or []) if isinstance(q, str) and q.strip()] or questions_ia(fiche, ville)
     taches = [(q, m) for q in questions for m in ("chatgpt", "gemini")]
 
     def une(tache):
@@ -599,6 +599,14 @@ def outils_reels() -> dict:
     }
 
 
+def suggestions(fiche: dict, ville: str, lire_html=None, proposer=None) -> dict:
+    """Recherches et questions suggerees d'apres le site de l'entreprise (voir suggestions_site.py)."""
+    from . import suggestions_site
+    if lire_html is None:
+        lire_html = outils_reels()["lire_html"]
+    return suggestions_site.suggerer(fiche, ville, lire_html, proposer)
+
+
 def mots_cles_par_defaut(fiche: dict, ville: str) -> list:
     activite = (fiche.get("categorie") or "").strip().lower()
     return [f"{activite} {ville.lower()}".strip()] if activite else []
@@ -611,7 +619,7 @@ def collecter(entree: dict, outils: dict = None, progression=lambda pct, message
     """
     outils = outils or outils_reels()
     fiche, ville = entree["fiche"], entree["ville"]
-    donnees = {"fiche": fiche, "ville": ville, "mots_cles": entree.get("mots_cles") or [], "etapes": {}}
+    donnees = {"fiche": fiche, "ville": ville, "mots_cles": entree.get("mots_cles") or [], "etapes": {}, "recherches_depuis_site": bool(entree.get("depuis_site"))}
     avancement = {"fait": 0}
     verrou = threading.Lock()
     etapes = [("positions", "Position sur la carte"), ("site", "Site web"), ("annuaires", "Annuaires")] + ([("ia", "Réponses de ChatGPT et Gemini")] if entree.get("ia", True) else [])
@@ -626,7 +634,7 @@ def collecter(entree: dict, outils: dict = None, progression=lambda pct, message
             elif nom == "annuaires":
                 valeur = collecter_annuaires(fiche, ville, outils)
             else:
-                valeur = collecter_ia(fiche, ville, outils)
+                valeur = collecter_ia(fiche, ville, outils, entree.get("questions_ia"))
             donnees[nom] = valeur
             donnees["etapes"][nom] = {"statut": "ok"}
         except Exception as erreur:

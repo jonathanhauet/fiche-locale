@@ -158,7 +158,7 @@
   {% set releves = (donnees.positions or {}).releves or [] %}
   {% if releves %}
   <h2>Visibilité sur la carte</h2>
-  <p class="af-sous">Pour chaque recherche, on interroge Google Maps depuis plusieurs points autour de l'adresse (le nord est en haut) : vert = dans les 3 premiers, orange = dans les 10 premiers, rouge = plus loin, gris = absent.</p>
+  <p class="af-sous">Pour chaque recherche, on interroge Google Maps depuis plusieurs points autour de l'adresse (le nord est en haut) : vert = dans les 3 premiers, orange = dans les 10 premiers, rouge = plus loin, gris = absent.{% if donnees.recherches_depuis_site %} Les recherches testées ont été choisies d'après les services présentés sur le site de l'entreprise.{% endif %}</p>
   {% for r in releves %}
   {% set taille = (r.points|length) ** 0.5 %}
   {% set taille = taille|round|int %}
@@ -186,7 +186,7 @@
   {% set ia = donnees.ia %}
   {% if ia and ia.questions %}
   <h2>Visibilité dans les assistants IA</h2>
-  <p class="af-sous">De plus en plus de clients demandent directement à ChatGPT ou Gemini. On leur pose la question comme un client le ferait, avec la ville.</p>
+  <p class="af-sous">De plus en plus de clients demandent directement à ChatGPT ou Gemini. On leur pose la question comme un client le ferait, avec la ville.{% if donnees.recherches_depuis_site %} Les questions sont tirées des services présentés sur le site de l'entreprise.{% endif %}</p>
   <div class="af-ia">
     {% for q in ia.questions %}
     <section class="af-carte">

@@ -18,6 +18,15 @@
   .au-options label.case input { width: auto; margin: 0; }
   .au-message { margin: 0.6rem 0; padding: 0.55rem 0.85rem; border-radius: 10px; font-size: 0.92rem; border: 1px solid var(--carte-bordure); background: var(--carte); }
   .au-message.erreur { border-color: var(--danger); background: rgba(220, 38, 38, 0.1); color: var(--danger); font-weight: 600; }
+  .au-sug { border: 1px solid var(--carte-bordure); border-radius: 12px; padding: 0.7rem 0.9rem; margin: 0.6rem 0; background: var(--fond); color: var(--texte); }
+  .au-sug-tete { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .au-sug-tete strong { font-size: 0.95rem; }
+  .au-sug-liste { display: grid; gap: 0.3rem; margin: 0.5rem 0; }
+  .au-sug-liste label.case { align-items: flex-start; font-weight: 500; }
+  .au-sug-liste label.case input { margin-top: 0.25rem; }
+  .au-sug-liste .pourquoi { display: block; font-size: 0.8rem; color: var(--texte-discret); }
+  .au-sug-liste label.case.limite { opacity: 0.5; }
+  .au-sug input[type="text"] { width: 100%; }
   .au-score { display: inline-block; min-width: 2.6rem; text-align: center; font-weight: 800; border-radius: 999px; padding: 0.1rem 0.6rem; color: #fff; }
   .au-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
   .au-table th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--texte-discret); padding: 0.4rem; }
@@ -42,7 +51,18 @@
   <div class="au-candidats" id="au-candidats"></div>
   <div id="au-suite" hidden>
     <div class="au-options">
-      <label>Recherches testées sur la carte (1 ou 2, séparées par une virgule)<input type="text" id="au-mots" maxlength="170" placeholder="Ex. plombier lens, dépannage plomberie lens"></label>
+      <div class="au-sug">
+        <div class="au-sug-tete"><strong>🔎 Recherches testées sur la carte (3 au maximum)</strong><button type="button" class="bouton-secondaire" id="au-sug-relancer">💡 Suggérer d'après le site</button></div>
+        <p class="texte-discret" id="au-sug-etat"></p>
+        <div class="au-sug-liste" id="au-sug-mots"></div>
+        <label>Ajouter la mienne<input type="text" id="au-mot-perso" maxlength="70" placeholder="Ex. dépannage chauffe-eau lens"></label>
+      </div>
+      <div class="au-sug" id="au-bloc-questions">
+        <div class="au-sug-tete"><strong>🤖 Questions posées à ChatGPT et Gemini (4 au maximum)</strong></div>
+        <p class="texte-discret">Des questions que de vrais clients poseraient, tirées des services du site : c'est ce qui rend l'audit crédible.</p>
+        <div class="au-sug-liste" id="au-sug-questions"></div>
+        <label>Ajouter la mienne<input type="text" id="au-question-perso" maxlength="160" placeholder="Ex. Qui peut réparer une fuite d'eau en urgence à Lens ?"></label>
+      </div>
       <label>Précision de la carte
         <select id="au-grille"><option value="3" selected>3 × 3 points (recommandé)</option><option value="5">5 × 5 points (plus précis, plus long)</option></select></label>
       <label class="case"><input type="checkbox" id="au-ia" checked> Interroger ChatGPT et Gemini (visibilité dans les IA, environ 0,40 $)</label>
@@ -78,12 +98,43 @@
     if (!r.ok) throw new Error(j.erreur || "Erreur " + r.status);
     return j;
   }
+  let sug = { mots: [], questions: [], source: "" };
+  const MAX_MOTS = 3, MAX_QUESTIONS = 4;
   function majCout() {
-    const mots = Math.max(1, $("au-mots").value.split(",").filter((m) => m.trim()).slice(0, 2).length), t = Number($("au-grille").value);
-    const base = 0.04 + 0.002 * t * t * mots, ia = $("au-ia").checked ? 0.4 : 0;
-    $("au-cout").textContent = "Coût estimé de l'analyse : environ " + (base + ia).toFixed(2).replace(".", ",") + " $ (requêtes DataForSEO" + (ia ? ", ChatGPT, Gemini et Claude" : "") + ").";
+    const mots = Math.max(1, selectionMots().length), questions = Math.max(1, selectionQuestions().length), t = Number($("au-grille").value), ia = $("au-ia").checked;
+    const base = 0.04 + 0.002 * t * t * mots, cout = base + (ia ? 0.04 + 0.11 * questions : 0);
+    $("au-cout").textContent = "Coût estimé de l'analyse : environ " + cout.toFixed(2).replace(".", ",") + " $ (requêtes DataForSEO" + (ia ? ", ChatGPT, Gemini et Claude" : "") + ").";
+    $("au-bloc-questions").style.opacity = ia ? "" : "0.5";
   }
-  ["au-mots", "au-grille", "au-ia"].forEach((id) => $(id).addEventListener("input", majCout));
+  ["au-grille", "au-ia", "au-mot-perso", "au-question-perso"].forEach((id) => $(id).addEventListener("input", majCout));
+  function selectionMots() { const l = Array.from(document.querySelectorAll("#au-sug-mots input:checked")).map((c) => c.value), p = $("au-mot-perso").value.trim().toLowerCase(); return (p ? l.concat([p]) : l).slice(0, MAX_MOTS); }
+  function selectionQuestions() { const l = Array.from(document.querySelectorAll("#au-sug-questions input:checked")).map((c) => c.value), p = $("au-question-perso").value.trim(); return (p ? l.concat([p]) : l).slice(0, MAX_QUESTIONS); }
+  function dessinerSuggestions() {
+    const liste = (id, elements, cle, max, coches) => {
+      $(id).innerHTML = elements.map((e, i) => '<label class="case"><input type="checkbox" value="' + esc(e[cle]) + '"' + (coches.has(e[cle]) ? " checked" : "") + '><span>' + esc(e[cle]) + (e.pourquoi ? '<span class="pourquoi">' + esc(e.pourquoi) + "</span>" : "") + "</span></label>").join("");
+      const boites = Array.from($(id).querySelectorAll("input"));
+      const limiter = () => { const n = boites.filter((b) => b.checked).length; boites.forEach((b) => { b.disabled = !b.checked && n >= max; b.closest("label").classList.toggle("limite", b.disabled); }); majCout(); };
+      boites.forEach((b) => b.addEventListener("change", limiter)); limiter();
+    };
+    liste("au-sug-mots", sug.mots, "mot_cle", MAX_MOTS, new Set(sug.mots.slice(0, 2).map((m) => m.mot_cle)));
+    liste("au-sug-questions", sug.questions, "question", MAX_QUESTIONS, new Set(sug.questions.slice(0, 2).map((q) => q.question)));
+  }
+  async function suggerer() {
+    if (!choisi) return;
+    const ville = $("au-ville").value.trim();
+    $("au-sug-relancer").disabled = true; $("au-sug-etat").textContent = "Lecture du site et préparation des suggestions…";
+    try {
+      const r = await appel("/audits/suggestions", { fiche: choisi, ville: ville });
+      sug = { mots: r.mots_cles || [], questions: r.questions_ia || [], source: r.source || "" };
+      $("au-sug-etat").textContent = r.message || (sug.source === "site+ia" ? "Suggestions tirées des services lus sur le site" + (r.services && r.services.length ? " (" + r.services.slice(0, 5).join(", ") + ")" : "") + ". Cochez celles à tester." : "");
+    } catch (e) {
+      const act = (choisi.categorie || "").toLowerCase();
+      sug = { mots: act ? [{ mot_cle: act + " " + ville.toLowerCase(), pourquoi: "Catégorie de la fiche Google." }] : [], questions: act ? [{ question: "Quel est le meilleur " + act + " à " + ville + " ?", pourquoi: "Question classique d'un client." }] : [], source: "categorie" };
+      $("au-sug-etat").textContent = "Suggestions indisponibles (" + e.message + ") : proposition de base d'après la catégorie.";
+    } finally { $("au-sug-relancer").disabled = false; }
+    dessinerSuggestions(); majCout();
+  }
+  $("au-sug-relancer").addEventListener("click", suggerer);
   async function chercher() {
     message(""); $("au-candidats").innerHTML = ""; $("au-suite").hidden = true; choisi = null;
     const nom = $("au-nom").value.trim(), ville = $("au-ville").value.trim();
@@ -103,8 +154,7 @@
   function choisir() {
     const sel = document.querySelector("input[name=au-fiche]:checked");
     choisi = sel ? candidats[Number(sel.value)] : null;
-    if (choisi) { const ville = $("au-ville").value.trim(), act = (choisi.categorie || "").toLowerCase(); $("au-mots").value = act ? act + " " + ville.toLowerCase() : ""; }
-    majCout();
+    if (choisi) suggerer(); else majCout();
   }
   $("au-chercher").addEventListener("click", chercher);
   [$("au-nom"), $("au-ville")].forEach((e) => e.addEventListener("keydown", (ev) => { if (ev.key === "Enter") chercher(); }));
@@ -112,7 +162,7 @@
     if (!choisi) { message("Choisissez une fiche.", "erreur"); return; }
     $("au-lancer").disabled = true; message("Lancement…");
     try {
-      const r = await appel("/audits/lancer", { fiche: choisi, ville: $("au-ville").value.trim(), mots_cles: $("au-mots").value.split(",").map((m) => m.trim()).filter(Boolean).slice(0, 2), taille_grille: Number($("au-grille").value), ia: $("au-ia").checked, lead_id: Number($("au-nouveau").dataset.lead) || null });
+      const r = await appel("/audits/lancer", { fiche: choisi, ville: $("au-ville").value.trim(), mots_cles: selectionMots(), questions_ia: $("au-ia").checked ? selectionQuestions() : [], depuis_site: sug.source.indexOf("site") === 0, taille_grille: Number($("au-grille").value), ia: $("au-ia").checked, lead_id: Number($("au-nouveau").dataset.lead) || null });
       location.href = "/audits/" + r.id;
     } catch (e) { message(e.message, "erreur"); $("au-lancer").disabled = false; }
   });

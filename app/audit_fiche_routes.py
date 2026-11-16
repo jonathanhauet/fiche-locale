@@ -115,6 +115,22 @@ def creer_routeur(templates, utilisateur_connecte, rediriger_si_non_connecte, se
             return resultat
         return JSONResponse({"candidats": resultat, "mots_cles": {i: audit_fiche.mots_cles_par_defaut(c, ville) for i, c in enumerate(resultat)}}, headers=ENTETES_PRIVES)
 
+    @routeur.post("/audits/suggestions")
+    async def suggestions(request: Request):
+        """Recherches (carte) et questions (IA) suggerees d'apres le site de l'entreprise : lit le site puis demande a Claude (quelques centimes)."""
+        if (r := refuse(request)):
+            return r
+        try:
+            corps = await request.json()
+            fiche = nettoyer_fiche(corps.get("fiche"))
+            ville = str(corps.get("ville", "")).strip()[:80]
+        except (ValueError, AttributeError) as erreur:
+            return JSONResponse({"erreur": str(erreur) or "Requête invalide."}, status_code=400)
+        if not ville:
+            return JSONResponse({"erreur": "Indiquez la ville."}, status_code=400)
+        resultat = await executer(audit_fiche.suggestions, fiche, ville)
+        return resultat if isinstance(resultat, Response) else JSONResponse(resultat, headers=ENTETES_PRIVES)
+
     @routeur.post("/audits/lancer")
     async def lancer(request: Request):
         if (r := refuse(request)):
@@ -127,10 +143,11 @@ def creer_routeur(templates, utilisateur_connecte, rediriger_si_non_connecte, se
             return JSONResponse({"erreur": str(erreur) or "Requête invalide."}, status_code=400)
         if not ville:
             return JSONResponse({"erreur": "Indiquez la ville."}, status_code=400)
-        mots = [str(m).strip()[:80] for m in (corps.get("mots_cles") or [])[:2] if str(m).strip()] if isinstance(corps.get("mots_cles"), list) else []
+        mots = [str(m).strip()[:80] for m in (corps.get("mots_cles") or [])[:3] if str(m).strip()] if isinstance(corps.get("mots_cles"), list) else []
+        questions = [str(q).strip()[:160] for q in (corps.get("questions_ia") or [])[:4] if isinstance(q, str) and q.strip()] if isinstance(corps.get("questions_ia"), list) else []
         taille = corps.get("taille_grille") if corps.get("taille_grille") in (3, 5) else 3
         lead_id = corps.get("lead_id") if isinstance(corps.get("lead_id"), int) else None
-        entree = {"fiche": fiche, "ville": ville, "mots_cles": mots or audit_fiche.mots_cles_par_defaut(fiche, ville), "taille_grille": taille, "ia": bool(corps.get("ia", True))}
+        entree = {"fiche": fiche, "ville": ville, "mots_cles": mots or audit_fiche.mots_cles_par_defaut(fiche, ville), "taille_grille": taille, "ia": bool(corps.get("ia", True)), "questions_ia": questions, "depuis_site": bool(corps.get("depuis_site"))}
 
         def creer_et_lancer():
             db = session_factory()
