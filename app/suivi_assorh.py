@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import Session
 
+from . import frequentation_assorh
 from .database import Base, obtenir_session
 
 EMPREINTE_JETON = "497273561af644db159d759ef7ae2371e2b76961cf27ba299431acc43c4dede5"
@@ -163,6 +164,18 @@ def page_suivi(jeton: str, request: Request, db: Session = Depends(obtenir_sessi
     }, headers=ENTETES)
 
 
+@routeur.get("/assorh/{jeton}/frequentation", response_class=HTMLResponse)
+def page_frequentation(jeton: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Onglet « Fréquentation du site » : chiffres GA4 et Search Console gardés en base, relus en arrière-plan s'ils sont périmés."""
+    if not _correspond(jeton, EMPREINTE_JETON):
+        return _introuvable()
+    donnees, _ = frequentation_assorh.donnees_en_cache(db)
+    relance = frequentation_assorh.relancer_si_perime(db)
+    return _templates.TemplateResponse(request, "suivi_assorh_frequentation.html", {
+        "jeton": jeton, "onglet": "frequentation", "v": frequentation_assorh.vue(donnees), "chargement": relance and not donnees,
+    }, headers=ENTETES)
+
+
 @routeur.post("/assorh/{jeton}/tache/{tache_id}")
 def cocher_tache(jeton: str, tache_id: int, db: Session = Depends(obtenir_session)):
     """Franck coche (ou decoche) une tache."""
@@ -210,6 +223,23 @@ def api_journal(request: Request, db: Session = Depends(obtenir_session)):
     remarques = [_remarque_json(r) for r in db.query(RemarqueSuiviAssoRH).order_by(RemarqueSuiviAssoRH.cree_le, RemarqueSuiviAssoRH.id).all()]
     taches = [_tache_json(t) for t in db.query(TacheSuiviAssoRH).order_by(TacheSuiviAssoRH.cree_le, TacheSuiviAssoRH.id).all()]
     return JSONResponse({"jours": jours, "remarques": remarques, "taches": taches}, headers=ENTETES)
+
+
+@routeur.get("/api/assorh/frequentation")
+def api_frequentation(request: Request, db: Session = Depends(obtenir_session)):
+    """Derniers chiffres gardés (avec le détail des erreurs éventuelles, que la page de Franck n'affiche pas)."""
+    if not _cle_valide(request):
+        return _refus()
+    donnees, maj_le = frequentation_assorh.donnees_en_cache(db)
+    return JSONResponse({"maj_le": maj_le.isoformat() if maj_le else "", "donnees": donnees}, headers=ENTETES)
+
+
+@routeur.post("/api/assorh/frequentation/rafraichir")
+def api_rafraichir_frequentation(request: Request, db: Session = Depends(obtenir_session)):
+    """Relit tout de suite Google Analytics et la Search Console."""
+    if not _cle_valide(request):
+        return _refus()
+    return JSONResponse(frequentation_assorh.rafraichir(db), headers=ENTETES)
 
 
 @routeur.post("/api/assorh/taches")

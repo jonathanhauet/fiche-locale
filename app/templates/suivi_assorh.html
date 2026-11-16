@@ -88,10 +88,16 @@ button.tache.faite .case { background: var(--accent); }
 button.tache.faite .tache-texte { text-decoration: line-through; color: var(--muted); }
 .etat { color: var(--muted); padding: 18px 20px; border: 1px dashed var(--line); border-radius: 12px; margin: 0; }
 footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+.onglets { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); }
+.onglets a { color: var(--muted); text-decoration: none; font-weight: 600; padding: 10px 14px; border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.onglets a:hover { color: var(--ink); }
+.onglets a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+.onglets a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 480px) {
   .action { grid-template-columns: 1fr; gap: 2px; }
   .theme { justify-self: start; min-width: 0; }
 }
+{% block styles %}{% endblock %}
 </style>
 </head>
 <body>
@@ -100,9 +106,15 @@ footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--lin
     <img class="logo" src="/static/assorh/logo-assorh.png" width="560" height="116" alt="AssoRH">
     <span class="eyebrow">Lancement digital</span>
     <h1>Journal de bord</h1>
-    <p>Franck, voici ce que j'ai fait pour AssoRH, jour par jour. Tu peux laisser une remarque ou une question sous chaque journée. Jonathan</p>
-    {% if maj %}<span class="maj">Dernière mise à jour : {{ maj }}</span>{% endif %}
+    {% block intro %}<p>Franck, voici ce que j'ai fait pour AssoRH, jour par jour. Tu peux laisser une remarque ou une question sous chaque journée. Jonathan</p>
+    {% if maj %}<span class="maj">Dernière mise à jour : {{ maj }}</span>{% endif %}{% endblock %}
   </header>
+
+  <nav class="onglets" aria-label="Rubriques">
+    <a href="/assorh/{{ jeton }}"{% if onglet != "frequentation" %} aria-current="page"{% endif %}>Journal</a>
+    <a href="/assorh/{{ jeton }}/frequentation"{% if onglet == "frequentation" %} aria-current="page"{% endif %}>Fréquentation du site</a>
+  </nav>
+{% block contenu %}
 
   {% if taches %}
   <section class="afaire" id="a-faire" aria-labelledby="t-afaire">
@@ -190,6 +202,7 @@ footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--lin
       </div>
     </form>
   </section>
+{% endblock %}
 
   <footer>Je mets ce journal à jour à chaque journée de travail sur AssoRH. Garde ce lien pour toi : il donne accès à la page sans mot de passe.</footer>
 </div>

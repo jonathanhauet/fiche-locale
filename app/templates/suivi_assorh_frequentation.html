@@ -1,0 +1,198 @@
+{% extends "suivi_assorh.html" %}
+
+{% block styles %}
+:root { --bon: #1E7A3C; --bon-bg: #E3F3E8; --mauvais: #A3302A; --mauvais-bg: #FBE7E5; --barre: var(--accent); }
+@media (prefers-color-scheme: dark) {
+  :root { --bon: #7FD99A; --bon-bg: #17331F; --mauvais: #F2A39C; --mauvais-bg: #3A1B19; }
+}
+.bloc { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 14px; min-width: 0; }
+.bloc h3 { font-family: var(--f-display); font-size: 1.05rem; margin: 0; color: var(--ink); }
+.sous-titre { margin: 0; color: var(--muted); font-size: .9rem; }
+.note { background: var(--note-bg); color: var(--note-ink); border: 1px solid var(--note-line); border-radius: 10px; padding: 12px 16px; margin: 0; font-size: .92rem; }
+.tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tuile { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; }
+.tuile .valeur { font-family: var(--f-display); font-size: 1.7rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--ink); }
+.tuile .titre { font-weight: 700; font-size: .88rem; color: var(--ink); }
+.tuile .aide { font-size: .78rem; color: var(--muted); }
+.evo { justify-self: start; font-size: .75rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--muted); }
+.evo.bon { background: var(--bon-bg); color: var(--bon); }
+.evo.mauvais { background: var(--mauvais-bg); color: var(--mauvais); }
+.graphe { width: 100%; height: auto; display: block; }
+.graphe rect.b { fill: var(--barre); }
+.graphe line { stroke: var(--line); }
+.graphe text { fill: var(--muted); font-size: 11px; font-family: var(--f-body); }
+.deux { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.barres { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.barres li { display: grid; gap: 4px; }
+.barres .libelle { display: flex; justify-content: space-between; gap: 10px; font-size: .9rem; color: var(--ink); }
+.barres .libelle span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.barres .fond { height: 8px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; }
+.barres .plein { height: 100%; border-radius: 4px; background: var(--barre); }
+.tableau { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); color: var(--ink); }
+th { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.mot { overflow-wrap: anywhere; }
+.marque { border: 2px solid var(--accent); }
+.marque p { margin: 0; }
+.vide { color: var(--muted); margin: 0; }
+details.glossaire summary, details.detail summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+details.glossaire dl { margin: 10px 0 0; display: grid; gap: 8px; }
+details.glossaire dt { font-weight: 700; }
+details.glossaire dd { margin: 0 0 4px; color: var(--muted); }
+{% endblock %}
+
+{% block intro %}<p>Franck, voici comment le site assorh.fr est fréquenté sur les 28 derniers jours, comparé aux 28 jours d'avant. Jonathan</p>
+    {% if v.maj %}<span class="maj">Chiffres mis à jour le {{ v.maj }} (toutes les 6 heures environ)</span>{% endif %}{% endblock %}
+
+{% block contenu %}
+  <p class="note">Bon à savoir : les visites ne comptent que les personnes qui ont accepté les cookies dans le bandeau, comme la loi l'impose. La fréquentation réelle est donc un peu plus élevée ; les évolutions, elles, restent fiables. La mesure a démarré le 16 novembre 2026.</p>
+
+  {% if chargement %}
+  <p class="etat">Les chiffres sont en cours de chargement. Recharge la page dans une minute.</p>
+  {% endif %}
+
+  <section aria-labelledby="t-visites">
+    <h2 id="t-visites">Les visites sur le site</h2>
+    {% if v.ga %}
+    <p class="sous-titre">{{ v.ga.periode|capitalize }}. Les pourcentages comparent aux 28 jours d'avant.</p>
+    {% if v.ga.vide %}<p class="etat">Pas encore de visite comptée sur cette période : les premiers chiffres arrivent dans les jours qui suivent la mise en place.</p>{% endif %}
+    <div class="tuiles">
+      {% for t in v.ga.tuiles %}
+      <div class="tuile">
+        <span class="valeur">{{ t.valeur }}</span>
+        <span class="titre">{{ t.titre }}</span>
+        {% if t.evo %}<span class="evo {{ t.evo.lecture }}">{{ t.evo.texte }}</span>{% endif %}
+        <span class="aide">{{ t.aide }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="bloc">
+      <h3>Visites par jour</h3>
+      <svg class="graphe" viewBox="0 0 560 162" role="img" aria-label="Visites par jour, {{ v.ga.periode }}, au maximum {{ v.ga.graphe_max }} visites dans une journée">
+        <line x1="0" y1="140.5" x2="560" y2="140.5"/>
+        {% for b in v.ga.graphe %}<rect class="b" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.l }}" height="{{ b.h }}" rx="2"><title>{{ b.jour }} : {{ b.visites }} visite{{ 's' if b.visites != 1 }}</title></rect>{% endfor %}
+        <text x="0" y="158">{{ v.ga.graphe_debut }}</text>
+        <text x="560" y="158" text-anchor="end">{{ v.ga.graphe_fin }}</text>
+        <text x="0" y="10">max. {{ v.ga.graphe_max }} / jour</text>
+      </svg>
+    </div>
+
+    <div class="deux">
+      <div class="bloc">
+        <h3>D'où viennent les visiteurs</h3>
+        {% if v.ga.canaux %}
+        <ul class="barres">
+          {% for c in v.ga.canaux %}<li><span class="libelle"><span>{{ c.nom }}</span><span>{{ c.part }} %</span></span><span class="fond"><span class="plein" style="display:block;width:{{ c.largeur }}%"></span></span></li>{% endfor %}
+        </ul>
+        {% if v.ga.sources %}
+        <details class="detail"><summary>Le détail des sources</summary>
+          <ul class="barres" style="margin-top:10px">{% for s in v.ga.sources %}<li><span class="libelle"><span>{{ s.nom }}</span><span>{{ s.valeur }} visite{{ 's' if s.valeur != 1 }}</span></span></li>{% endfor %}</ul>
+        </details>
+        {% endif %}
+        {% else %}<p class="vide">Pas encore de données.</p>{% endif %}
+      </div>
+      <div class="bloc">
+        <h3>Sur quel appareil</h3>
+        {% if v.ga.appareils %}
+        <ul class="barres">
+          {% for c in v.ga.appareils %}<li><span class="libelle"><span>{{ c.nom }}</span><span>{{ c.part }} %</span></span><span class="fond"><span class="plein" style="display:block;width:{{ c.largeur }}%"></span></span></li>{% endfor %}
+        </ul>
+        {% else %}<p class="vide">Pas encore de données.</p>{% endif %}
+      </div>
+    </div>
+
+    <div class="deux">
+      <div class="bloc">
+        <h3>Les pages les plus consultées</h3>
+        {% if v.ga.pages %}
+        <div class="tableau"><table>
+          <thead><tr><th>Page</th><th class="n">Vues</th><th class="n">Visiteurs</th></tr></thead>
+          <tbody>{% for pg in v.ga.pages %}<tr><td class="mot">{{ pg.nom }}</td><td class="n">{{ pg.vues_txt }}</td><td class="n">{{ pg.visiteurs_txt }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+        {% else %}<p class="vide">Pas encore de données.</p>{% endif %}
+      </div>
+      <div class="bloc">
+        <h3>Dans quelles régions</h3>
+        {% if v.ga.regions %}
+        <ul class="barres">
+          {% for c in v.ga.regions %}<li><span class="libelle"><span>{{ c.nom }}</span><span>{{ c.part }} %</span></span><span class="fond"><span class="plein" style="display:block;width:{{ c.largeur }}%"></span></span></li>{% endfor %}
+        </ul>
+        {% else %}<p class="vide">Pas encore de données.</p>{% endif %}
+      </div>
+    </div>
+    {% elif v.ga_indisponible or not chargement %}
+    <p class="etat">Ces chiffres ne sont pas encore disponibles. Je m'en occupe.</p>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="t-google">
+    <h2 id="t-google">Dans les résultats de Google</h2>
+    {% if v.sc %}
+    <p class="sous-titre">Recherches naturelles (hors publicité), {{ v.sc.periode }}. Google publie ces chiffres avec 3 jours de décalage. Ils comptent tout le monde, bandeau cookies ou pas.</p>
+    {% if v.sc.vide %}<p class="etat">Google n'a pas encore affiché le site sur cette période, ou ne l'a pas encore comptabilisé.</p>{% endif %}
+    <div class="tuiles">
+      {% for t in v.sc.tuiles %}
+      <div class="tuile">
+        <span class="valeur">{{ t.valeur }}</span>
+        <span class="titre">{{ t.titre }}</span>
+        {% if t.evo %}<span class="evo {{ t.evo.lecture }}">{{ t.evo.texte }}</span>{% endif %}
+        <span class="aide">{{ t.aide }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="bloc marque">
+      <h3>Quand on cherche « AssoRH » sur Google</h3>
+      {% if v.sc.marque.position %}
+      <p>{% if v.sc.marque.premier %}Le site sort <strong>en première position</strong>{% else %}Le site sort en moyenne <strong>en position {{ v.sc.marque.position }}</strong>{% endif %} : {{ v.sc.marque.impressions }} apparition{{ 's' if v.sc.marque.impressions != '1' }} et {{ v.sc.marque.clics }} clic{{ 's' if v.sc.marque.clics not in ('0', '1') }} sur ces recherches.</p>
+      {% if v.sc.marque.requetes %}<p class="sous-titre">Recherches tapées : {{ v.sc.marque.requetes|join(', ') }}</p>{% endif %}
+      {% else %}
+      <p class="vide">Personne n'a encore cherché « AssoRH » sur Google pendant cette période, ou Google ne l'a pas encore comptabilisé.</p>
+      {% endif %}
+    </div>
+
+    <div class="bloc">
+      <h3>Les recherches qui font apparaître le site</h3>
+      {% if v.sc.requetes %}
+      <div class="tableau"><table>
+        <thead><tr><th>Recherche tapée</th><th class="n">Apparitions</th><th class="n">Clics</th><th class="n">Position</th></tr></thead>
+        <tbody>{% for r in v.sc.requetes %}<tr><td class="mot">{{ r.requete }}</td><td class="n">{{ r.impressions_txt }}</td><td class="n">{{ r.clics_txt }}</td><td class="n">{{ r.position_txt }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% if v.sc.nb_requetes > v.sc.requetes|length %}<p class="sous-titre">Les {{ v.sc.requetes|length }} principales sur {{ v.sc.nb_requetes }} recherches différentes.</p>{% endif %}
+      {% else %}<p class="vide">Pas encore de recherche enregistrée.</p>{% endif %}
+    </div>
+
+    {% if v.sc.pages %}
+    <div class="bloc">
+      <h3>Les pages qui apparaissent dans Google</h3>
+      <div class="tableau"><table>
+        <thead><tr><th>Page</th><th class="n">Apparitions</th><th class="n">Clics</th></tr></thead>
+        <tbody>{% for pg in v.sc.pages %}<tr><td class="mot">{{ pg.nom }}</td><td class="n">{{ pg.impressions_txt }}</td><td class="n">{{ pg.clics_txt }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+    {% endif %}
+    {% elif v.sc_indisponible or not chargement %}
+    <p class="etat">Ces chiffres ne sont pas encore disponibles. Je m'en occupe.</p>
+    {% endif %}
+  </section>
+
+  <section class="bloc" aria-labelledby="t-bientot">
+    <h2 id="t-bientot">Bientôt sur cette page</h2>
+    <p class="sous-titre">Les démos réservées et les résultats des publicités (LinkedIn, Google, Meta) apparaîtront ici dès le lancement des campagnes.</p>
+  </section>
+
+  <details class="glossaire bloc">
+    <summary>Comprendre les termes</summary>
+    <dl>
+      <dt>Visiteur</dt><dd>Une personne (un appareil) venue sur le site, comptée une fois sur la période.</dd>
+      <dt>Visite</dt><dd>Un passage sur le site. Une même personne qui revient trois fois fait trois visites.</dd>
+      <dt>Page vue</dt><dd>Chaque page ouverte pendant une visite.</dd>
+      <dt>Apparition dans Google</dt><dd>Le site s'est affiché dans les résultats d'une recherche, que la personne ait cliqué ou non.</dd>
+      <dt>Position moyenne</dt><dd>Le rang moyen du site dans les résultats : 1 = tout en haut. Plus le chiffre est bas, mieux c'est.</dd>
+      <dt>Taux de clic</dt><dd>Sur 100 apparitions, combien de personnes ont cliqué vers le site.</dd>
+    </dl>
+  </details>
+{% endblock %}

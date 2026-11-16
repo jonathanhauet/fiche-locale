@@ -35,6 +35,12 @@ SCOPES_SEARCH_CONSOLE = [
     "https://www.googleapis.com/auth/userinfo.email",
 ]
 
+# Google Analytics (lecture seule) : demande dans le MEME consentement que la Search Console (voir construire_flow_search_console),
+# pour l'onglet « Fréquentation » de la page de suivi AssoRH (frequentation_assorh.py). Les jetons Search Console sont toujours
+# rafraichis avec SCOPES_SEARCH_CONSOLE seul (sous-ensemble autorise par Google) : un jeton emis avant cet ajout continue de
+# fonctionner pour la Search Console, seul Google Analytics reste indisponible tant que le compte n'est pas reconnecte.
+SCOPE_ANALYTICS = "https://www.googleapis.com/auth/analytics.readonly"
+
 # Google Sheets : autorisation separee (un seul compte pour toute l'agence, voir models.ParametreGoogleSheets). Ce compte cree
 # ou modifie le Sheet du reporting mensuel automatique.
 SCOPES_SHEETS = [
@@ -102,8 +108,11 @@ def construire_flow_search_console(redirect_uri: str, code_verifier: str = None)
     if redirect_uri.startswith("http://localhost") or redirect_uri.startswith("http://127.0.0.1"):
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
+    # Google peut renvoyer les scopes dans un autre ordre, ou sans Google Analytics si la case a ete decochee a l'ecran de
+    # consentement : oauthlib leverait alors « Scope has changed ». La Search Console seule suffit au reste de la plateforme.
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
     return Flow.from_client_config(
-        _configuration_client(), scopes=SCOPES_SEARCH_CONSOLE, redirect_uri=redirect_uri, code_verifier=code_verifier
+        _configuration_client(), scopes=SCOPES_SEARCH_CONSOLE + [SCOPE_ANALYTICS], redirect_uri=redirect_uri, code_verifier=code_verifier
     )
 
 
