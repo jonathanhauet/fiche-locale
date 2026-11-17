@@ -634,6 +634,7 @@
   <p id="texte-statut-video-ia" class="texte-vide" hidden></p>
   <video id="apercu-video-ia" controls {% if not video_url_initial %}hidden{% endif %} {% if video_url_initial %}src="{{ video_url_initial }}"{% endif %} style="max-width:320px; display:block; margin-bottom:0.5rem;"></video>
   <input type="hidden" name="video_url_ia" id="champ-video-url-ia" value="{{ video_url_initial }}">
+  {% with mode="composeur", fichier_video_id="video-partagee", url_video_id="champ-video-url-ia", url_video_initiale="", couverture_actuelle="" %}{% include "_choix_couverture_video.html" %}{% endwith %}
 
   <details class="options-visuel">
     <summary>🎬 Monter une vidéo (texte incrusté + musique)</summary>

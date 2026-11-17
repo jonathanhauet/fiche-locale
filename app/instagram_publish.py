@@ -118,19 +118,23 @@ def publier_medias(token_instagram: str, instagram_id: str, image_urls: list[str
     return publier_photo(token_instagram, instagram_id, image_urls[0], caption)
 
 
-def publier_reel(token_instagram: str, instagram_id: str, video_url: str, caption: str = "") -> dict:
+def publier_reel(token_instagram: str, instagram_id: str, video_url: str, caption: str = "", couverture_url: str = None) -> dict:
     """
     Publie une video en Reel (media_type=REELS - toute nouvelle video postee
     via l'API rejoint desormais les Reels, il n'y a plus de "video de feed"
     distincte cote Instagram). video_url doit etre accessible publiquement
     (comme image_url pour une photo, voir publier_photo) : Instagram la
     televerse lui-meme.
+    couverture_url : image de couverture du Reel (fil et grille du profil, voir
+    couverture_video.py) ; sans elle Instagram prend la 1re image de la video.
+    Si Instagram la refuse, le Reel repart sans elle plutot que d'echouer.
     """
-    reponse_conteneur = requests.post(
-        f"{URL_GRAPH}/{instagram_id}/media",
-        data={"media_type": "REELS", "video_url": video_url, "caption": caption, "access_token": token_instagram},
-        timeout=30,
-    )
+    donnees = {"media_type": "REELS", "video_url": video_url, "caption": caption, "access_token": token_instagram}
+    reponse_conteneur = None
+    if couverture_url:
+        reponse_conteneur = requests.post(f"{URL_GRAPH}/{instagram_id}/media", data={**donnees, "cover_url": couverture_url}, timeout=30)
+    if reponse_conteneur is None or reponse_conteneur.status_code != 200:
+        reponse_conteneur = requests.post(f"{URL_GRAPH}/{instagram_id}/media", data=donnees, timeout=30)
     if reponse_conteneur.status_code != 200:
         raise RuntimeError(
             f"Echec de la creation du conteneur Reel Instagram (code {reponse_conteneur.status_code}) : {reponse_conteneur.text}"

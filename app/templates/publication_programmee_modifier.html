@@ -51,12 +51,15 @@
   </div>
   <label>
     Remplacer par une autre vidéo
-    <input type="file" name="video" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v">
+    <input type="file" name="video" id="video-modification" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v">
   </label>
   <p class="texte-discret">
     Fichier MP4 ou MOV, 200 Mo maximum.
     {% if reseau == "instagram" %}Instagram nécessite une image ou une vidéo : la supprimer sans la remplacer n'est pas possible depuis cet écran.{% endif %}
   </p>
+  {% if reseau in ("facebook", "instagram") %}
+  {% with mode="modification", fichier_video_id="video-modification", url_video_id="", url_video_initiale=post.video_url or "", couverture_actuelle=post.couverture_url or "" %}{% include "_choix_couverture_video.html" %}{% endwith %}
+  {% endif %}
   {% elif reseau == "linkedin" %}
   <span class="choix-image-titre">Image</span>
   {% if image_linkedin_uri %}

@@ -833,7 +833,7 @@ def publier_posts_meta_programmes():
                 if not post.client.page_id_meta or not post.client.token_page_meta:
                     raise RuntimeError("Ce client n'a plus de Page Facebook associee.")
                 if post.video_url:
-                    meta_publish.publier_video_page(post.client.token_page_meta, post.client.page_id_meta, post.video_url, post.texte)
+                    meta_publish.publier_video_page(post.client.token_page_meta, post.client.page_id_meta, post.video_url, post.texte, couverture_url=post.couverture_url)
                 else:
                     meta_publish.publier_post_page(
                         post.client.token_page_meta, post.client.page_id_meta, post.texte,
@@ -912,7 +912,7 @@ def publier_posts_instagram_programmes():
                 if not post.client.instagram_id_meta or not post.client.token_instagram:
                     raise RuntimeError("Ce client n'a plus de compte Instagram associe.")
                 if post.video_url:
-                    instagram_publish.publier_reel(post.client.token_instagram, post.client.instagram_id_meta, post.video_url, post.texte)
+                    instagram_publish.publier_reel(post.client.token_instagram, post.client.instagram_id_meta, post.video_url, post.texte, couverture_url=post.couverture_url)
                 elif post.image_url:
                     instagram_publish.publier_medias(
                         post.client.token_instagram, post.client.instagram_id_meta,

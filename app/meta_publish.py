@@ -60,7 +60,7 @@ def publier_post_page(token_page: str, page_id: str, message: str, image_url=Non
     return reponse.json()
 
 
-def publier_video_page(token_page: str, page_id: str, video_url: str, message: str) -> dict:
+def publier_video_page(token_page: str, page_id: str, video_url: str, message: str, couverture_url: str = None) -> dict:
     """
     Publie une video sur le fil de la Page (POST /videos) : Facebook la
     televerse lui-meme depuis video_url, le traitement (encodage, generation
@@ -68,12 +68,24 @@ def publier_video_page(token_page: str, page_id: str, video_url: str, message: s
     - la video devient visible une fois pret, sans que la plateforme ait a
     interroger un statut (contrairement au conteneur Instagram, voir
     instagram_publish.publier_reel).
+    couverture_url : image de couverture (voir couverture_video.py), envoyee en
+    fichier (« thumb » n'accepte pas d'URL). Si Facebook la refuse, la video
+    repart sans elle plutot que d'echouer.
     """
-    reponse = requests.post(
-        f"{URL_GRAPH}/{page_id}/videos",
-        data={"file_url": video_url, "description": message, "access_token": token_page},
-        timeout=60,
-    )
+    donnees = {"file_url": video_url, "description": message, "access_token": token_page}
+    reponse = None
+    if couverture_url:
+        try:
+            image = requests.get(couverture_url, timeout=30)
+            image.raise_for_status()
+            reponse = requests.post(
+                f"{URL_GRAPH}/{page_id}/videos", data=donnees,
+                files={"thumb": ("couverture.jpg", image.content, "image/jpeg")}, timeout=90,
+            )
+        except requests.RequestException:
+            reponse = None
+    if reponse is None or reponse.status_code != 200:
+        reponse = requests.post(f"{URL_GRAPH}/{page_id}/videos", data=donnees, timeout=60)
     if reponse.status_code != 200:
         raise RuntimeError(f"Echec de la publication video sur la Page (code {reponse.status_code}) : {reponse.text}")
     return reponse.json()

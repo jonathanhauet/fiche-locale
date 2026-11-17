@@ -1,0 +1,165 @@
+{# Choix de la couverture d'une video Facebook / Instagram (voir couverture_video.py). A inclure DANS le formulaire.
+   Variables : mode ("composeur" ou "modification"), fichier_video_id (champ fichier de la video), url_video_id (champ cache
+   portant l'URL d'une video deja en ligne, facultatif), url_video_initiale (video deja enregistree, facultatif),
+   couverture_actuelle (URL, facultatif). En modification, rien ne change cote serveur tant que l'utilisateur n'a pas
+   touche au bloc (champ « couverture_modifiee »). #}
+<div class="bloc-couverture-video" id="bloc-couverture-video" hidden>
+  <span class="choix-image-titre">Couverture de la vidéo <span class="texte-discret">· Facebook et Instagram</span></span>
+  <p class="texte-discret">
+    L'image affichée dans le fil et sur la grille du profil. Par défaut, la plateforme prend la première image nette de
+    la vidéo : elle saute les fonds blancs ou noirs du début.
+  </p>
+  <div class="couverture-video-zone">
+    <div class="couverture-video-cadre">
+      <video id="couverture-video-lecteur" muted playsinline preload="auto"></video>
+      <img id="couverture-video-image" alt="Couverture choisie" hidden>
+    </div>
+    <div class="couverture-video-reglages">
+      <p class="couverture-video-etat" id="couverture-video-etat">Automatique</p>
+      <label for="couverture-video-curseur">Choisir un autre moment de la vidéo</label>
+      <input type="range" id="couverture-video-curseur" min="0" max="0" step="0.05" value="0">
+      <div class="couverture-video-boutons">
+        <button type="button" class="bouton-secondaire bouton-mini" id="couverture-video-auto">↺ Automatique</button>
+        <button type="button" class="bouton-secondaire bouton-mini" id="couverture-video-importer">🖼️ Importer une image</button>
+      </div>
+      <p class="texte-discret">Image importée : idéalement au format vertical 1080 × 1920, l'essentiel au centre (la grille du profil recadre le haut et le bas).</p>
+      <input type="file" name="couverture_image" id="couverture-video-fichier" accept="image/jpeg,image/png,image/webp" hidden>
+    </div>
+  </div>
+  <input type="hidden" name="couverture_temps" id="couverture-video-temps" value="">
+  <input type="hidden" name="couverture_modifiee" id="couverture-video-modifiee" value="">
+</div>
+<script>
+  // Choix de la couverture : apercu dans le navigateur, le serveur extrait ensuite l'image au meme instant (ffmpeg).
+  (function () {
+    const bloc = document.getElementById("bloc-couverture-video");
+    if (!bloc) return;
+    const MODE = {{ (mode or "composeur")|tojson }};
+    const URL_INITIALE = {{ (url_video_initiale or "")|tojson }};
+    const COUVERTURE_ACTUELLE = {{ (couverture_actuelle or "")|tojson }};
+    const champVideo = document.getElementById({{ (fichier_video_id or "")|tojson }});
+    const champUrl = document.getElementById({{ (url_video_id or "")|tojson }});
+    const lecteur = document.getElementById("couverture-video-lecteur"), image = document.getElementById("couverture-video-image");
+    const curseur = document.getElementById("couverture-video-curseur"), etat = document.getElementById("couverture-video-etat");
+    const champTemps = document.getElementById("couverture-video-temps"), champModifiee = document.getElementById("couverture-video-modifiee");
+    const champFichier = document.getElementById("couverture-video-fichier");
+    // Memes seuils que couverture_video.py (image surtout blanche, surtout noire ou unie : sautee).
+    const L = 32, H = 56, CLAIR = 225, SOMBRE = 30, PART_CLAIRE = 0.45, PART_SOMBRE = 0.60, ECART_MIN = 18, PAS = 0.25, DUREE_ANALYSE = 10;
+    const toile = document.createElement("canvas"); toile.width = L; toile.height = H;
+    let cleSource = null, urlObjet = null, urlImage = null, jeton = 0;
+    let affichage = "auto";               // auto, moment, image (importee) ou actuelle (couverture deja enregistree)
+
+    function secondes(t) { return (Math.round(t * 100) / 100).toString().replace(".", ",") + " s"; }
+    function modifie() { if (MODE === "modification") champModifiee.value = "1"; }
+    function montrerVideo() { lecteur.hidden = false; image.hidden = true; }
+    function suffixe() { return MODE === "modification" ? " · appliquée à l'enregistrement" : ""; }
+    function montrerImage(src) { image.src = src; image.hidden = false; lecteur.hidden = true; }
+    function source() {
+      const f = champVideo && champVideo.files && champVideo.files[0];
+      if (f) return { cle: "f:" + f.name + ":" + f.size + ":" + f.lastModified, fichier: f };
+      const u = (champUrl && champUrl.value) || URL_INITIALE;
+      return u ? { cle: "u:" + u, url: u } : null;
+    }
+    function nette(pixels) {
+      let claire = 0, sombre = 0, somme = 0, somme2 = 0;
+      for (const p of pixels) { if (p >= CLAIR) claire++; if (p <= SOMBRE) sombre++; somme += p; somme2 += p * p; }
+      const n = pixels.length, moyenne = somme / n, ecart = Math.sqrt(Math.max(0, somme2 / n - moyenne * moyenne));
+      return claire / n <= PART_CLAIRE && sombre / n <= PART_SOMBRE && ecart >= ECART_MIN;
+    }
+    function aller(t) {
+      return new Promise((resoudre) => {
+        if (Math.abs(lecteur.currentTime - t) < 0.01 && lecteur.readyState >= 2) return resoudre();
+        // « seeked » peut arriver avant que la nouvelle image soit affichee : on attend aussi l'image elle-meme (au plus 300 ms).
+        lecteur.addEventListener("seeked", () => {
+          if (!lecteur.requestVideoFrameCallback) return resoudre();
+          let fait = false;
+          const fin = () => { if (!fait) { fait = true; resoudre(); } };
+          lecteur.requestVideoFrameCallback(fin); setTimeout(fin, 300);
+        }, { once: true });
+        lecteur.currentTime = t;
+      });
+    }
+    function grisActuel() {
+      const ctx = toile.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(lecteur, 0, 0, L, H);
+      const d = ctx.getImageData(0, 0, L, H).data, gris = new Uint8Array(L * H);       // exception si la video est d'une autre origine sans CORS
+      for (let i = 0; i < gris.length; i++) gris[i] = Math.round(0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]);
+      return gris;
+    }
+    async function automatique() {
+      const monJeton = ++jeton;
+      affichage = "auto"; champTemps.value = ""; champFichier.value = "";
+      montrerVideo(); etat.textContent = "Automatique : recherche de la première image nette…";
+      const fin = Math.min(DUREE_ANALYSE, lecteur.duration || 0);
+      let precedente = false, trouve = null;
+      try {
+        for (let t = 0; t <= fin + 1e-6; t += PAS) {
+          await aller(t);
+          if (monJeton !== jeton) return;
+          const ok = nette(grisActuel());
+          if (ok && precedente) { trouve = t; break; }            // deux images nettes de suite (comme le serveur)
+          precedente = ok;
+        }
+      } catch (e) {
+        if (monJeton !== jeton) return;
+        await aller(Math.min(0.25, lecteur.duration || 0));
+        curseur.value = lecteur.currentTime;
+        etat.textContent = "Automatique : la plateforme prendra la première image nette de la vidéo (aperçu indisponible pour cette vidéo)" + suffixe() + ".";
+        return;
+      }
+      if (monJeton !== jeton) return;
+      const t = trouve === null ? 0 : trouve;
+      await aller(t); curseur.value = t;
+      etat.textContent = "Automatique : image à " + secondes(t) + (trouve === null ? " (aucune image nette au début de la vidéo)" : "") + suffixe();
+    }
+    function charger(s) {
+      jeton++;
+      if (urlObjet) { URL.revokeObjectURL(urlObjet); urlObjet = null; }
+      if (s.fichier) { lecteur.removeAttribute("crossorigin"); urlObjet = URL.createObjectURL(s.fichier); lecteur.src = urlObjet; }
+      else { lecteur.crossOrigin = "anonymous"; lecteur.src = s.url; }
+    }
+    // Video d'une autre origine refusee en mode CORS : on la recharge sans, pour l'apercu (le choix automatique se fera au serveur).
+    lecteur.addEventListener("error", () => {
+      if (lecteur.getAttribute("crossorigin") !== null && lecteur.src) { const src = lecteur.src; lecteur.removeAttribute("crossorigin"); lecteur.src = src; }
+    });
+    lecteur.addEventListener("loadedmetadata", () => {
+      curseur.max = (lecteur.duration || 0).toFixed(2);
+      if (affichage === "moment") aller(parseFloat(champTemps.value) || 0);
+      else if (affichage === "auto") automatique();
+    });
+    function synchroniser() {
+      const s = source(), cle = s ? s.cle : null;
+      if (cle === cleSource) return;
+      cleSource = cle; bloc.hidden = !s;
+      champTemps.value = ""; champFichier.value = ""; affichage = "auto";
+      if (!s) { jeton++; lecteur.removeAttribute("src"); return; }
+      if (MODE === "modification" && s.url === URL_INITIALE && COUVERTURE_ACTUELLE) {
+        affichage = "actuelle"; champModifiee.value = "";
+        montrerImage(COUVERTURE_ACTUELLE); etat.textContent = "Couverture actuelle. Déplacez le curseur, cliquez sur « Automatique » ou importez une image pour la changer.";
+      } else {
+        modifie();     // modification : video sans couverture ou remplacee -> couverture (automatique par defaut) appliquee a l'enregistrement
+      }
+      charger(s);
+    }
+
+    curseur.addEventListener("input", () => {
+      jeton++; affichage = "moment"; champFichier.value = ""; montrerVideo();
+      const t = parseFloat(curseur.value) || 0;
+      champTemps.value = t.toFixed(2); lecteur.currentTime = t; modifie();
+      etat.textContent = "Image à " + secondes(t) + suffixe();
+    });
+    document.getElementById("couverture-video-auto").addEventListener("click", () => { modifie(); automatique(); });
+    document.getElementById("couverture-video-importer").addEventListener("click", () => champFichier.click());
+    champFichier.addEventListener("change", () => {
+      const f = champFichier.files && champFichier.files[0];
+      if (!f) return;
+      jeton++; affichage = "image"; champTemps.value = ""; modifie();
+      if (urlImage) URL.revokeObjectURL(urlImage);
+      urlImage = URL.createObjectURL(f); montrerImage(urlImage);
+      etat.textContent = "Image importée : " + f.name + suffixe();
+    });
+    if (champVideo) champVideo.addEventListener("change", synchroniser);
+    setInterval(synchroniser, 800);       // la video peut aussi venir de l'IA, d'un montage ou d'un modele (URL posee par script)
+    synchroniser();
+  })();
+</script>

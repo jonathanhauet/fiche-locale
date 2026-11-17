@@ -90,6 +90,7 @@ from . import (
     meta_publish,
     models,
     miniature_youtube,
+    couverture_video,
     montage_editeur,
     motion_video,
     cartes_montage,
@@ -370,6 +371,9 @@ def _migrer_vers_multi_comptes():
         colonnes_posts_instagram = {c["name"] for c in inspecteur.get_columns("posts_instagram_programmes")}
         if "video_url" not in colonnes_posts_instagram:
             connexion.execute(text("ALTER TABLE posts_instagram_programmes ADD COLUMN video_url TEXT"))
+        for table_video, colonnes_table in (("posts_meta_programmes", colonnes_posts_meta), ("posts_instagram_programmes", colonnes_posts_instagram)):
+            if "couverture_url" not in colonnes_table:
+                connexion.execute(text(f"ALTER TABLE {table_video} ADD COLUMN couverture_url TEXT"))
         colonnes_posts_linkedin = {c["name"] for c in inspecteur.get_columns("posts_linkedin_programmes")}
         if "video_donnees" not in colonnes_posts_linkedin:
             type_binaire = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
@@ -1469,6 +1473,32 @@ def _valider_video(octets: bytes, nom_fichier: str) -> None:
         raise ValueError(f"fichier trop volumineux ({len(octets) // (1024 * 1024)} Mo, {TAILLE_MAX_VIDEO_PUBLICATION // (1024 * 1024)} Mo maximum).")
 
 
+def _heberger_couverture_video(octets_video: bytes, octets_image: bytes = None, instant=None):
+    """
+    Couverture d'une video Facebook / Instagram (voir couverture_video.py), hebergee sur OVH : l'image importee si
+    l'utilisateur en a choisi une (ValueError si illisible), sinon l'image de la video a l'instant choisi (« instant »,
+    texte du formulaire) ou choisi automatiquement. None si l'extraction ou l'hebergement echoue : la video part
+    alors sans couverture, comme avant.
+    """
+    if octets_image:
+        return _televerser_image_publication(octets_image, "multi-couverture")
+    jpeg, _ = couverture_video.couverture(octets_video, couverture_video.lire_instant(instant))
+    if not jpeg:
+        return None
+    try:
+        return _televerser_image_publication(jpeg, "multi-couverture")
+    except Exception:
+        return None
+
+
+async def _lire_image_couverture(formulaire):
+    """Octets de l'image de couverture importee (champ « couverture_image »), ou None."""
+    fichier = formulaire.get("couverture_image")
+    if fichier is None or not getattr(fichier, "filename", ""):
+        return None
+    return await fichier.read() or None
+
+
 def _televerser_video_publication(octets: bytes, nom_fichier: str, prefixe: str) -> str:
     """Valide puis heberge une video sur OVH sous un nom neutre (voir _televerser_image_publication). Renvoie l'URL publique ; ValueError si le fichier est refuse."""
     _valider_video(octets, nom_fichier)
@@ -1586,7 +1616,7 @@ def _publications_externes(client: "models.Client", posts_google_en_ligne: list,
     return lignes
 
 
-def _journaliser_publication_meta(db: Session, modele, client_id: int, texte: str, urls: list, video_url: str = None) -> None:
+def _journaliser_publication_meta(db: Session, modele, client_id: int, texte: str, urls: list, video_url: str = None, couverture_url: str = None) -> None:
     """
     Trace d'une publication Facebook/Instagram faite immediatement via le
     composeur (modele : PostMetaProgramme ou PostInstagramProgramme, etat
@@ -1596,7 +1626,7 @@ def _journaliser_publication_meta(db: Session, modele, client_id: int, texte: st
     """
     db.add(modele(
         client_id=client_id, texte=texte, image_url=meta_publish.champ_depuis_urls(urls), video_url=video_url,
-        publier_le=_maintenant_paris(), etat="PUBLIE",
+        couverture_url=couverture_url, publier_le=_maintenant_paris(), etat="PUBLIE",
     ))
     db.commit()
 
@@ -1699,7 +1729,7 @@ def _publications_multi_reseaux(
                 "titre": post.texte[:60] + ("…" if len(post.texte) > 60 else ""),
                 "texte": post.texte or "",
                 "images": [] if post.video_url else meta_publish.urls_depuis_champ(post.image_url),
-                "image_url": None if post.video_url else (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
+                "image_url": (post.couverture_url or None) if post.video_url else (meta_publish.urls_depuis_champ(post.image_url) or [None])[0],
                 "video": bool(post.video_url),
                 "video_url": post.video_url or "",   # URL publique (hebergement) : sa premiere image sert de vignette
                 "date": post.publier_le.date(),
@@ -15413,6 +15443,16 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
 
     if "instagram" in reseaux and not video_url_partagee and not urls_par_reseau.get("instagram"):
         return _erreur("Instagram necessite une image ou une vidéo (partagee ou dediee).")
+
+    # Couverture de la video (Facebook / Instagram) : sans elle, Meta prend la 1re image, souvent un fond blanc ou noir.
+    couverture_url_partagee = None
+    if video_url_partagee and ("facebook" in reseaux or "instagram" in reseaux):
+        try:
+            couverture_url_partagee = await run_in_threadpool(
+                _heberger_couverture_video, octets_video_partagee, await _lire_image_couverture(formulaire), formulaire.get("couverture_temps"),
+            )
+        except ValueError as erreur_couverture:
+            return _erreur(f"Couverture refusée : {erreur_couverture}")
     if "youtube" in reseaux and not octets_video_partagee:
         return _erreur("YouTube necessite une vidéo (televersee ou generee par IA).")
 
@@ -15446,13 +15486,13 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     db.add(models.PostMetaProgramme(
                         client_id=client.id, texte=texte,
                         image_url=None if video_url_partagee else meta_publish.champ_depuis_urls(urls_par_reseau.get("facebook")),
-                        video_url=video_url_partagee,
+                        video_url=video_url_partagee, couverture_url=couverture_url_partagee,
                         publier_le=publier_le_reseau,
                     ))
                     db.commit()
                 elif video_url_partagee:
-                    meta_publish.publier_video_page(client.token_page_meta, client.page_id_meta, video_url_partagee, texte)
-                    _journaliser_publication_meta(db, models.PostMetaProgramme, client.id, texte, None, video_url=video_url_partagee)
+                    meta_publish.publier_video_page(client.token_page_meta, client.page_id_meta, video_url_partagee, texte, couverture_url=couverture_url_partagee)
+                    _journaliser_publication_meta(db, models.PostMetaProgramme, client.id, texte, None, video_url=video_url_partagee, couverture_url=couverture_url_partagee)
                 else:
                     meta_publish.publier_post_page(
                         client.token_page_meta, client.page_id_meta, texte, urls_par_reseau.get("facebook"),
@@ -15464,13 +15504,13 @@ async def publication_multi_publier(client_id: int, request: Request, db: Sessio
                     db.add(models.PostInstagramProgramme(
                         client_id=client.id, texte=texte,
                         image_url=None if video_url_partagee else meta_publish.champ_depuis_urls(urls_par_reseau.get("instagram")),
-                        video_url=video_url_partagee,
+                        video_url=video_url_partagee, couverture_url=couverture_url_partagee,
                         publier_le=publier_le_reseau,
                     ))
                     db.commit()
                 elif video_url_partagee:
-                    instagram_publish.publier_reel(client.token_instagram, client.instagram_id_meta, video_url_partagee, texte)
-                    _journaliser_publication_meta(db, models.PostInstagramProgramme, client.id, texte, None, video_url=video_url_partagee)
+                    instagram_publish.publier_reel(client.token_instagram, client.instagram_id_meta, video_url_partagee, texte, couverture_url=couverture_url_partagee)
+                    _journaliser_publication_meta(db, models.PostInstagramProgramme, client.id, texte, None, video_url=video_url_partagee, couverture_url=couverture_url_partagee)
                 else:
                     instagram_publish.publier_medias(
                         client.token_instagram, client.instagram_id_meta, urls_par_reseau["instagram"], texte,
@@ -15771,6 +15811,7 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
     nouvelle_image_linkedin = "inchangee"   # LinkedIn : octets, None (supprimer) ou "inchangee"
     nouvelle_video_url = "inchangee"        # Facebook / Instagram : URL, None (supprimer) ou "inchangee"
     nouvelle_video_linkedin = "inchangee"   # LinkedIn : octets, None (supprimer) ou "inchangee"
+    octets_video = None                     # nouvelle video televersee (sert aussi a en tirer la couverture)
 
     if gerer_images and a_video:
         fichier_video = formulaire.get("video")
@@ -15832,6 +15873,22 @@ async def publication_multi_modifier(reseau: str, post_id: int, request: Request
             post.document_donnees = None  # l'image remplace le carrousel PDF
     if nouvelle_video_url != "inchangee":
         post.video_url = nouvelle_video_url
+        post.couverture_url = None
+    # Couverture (Facebook / Instagram) : recalculee si la video change ou si l'utilisateur l'a choisie dans le bloc « Couverture ».
+    if reseau in ("facebook", "instagram") and post.video_url and (nouvelle_video_url != "inchangee" or formulaire.get("couverture_modifiee") == "1"):
+        try:
+            octets_image_couverture = await _lire_image_couverture(formulaire)
+            if octets_video is None and not octets_image_couverture:
+                octets_video = await run_in_threadpool(lambda: requests.get(post.video_url, timeout=60).content)
+            post.couverture_url = await run_in_threadpool(
+                _heberger_couverture_video, octets_video, octets_image_couverture, formulaire.get("couverture_temps"),
+            ) or post.couverture_url
+        except ValueError as erreur_couverture:
+            db.rollback()
+            return _reponse_modifier_post_programme(request, reseau, post, client, erreur=f"Couverture refusée : {erreur_couverture}", code=400)
+        except requests.RequestException:
+            db.rollback()
+            return _reponse_modifier_post_programme(request, reseau, post, client, erreur="Vidéo injoignable : impossible d'en tirer la couverture, réessayez.", code=400)
     if nouvelle_video_linkedin != "inchangee":
         post.video_donnees = nouvelle_video_linkedin
     db.commit()

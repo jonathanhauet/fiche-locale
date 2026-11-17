@@ -795,6 +795,8 @@ class PostMetaProgramme(Base):
     # Video au lieu d'image(s) (mutuellement exclusif) : URL hebergee sur OVH,
     # Facebook la televerse lui-meme depuis cette URL (voir meta_publish.publier_video_page).
     video_url = Column(String, nullable=True)
+    # Couverture de la video (image hebergee, voir couverture_video.py) : vignette dans le fil, a la place de la 1re image.
+    couverture_url = Column(String, nullable=True)
     publier_le = Column(DateTime, nullable=False)
     etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
     erreur = Column(Text, nullable=True)
@@ -814,6 +816,8 @@ class PostInstagramProgramme(Base):
     image_url = Column(String, nullable=True)
     # Video au lieu d'image(s) (mutuellement exclusif) : publiee en Reel (voir instagram_publish.publier_reel).
     video_url = Column(String, nullable=True)
+    # Couverture du Reel (image hebergee, voir couverture_video.py) : vignette du fil et de la grille du profil.
+    couverture_url = Column(String, nullable=True)
     publier_le = Column(DateTime, nullable=False)
     etat = Column(String, default="EN_ATTENTE")  # EN_ATTENTE, PUBLIE, ECHEC
     erreur = Column(Text, nullable=True)
