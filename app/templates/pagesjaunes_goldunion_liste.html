@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set page_actuelle = "suivi_goldunion" %}
+{% block titre %}Fiches PagesJaunes GoldUnion — Fiche Locale{% endblock %}
+{% block contenu %}
+<p class="fil-retour"><a href="/suivi-goldunion">&larr; Retour au suivi GoldUnion</a></p>
+<div class="barre-titre"><h1>Fiches PagesJaunes GoldUnion</h1></div>
+<p class="texte-discret">
+  Les agences qui ont revendiqué leur fiche PagesJaunes la déclarent sur la <a href="{{ chemin }}" target="_blank" rel="noopener">page publique</a>
+  (lien donné dans le tuto) : ville, adresse e-mail utilisée sur Solocal et personne qui a fait la manipulation.
+</p>
+
+{% if message %}<div class="bandeau-info">{{ message }}</div>{% endif %}
+
+<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0">
+  <div class="carte-resume"><div class="carte-resume-chiffre">{{ nb_agences }}</div><div class="carte-resume-libelle">agence{{ "s" if nb_agences != 1 }} déclarée{{ "s" if nb_agences != 1 }}</div></div>
+  <div class="carte-resume"><div class="carte-resume-chiffre">{{ declarations|length }}</div><div class="carte-resume-libelle">déclaration{{ "s" if declarations|length != 1 }}</div></div>
+  <div class="carte-resume"><div class="carte-resume-chiffre">{{ nb_perso }}</div><div class="carte-resume-libelle">adresse{{ "s" if nb_perso != 1 }} hors @goldunion.fr</div></div>
+</div>
+
+{% if nb_perso %}
+<div class="bandeau-avertissement">{{ nb_perso }} déclaration{{ "s" if nb_perso != 1 }} utilise{{ "nt" if nb_perso != 1 }} une adresse qui ne se termine pas par @goldunion.fr (en rouge ci-dessous).</div>
+{% endif %}
+
+{% if declarations %}
+<div style="overflow-x:auto">
+<table class="tableau-historique">
+  <thead><tr><th>Ville de l'agence</th><th>Adresse e-mail Solocal</th><th>Fait par</th><th>Déclaré le</th><th></th></tr></thead>
+  <tbody>
+  {% for d in declarations %}
+    <tr>
+      <td><strong>{{ d.ville }}</strong></td>
+      <td>{% if d.attendue %}{{ d.email }}{% else %}<span style="color:#B42318;font-weight:600">{{ d.email }}</span>{% endif %}</td>
+      <td>{{ d.responsable }}</td>
+      <td>{{ d.quand }}</td>
+      <td>
+        <form method="post" action="{{ chemin }}/declarations/{{ d.id }}/supprimer" onsubmit="return confirm({{ ('Supprimer la déclaration de ' ~ d.ville ~ ' ?')|tojson|forceescape }})">
+          <button type="submit" class="bouton-secondaire bouton-mini">Supprimer</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="texte-discret">Aucune déclaration pour l'instant.</p>
+{% endif %}
+{% endblock %}

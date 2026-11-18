@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Fiche PagesJaunes GoldUnion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Une colonne : le formulaire de declaration d'abord (c'est ce qu'on attend des agences), puis le logo et les photos a telecharger. Theme clair uniquement. */
+:root {
+  --bg: #FFFFFF; --surface: #F7F7F4; --ink: #1D2127; --muted: #545B66; --line: #DCDCD5;
+  --gold: #8A6210; --gold-soft: #F3E7CC; --gold-ink: #5C3F05;
+  --ok-bg: #E7F4EC; --ok-line: #9CCFB0; --ok-ink: #14532D;
+  --warn-bg: #FDECEA; --warn-line: #E3A29B; --warn-ink: #7A1D14;
+  --f-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 36px 64px; }
+main { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--f-display); margin: 0; text-wrap: balance; color: var(--ink); }
+h1 { font-size: clamp(1.8rem, 5vw, 2.4rem); line-height: 1.12; }
+h2 { font-size: 1.3rem; }
+p { margin: 0; }
+.eyebrow { align-self: flex-start; font-size: .78rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--gold-ink); background: var(--gold-soft); padding: 4px 10px; border-radius: 4px; }
+header { display: flex; flex-direction: column; gap: 14px; }
+.lead { color: var(--muted); font-size: 1.05rem; }
+.declarer { background: var(--surface); border: 3px solid var(--gold); border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+.declarer h2 { font-size: 1.5rem; }
+label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: var(--ink); }
+.aide { font-weight: 400; font-size: .9rem; color: var(--muted); }
+input[type=text], input[type=email] { font: inherit; color: var(--ink); background: #FFFFFF; border: 1.5px solid var(--line); border-radius: 8px; padding: 12px 14px; width: 100%; }
+input:focus-visible, .bouton:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.bouton { display: inline-flex; justify-content: center; align-items: center; gap: 8px; font: inherit; font-weight: 700; font-size: 1.05rem; color: #FFFFFF; background: var(--gold); border: 0; border-radius: 10px; padding: 14px 22px; cursor: pointer; text-decoration: none; }
+.bouton.secondaire { background: #FFFFFF; color: var(--gold-ink); border: 2px solid var(--gold); font-size: 1rem; padding: 12px 18px; }
+.piege { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.bandeau { border-radius: 10px; padding: 16px 18px; border: 1px solid; display: flex; flex-direction: column; gap: 4px; }
+.bandeau.ok { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.bandeau.alerte { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+.bandeau strong { font-size: 1.05rem; }
+.ressources { display: flex; flex-direction: column; gap: 14px; }
+.boutons { display: flex; flex-wrap: wrap; gap: 12px; }
+.vignettes { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+.vignettes img { width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; }
+footer { border-top: 1px solid var(--line); padding-top: 16px; color: var(--muted); font-size: .95rem; }
+footer strong { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="eyebrow">Agences GoldUnion · PagesJaunes</span>
+    <h1>Déclarez votre fiche PagesJaunes</h1>
+    <p class="lead">Vous avez revendiqué et validé la fiche PagesJaunes de votre agence ? Indiquez-nous ci-dessous avec quelle adresse e-mail, pour que toutes les fiches soient suivies au même endroit.</p>
+  </header>
+
+  {% if ok %}
+  <div class="bandeau ok" role="status">
+    <strong>Merci, votre déclaration est bien enregistrée.</strong>
+    <p>Vous pouvez fermer cette page.</p>
+  </div>
+  {% if adresse_perso %}
+  <div class="bandeau alerte" role="alert">
+    <strong>Cette adresse ne se termine pas par @goldunion.fr.</strong>
+    <p>La fiche doit être revendiquée avec une adresse @goldunion.fr, pas une adresse personnelle. Prévenez Jonathan Hauet sur Slack pour corriger.</p>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <section class="declarer" id="declarer" aria-labelledby="titre-form">
+    <h2 id="titre-form">Ma déclaration</h2>
+    {% if erreur %}
+    <div class="bandeau alerte" role="alert"><strong>Il manque une information.</strong><p>Remplissez les trois champs, avec une adresse e-mail complète.</p></div>
+    {% endif %}
+    <form method="post" action="{{ chemin }}" style="display:flex;flex-direction:column;gap:18px">
+      <label for="ville">Ville de l'agence
+        <input id="ville" name="ville" type="text" required maxlength="80" autocomplete="off" placeholder="Ex. : Lorient">
+      </label>
+      <label for="responsable">Vos prénom et nom
+        <span class="aide">La personne qui a fait la manipulation sur PagesJaunes.</span>
+        <input id="responsable" name="responsable" type="text" required maxlength="120" autocomplete="name" placeholder="Ex. : Marie Dupont">
+      </label>
+      <label for="email">Adresse e-mail utilisée sur Solocal
+        <span class="aide">Celle avec laquelle vous avez créé le compte Solocal. Elle doit se terminer par @goldunion.fr.</span>
+        <input id="email" name="email" type="email" required maxlength="160" autocomplete="email" placeholder="Ex. : lorient@goldunion.fr">
+      </label>
+      <div class="piege" aria-hidden="true"><label for="site_web">Ne pas remplir<input id="site_web" name="site_web" type="text" tabindex="-1" autocomplete="off"></label></div>
+      <div><button class="bouton" type="submit">Envoyer ma déclaration</button></div>
+    </form>
+  </section>
+
+  <section class="ressources" aria-labelledby="titre-res">
+    <h2 id="titre-res">Le logo et les photos pour votre fiche</h2>
+    <p>Un clic pour tout récupérer. Pour les photos, ouvrez ensuite le fichier .zip et extrayez les {{ photos|length }} photos.</p>
+    <div class="boutons">
+      <a class="bouton secondaire" href="{{ chemin }}/photos.zip">Télécharger les {{ photos|length }} photos (.zip)</a>
+      <a class="bouton secondaire" href="{{ chemin }}/logo.png">Télécharger le logo</a>
+    </div>
+    <div class="vignettes">
+      {% for p in photos %}<img src="{{ url_fichiers }}/{{ p }}" alt="Photo {{ loop.index }}" loading="lazy" width="200" height="200">{% endfor %}
+    </div>
+  </section>
+
+  <footer>Une question ou un blocage ? Contactez <strong>Jonathan Hauet</strong> directement sur <strong>Slack</strong> : cherchez « Jonathan Hauet » dans la barre de recherche de Slack.</footer>
+</main>
+</body>
+</html>

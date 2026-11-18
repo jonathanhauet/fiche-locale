@@ -8249,6 +8249,10 @@ app.include_router(compression_routes.creer_routeur(templates, lambda request: u
 app.include_router(pipette_routes.creer_routeur(templates, lambda request: rediriger_si_non_connecte(request)))
 app.include_router(audit_fiche_routes.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request), lambda: SessionLocal()))
 
+# --- PagesJaunes GoldUnion : declaration des fiches revendiquees par les agences, logo et photos (voir pagesjaunes_goldunion.py) ---------------
+from . import pagesjaunes_goldunion  # noqa: E402
+app.include_router(pagesjaunes_goldunion.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request)))
+
 
 # --- Baisse de visibilite Google (France, Espagne, Italie) : statistiques, fiches, rangs, reponses des IA, annuaires -------------------------------
 
