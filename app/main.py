@@ -8394,7 +8394,20 @@ def page_publique_goldunion(jeton: str, request: Request, db: Session = Depends(
     options_anciennete = [(code, libelle.replace("{n}", str(n_mois)), nb_par_anciennete[code]) for code, libelle in suivi_goldunion.CATEGORIES_ANCIENNETE if nb_par_anciennete[code]]
     libelles_statut = dict(suivi_goldunion.STATUTS_FICHE)
     options_groupes = {g: [(code, libelles_statut[code], nb_par_statut[code]) for code in codes if nb_par_statut[code]] for g, codes in suivi_goldunion.GROUPES_STATUT.items()}
+    ads = suivi_ads.charger(parametre)
+    try:
+        retenues_ads = json.loads(parametre.ads_actions_retenues) if parametre.ads_actions_retenues else []
+    except ValueError:
+        retenues_ads = []
+    pubs = suivi_ads.pubs_pour_page(ads, entrees, retenues_ads)
+    lectures = [(code, libelle, explication, sum(1 for p in pubs.values() if p["lecture"] == code)) for code, libelle, explication in suivi_ads.LECTURES]
+    resume_pubs = {"depense": ads.get("total", {}).get("cout", 0), "jours": ads.get("jours", 30), "maj": ads.get("maj", ""), "retenues": bool(retenues_ads),
+                   "conv": round(sum(p["conv_retenues"] for p in pubs.values()), 1), "cout": ads.get("total", {}).get("cout", 0)} if pubs else {}
+    if resume_pubs and resume_pubs["conv"]:
+        resume_pubs["cout_par_conv"] = round(sum(p["depense_dediee"] for p in pubs.values() if p["conv_retenues"]) / sum(p["conv_retenues"] for p in pubs.values() if p["conv_retenues"]), 2)
     return templates.TemplateResponse(request, "suivi_goldunion_public.html", {
+        "pubs": pubs, "lectures": [l for l in lectures if l[3]], "resume_pubs": resume_pubs, "seuils_pubs": {"bien": suivi_ads.SEUIL_BIEN_PLACEE, "peu": suivi_ads.SEUIL_PEU_VISIBLE, "note_bonne": suivi_ads.NOTE_BONNE, "note_basse": suivi_ads.NOTE_BASSE},
+        "nb_pubs_actives": sum(1 for p in pubs.values() if p["statut"] == "active"),
         "entrees": entrees, "synthese": suivi_goldunion.synthese(entrees), "mots": mots, "avec_mot_de_passe": suivi_goldunion.mot_de_passe_actif(parametre) and not utilisateur_connecte(request), "options_fiche": options_groupes["fiche"], "options_ouverture": options_groupes["ouverture"], "options_anciennete": options_anciennete, "mois_recente": n_mois, "options_reponses": options_reponses,
         "avis_page": suivi_goldunion.avis_pour_page(entrees), "nb_sans_detail_avis": sum(1 for e in entrees if e["donnees"].get("adresse") and (e["donnees"].get("avis") or {}).get("liste") is None), "paliers": suivi_goldunion.repartition_paliers(entrees), "jeton": jeton, "parametre": parametre,
         "libelle_date_ouverture": suivi_goldunion.libelle_date_ouverture,

@@ -379,6 +379,57 @@ def vue_par_agence(campagnes_couvertes: list, agences: list, villes: list = None
     return sorted(par_agence.values(), key=lambda l: ({"aucune": 0, "pause": 1, "active": 2}[l["statut"]], l["agence"]["nom"].lower()))
 
 
+# ---- Onglet « Pubs » de la page des responsables : pubs croisees avec la visibilite et la note
+SEUIL_BIEN_PLACEE = 60        # % de points mesures dans le top 3 a partir duquel l'agence est consideree bien placee
+SEUIL_PEU_VISIBLE = 40        # en dessous : peu visible
+NOTE_BONNE = 4.5
+NOTE_BASSE = 4.2
+
+LECTURES = [
+    ("a_booster", "À booster", "Peu visible dans le top 3, très bien notée et aucune pub active : bon candidat pour un coup de pouce Google Ads."),
+    ("a_etudier", "À étudier", "Peu visible, aucune pub active, note correcte : à regarder au cas par cas (concurrence locale, avis à développer)."),
+    ("note_a_corriger", "Note à améliorer d'abord", "Peu visible, aucune pub active, mais note basse : améliorer les avis avant d'investir en pubs."),
+    ("pubs_utiles", "Pubs actives, encore peu visible", "Des pubs tournent et l'agence n'est pas encore bien placée sur Google : les pubs compensent."),
+    ("deja_bien", "Déjà bien placée malgré les pubs", "Des pubs tournent alors que l'agence est déjà dans le top 3 sur la plupart des points : le budget mérite d'être questionné."),
+    ("bien_sans_pub", "Bien placée sans pub", "Bonne visibilité naturelle, aucune pub : rien à faire."),
+    ("neutre", "Rien de particulier", "Visibilité intermédiaire, sans pub : pas de signal."),
+    ("sans_mesure", "Visibilité non mesurée", "Impossible de juger sans mesure de visibilité."),
+]
+LIBELLES_LECTURE = {code: libelle for code, libelle, _ in LECTURES}
+
+
+def lecture_agence(statut_pub: str, pct3, note) -> str:
+    """Code de lecture d'une agence : croise pubs (active / pause / aucune), part de points dans le top 3 et note globale."""
+    if pct3 is None:
+        return "sans_mesure"
+    if statut_pub == "active":
+        return "deja_bien" if pct3 >= SEUIL_BIEN_PLACEE else "pubs_utiles"
+    if pct3 >= SEUIL_BIEN_PLACEE:
+        return "bien_sans_pub"
+    if pct3 < SEUIL_PEU_VISIBLE:
+        if note is not None and note < NOTE_BASSE:
+            return "note_a_corriger"
+        return "a_booster" if note is not None and note >= NOTE_BONNE else "a_etudier"
+    return "neutre"
+
+
+def pubs_pour_page(ads: dict, entrees: list, retenues: list) -> dict:
+    """{id d'agence: lignes de pubs + « lecture »} pour la page des responsables, ou {} si le compte Google Ads n'a pas ete lu."""
+    if not ads or not ads.get("campagnes"):
+        return {}
+    agences = agences_pour_rattachement(entrees)
+    campagnes = couverture_campagnes(appliquer_conversions_retenues(ads.get("campagnes", []), ads.get("conversions_campagnes"), retenues), agences)
+    par_id = {e["client"].id: e for e in entrees}
+    resultat = {}
+    for ligne in vue_par_agence(campagnes, agences, ads.get("villes")):
+        e = par_id[ligne["agence"]["id"]]
+        pct3 = (e["pos"] or {}).get("pct3")
+        note = (e["avis"] or {}).get("note")
+        code = lecture_agence(ligne["statut"], pct3, note)
+        resultat[ligne["agence"]["id"]] = {k: v for k, v in ligne.items() if k not in ("agence", "campagnes")} | {"lecture": code, "lecture_libelle": LIBELLES_LECTURE[code], "note_basse": note is not None and note < NOTE_BASSE}
+    return resultat
+
+
 def agences_pour_rattachement(entrees: list) -> list:
     """Agences suivies (lignes de suivi_goldunion.lignes) avec leur ville et leurs coordonnees."""
     return [{"id": e["client"].id, "nom": e["client"].nom, "ville": e["donnees"].get("ville", ""), "lat": e["donnees"].get("lat"), "lng": e["donnees"].get("lng")} for e in entrees]

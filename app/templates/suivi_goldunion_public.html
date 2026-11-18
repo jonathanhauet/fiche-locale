@@ -137,6 +137,16 @@
     .gu-tableau td.gu-premiere::before { display: none; }
     .gu-barre .gu-compte { margin-left: 0; width: 100%; }
   }
+  .col-pubs { display: none; }
+  .gu[data-vue="pubs"] .col-pubs { display: table-cell; }
+  .gu[data-vue="pubs"] .col-infos, .gu[data-vue="pubs"] .col-avis, .gu[data-vue="pubs"] .col-pos, .gu[data-vue="pubs"] .col-maps, .gu[data-vue="pubs"] .col-surv, .gu[data-vue="pubs"] .col-vavis, .gu[data-vue="pubs"] .gu-date-agence { display: none; }
+  .gu[data-vue="pubs"] [data-vues]:not([data-vues~="pubs"]) { display: none !important; }
+  @media (max-width: 1000px) { .gu[data-vue="pubs"] .col-pubs { display: block; } }
+  .gu-lecture-boost { background: rgba(79, 110, 247, 0.16); color: var(--accent); }
+  .gu-regles-pubs { background: var(--carte); border: 1px solid var(--carte-bordure); border-radius: var(--rayon); padding: 0.6rem 0.9rem; margin-bottom: 0.9rem; font-size: 0.85rem; }
+  .gu-regles-pubs summary { cursor: pointer; font-weight: 700; }
+  .gu-regles-pubs ul { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+  .gu-regles-pubs li { margin-bottom: 0.3rem; }
 </style>
 {% endblock %}
 {% block corps %}
@@ -159,6 +169,7 @@
     <button type="button" class="gu-onglet" role="tab" data-vue="visibilite">📍 Visibilité</button>
     <button type="button" class="gu-onglet" role="tab" data-vue="avis">★ Avis</button>
     {% if evo_baisse and evo_baisse.agences %}<button type="button" class="gu-onglet" role="tab" data-vue="evolution">📉 Évolution</button>{% endif %}
+    {% if pubs %}<button type="button" class="gu-onglet" role="tab" data-vue="pubs">📣 Pubs</button>{% endif %}
     <button type="button" class="gu-onglet" role="tab" data-vue="tout">Toutes les infos</button>
   </div>
 
@@ -183,6 +194,26 @@
       {% for p in paliers %}<button type="button" class="gu-palier-bouton" data-groupe="palier" data-palier="{{ p.code }}"><span class="gu-pastille-palier p-{{ p.code }}"></span><strong>{{ p.nb }}</strong> {{ p.libelle }}</button>{% endfor %}
     </div>
   </div>
+
+  {% if pubs %}
+  <div class="gu-avis-bloc" data-vues="pubs">
+    <div class="gu-tuiles">
+      <div class="gu-tuile"><strong>{{ '{:,.0f}'.format(resume_pubs.depense).replace(',', ' ') }} €</strong><span>dépensés en pubs ({{ resume_pubs.jours }} derniers jours)</span></div>
+      <div class="gu-tuile"><strong>{{ nb_pubs_actives }}</strong><span>agences avec une pub active</span></div>
+      <div class="gu-tuile"><strong>{{ resume_pubs.conv if resume_pubs.retenues else '—' }}</strong><span>conversions retenues (appels, itinéraires…){% if resume_pubs.cout_par_conv %} · {{ '%.2f'|format(resume_pubs.cout_par_conv)|replace('.', ',') }} € l'une{% endif %}</span></div>
+      {% for code, libelle, explication, nb in lectures %}{% if code in ('a_booster', 'deja_bien', 'note_a_corriger') %}<div class="gu-tuile {{ 'alerte' if code != 'a_booster' else '' }}"><strong>{{ nb }}</strong><span>{{ libelle }}</span></div>{% endif %}{% endfor %}
+    </div>
+    <details class="gu-regles-pubs">
+      <summary>Comment lire cet onglet ?</summary>
+      <ul>
+        <li>Chaque agence est classée en croisant <strong>ses pubs Google Ads</strong> (30 derniers jours), sa <strong>visibilité naturelle</strong> (part des points mesurés où elle est dans le top 3) et sa <strong>note Google</strong>.</li>
+        {% for code, libelle, explication, nb in lectures %}<li><strong>{{ libelle }}</strong> ({{ nb }}) : {{ explication }}</li>{% endfor %}
+        <li>Seuils : « bien placée » à partir de {{ seuils_pubs.bien }} % de points dans le top 3, « peu visible » sous {{ seuils_pubs.peu }} %, « très bien notée » à partir de {{ seuils_pubs.note_bonne|string|replace('.', ',') }}, « note basse » sous {{ seuils_pubs.note_basse|string|replace('.', ',') }}.</li>
+        <li>Une campagne qui couvre plusieurs agences (par exemple « France entière ») n'est pas attribuée à une agence en particulier : l'agence est indiquée comme couverte, sa dépense propre ne compte que les campagnes qui ne visent qu'elle. Ces chiffres aident à décider, ils ne remplacent pas le jugement.</li>
+      </ul>
+    </details>
+  </div>
+  {% endif %}
 
   {% if evo_baisse and evo_baisse.agences %}{% include "_goldunion_evolution.html" %}{% endif %}
 
@@ -224,10 +255,13 @@
   <div class="gu-barre">
     <input type="search" id="gu-recherche" placeholder="Rechercher une agence ou une ville…" autocomplete="off">
     <select id="gu-tri" aria-label="Trier">
-      <option value="nom" data-vues="visibilite avis tout">Trier : ordre alphabétique</option>
+      <option value="nom" data-vues="visibilite avis tout pubs">Trier : ordre alphabétique</option>
+      <option value="p-priorite" data-vues="pubs">Trier : à booster d'abord</option>
+      <option value="p-depense" data-vues="pubs">Trier : plus forte dépense en pubs</option>
+      <option value="p-cout" data-vues="pubs">Trier : coût par conversion le plus bas</option>
       <option value="surveiller" data-vues="visibilite avis tout">Trier : à surveiller d'abord</option>
       <option value="baisse" data-vues="visibilite tout">Trier : plus forte baisse de visibilité</option>
-      <option value="visibilite" data-vues="visibilite tout">Trier : visibilité la plus faible</option>
+      <option value="visibilite" data-vues="visibilite tout pubs">Trier : visibilité la plus faible</option>
       <option value="a-periode" data-vues="avis">Trier : plus d'avis sur la période</option>
       <option value="a-moyenne" data-vues="avis">Trier : moyenne de la période la plus basse</option>
       <option value="a-negatifs" data-vues="avis">Trier : plus d'avis négatifs (période)</option>
@@ -247,7 +281,20 @@
     <div class="gu-groupe-filtre"><span class="gu-titre-filtre">Ouverture</span>
       {% for code, libelle, nb in options_ouverture %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="ouverture" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
-    <div class="gu-groupe-filtre" data-vues="visibilite avis tout"><span class="gu-titre-filtre">Date d'ouverture</span>
+    {% if pubs %}
+    <div class="gu-groupe-filtre" data-vues="pubs"><span class="gu-titre-filtre">Lecture</span>
+      {% for code, libelle, explication, nb in lectures %}<label class="gu-case" title="{{ explication }}"><input type="checkbox" class="gu-filtre" data-groupe="lecture" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
+    </div>
+    <div class="gu-groupe-filtre" data-vues="pubs"><span class="gu-titre-filtre">Pubs</span>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="pubsstat" value="active"> Pub active <span class="gu-nb">{{ pubs.values()|selectattr("statut", "equalto", "active")|list|length }}</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="pubsstat" value="pause"> En pause <span class="gu-nb">{{ pubs.values()|selectattr("statut", "equalto", "pause")|list|length }}</span></label>
+      <label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="pubsstat" value="aucune"> Aucune pub <span class="gu-nb">{{ pubs.values()|selectattr("statut", "equalto", "aucune")|list|length }}</span></label>
+    </div>
+    <div class="gu-groupe-filtre" data-vues="pubs"><span class="gu-titre-filtre">Visibilité (top 3)</span>
+      {% for p in paliers %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="palier" value="{{ p.code }}"> <span class="gu-pastille-palier p-{{ p.code }}"></span> {{ p.libelle if p.code != 'aucune' else 'Non mesurée' }} <span class="gu-nb">{{ p.nb }}</span></label>{% endfor %}
+    </div>
+    {% endif %}
+    <div class="gu-groupe-filtre" data-vues="visibilite avis tout pubs"><span class="gu-titre-filtre">Date d'ouverture</span>
       {% for code, libelle, nb in options_anciennete %}<label class="gu-case"><input type="checkbox" class="gu-filtre" data-groupe="anciennete" value="{{ code }}"> {{ libelle }} <span class="gu-nb">{{ nb }}</span></label>{% endfor %}
     </div>
     <div class="gu-groupe-filtre" data-vues="visibilite tout"><span class="gu-titre-filtre">Visibilité (top 3)</span>
@@ -288,12 +335,14 @@
   <table class="gu-tableau" id="gu-tableau" data-jeton="{{ jeton }}">
     <thead>
       <tr><th>Agence</th><th class="col-infos">Fiche Google et site</th><th class="col-infos">Coordonnées et horaires</th><th class="col-infos">Ouverture et fermetures</th><th class="col-avis">Avis</th><th class="col-pos">Positionnement naturel</th><th class="col-maps">Maps · mois dernier</th><th class="col-surv">À surveiller</th>
+          <th class="col-pubs">Pubs Google</th><th class="col-pubs">Résultats des pubs</th><th class="col-pubs">Visibilité et note</th><th class="col-pubs">Lecture</th>
           <th class="col-vavis">Avis (période)</th><th class="col-vavis">Moyenne (période)</th><th class="col-vavis">Positifs</th><th class="col-vavis">Négatifs</th><th class="col-vavis">Note globale</th><th class="col-vavis">Total (historique)</th><th class="col-vavis">Sans réponse</th><th class="col-vavis">À surveiller (avis)</th></tr>
     </thead>
     <tbody>
       {% for e in entrees %}
       {% set d = e.donnees %}{% set fiche = d.get("fiche") or {} %}{% set site = d.get("site_etat") or {} %}{% set stats = d.get("stats") or {} %}{% set avis = e.avis %}{% set pos = e.pos %}
-      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-statuts="{{ e.statuts|join(' ') }}" data-palier="{{ e.palier }}" data-anciennete="{{ e.anciennete }}" data-id="{{ e.client.id }}" data-avisetats="{{ e.avis_reponses|join(' ') }}" data-survavis="{{ 1 if e.problemes_avis else 0 }}" data-nbavis="{{ e.problemes_avis|length }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
+      {% set pb = pubs.get(e.client.id) if pubs else none %}
+      <tr class="{{ '' if d else 'gu-pas-lue' }}" data-lecture="{{ pb.lecture if pb else '' }}" data-pubsstat="{{ pb.statut if pb else '' }}" data-depense="{{ pb.depense_dediee if pb else 0 }}" data-coutconv="{{ pb.cout_par_conv if pb and pb.cout_par_conv else 999999 }}" data-priorite="{{ {'a_booster': 0, 'a_etudier': 1, 'note_a_corriger': 2, 'deja_bien': 3, 'pubs_utiles': 4}.get(pb.lecture, 9) if pb else 9 }}" data-statuts="{{ e.statuts|join(' ') }}" data-palier="{{ e.palier }}" data-anciennete="{{ e.anciennete }}" data-id="{{ e.client.id }}" data-avisetats="{{ e.avis_reponses|join(' ') }}" data-survavis="{{ 1 if e.problemes_avis else 0 }}" data-nbavis="{{ e.problemes_avis|length }}" data-surveiller="{{ 1 if e.problemes else 0 }}"
           data-nom="{{ e.client.nom|lower }}" data-nb="{{ e.problemes|length }}" data-visibilite="{{ pos.pct3 if pos else 999 }}" data-evolution="{{ pos.evolution if pos and pos.evolution is not none else 999 }}"
           data-note="{{ avis.note if avis and avis.note is not none else 99 }}" data-sans-reponse="{{ avis.sans_reponse if avis else 0 }}"
           data-texte="{{ (e.client.nom ~ ' ' ~ d.get('ville', '') ~ ' ' ~ d.get('adresse', ''))|lower }}">
@@ -397,6 +446,33 @@
         <td class="col-surv" data-label="À surveiller">
           {% if e.problemes %}{% for p in e.problemes %}<span class="gu-puce gu-alerte">{{ p }}</span> {% endfor %}{% else %}<span class="gu-puce gu-ok">Rien à signaler</span>{% endif %}
         </td>
+        <td class="col-pubs" data-label="Pubs Google">
+          {% if pb %}
+          {% if pb.statut == 'active' %}<span class="gu-puce gu-ok">Pub active{% if pb.nb_actives > 1 %} ({{ pb.nb_actives }}){% endif %}</span>
+          {% elif pb.statut == 'pause' %}<span class="gu-puce gu-attention">En pause</span>
+          {% else %}<span class="gu-puce gu-neutre">Aucune pub</span>{% endif %}
+          {% if pb.depense_dediee %}<div><strong>{{ '%.0f'|format(pb.depense_dediee) }} €</strong> <span class="gu-doux">dédiés (30 j)</span></div>{% endif %}
+          {% if pb.depense_ville %}<div><strong>{{ '%.0f'|format(pb.depense_ville) }} €</strong> <span class="gu-doux">dans sa ville (campagnes partagées)</span></div>{% endif %}
+          {% if pb.statut != 'aucune' and not pb.depense_dediee and not pb.depense_ville %}<div class="gu-doux">Couverte par une campagne partagée</div>{% endif %}
+          {% else %}<span class="gu-doux">—</span>{% endif %}
+        </td>
+        <td class="col-pubs" data-label="Résultats des pubs">
+          {% if pb and pb.depense_dediee %}
+          <div><strong>{{ pb.conv_retenues if resume_pubs.retenues else '—' }}</strong> <span class="gu-doux">conversions retenues</span></div>
+          <div>{% if pb.cout_par_conv %}<strong>{{ '%.2f'|format(pb.cout_par_conv)|replace('.', ',') }} €</strong> <span class="gu-doux">par conversion</span>{% else %}<span class="gu-doux">Pas de coût par conversion</span>{% endif %}</div>
+          {% else %}<span class="gu-doux">—</span>{% endif %}
+        </td>
+        <td class="col-pubs" data-label="Visibilité et note">
+          {% if pos %}<div><span class="gu-gros gu-pct-{{ e.palier }}">{{ pos.pct3 }} %</span> <span class="gu-doux">top 3</span></div>
+          {% if pos.evolution is not none %}<div class="gu-doux">Depuis le mois dernier : {{ evolution(pos.evolution, " pts", -10) }}</div>{% endif %}
+          {% else %}<span class="gu-doux">Visibilité non mesurée</span>{% endif %}
+          {% if avis and avis.note is not none %}<div><span class="gu-gros">★ {{ avis.note|string|replace(".", ",") }}</span> <span class="gu-doux">{{ avis.total }} avis</span></div>{% endif %}
+        </td>
+        <td class="col-pubs" data-label="Lecture">
+          {% if pb %}<span class="gu-puce {{ 'gu-lecture-boost' if pb.lecture == 'a_booster' else ('gu-alerte' if pb.lecture in ('deja_bien', 'note_a_corriger') else ('gu-ok' if pb.lecture in ('bien_sans_pub', 'pubs_utiles') else 'gu-neutre')) }}">{{ pb.lecture_libelle }}</span>
+          {% if pb.note_basse and pb.statut == 'active' %}<span class="gu-puce gu-attention">Pubs sur une note basse</span>{% endif %}
+          {% else %}<span class="gu-doux">—</span>{% endif %}
+        </td>
         <td class="col-vavis" data-label="Avis (période)"><span class="av-periode gu-num-avis">—</span></td>
         <td class="col-vavis" data-label="Moyenne (période)"><span class="av-moyenne gu-num-avis">—</span><span class="av-tendance"></span></td>
         <td class="col-vavis" data-label="Positifs"><span class="av-positifs">—</span></td>
@@ -412,7 +488,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="16" class="gu-vide">Aucune agence à afficher pour l'instant.</td></tr>
+      <tr><td colspan="20" class="gu-vide">Aucune agence à afficher pour l'instant.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -572,8 +648,11 @@
     "a-negatifs": (a, b) => valeur(b, "avneg", -1) - valeur(a, "avneg", -1) || parNom(a, b),
     "a-tendance": (a, b) => valeur(a, "avtend", 999) - valeur(b, "avtend", 999) || parNom(a, b),
     "a-total": (a, b) => valeur(b, "avtotal", -1) - valeur(a, "avtotal", -1) || parNom(a, b),
+    "p-priorite": (a, b) => valeur(a, "priorite", 9) - valeur(b, "priorite", 9) || valeur(a, "visibilite", 999) - valeur(b, "visibilite", 999) || parNom(a, b),
+    "p-depense": (a, b) => valeur(b, "depense", 0) - valeur(a, "depense", 0) || parNom(a, b),
+    "p-cout": (a, b) => valeur(a, "coutconv", 999999) - valeur(b, "coutconv", 999999) || parNom(a, b),
   };
-  const GROUPES = { fiche: "statuts", ouverture: "statuts", palier: "palier", anciennete: "anciennete", moyper: "moyper", activite: "activite", reponses: "avisetats" };
+  const GROUPES = { fiche: "statuts", ouverture: "statuts", palier: "palier", anciennete: "anciennete", moyper: "moyper", activite: "activite", reponses: "avisetats", lecture: "lecture", pubsstat: "pubsstat" };
   const cochees = (groupe) => casesFiltre.filter((c) => c.dataset.groupe === groupe && c.checked).map((c) => c.value);
 
   // ---- Vue Avis : memes definitions que le Comparatif avis (positifs 4-5 etoiles, negatifs 1-3, periode precedente de meme duree juste avant)
@@ -736,7 +815,7 @@
   }
   onglets.forEach((o) => o.addEventListener("click", () => appliquerVue(o.dataset.vue, true)));
   let vueInitiale = "visibilite";
-  try { const v = localStorage.getItem("gu-vue"); if (["visibilite", "avis", "tout"].includes(v)) vueInitiale = v; } catch (e) { /* ignore */ }
+  try { const v = localStorage.getItem("gu-vue"); if (onglets.some((o) => o.dataset.vue === v)) vueInitiale = v; } catch (e) { /* ignore */ }
   appliquerVue(vueInitiale, false);
 })();
 </script>
