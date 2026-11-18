@@ -4,7 +4,7 @@ PagesJaunes GoldUnion : page publique ou les experts des agences GoldUnion decla
 
 - /pagesjaunes-goldunion : page publique sans mot de passe (lien donne dans le tuto), formulaire + telechargements.
 - /pagesjaunes-goldunion/photos.zip : les 17 photos en un seul fichier.
-- /pagesjaunes-goldunion/declarations : liste des declarations, reservee a l'espace connecte.
+- /pagesjaunes-goldunion/comptes : liste des declarations, reservee a l'espace connecte.
 
 Le routeur est cree par main.py, qui fournit les gabarits et la connexion. La table est creee ici (main.py cree les autres
 tables avant d'inclure ce routeur).
@@ -124,7 +124,7 @@ def creer_routeur(templates, utilisateur_connecte, rediriger_si_non_connecte) ->
         return Response(octets, media_type="image/png",
                         headers={**ENTETES_PUBLICS, "Content-Disposition": 'attachment; filename="logo-goldunion.png"'})
 
-    @routeur.get("/declarations", response_class=HTMLResponse)
+    @routeur.get("/comptes", response_class=HTMLResponse)
     def liste(request: Request, message: str = "", db: Session = Depends(obtenir_session)):
         redirection = rediriger_si_non_connecte(request)
         if redirection:
@@ -139,12 +139,12 @@ def creer_routeur(templates, utilisateur_connecte, rediriger_si_non_connecte) ->
             "nb_agences": len({d["ville"].lower() for d in declarations}), "nb_perso": sum(1 for d in declarations if not d["attendue"]),
         }, headers=ENTETES_PRIVES)
 
-    @routeur.post("/declarations/{declaration_id}/supprimer")
+    @routeur.post("/comptes/{declaration_id}/supprimer")
     def supprimer(declaration_id: int, request: Request, db: Session = Depends(obtenir_session)):
         if not utilisateur_connecte(request):
             return RedirectResponse("/connexion", status_code=303)
         db.query(DeclarationPagesJaunesGoldUnion).filter_by(id=declaration_id).delete()
         db.commit()
-        return RedirectResponse(f"{CHEMIN}/declarations?message=Déclaration supprimée.", status_code=303, headers=ENTETES_PRIVES)
+        return RedirectResponse(f"{CHEMIN}/comptes?message=Ligne supprimée.", status_code=303, headers=ENTETES_PRIVES)
 
     return routeur
