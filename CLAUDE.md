@@ -8,6 +8,9 @@ Jonathan travaille sur son PC fixe, son portable et claude.ai/code. Dépôt priv
 - Toute nouvelle règle ou décision de Jonathan est ajoutée à ce fichier : c'est la seule mémoire partagée entre les ordinateurs.
 - Jamais de secret dans le dépôt (`.env`, clés d'API, mots de passe) : les valeurs de production sont dans les variables Railway.
 
+## Travaux en attente
+- Branche `brouillon-onglet-pubs` (non publiée) : onglet « Pubs » de la page GoldUnion des responsables (pubs Google Ads croisées avec la visibilité et la note). À terminer, tester puis fusionner dans `main`.
+
 ## Règles de Jonathan
 - **Toujours répondre en français**, même pour une réponse courte ou après une capture d'écran.
 - Une fois une modification vérifiée, pousser sur `main` (déploiement automatique sur Railway) sans redemander. Prévenir avant seulement si c'est risqué : migration de base, envois réels à des clients.
