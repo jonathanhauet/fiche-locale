@@ -79,8 +79,17 @@ def identifiants_analytics(db):
     return identifiants
 
 
+# Seules les pages publiques du site comptent : l'application tourne aussi sur www.assorh.fr
+# (tableau de bord, salariés…), et l'usage de l'outil par les clients n'est pas de la fréquentation.
+# Même liste que la restriction prévue dans Google Tag Manager (voir le CLAUDE.md d'AssoRH).
+PAGES_PUBLIQUES = r"/((tarifs|demo|cgu|cgs|mentions-legales|sport|petite-enfance|ressources|blog|merci|bienvenue)[^/]*(/.*)?)?"
+FILTRE_PUBLIC = {"filter": {"fieldName": "pagePath", "stringFilter": {"matchType": "FULL_REGEXP", "value": PAGES_PUBLIQUES}}}
+
+
 def _ga4(identifiants, corps: dict) -> list:
-    """Lignes d'un rapport GA4 : [(dimensions, metriques)], metriques en nombres."""
+    """Lignes d'un rapport GA4 (pages publiques seulement) : [(dimensions, metriques)], metriques en nombres."""
+    filtre = corps.get("dimensionFilter")
+    corps = dict(corps, dimensionFilter={"andGroup": {"expressions": [FILTRE_PUBLIC, filtre]}} if filtre else FILTRE_PUBLIC)
     reponse = requests.post(URL_GA4.format(PROPRIETE_GA4), headers={"Authorization": f"Bearer {identifiants.token}"}, json=corps, timeout=30)
     if reponse.status_code == 403:
         raise RuntimeError("Accès refusé par Google Analytics : activer « Google Analytics Data API » dans le projet Google Cloud, "
