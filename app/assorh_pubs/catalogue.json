@@ -1,0 +1,523 @@
+{
+ "series": [
+  {
+   "id": "serie-1",
+   "titre": "Les messages clés",
+   "texte": "Images fixes : la signature d'AssoRH et trois avantages.",
+   "pubs": [
+    {
+     "id": "serie-1-message-cle",
+     "titre": "Vous n’êtes plus seul pour gérer votre association.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-1/message-cle-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-1/message-cle-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-1/message-cle-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-1/message-cle-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-1-tout-au-meme-endroit",
+     "titre": "Salariés, bénévoles, prestataires : tout au même endroit.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-1/tout-au-meme-endroit-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-1/tout-au-meme-endroit-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-1/tout-au-meme-endroit-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-1/tout-au-meme-endroit-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-1-benevoles",
+     "titre": "Vos bénévoles comptent. Pas dans votre facture.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-1/benevoles-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-1/benevoles-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-1/benevoles-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-1/benevoles-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-1-rappels",
+     "titre": "Rien n’est oublié. On vous prévient.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-1/rappels-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-1/rappels-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-1/rappels-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-1/rappels-story.jpg"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "serie-2",
+   "titre": "Par public",
+   "texte": "Images fixes, certaines avec photo : un message par type d'association ou par sujet.",
+   "pubs": [
+    {
+     "id": "serie-2-club-sportif",
+     "titre": "Moins de paperasse, plus de terrain.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-2/club-sportif-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-2/club-sportif-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-2/club-sportif-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-2/club-sportif-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-2-petite-enfance",
+     "titre": "Plus de temps pour les enfants, moins pour les tableurs.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-2/petite-enfance-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-2/petite-enfance-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-2/petite-enfance-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-2/petite-enfance-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-2-president-benevole",
+     "titre": "Président bénévole, pas DRH.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-2/president-benevole-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-2/president-benevole-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-2/president-benevole-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-2/president-benevole-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-2-conformite",
+     "titre": "Un contrôle ? Vos documents sont prêts.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-2/conformite-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-2/conformite-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-2/conformite-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-2/conformite-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-2-tarifs",
+     "titre": "Un prix accessible, dès le premier salarié.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-2/tarifs-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-2/tarifs-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-2/tarifs-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-2/tarifs-story.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-2-qualite-de-vie",
+     "titre": "Votre équipe va bien ? Demandez-lui, anonymement.",
+     "type": "image",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-2/qualite-de-vie-carre.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-2/qualite-de-vie-portrait.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-2/qualite-de-vie-paysage.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-2/qualite-de-vie-story.jpg"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "serie-3",
+   "titre": "Vidéos animées",
+   "texte": "Courtes vidéos sans son (la plupart des vidéos sont regardées sans le son dans le fil).",
+   "pubs": [
+    {
+     "id": "serie-3-pitch",
+     "titre": "Ton pitch en texte animé",
+     "texte": "« Vous dirigez une association avec des salariés, sans service RH ? » → « Tout repose sur vous » → « Vous n'êtes plus seul. »",
+     "type": "video",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-3/pitch-carre.mp4",
+       "affiche": "serie-3/pitch-carre-affiche.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-3/pitch-portrait.mp4",
+       "affiche": "serie-3/pitch-portrait-affiche.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-3/pitch-paysage.mp4",
+       "affiche": "serie-3/pitch-paysage-affiche.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-3/pitch-story.mp4",
+       "affiche": "serie-3/pitch-story-affiche.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-3-rappels",
+     "titre": "Rien n'est oublié",
+     "texte": "Les rappels arrivent un par un, puis « On vous prévient. »",
+     "type": "video",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-3/rappels-carre.mp4",
+       "affiche": "serie-3/rappels-carre-affiche.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-3/rappels-portrait.mp4",
+       "affiche": "serie-3/rappels-portrait-affiche.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-3/rappels-paysage.mp4",
+       "affiche": "serie-3/rappels-paysage-affiche.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-3/rappels-story.mp4",
+       "affiche": "serie-3/rappels-story-affiche.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-3-avant-apres",
+     "titre": "Avant / après",
+     "texte": "Tableurs, messageries, classeurs papier… puis un seul outil : tout au même endroit.",
+     "type": "video",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-3/avant-apres-carre.mp4",
+       "affiche": "serie-3/avant-apres-carre-affiche.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-3/avant-apres-portrait.mp4",
+       "affiche": "serie-3/avant-apres-portrait-affiche.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-3/avant-apres-paysage.mp4",
+       "affiche": "serie-3/avant-apres-paysage-affiche.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-3/avant-apres-story.mp4",
+       "affiche": "serie-3/avant-apres-story-affiche.jpg"
+      }
+     ]
+    },
+    {
+     "id": "serie-3-deux-applis",
+     "titre": "Une seule base, deux applis",
+     "texte": "Une tâche créée au bureau arrive sur le téléphone du salarié, qui la marque comme faite.",
+     "type": "video",
+     "formats": [
+      {
+       "nom": "carre",
+       "libelle": "Carré",
+       "ou": "LinkedIn, Facebook, Instagram",
+       "fichier": "serie-3/deux-applis-carre.mp4",
+       "affiche": "serie-3/deux-applis-carre-affiche.jpg"
+      },
+      {
+       "nom": "portrait",
+       "libelle": "Portrait",
+       "ou": "Facebook et Instagram (fil)",
+       "fichier": "serie-3/deux-applis-portrait.mp4",
+       "affiche": "serie-3/deux-applis-portrait-affiche.jpg"
+      },
+      {
+       "nom": "paysage",
+       "libelle": "Paysage",
+       "ou": "LinkedIn",
+       "fichier": "serie-3/deux-applis-paysage.mp4",
+       "affiche": "serie-3/deux-applis-paysage-affiche.jpg"
+      },
+      {
+       "nom": "story",
+       "libelle": "Story",
+       "ou": "Stories et reels",
+       "fichier": "serie-3/deux-applis-story.mp4",
+       "affiche": "serie-3/deux-applis-story-affiche.jpg"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "serie-4",
+   "titre": "Carrousel",
+   "texte": "Un contenu utile à faire défiler, qui donne quelque chose au lecteur avant de parler d'AssoRH.",
+   "pubs": [
+    {
+     "id": "serie-4-echeances",
+     "titre": "5 échéances RH que les associations oublient souvent",
+     "type": "carrousel",
+     "texte": "À vérifier en priorité : les règles sur chaque échéance, c'est ton domaine.",
+     "formats": [
+      {
+       "nom": "linkedin",
+       "libelle": "LinkedIn",
+       "ou": "Publicité « document » LinkedIn (PDF)",
+       "pages": [
+        "serie-4/linkedin-page-1.jpg",
+        "serie-4/linkedin-page-2.jpg",
+        "serie-4/linkedin-page-3.jpg",
+        "serie-4/linkedin-page-4.jpg",
+        "serie-4/linkedin-page-5.jpg",
+        "serie-4/linkedin-page-6.jpg",
+        "serie-4/linkedin-page-7.jpg"
+       ],
+       "pdf": "serie-4/carrousel-linkedin.pdf"
+      },
+      {
+       "nom": "meta",
+       "libelle": "Facebook / Instagram",
+       "ou": "Carrousel Facebook et Instagram",
+       "pages": [
+        "serie-4/meta-page-1.jpg",
+        "serie-4/meta-page-2.jpg",
+        "serie-4/meta-page-3.jpg",
+        "serie-4/meta-page-4.jpg",
+        "serie-4/meta-page-5.jpg",
+        "serie-4/meta-page-6.jpg",
+        "serie-4/meta-page-7.jpg"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
