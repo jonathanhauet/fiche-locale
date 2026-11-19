@@ -111,8 +111,9 @@ footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--lin
   </header>
 
   <nav class="onglets" aria-label="Rubriques">
-    <a href="/assorh/{{ jeton }}"{% if onglet != "frequentation" %} aria-current="page"{% endif %}>Journal</a>
+    <a href="/assorh/{{ jeton }}"{% if not onglet %} aria-current="page"{% endif %}>Journal</a>
     <a href="/assorh/{{ jeton }}/frequentation"{% if onglet == "frequentation" %} aria-current="page"{% endif %}>Fréquentation du site</a>
+    <a href="/assorh/{{ jeton }}/pubs"{% if onglet == "pubs" %} aria-current="page"{% endif %}>Publicités</a>
   </nav>
 {% block contenu %}
 

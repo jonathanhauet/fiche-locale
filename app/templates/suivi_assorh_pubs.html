@@ -1,0 +1,138 @@
+{% extends "suivi_assorh.html" %}
+
+{% block styles %}
+:root { --ok: #1E7A3C; --ok-bg: #E3F3E8; --fond-media: #E6ECEA; }
+@media (prefers-color-scheme: dark) {
+  :root { --ok: #7FD99A; --ok-bg: #17331F; --fond-media: #0B1311; }
+}
+.wrap { max-width: 1080px; }
+.note { background: var(--note-bg); color: var(--note-ink); border: 1px solid var(--note-line); border-radius: 10px; padding: 12px 16px; margin: 0; font-size: .92rem; }
+.bilan { display: flex; flex-wrap: wrap; gap: 8px; }
+.bilan span { font-size: .85rem; font-weight: 700; padding: 4px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); }
+.serie { display: grid; gap: 14px; min-width: 0; }
+.serie > p { margin: 0; color: var(--muted); }
+.pubs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 310px), 1fr)); gap: 16px; }
+.pub { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; align-content: start; min-width: 0; scroll-margin-top: 16px; }
+.pub.large { grid-column: 1 / -1; }
+.pub.valide { border: 2px solid var(--ok); }
+.pub.a-revoir { border: 2px solid var(--note-line); }
+.pub h3 { font-family: var(--f-display); font-size: 1.02rem; margin: 0; line-height: 1.25; color: var(--ink); }
+.pub .desc { margin: 0; color: var(--muted); font-size: .88rem; }
+.statut { justify-self: start; font-size: .75rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
+.statut.valide { background: var(--ok-bg); color: var(--ok); }
+.statut.a-revoir { background: var(--note-bg); color: var(--note-ink); border: 1px solid var(--note-line); }
+.formats { display: flex; flex-wrap: wrap; gap: 6px; }
+.formats button { font-size: .8rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+.formats button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.panneau { display: grid; gap: 6px; min-width: 0; }
+.panneau[hidden] { display: none; }
+.media { background: var(--fond-media); border-radius: 8px; display: grid; place-items: center; height: 360px; overflow: hidden; }
+.media img, .media video { max-width: 100%; max-height: 360px; width: auto; height: auto; display: block; }
+.ou { font-size: .8rem; color: var(--muted); margin: 0; }
+.ou a { color: var(--accent); }
+.bande { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; }
+.bande a { flex: 0 0 auto; scroll-snap-align: start; }
+.bande img { height: 300px; width: auto; display: block; border-radius: 6px; border: 1px solid var(--line); }
+.choix-avis { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; }
+.choix-avis button { padding: 8px 14px; font-size: .9rem; }
+.choix-avis button.second { background: var(--surface); color: var(--accent); border: 1px solid var(--accent); }
+.choix-avis button[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--accent-soft); }
+.choix-avis button.retirer { background: none; color: var(--muted); padding: 8px 4px; font-weight: 600; text-decoration: underline; }
+.demandes { display: grid; gap: 6px; }
+.demande { background: var(--note-bg); color: var(--note-ink); border: 1px solid var(--note-line); border-radius: 8px; padding: 8px 12px; display: grid; gap: 2px; font-size: .9rem; }
+.demande .qui { font-size: .75rem; font-weight: 700; color: var(--note-ink); }
+.demande p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; color: var(--note-ink); }
+.demande.faite { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.demande.faite .qui, .demande.faite p { color: var(--ok); }
+.pub form { margin-top: 0; }
+.pub textarea { min-height: 72px; }
+@media (max-width: 480px) { .media { height: 300px; } .media img, .media video { max-height: 300px; } .bande img { height: 240px; } }
+{% endblock %}
+
+{% block intro %}<p>Franck, voici toutes les pubs que j'ai préparées pour LinkedIn, Facebook et Instagram. Pour chacune, clique sur « Je valide » si elle te plaît, sur « À revoir » sinon, et sur « Demander une modification » si un mot ou une phrase ne va pas. Jonathan</p>{% endblock %}
+
+{% block contenu %}
+  <p class="note">Chaque pub existe en plusieurs formats (carré, portrait, paysage, story) : c'est le même message, adapté à chaque emplacement. Les écrans dessinés sont des illustrations de l'outil, avec des noms et des chiffres fictifs. Les vidéos se lancent en cliquant dessus.</p>
+
+  {% if total %}
+  <div class="bilan" aria-label="Où tu en es">
+    <span>{{ nb_valides }} validée{{ "s" if nb_valides > 1 }} sur {{ total }}</span>
+    {% if nb_a_revoir %}<span>{{ nb_a_revoir }} à revoir</span>{% endif %}
+    {% if nb_demandes %}<span>{{ nb_demandes }} modification{{ "s" if nb_demandes > 1 }} demandée{{ "s" if nb_demandes > 1 }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% for s in series %}
+  <section class="serie" aria-labelledby="t-{{ s.id }}">
+    <h2 id="t-{{ s.id }}">{{ s.titre }}</h2>
+    {% if s.texte %}<p>{{ s.texte }}</p>{% endif %}
+    <div class="pubs">
+      {% for p in s.pubs %}
+      <article class="pub{% if p.type == 'carrousel' %} large{% endif %}{% if p.avis %} {{ p.avis }}{% endif %}" id="pub-{{ p.id }}">
+        {% if p.avis %}<span class="statut {{ p.avis }}">{{ libelles_avis[p.avis] }}{% if p.avis == "valide" %} par toi{% endif %}</span>{% endif %}
+        <h3>{{ p.titre }}</h3>
+        {% if p.texte %}<p class="desc">{{ p.texte }}</p>{% endif %}
+        {% if p.formats|length > 1 %}
+        <div class="formats" role="group" aria-label="Format">
+          {% for f in p.formats %}<button type="button" data-cible="{{ p.id }}-{{ f.nom }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ f.libelle }}</button>{% endfor %}
+        </div>
+        {% endif %}
+        {% for f in p.formats %}
+        <div class="panneau" id="{{ p.id }}-{{ f.nom }}" data-pub="{{ p.id }}"{% if not loop.first %} hidden{% endif %}>
+          {% if p.type == "carrousel" %}
+          <div class="bande">
+            {% for page in f.pages %}<a href="/assorh/{{ jeton }}/pubs/f/{{ page }}" target="_blank" rel="noopener"><img src="/assorh/{{ jeton }}/pubs/f/{{ page }}" alt="{{ p.titre }}, {{ f.libelle }}, page {{ loop.index }}" loading="lazy"></a>{% endfor %}
+          </div>
+          <p class="ou">{{ f.ou }}{% if f.pdf %} · <a href="/assorh/{{ jeton }}/pubs/f/{{ f.pdf }}" target="_blank" rel="noopener">ouvrir le PDF</a>{% endif %} · fais défiler les pages</p>
+          {% elif p.type == "video" %}
+          <div class="media"><video controls muted loop playsinline preload="none" poster="/assorh/{{ jeton }}/pubs/f/{{ f.affiche }}" aria-label="{{ p.titre }}, format {{ f.libelle|lower }}"><source src="/assorh/{{ jeton }}/pubs/f/{{ f.fichier }}" type="video/mp4"></video></div>
+          <p class="ou">{{ f.libelle }} : {{ f.ou }}</p>
+          {% else %}
+          <div class="media"><a href="/assorh/{{ jeton }}/pubs/f/{{ f.fichier }}" target="_blank" rel="noopener"><img src="/assorh/{{ jeton }}/pubs/f/{{ f.fichier }}" alt="{{ p.titre }}, format {{ f.libelle|lower }}" loading="lazy"></a></div>
+          <p class="ou">{{ f.libelle }} : {{ f.ou }} · clique pour agrandir</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        <form class="choix-avis" method="post" action="/assorh/{{ jeton }}/pubs/avis">
+          <input type="hidden" name="pub_id" value="{{ p.id }}">
+          <button type="submit" name="avis" value="valide" aria-pressed="{{ 'true' if p.avis == 'valide' else 'false' }}">{{ "✓ Validée" if p.avis == "valide" else "Je valide" }}</button>
+          <button type="submit" name="avis" value="a-revoir" class="second" aria-pressed="{{ 'true' if p.avis == 'a-revoir' else 'false' }}">{{ "✓ À revoir" if p.avis == "a-revoir" else "À revoir" }}</button>
+          {% if p.avis %}<button type="submit" name="avis" value="" class="retirer">Retirer mon choix</button>{% endif %}
+        </form>
+
+        {% if p.demandes %}
+        <div class="demandes">
+          {% for d in p.demandes %}<div class="demande{% if d.faite %} faite{% endif %}"><span class="qui">{% if d.faite %}Modifiée le {{ d.faite_quand }}{% else %}Demandée le {{ d.quand }}{% endif %}</span><p>{{ d.texte }}</p></div>{% endfor %}
+        </div>
+        {% endif %}
+        <details class="ecrire">
+          <summary>Demander une modification</summary>
+          <form method="post" action="/assorh/{{ jeton }}/pubs/demande">
+            <input type="hidden" name="pub_id" value="{{ p.id }}">
+            <textarea name="texte" maxlength="2000" required aria-label="Ta demande de modification pour « {{ p.titre }} »" placeholder="Ex. : dans le titre, remplacer « paperasse » par « papiers »"></textarea>
+            <div class="ligne-envoi"><span></span><button type="submit">Envoyer</button></div>
+          </form>
+        </details>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <p class="etat">Aucune pub pour l'instant.</p>
+  {% endfor %}
+
+<script>
+document.querySelectorAll(".formats button").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var cible = document.getElementById(b.dataset.cible);
+    if (!cible) return;
+    document.querySelectorAll('.panneau[data-pub="' + cible.dataset.pub + '"]').forEach(function (p) {
+      p.hidden = p !== cible;
+      p.querySelectorAll("video").forEach(function (v) { if (p.hidden) v.pause(); });
+    });
+    b.parentNode.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+  });
+});
+</script>
+{% endblock %}

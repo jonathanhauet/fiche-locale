@@ -18,7 +18,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import Session
@@ -74,6 +74,28 @@ class TacheSuiviAssoRH(Base):
 
     id = Column(Integer, primary_key=True)
     jour = Column(String(10), default="")                      # journee a laquelle la demande a ete faite
+    texte = Column(Text, nullable=False)
+    faite = Column(Boolean, default=False)
+    faite_le = Column(DateTime, nullable=True)
+    cree_le = Column(DateTime, default=datetime.utcnow)
+
+
+class AvisPubSuiviAssoRH(Base):
+    """Onglet Publicités : l'avis de Franck sur une pub (« valide » ou « a-revoir »), une ligne par pub du catalogue."""
+    __tablename__ = "suivi_assorh_avis_pubs"
+
+    id = Column(Integer, primary_key=True)
+    pub_id = Column(String, unique=True, nullable=False)
+    avis = Column(String, default="")
+    maj_le = Column(DateTime, default=datetime.utcnow)
+
+
+class DemandePubSuiviAssoRH(Base):
+    """Onglet Publicités : une demande de modification de Franck sur une pub (« changer tel mot »…), que Jonathan marque comme faite."""
+    __tablename__ = "suivi_assorh_demandes_pubs"
+
+    id = Column(Integer, primary_key=True)
+    pub_id = Column(String, nullable=False, index=True)
     texte = Column(Text, nullable=False)
     faite = Column(Boolean, default=False)
     faite_le = Column(DateTime, nullable=True)
@@ -176,6 +198,110 @@ def page_frequentation(jeton: str, request: Request, db: Session = Depends(obten
     }, headers=ENTETES)
 
 
+# ---------- onglet « Publicités » : les pubs preparees pour Franck (fichiers exportes par AssoRH/pubs/exporter_pour_suivi.py)
+
+DOSSIER_PUBS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assorh_pubs")
+AVIS_PUBS = {"valide": "Validée", "a-revoir": "À revoir"}
+TAILLE_DEMANDE = 2000
+MAX_DEMANDES_PAR_HEURE = 30
+_cache_catalogue = {"mtime": None, "valeur": None}
+
+
+def catalogue_pubs() -> dict:
+    """Catalogue des pubs (series -> pubs -> formats), relu seulement si le fichier a change."""
+    chemin = os.path.join(DOSSIER_PUBS, "catalogue.json")
+    try:
+        mtime = os.path.getmtime(chemin)
+    except OSError:
+        return {"series": []}
+    if _cache_catalogue["mtime"] != mtime:
+        with open(chemin, encoding="utf-8") as f:
+            _cache_catalogue.update(mtime=mtime, valeur=json.load(f))
+    return _cache_catalogue["valeur"]
+
+
+def _pubs(catalogue: dict) -> list:
+    return [p for s in catalogue.get("series", []) for p in s.get("pubs", [])]
+
+
+def _fichiers_pubs(catalogue: dict) -> set:
+    """Seuls les fichiers cites par le catalogue sont servis."""
+    fichiers = set()
+    for p in _pubs(catalogue):
+        for f in p.get("formats", []):
+            fichiers.update(x for x in (f.get("fichier"), f.get("affiche"), f.get("pdf")) if x)
+            fichiers.update(f.get("pages", []))
+    return fichiers
+
+
+def _demande_json(d: DemandePubSuiviAssoRH) -> dict:
+    return {"id": d.id, "pub_id": d.pub_id, "texte": d.texte, "faite": bool(d.faite),
+            "faite_le": d.faite_le.isoformat() if d.faite_le else "", "cree_le": d.cree_le.isoformat() if d.cree_le else ""}
+
+
+@routeur.get("/assorh/{jeton}/pubs", response_class=HTMLResponse)
+def page_pubs(jeton: str, request: Request, db: Session = Depends(obtenir_session)):
+    """Onglet « Publicités » : toutes les pubs, avec pour chacune l'avis de Franck et ses demandes de modification."""
+    if not _correspond(jeton, EMPREINTE_JETON):
+        return _introuvable()
+    catalogue = catalogue_pubs()
+    avis = {a.pub_id: a.avis for a in db.query(AvisPubSuiviAssoRH).all()}
+    demandes = defaultdict(list)
+    for d in db.query(DemandePubSuiviAssoRH).order_by(DemandePubSuiviAssoRH.cree_le, DemandePubSuiviAssoRH.id).all():
+        demandes[d.pub_id].append({"texte": d.texte, "faite": bool(d.faite), "quand": libelle_moment(d.cree_le) if d.cree_le else "",
+                                   "faite_quand": libelle_moment(d.faite_le) if d.faite_le else ""})
+    series = [dict(s, pubs=[dict(p, avis=avis.get(p["id"], ""), demandes=demandes.get(p["id"], [])) for p in s.get("pubs", [])])
+              for s in catalogue.get("series", [])]
+    toutes = [p for s in series for p in s["pubs"]]
+    return _templates.TemplateResponse(request, "suivi_assorh_pubs.html", {
+        "jeton": jeton, "onglet": "pubs", "series": series, "libelles_avis": AVIS_PUBS, "total": len(toutes),
+        "nb_valides": sum(1 for p in toutes if p["avis"] == "valide"), "nb_a_revoir": sum(1 for p in toutes if p["avis"] == "a-revoir"),
+        "nb_demandes": sum(1 for p in toutes for d in p["demandes"] if not d["faite"]),
+    }, headers=ENTETES)
+
+
+@routeur.get("/assorh/{jeton}/pubs/f/{chemin:path}")
+def fichier_pub(jeton: str, chemin: str):
+    """Image, video ou PDF d'une pub (derriere le lien secret, comme la page)."""
+    if not _correspond(jeton, EMPREINTE_JETON) or chemin not in _fichiers_pubs(catalogue_pubs()):
+        return _introuvable()
+    complet = os.path.realpath(os.path.join(DOSSIER_PUBS, chemin))
+    if not complet.startswith(os.path.realpath(DOSSIER_PUBS) + os.sep) or not os.path.isfile(complet):
+        return _introuvable()
+    return FileResponse(complet, headers={"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "private, max-age=86400", "Referrer-Policy": "no-referrer"})
+
+
+@routeur.post("/assorh/{jeton}/pubs/avis")
+def donner_avis_pub(jeton: str, pub_id: str = Form(""), avis: str = Form(""), db: Session = Depends(obtenir_session)):
+    """Franck valide une pub, la met « à revoir », ou retire son choix (avis vide)."""
+    if not _correspond(jeton, EMPREINTE_JETON):
+        return _introuvable()
+    if pub_id in {p["id"] for p in _pubs(catalogue_pubs())}:
+        ligne = db.query(AvisPubSuiviAssoRH).filter_by(pub_id=pub_id).first()
+        if avis in AVIS_PUBS:
+            if not ligne:
+                ligne = AvisPubSuiviAssoRH(pub_id=pub_id)
+                db.add(ligne)
+            ligne.avis, ligne.maj_le = avis, datetime.utcnow()
+        elif ligne:
+            db.delete(ligne)
+        db.commit()
+    return RedirectResponse(f"/assorh/{jeton}/pubs#pub-{pub_id}", status_code=303, headers=ENTETES)
+
+
+@routeur.post("/assorh/{jeton}/pubs/demande")
+def demander_modif_pub(jeton: str, pub_id: str = Form(""), texte: str = Form(""), db: Session = Depends(obtenir_session)):
+    """Franck demande une modification sur une pub (« remplacer tel mot par… »)."""
+    if not _correspond(jeton, EMPREINTE_JETON):
+        return _introuvable()
+    texte = (texte or "").strip()[:TAILLE_DEMANDE]
+    recentes = db.query(DemandePubSuiviAssoRH).filter(DemandePubSuiviAssoRH.cree_le >= datetime.utcnow() - timedelta(hours=1)).count()
+    if texte and pub_id in {p["id"] for p in _pubs(catalogue_pubs())} and recentes < MAX_DEMANDES_PAR_HEURE:
+        db.add(DemandePubSuiviAssoRH(pub_id=pub_id, texte=texte))
+        db.commit()
+    return RedirectResponse(f"/assorh/{jeton}/pubs#pub-{pub_id}", status_code=303, headers=ENTETES)
+
+
 @routeur.post("/assorh/{jeton}/tache/{tache_id}")
 def cocher_tache(jeton: str, tache_id: int, db: Session = Depends(obtenir_session)):
     """Franck coche (ou decoche) une tache."""
@@ -232,6 +358,37 @@ def api_frequentation(request: Request, db: Session = Depends(obtenir_session)):
         return _refus()
     donnees, maj_le = frequentation_assorh.donnees_en_cache(db)
     return JSONResponse({"maj_le": maj_le.isoformat() if maj_le else "", "donnees": donnees}, headers=ENTETES)
+
+
+@routeur.get("/api/assorh/pubs")
+def api_pubs(request: Request, db: Session = Depends(obtenir_session)):
+    """Avis de Franck et demandes de modification, pub par pub (avec le titre de chaque pub)."""
+    if not _cle_valide(request):
+        return _refus()
+    titres = {p["id"]: p.get("titre", "") for p in _pubs(catalogue_pubs())}
+    avis = {a.pub_id: {"avis": a.avis, "maj_le": a.maj_le.isoformat() if a.maj_le else ""} for a in db.query(AvisPubSuiviAssoRH).all()}
+    demandes = [dict(_demande_json(d), titre=titres.get(d.pub_id, ""))
+                for d in db.query(DemandePubSuiviAssoRH).order_by(DemandePubSuiviAssoRH.cree_le, DemandePubSuiviAssoRH.id).all()]
+    pubs = [{"id": i, "titre": t, **avis.get(i, {"avis": "", "maj_le": ""})} for i, t in titres.items()]
+    return JSONResponse({"pubs": pubs, "demandes": demandes}, headers=ENTETES)
+
+
+@routeur.post("/api/assorh/pubs/demandes/{demande_id}")
+async def api_marquer_demande(demande_id: int, request: Request, db: Session = Depends(obtenir_session)):
+    """Jonathan marque une demande de modification comme faite : {"faite": true} (false pour la rouvrir)."""
+    if not _cle_valide(request):
+        return _refus()
+    try:
+        corps = await request.json()
+    except ValueError:
+        corps = {}
+    demande = db.get(DemandePubSuiviAssoRH, demande_id)
+    if not demande:
+        return JSONResponse({"erreur": "demande introuvable"}, status_code=404, headers=ENTETES)
+    demande.faite = bool((corps or {}).get("faite", True)) if isinstance(corps, dict) else True
+    demande.faite_le = datetime.utcnow() if demande.faite else None
+    db.commit()
+    return JSONResponse({"ok": True, "demande": _demande_json(demande)}, headers=ENTETES)
 
 
 @routeur.post("/api/assorh/frequentation/rafraichir")
