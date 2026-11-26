@@ -679,6 +679,13 @@
     🤖 Adapter le texte par réseau (IA)
   </button>
   <p id="texte-statut-adaptation" class="texte-vide" hidden></p>
+  {% set voix_client = lire_voix_reseaux(client.voix_reseaux) %}
+  {% set voix_reglees = [("linkedin", "LinkedIn"), ("facebook", "Facebook"), ("instagram", "Instagram"), ("google", "Google"), ("youtube", "YouTube"), ("wordpress", "Blog")] | selectattr(0, "in", voix_client) | list %}
+  {% if voix_reglees %}
+  <p class="texte-discret" id="rappel-voix-reseaux">🗣️ Qui parle :
+    {% for reseau, nom_reseau in voix_reglees %}{{ nom_reseau }} → {% if voix_client[reseau] == "fondateur" %}{{ voix_client.get("fondateur") or "le fondateur" }} (« je »){% else %}{{ client.nom_affiche_carrousel or client.nom }} (« nous »){% endif %}{{ " · " if not loop.last }}{% endfor %}
+    (<a href="/clients/{{ client.id }}/charte#voix-reseaux">modifier</a>)</p>
+  {% endif %}
 
   <div id="zone-variantes">
     {% for reseau, nom, initiales in [("google", "Google Business Profile", "G"), ("facebook", "Facebook", "f"), ("instagram", "Instagram", "IG"), ("linkedin", "LinkedIn", "in"), ("wordpress", "WordPress", "W"), ("youtube", "YouTube", "YT")] %}

@@ -179,6 +179,9 @@ class Client(Base):
     # ("feminin" ou "masculin"). Vide = deduit automatiquement du site, comme avant.
     personne_ecriture = Column(String, default="")
     genre_ecriture = Column(String, default="")
+    # Qui parle sur chaque reseau (voir claude_generation.lire_voix_reseaux) : JSON {"fondateur": "Prenom Nom", "linkedin": "fondateur", "facebook": "entreprise", ...}.
+    # Ex. le fondateur en « je » sur son profil LinkedIn, l'entreprise en « nous » sur Facebook et Instagram. Vide = meme voix partout, comme avant.
+    voix_reseaux = Column(Text, default="")
     # Polices du site du client (reference de charte, voir analyse_site.py) et CMS detecte (utile pour savoir ce qui est modifiable sur son site)
     police_titres = Column(String, default="")
     police_texte = Column(String, default="")

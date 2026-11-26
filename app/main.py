@@ -391,6 +391,8 @@ def _migrer_vers_multi_comptes():
             connexion.execute(text("ALTER TABLE clients ADD COLUMN personne_ecriture VARCHAR DEFAULT ''"))
         if "genre_ecriture" not in colonnes_clients:
             connexion.execute(text("ALTER TABLE clients ADD COLUMN genre_ecriture VARCHAR DEFAULT ''"))
+        if "voix_reseaux" not in colonnes_clients:
+            connexion.execute(text("ALTER TABLE clients ADD COLUMN voix_reseaux TEXT DEFAULT ''"))
         for colonne_charte in ("police_titres", "police_texte", "cms_site"):
             if colonne_charte not in colonnes_clients:
                 connexion.execute(text(f"ALTER TABLE clients ADD COLUMN {colonne_charte} VARCHAR DEFAULT ''"))
@@ -551,6 +553,8 @@ templates.env.globals["version_css"] = int(
 templates.env.globals["version_pipette_js"] = int(os.path.getmtime(os.path.join(DOSSIER_APP, "static", "pipette.js")))
 templates.env.globals["personnes_ecriture"] = claude_generation.PERSONNES_ECRITURE
 templates.env.globals["genres_ecriture"] = claude_generation.GENRES_ECRITURE
+templates.env.globals["voix_par_reseau"] = claude_generation.VOIX_PAR_RESEAU
+templates.env.globals["lire_voix_reseaux"] = claude_generation.lire_voix_reseaux
 templates.env.globals["version_calendrier_js"] = int(
     os.path.getmtime(os.path.join(DOSSIER_APP, "static", "calendrier_champ.js"))
 )
@@ -12626,6 +12630,7 @@ async def publication_multi_adapter(client_id: int, request: Request, db: Sessio
         # Contenu de marque : les hashtags fixes de cette agence (souvent locaux) ne sont pas ajoutes.
         variantes = claude_generation.adapter_post_multi_reseaux(
             texte_base, reseaux, _contexte_ia_client(client, marque=marque), "" if marque else client.hashtags_fixes,
+            voix_reseaux=None if marque else claude_generation.lire_voix_reseaux(client.voix_reseaux), nom_entreprise=client.nom_affiche_carrousel or client.nom,
         )
     except Exception as e:
         return JSONResponse({"erreur": f"Echec de l'adaptation IA : {e}"}, status_code=500)
@@ -12980,7 +12985,7 @@ def _charte_client(db: Session, client) -> dict:
         "principale": principale, "secondaires": secondaires, "nom": nom, "logo_envoye": client.logo_url or "", "logo_google": client.logo_google_url or "",
         "logo_position": logo_position_client(client), "logo_style": logo_style_client(client), "logo_fond": logo_couleur_fond_client(client), "decor": style_decor_client(client),
         "wordpress": wordpress, "reprises": reprises, "ecarts": ecarts, "profil_video": bool(video1 or video2),
-        "personne": client.personne_ecriture or "", "genre": client.genre_ecriture or "",
+        "personne": client.personne_ecriture or "", "genre": client.genre_ecriture or "", "voix_reseaux": claude_generation.lire_voix_reseaux(client.voix_reseaux),
         "police_titres": client.police_titres or "", "police_texte": client.police_texte or "", "cms": client.cms_site or "", "site": client.site_web or client.wordpress_url or "",
     }
 
@@ -13153,6 +13158,8 @@ async def enregistrer_identite_visuelle(client_id: int, request: Request, db: Se
         client.personne_ecriture = donnees["personne_ecriture"] if donnees["personne_ecriture"] in ("je", "nous") else ""
     if "genre_ecriture" in donnees:
         client.genre_ecriture = donnees["genre_ecriture"] if donnees["genre_ecriture"] in ("feminin", "masculin") else ""
+    if "voix_reseaux" in donnees:                               # qui parle sur chaque reseau (fondateur ou entreprise)
+        client.voix_reseaux = claude_generation.normaliser_voix_reseaux(donnees.get("voix_reseaux"))
     db.commit()
     return JSONResponse({"ok": True})
 

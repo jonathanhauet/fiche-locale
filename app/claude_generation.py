@@ -1016,6 +1016,66 @@ PERSONNES_ECRITURE = {"": "Automatique (déduit du site)", "je": "« Je » : une
 GENRES_ECRITURE = {"": "Automatique", "feminin": "Féminin (une femme)", "masculin": "Masculin (un homme)"}
 
 
+# Qui parle sur chaque reseau : le fondateur en son nom (« je ») ou l'entreprise (« nous »). Vide = la voix generale du client (section du dessus).
+VOIX_PAR_RESEAU = {"": "Comme les autres textes", "fondateur": "Le fondateur, en « je »", "entreprise": "L'entreprise, en « nous »"}
+RESEAUX_VOIX = ("linkedin", "facebook", "instagram", "google", "youtube", "wordpress")
+
+
+def normaliser_voix_reseaux(valeur) -> str:
+    """Valeur recue du formulaire (dict ou JSON) -> JSON propre a enregistrer ("" si aucun reseau n'a de voix imposee)."""
+    if isinstance(valeur, str):
+        try:
+            valeur = json.loads(valeur) if valeur.strip() else {}
+        except ValueError:
+            valeur = {}
+    if not isinstance(valeur, dict):
+        return ""
+    propre = {r: valeur[r] for r in RESEAUX_VOIX if valeur.get(r) in ("fondateur", "entreprise")}
+    if not propre:
+        return ""
+    fondateur = " ".join(str(valeur.get("fondateur") or "").split())[:80]
+    if fondateur:
+        propre["fondateur"] = fondateur
+    return json.dumps(propre, ensure_ascii=False)
+
+
+def lire_voix_reseaux(valeur) -> dict:
+    """Client.voix_reseaux (JSON) -> dict {"fondateur": "...", "linkedin": "fondateur", ...} ; {} si rien n'est regle ou si la valeur est illisible."""
+    try:
+        donnees = json.loads(valeur) if valeur else {}
+    except (ValueError, TypeError):
+        return {}
+    return donnees if isinstance(donnees, dict) else {}
+
+
+def formater_bloc_voix_reseaux(voix: dict, reseaux: list, nom_entreprise: str = "") -> str:
+    """Consigne « qui parle sur chaque reseau » pour l'adaptation multi-reseaux ; vide si aucun des reseaux demandes n'a de voix imposee."""
+    voix = voix or {}
+    concernes = [r for r in reseaux if voix.get(r) in ("fondateur", "entreprise")]
+    if not concernes:
+        return ""
+    fondateur = voix.get("fondateur") or "le fondateur ou la fondatrice"
+    entreprise = nom_entreprise or "l'entreprise"
+    lignes = []
+    for r in concernes:
+        if voix[r] == "fondateur":
+            lignes.append(
+                f"- {NOMS_RESEAUX.get(r, r)} : c'est {fondateur}, fondateur de {entreprise}, qui parle EN SON NOM sur son profil personnel. Premiere personne du "
+                "singulier (« je », « mon », « j'ai vu », « je constate »), avec son vecu et son regard de dirigeant (ce qu'il observe, ce qu'il en pense, "
+                f"pourquoi il a cree ou fait les choses ainsi). Il peut citer {entreprise} par son nom (« chez {entreprise}, on... » ou « mon equipe ») mais "
+                "le texte reste un temoignage personnel, pas un communique d'entreprise."
+            )
+        else:
+            lignes.append(
+                f"- {NOMS_RESEAUX.get(r, r)} : c'est l'entreprise {entreprise} qui parle, a la premiere personne du pluriel (« nous », « notre equipe », "
+                f"« chez {entreprise} »). N'ecris jamais « je » : si le fondateur est evoque, c'est a la troisieme personne."
+            )
+    return (
+        "=== QUI PARLE SUR CHAQUE RESEAU (prioritaire sur la personne grammaticale du texte d'origine et sur le bloc STYLE D'ECRITURE ; "
+        "le genre de l'auteur reste valable) ===\n" + "\n".join(lignes) + "\n=== FIN QUI PARLE ===\n"
+    )
+
+
 def formater_bloc_style(personne: str = "", genre: str = "") -> str:
     """
     Style d'ecriture choisi a la main pour un client (personne grammaticale et genre de l'auteur), a placer tout en haut du contexte IA : il l'emporte
@@ -2165,7 +2225,7 @@ def prompt_image_avec_auteur(prompt_image: str, texte_post: str = "") -> str:
 
 
 def adapter_post_multi_reseaux(
-    texte_base: str, reseaux: list[str], contenu_site: str = "", hashtags_fixes: str = "",
+    texte_base: str, reseaux: list[str], contenu_site: str = "", hashtags_fixes: str = "", voix_reseaux: dict = None, nom_entreprise: str = "",
 ) -> dict[str, str]:
     """
     A partir d'un texte de post de base, genere une variante adaptee au ton
@@ -2191,12 +2251,26 @@ def adapter_post_multi_reseaux(
         f"{hashtags_fixes.strip()}\n"
         if hashtags_fixes.strip() else ""
     )
+    bloc_voix_reseaux = formater_bloc_voix_reseaux(voix_reseaux, reseaux, nom_entreprise)
+    if bloc_voix_reseaux:
+        regle_personne = (
+            "Pour la personne grammaticale, suis le bloc « QUI PARLE SUR CHAQUE RESEAU » ci-dessus, meme si le texte d'origine est ecrit autrement : "
+            "reformule alors les phrases concernees (pas une simple substitution de pronoms). Pour un reseau qui n'y figure pas, conserve la meme "
+            "personne grammaticale que le texte d'origine.\n"
+        )
+    else:
+        regle_personne = (
+            "Conserve strictement la meme personne grammaticale que le texte d'origine (s'il est ecrit a la "
+            "premiere personne du singulier \"je\", reste en \"je\" : ne bascule jamais vers un \"nous\" "
+            "d'entreprise generique).\n"
+        )
 
     prompt = (
         f"Voici un texte de post de base a publier sur plusieurs reseaux sociaux :\n\n"
         f'"{texte_base.strip()}"\n'
         f"{bloc_contexte}"
         f"{bloc_hashtags_fixes}\n"
+        f"{bloc_voix_reseaux}"
         "Adapte ce message pour chacun des reseaux suivants, en gardant le meme fond (memes informations, "
         "meme offre, memes coordonnees le cas echeant, SAUF pour Google Business Profile qui n'accepte ni numero de telephone, "
         "ni lien, ni e-mail : retire-les de sa version) mais en ajustant le ton et la formulation :\n"
@@ -2204,9 +2278,7 @@ def adapter_post_multi_reseaux(
         "Ne raccourcis ni n'allonge exagerement par rapport a l'original sauf si le ton du reseau l'exige "
         "naturellement. N'utilise jamais de tiret cadratin (—) : remplace par une virgule, un deux-points "
         "ou un tiret simple (-).\n"
-        "Conserve strictement la meme personne grammaticale que le texte d'origine (s'il est ecrit a la "
-        "premiere personne du singulier \"je\", reste en \"je\" : ne bascule jamais vers un \"nous\" "
-        "d'entreprise generique).\n"
+        f"{regle_personne}"
         "Si le contexte contient un bloc « VOIX DU CLIENT », l'auteur a une facon de parler bien a lui : "
         "garde ses tournures et ses expressions sur chaque reseau (on adapte le format et le ton du "
         "reseau, pas la personnalite de l'auteur).\n"

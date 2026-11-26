@@ -129,6 +129,19 @@
     </div>
     <p class="texte-discret">Une entrepreneuse seule : « Je » et « Féminin ». Tous les textes écrits pour ce client (posts, articles, carrousels, réponses aux avis, posts programmés) suivent ce choix. En « Automatique », l'IA décide d'après le site.</p>
 
+    <h3 id="voix-reseaux">Qui parle sur chaque réseau ?</h3>
+    <p class="texte-discret">Par exemple le fondateur en « je » sur son profil LinkedIn, et l'entreprise en « nous » sur Facebook et Instagram. Utilisé par « 🤖 Adapter le texte par réseau » dans Publier : un seul texte de base, chaque réseau sort avec la bonne voix.</p>
+    <div class="charte-trois">
+      <label>Nom du fondateur ou de la fondatrice
+        <input type="text" id="charte-fondateur" maxlength="80" placeholder="Ex : Franck Laduche" value="{{ charte.voix_reseaux.get('fondateur', '') }}">
+      </label>
+      {% for reseau, nom_reseau in [("linkedin", "LinkedIn"), ("facebook", "Facebook"), ("instagram", "Instagram"), ("google", "Google"), ("youtube", "YouTube"), ("wordpress", "Article de blog")] %}
+      <label>{{ nom_reseau }}
+        <select class="charte-voix-reseau" data-reseau="{{ reseau }}">{% for cle, libelle in voix_par_reseau.items() %}<option value="{{ cle }}" {% if charte.voix_reseaux.get(reseau, '') == cle %}selected{% endif %}>{{ libelle }}</option>{% endfor %}</select>
+      </label>
+      {% endfor %}
+    </div>
+
     <div class="actions-avis">
       <button type="button" class="bouton" id="charte-enregistrer"><span class="spinner" id="charte-spinner" hidden></span> 💾 Enregistrer la charte</button>
     </div>
@@ -388,7 +401,9 @@
     const corps = {
       principale: normaliser($("charte-principale-hex").value), secondaires: secondaires, nom_affiche: $("charte-nom").value, style_decor: $("charte-decor").value,
       logo_position: $("charte-logo-position").value, logo_style: $("charte-logo-style").value, logo_couleur_fond: normaliser($("charte-logo-fond-hex").value), wordpress_couleur: normaliser($("charte-wp-hex").value),
-      personne_ecriture: $("charte-personne").value, genre_ecriture: $("charte-genre").value, police_titres: $("charte-police-titres").value, police_texte: $("charte-police-texte").value,
+      personne_ecriture: $("charte-personne").value, genre_ecriture: $("charte-genre").value,
+      voix_reseaux: Object.assign({ fondateur: $("charte-fondateur").value }, ...Array.from(document.querySelectorAll(".charte-voix-reseau")).map((s) => ({ [s.dataset.reseau]: s.value }))),
+      police_titres: $("charte-police-titres").value, police_texte: $("charte-police-texte").value,
     };
     try { await post("/clients/" + CLIENT + "/identite-visuelle", corps); dire("charte-statut", "Charte enregistrée : elle est utilisée par tous les outils."); setTimeout(() => window.location.reload(), 900); }
     catch (e) { dire("charte-statut", e.message); }
