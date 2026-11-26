@@ -103,7 +103,7 @@
 
         {% if p.demandes %}
         <div class="demandes">
-          {% for d in p.demandes %}<div class="demande{% if d.faite %} faite{% endif %}"><span class="qui">{% if d.faite %}Modifiée le {{ d.faite_quand }}{% else %}Demandée le {{ d.quand }}{% endif %}</span><p>{{ d.texte }}</p></div>{% endfor %}
+          {% for d in p.demandes %}<div class="demande{% if d.faite %} faite{% endif %}"><span class="qui">{% if d.faite %}Prise en compte le {{ d.faite_quand }}{% else %}Demandée le {{ d.quand }}{% endif %}</span><p>{{ d.texte }}</p></div>{% endfor %}
         </div>
         {% endif %}
         <details class="ecrire">
