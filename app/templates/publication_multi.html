@@ -2182,7 +2182,13 @@
         if (!contenu || occupe) return; occupe = true; message("Dessin de l'aperçu...");
         try {
           const d = await appeler(base + "/rendu", corps("apercu")); const zone = $("modeles-apercu"); zone.innerHTML = "";
-          d.images.forEach((src, i) => { const img = document.createElement("img"); img.src = src; img.alt = "Slide " + (i + 1); zone.appendChild(img); });
+          const zoneZoom = $("carrousel-zoom"), zoomImg = zoneZoom.querySelector("img");            // meme agrandissement que les aperçus du carrousel
+          d.images.forEach((src, i) => {
+            const img = document.createElement("img"); img.src = src; img.alt = "Slide " + (i + 1); zone.appendChild(img);
+            img.addEventListener("mouseenter", () => { zoomImg.src = src; zoneZoom.hidden = false; });
+            img.addEventListener("mouseleave", () => { zoneZoom.hidden = true; });
+            img.addEventListener("click", () => { zoomImg.src = src; zoneZoom.hidden = !zoneZoom.hidden; });
+          });
           message("Aperçu à jour. Corrigez un texte si besoin, puis « Utiliser ce visuel ».");
         } catch (e) { message(e.message); } finally { occupe = false; }
       }
