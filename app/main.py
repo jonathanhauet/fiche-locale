@@ -16800,10 +16800,15 @@ async def publier_post_route(post_id: int, request: Request, db: Session = Depen
     # "Enregistrer les modifications" (voir post_detail.html) : on applique
     # d'abord les champs du formulaire (ex. une photo choisie sur la fiche
     # mais pas encore enregistree) pour ne jamais publier un etat perime.
+    # Le bouton « Publier maintenant sur toutes les fiches » d'un lot (posts_lot.html) appelle cette route SANS formulaire : appliquer un formulaire
+    # vide effacait le titre, le texte, le type (Offre, Evenement), ses details et l'image de chaque post, que Google refusait ensuite.
     formulaire = await request.form()
-    _appliquer_formulaire_post(post, formulaire)
-    db.commit()
+    if "texte" in formulaire:
+        _appliquer_formulaire_post(post, formulaire)
+        db.commit()
 
+    if not (post.texte or "").strip():
+        return _reponse_post_detail(request, db, post, erreur="Le texte du post est vide : écrivez-le avant de publier.", code=400)
     if not post.client.account_id or not post.client.location_id:
         return _reponse_post_detail(request, db, post, erreur="Ce client n'a pas de fiche Google associee.", code=400)
 
