@@ -69,7 +69,7 @@
     },
     {
      "id": "serie-1-benevoles",
-     "titre": "Vos bénévoles comptent. Pas dans votre facture.",
+     "titre": "Vos bénévoles, enfin pris en compte.",
      "type": "image",
      "formats": [
       {
@@ -482,9 +482,9 @@
    "pubs": [
     {
      "id": "serie-4-echeances",
-     "titre": "5 échéances RH que les associations oublient souvent",
+     "titre": "6 obligations RH que les associations oublient souvent",
      "type": "carrousel",
-     "texte": "À vérifier en priorité : les règles sur chaque échéance, c'est ton domaine.",
+     "texte": "À vérifier en priorité : les règles sur chaque obligation, c'est ton domaine.",
      "formats": [
       {
        "nom": "linkedin",
@@ -497,7 +497,8 @@
         "serie-4/linkedin-page-4.jpg",
         "serie-4/linkedin-page-5.jpg",
         "serie-4/linkedin-page-6.jpg",
-        "serie-4/linkedin-page-7.jpg"
+        "serie-4/linkedin-page-7.jpg",
+        "serie-4/linkedin-page-8.jpg"
        ],
        "pdf": "serie-4/carrousel-linkedin.pdf"
       },
@@ -512,7 +513,8 @@
         "serie-4/meta-page-4.jpg",
         "serie-4/meta-page-5.jpg",
         "serie-4/meta-page-6.jpg",
-        "serie-4/meta-page-7.jpg"
+        "serie-4/meta-page-7.jpg",
+        "serie-4/meta-page-8.jpg"
        ]
       }
      ]
