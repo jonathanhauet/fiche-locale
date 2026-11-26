@@ -27,8 +27,12 @@ MODELES = {
     "chiffre_cle": {"libelle": "Chiffres clés", "description": "Un grand chiffre par slide, avec ce qu'il veut dire.", "champs": ("valeur", "libelle"), "nb": (1, 5), "couverture": True},
     "temoignage": {"libelle": "Témoignages", "description": "Des avis clients mis en scène (étoiles, citation).", "champs": ("texte", "auteur"), "nb": (1, 4), "couverture": True},
     "post_typo": {"libelle": "Post typographique", "description": "Une phrase forte en grand, sur votre couleur : un seul visuel.", "champs": ("texte", "soustexte"), "nb": (1, 1), "couverture": False},
+    "annonce": {"libelle": "Annonce", "description": "Un visuel façon publicité : surtitre, titre en deux couleurs, texte, atouts en pastilles, bouton et site. "
+                "Avec la mise en page claire et le décor « Bande dégradée », il reprend les codes d'une charte de marque.",
+                "champs": ("surtitre", "titre", "titre_accent", "texte", "pastilles", "bouton", "site"), "nb": (1, 1), "couverture": False},
 }
-LIMITES = {"mythe": 150, "realite": 190, "avant": 150, "apres": 190, "titre": 80, "texte": 260, "valeur": 12, "libelle": 110, "auteur": 40, "soustexte": 120}
+LIMITES = {"mythe": 150, "realite": 190, "avant": 150, "apres": 190, "titre": 80, "texte": 260, "valeur": 12, "libelle": 110, "auteur": 40, "soustexte": 120,
+           "surtitre": 60, "titre_accent": 80, "pastilles": 120, "bouton": 30, "site": 40}
 
 
 # --------------------------------------------------------------------------- validation
@@ -164,6 +168,107 @@ def _slide_typo(element, layout, couleur, nom, rang, total, secondaires, decor, 
     return image
 
 
+def _contraste(a: tuple, b: tuple) -> float:
+    """Rapport de contraste WCAG entre deux couleurs."""
+    def lum(c):
+        canaux = []
+        for v in c[:3]:
+            v = v / 255
+            canaux.append(v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * canaux[0] + 0.7152 * canaux[1] + 0.0722 * canaux[2]
+    claire, sombre = sorted((lum(a), lum(b)), reverse=True)
+    return (claire + 0.05) / (sombre + 0.05)
+
+
+def _lisible(couleur: tuple, fond: tuple, minimum: float = 4.5) -> tuple:
+    """La couleur, assombrie (fond clair) ou eclaircie (fond sombre) juste assez pour etre lisible en texte sur ce fond."""
+    cible = (0, 0, 0) if cv._luminance(fond) > 0.5 else (255, 255, 255)
+    t = 0.0
+    while _contraste(couleur if t == 0 else cv._melange(couleur, cible, t), fond) < minimum and t < 1:
+        t = round(t + 0.05, 2)
+    return couleur if t == 0 else cv._melange(couleur, cible, t)
+
+
+def _pastilles(texte: str) -> list:
+    morceaux = [" ".join(m.split()) for m in texte.replace("|", "·").replace(";", "·").replace(",", "·").replace("\n", "·").split("·")]
+    return [m for m in morceaux if m][:4]
+
+
+def _slide_annonce(element, layout, couleur, nom, secondaires, decor, graine, logo=None, logo_position="haut_gauche", logo_style="pastille", logo_couleur_fond=""):
+    """
+    Visuel unique facon publicite (1080x1350) : surtitre en majuscules, titre en deux couleurs, texte, atouts en pastilles, bouton et site en bas.
+    Le titre prend la couleur principale si elle est lisible sur le fond, sa suite la couleur secondaire (assombrie si besoin pour rester lisible).
+    """
+    image, d, p = _fond(layout, couleur, secondaires, decor, graine)
+    marque, fond = cv._rgb(couleur), p["fond"]
+    clair = cv._luminance(fond) > 0.5
+    zone = LARGEUR - 2 * MARGE
+    couleur_titre = marque if clair and _contraste(marque, fond) >= 7 else p["texte"]
+    accent = _lisible(p["accent2"], fond)
+    if _contraste(accent, couleur_titre) < 1.6:                 # pas de couleur secondaire distincte : titre neutre, suite a la couleur du client
+        couleur_titre = p["texte"]
+        accent = _lisible(marque if clair else p["accent"], fond)
+    corps = _lisible(p["doux"], fond)
+
+    y = 160
+    if logo is not None:
+        position = logo_position if str(logo_position).startswith("haut") else "haut_gauche"      # le bas est pris par le bouton
+        cv._coller_logo(image, logo, 80, position, logo_style, logo_couleur_fond)
+        y = 270
+    if element.get("surtitre"):
+        d.text((MARGE, y), element["surtitre"].upper(), font=cv._police("gras", 30), fill=accent)
+        y += 62
+
+    titre, suite = element.get("titre", ""), element.get("titre_accent", "")
+    taille = 96
+    while taille > 52:
+        police = cv._police("gras", taille)
+        lignes = (cv._lignes(d, titre, police, zone) if titre else []) + (cv._lignes(d, suite, police, zone) if suite else [])
+        if len(lignes) * int(taille * 1.1) <= 440:
+            break
+        taille -= 4
+    police, pas = cv._police("gras", taille), int(taille * 1.1)
+    for texte, teinte in ((titre, couleur_titre), (suite, accent)):
+        if not texte:
+            continue
+        for ligne in cv._lignes(d, texte, police, zone):
+            d.text((MARGE, y), ligne, font=police, fill=teinte)
+            y += pas
+    y += 30
+
+    haut_bouton = HAUTEUR - 200
+    y += _paragraphe(d, element.get("texte", ""), "normal", 40, 28, MARGE, y, zone, min(240, max(0, haut_bouton - 150 - y)), corps, 1.3) + 34
+
+    police_pastille = cv._police("gras", 28)
+    fond_pastille = (255, 255, 255) if clair and fond != (255, 255, 255) else cv._melange(fond, p["texte"], 0.14)
+    x = MARGE
+    for etiquette in _pastilles(element.get("pastilles", "")):
+        largeur = int(d.textlength(etiquette, font=police_pastille)) + 48
+        if x + largeur > LARGEUR - MARGE:
+            x, y = MARGE, y + 70
+        if y + 58 > haut_bouton - 30:
+            break
+        d.rounded_rectangle((x, y, x + largeur, y + 58), radius=29, fill=fond_pastille)
+        d.text((x + 24, y + 12), etiquette, font=police_pastille, fill=p["texte"])
+        x += largeur + 16
+
+    if element.get("bouton"):
+        police_bouton = cv._police("gras", 34)
+        libelle = element["bouton"] + "  →"
+        largeur = int(d.textlength(libelle, font=police_bouton)) + 84
+        fond_bouton = couleur_titre if clair else (255, 255, 255)
+        d.rounded_rectangle((MARGE, haut_bouton, MARGE + largeur, haut_bouton + 92), radius=46, fill=fond_bouton)
+        texte_bouton = (255, 255, 255) if cv._luminance(fond_bouton) < 0.5 else p["texte"] if clair else fond
+        d.text((MARGE + 42, haut_bouton + 24), libelle, font=police_bouton, fill=texte_bouton)
+    site = element.get("site", "")
+    if site:
+        police_site = cv._police("gras", 32)
+        d.text((LARGEUR - MARGE - d.textlength(site, font=police_site), haut_bouton + 28), site, font=police_site, fill=couleur_titre if clair else p["texte"])
+    elif not element.get("bouton"):
+        cv._pied(d, p, nom, 0, 0)
+    return image
+
+
 _DESSINS = {"mythe_realite": _slide_mythe_realite, "avant_apres": _slide_avant_apres, "chiffre_cle": _slide_chiffre, "temoignage": _slide_temoignage}
 
 
@@ -172,6 +277,8 @@ def construire(modele: str, contenu: dict, layout: str, couleur: str, nom_client
     """Slides (images 1080x1350) du modele ; contenu deja valide (valider_contenu)."""
     layout = layout if layout in cv.LAYOUTS else "plein"
     definition = MODELES[modele]
+    if modele == "annonce":
+        return [_slide_annonce(contenu["elements"][0], layout, couleur, nom_client, secondaires, decor, graine, logo, logo_position, logo_style, logo_couleur_fond)]
     if modele == "post_typo":
         return [_slide_typo(contenu["elements"][0], layout, couleur, nom_client, 1, 1, secondaires, decor, graine, logo, logo_position, logo_style, logo_couleur_fond)]
     elements = contenu["elements"]
@@ -233,8 +340,11 @@ def couleur_du_fond(layout: str, couleur: str, secondaires: list = None) -> tupl
 LIBELLES_CHAMPS = {
     "mythe": "L'idée reçue", "realite": "La réalité", "avant": "Avant", "apres": "Après", "titre": "Titre", "texte": "Texte", "valeur": "Chiffre (ex : 137 %)",
     "libelle": "Ce que mesure ce chiffre", "auteur": "Prénom et initiale (ex : Marie D.)", "soustexte": "Précision (facultatif)",
+    "surtitre": "Surtitre (ex : Pour les associations employeuses)", "titre_accent": "Suite du titre, en couleur", "pastilles": "Atouts en pastilles, séparés par des virgules",
+    "bouton": "Texte du bouton (ex : Réserver une démo)", "site": "Site affiché (ex : assorh.fr)",
 }
-LIBELLES_CHAMPS_PAR_MODELE = {"temoignage": {"texte": "Avis du client (un vrai avis)"}, "post_typo": {"texte": "La phrase en grand"}}
+LIBELLES_CHAMPS_PAR_MODELE = {"temoignage": {"texte": "Avis du client (un vrai avis)"}, "post_typo": {"texte": "La phrase en grand"},
+                              "annonce": {"titre": "Début du titre", "texte": "Texte (1 à 2 phrases)"}}
 
 
 def description_pour_page() -> dict:

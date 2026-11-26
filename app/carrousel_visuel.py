@@ -156,6 +156,7 @@ def _avec_secondaire(p: dict, secondaires: list = None) -> dict:
             valides.append(_rgb(c))
         except (ValueError, IndexError):
             continue
+    p["secondaires"] = valides
     for s in valides:
         if abs(_luminance(s) - _luminance(p["fond"])) >= 0.22:
             p["accent2"] = s
@@ -168,13 +169,13 @@ def _avec_secondaire(p: dict, secondaires: list = None) -> dict:
     return p
 
 
-STYLES_DECOR = ("cercles", "points", "diagonales", "vagues", "blocs", "cadre", "aucun")
+STYLES_DECOR = ("cercles", "points", "diagonales", "vagues", "blocs", "cadre", "bande", "aucun")
 # "auto" : un style different selon le client (stable pour un client donne), jamais "aucun".
 STYLES_DECOR_AUTO = ("points", "diagonales", "vagues", "blocs", "cadre", "cercles")
 LIBELLES_DECOR = {
     "auto": "Automatique (varie selon le client)", "cercles": "Cercles", "points": "Grille de points",
     "diagonales": "Bandes diagonales", "vagues": "Vagues", "blocs": "Blocs géométriques", "cadre": "Cadre fin",
-    "aucun": "Aucun (épuré)",
+    "bande": "Bande dégradée à gauche", "aucun": "Aucun (épuré)",
 }
 
 
@@ -203,8 +204,8 @@ def _decor(dessin, layout, p, marque, decor="auto", graine=0):
     def pt(x, y):
         return (LARGEUR - x if miroir_x else x, HAUTEUR - y if miroir_y else y)
 
-    # Reperes propres a la mise en page (discrets), sauf avec le cadre qui les remplace.
-    if style != "cadre":
+    # Reperes propres a la mise en page (discrets), sauf avec le cadre ou la bande qui les remplacent.
+    if style not in ("cadre", "bande"):
         if layout == "clair":
             dessin.rectangle((0, 0, LARGEUR, 26), fill=p["accent"])
             dessin.rectangle((0, HAUTEUR - 26, LARGEUR, HAUTEUR), fill=trait)
@@ -244,7 +245,30 @@ def _decor(dessin, layout, p, marque, decor="auto", graine=0):
             dessin.polygon([(x, y - taille), (x + taille, y), (x, y + taille), (x - taille, y)], fill=_melange(p["fond"], tint, poids))
     elif style == "cadre":
         dessin.rounded_rectangle((34, 34, LARGEUR - 34, HAUTEUR - 34), radius=28, outline=_melange(p["fond"], trait, 0.55), width=4)
+    elif style == "bande":
+        _bande_degradee(dessin, p, marque, dessin.im.size[1] if hasattr(dessin, "im") else HAUTEUR)
     # "aucun" : rien
+
+
+def couleurs_bande(p: dict, marque: tuple) -> list:
+    """Couleurs de la bande degradee : les couleurs secondaires du client puis sa couleur principale (au moins deux teintes)."""
+    couleurs = []
+    for c in list(p.get("secondaires") or []) + [marque]:
+        if c not in couleurs:
+            couleurs.append(c)
+    if len(couleurs) < 2:
+        couleurs.append(_melange(marque, p["fond"], 0.5))
+    return couleurs
+
+
+def _bande_degradee(dessin, p, marque, hauteur: int = HAUTEUR, largeur: int = 22) -> None:
+    """Bande verticale sur le bord gauche, en degrade de haut en bas sur les couleurs de la charte (comme la couverture d'une charte graphique)."""
+    couleurs = couleurs_bande(p, marque)
+    segments = len(couleurs) - 1
+    for y in range(hauteur):
+        position = y / max(1, hauteur - 1) * segments
+        i = min(int(position), segments - 1)
+        dessin.line((0, y, largeur - 1, y), fill=_melange(couleurs[i], couleurs[i + 1], position - i))
 
 
 def _pied(dessin, p, nom_client, numero, total, numero_a_gauche=False):

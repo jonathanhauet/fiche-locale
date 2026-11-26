@@ -13224,6 +13224,10 @@ async def publication_multi_modele_remplir(client_id: int, request: Request, db:
             "temoignage": "Aucun avis client dans votre texte de base : collez un vrai avis, ou utilisez le panneau « Avis ». Rien n'est inventé.",
         }.get(modele, "L'IA n'a pas trouvé de quoi remplir ce modèle : précisez le sujet dans le texte de base.")
         return JSONResponse({"erreur": explication}, status_code=422)
+    if modele == "annonce" and not contenu["elements"][0].get("site"):              # le site du client, a defaut de celui trouve par l'IA
+        adresse = (client.site_web or client.wordpress_url or "").strip()
+        if adresse:
+            contenu["elements"][0]["site"] = re.sub(r"^(https?://)?(www\.)?", "", adresse, flags=re.IGNORECASE).split("/")[0][:40]
     return JSONResponse({"contenu": contenu})
 
 

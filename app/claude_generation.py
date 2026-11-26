@@ -4134,6 +4134,8 @@ def decrire_style_reference(images: list, rythme: dict) -> dict:
         raise RuntimeError(f"Reponse de l'IA incomplete (arret : {reponse.stop_reason}).") from erreur
 
 
+CHAMPS_ELEMENT_MODELE_VISUEL = ("mythe", "realite", "avant", "apres", "titre", "texte", "valeur", "libelle", "auteur", "soustexte",
+                                "surtitre", "titre_accent", "pastilles", "bouton", "site")
 SCHEMA_MODELE_VISUEL = {
     "type": "object",
     "properties": {
@@ -4142,8 +4144,8 @@ SCHEMA_MODELE_VISUEL = {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {cle: {"type": "string"} for cle in ("mythe", "realite", "avant", "apres", "titre", "texte", "valeur", "libelle", "auteur", "soustexte")},
-                "required": ["mythe", "realite", "avant", "apres", "titre", "texte", "valeur", "libelle", "auteur", "soustexte"], "additionalProperties": False,
+                "properties": {cle: {"type": "string"} for cle in CHAMPS_ELEMENT_MODELE_VISUEL},
+                "required": list(CHAMPS_ELEMENT_MODELE_VISUEL), "additionalProperties": False,
             },
         },
         "cta": {"type": "object", "properties": {"titre": {"type": "string"}, "texte": {"type": "string"}, "bouton": {"type": "string"}}, "required": ["titre", "texte", "bouton"], "additionalProperties": False},
@@ -4158,6 +4160,14 @@ CONSIGNES_MODELE_VISUEL = {
     "chiffre_cle": "Chaque élément met en avant UN chiffre réel, présent dans le texte de base ou le contexte (valeur : le chiffre court, comme « 137 % » ; libelle : ce qu'il mesure, 1 phrase). Si le texte ne contient aucun chiffre, renvoie une liste d'éléments vide : n'invente jamais un chiffre.",
     "temoignage": "Chaque élément reprend un VRAI avis client présent dans le texte de base (texte : l'extrait le plus parlant, tel quel, 1 à 3 phrases ; auteur : prénom et initiale du nom, comme « Marie D. »). Si le texte ne contient aucun avis client, renvoie une liste d'éléments vide : n'invente jamais un témoignage.",
     "post_typo": "Un seul élément : texte = une phrase forte et simple tirée du message (14 mots au maximum), soustexte = une précision courte (facultative, '' sinon).",
+    "annonce": (
+        "Un seul élément, mis en page comme une publicité sobre. surtitre : la cible ou le thème en 2 à 5 mots (ex. « Pour les associations employeuses »). "
+        "titre : le début de l'accroche (2 à 6 mots) ; titre_accent : sa suite, mise en couleur (2 à 6 mots) ; titre + titre_accent forment une seule phrase "
+        "(ex. « Vous n'êtes plus seul » + « pour gérer votre association. »). texte : 1 à 2 phrases concrètes, 30 mots au maximum. pastilles : 2 ou 3 atouts très "
+        "courts (2 à 4 mots chacun) séparés par des virgules, uniquement des faits présents dans le texte de base ou le contexte ('' sinon). bouton : 2 à 4 mots "
+        "(ex. « Réserver une démo », « Prendre rendez-vous »). site : le nom de domaine du site s'il figure dans le contexte, sans https ni www ('' sinon). "
+        "Aucun superlatif, ni « garanti », « certifié », « officiel » ou « meilleur »."
+    ),
 }
 
 
