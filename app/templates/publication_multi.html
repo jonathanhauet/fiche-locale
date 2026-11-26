@@ -371,7 +371,7 @@
     <p id="carrousel-statut" class="texte-vide" hidden></p>
   </details>
   <details class="options-visuel" id="panneau-modeles">
-    <summary>🧩 Modèles de visuels (mythe ou réalité, avant / après, chiffres clés…)</summary>
+    <summary>🧩 Modèles de visuels (annonce, mythe ou réalité, avant / après, chiffres clés…)</summary>
     <p class="texte-discret">
       Un visuel prêt à l'emploi, aux couleurs, au logo et au décor de la fiche (bloc « identité » ci-dessus). L'IA rédige à partir du texte de base, sans rien inventer :
       chiffres et témoignages ne viennent que de votre texte. Vous pouvez tout corriger, puis l'utiliser en images ou en petite vidéo animée.
@@ -381,6 +381,8 @@
       <select id="modeles-choix" style="width:auto;"></select>
       <label for="modeles-nb" class="texte-discret">Éléments</label>
       <select id="modeles-nb" style="width:auto;"></select>
+      <label for="modeles-layout" class="texte-discret">Mise en page</label>
+      <select id="modeles-layout" style="width:auto;"><option value="plein">Plein (fond couleur de marque)</option><option value="clair">Clair</option><option value="sombre">Sombre</option></select>
       <button type="button" id="modeles-rediger" class="bouton-secondaire">✨ Rédiger avec l'IA</button>
     </div>
     <p id="modeles-description" class="texte-discret"></p>
@@ -2135,6 +2137,7 @@
       Object.entries(MODELES).forEach(([id, m]) => { const o = document.createElement("option"); o.value = id; o.textContent = m.libelle; $("modeles-choix").appendChild(o); });
       function majModele() {
         const m = MODELES[$("modeles-choix").value]; $("modeles-description").textContent = m.description;
+        if ($("modeles-choix").value === "annonce") $("modeles-layout").value = "clair";            // fond clair : le style des publicites de marque
         const nb = $("modeles-nb"); nb.textContent = "";
         for (let i = m.nb[0]; i <= m.nb[1]; i++) { const o = document.createElement("option"); o.value = i; o.textContent = i; nb.appendChild(o); }
         nb.value = Math.min(m.nb[1], Math.max(m.nb[0], 3)); nb.disabled = m.nb[0] === m.nb[1];
@@ -2168,7 +2171,7 @@
         contenu = resultat; return resultat;
       }
       function corps(mode) {
-        const layout = document.querySelector('input[name="carrousel-layout"]:checked').value;
+        const layout = $("modeles-layout").value;
         return {
           modele: $("modeles-choix").value, contenu: lire(), layout, couleur: $("carrousel-couleur").value, couleurs_secondaires: window.secondairesIdentite(),
           decor: $("identite-decor").value, logo_position: $("identite-logo-position").value, logo_style: $("identite-logo-style").value,
