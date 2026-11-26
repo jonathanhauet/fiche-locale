@@ -100,13 +100,33 @@ def _recuperer_libelle(access_token: str) -> str:
 
 
 def enregistrer_compte(db: Session, access_token: str, identifiant_instagram: str) -> "models.CompteInstagram":
-    """Flux additif, comme pour Google/Meta : n'ecrase jamais un compte deja connecte."""
+    """
+    Connexion d'un compte Instagram. Un compte deja connu (meme identifiant) est RENOUVELE : nouveau jeton, nouvelle expiration, meme ligne, et le jeton
+    est recopie sur les fiches qui y sont liees (elles en gardent une copie) : leurs publications repartent sans rien relier a nouveau. Les doublons
+    d'anciennes reconnexions sont fusionnes dans le plus ancien. Un compte nouveau cree une ligne.
+    """
     libelle = _recuperer_libelle(access_token)
-    compte = models.CompteInstagram(
-        libelle=libelle, identifiant_instagram=identifiant_instagram, access_token=access_token,
-        expire_le=datetime.utcnow() + timedelta(days=60),
+    expire_le = datetime.utcnow() + timedelta(days=60)
+    existants = (
+        db.query(models.CompteInstagram).filter(models.CompteInstagram.identifiant_instagram == identifiant_instagram)
+        .order_by(models.CompteInstagram.cree_le, models.CompteInstagram.id).all()
     )
-    db.add(compte)
+    if not existants:
+        compte = models.CompteInstagram(libelle=libelle, identifiant_instagram=identifiant_instagram, access_token=access_token, expire_le=expire_le)
+        db.add(compte)
+        db.commit()
+        db.refresh(compte)
+        return compte
+    compte, doublons = existants[0], existants[1:]
+    compte.libelle, compte.access_token, compte.expire_le = libelle, access_token, expire_le
+    for doublon in doublons:
+        db.query(models.Client).filter(models.Client.compte_instagram_id == doublon.id).update({"compte_instagram_id": compte.id})
+        db.delete(doublon)
+    db.flush()
+    for client in db.query(models.Client).filter(models.Client.compte_instagram_id == compte.id).all():
+        client.token_instagram = access_token
+        client.instagram_id_meta = identifiant_instagram
+        client.instagram_nom_meta = libelle
     db.commit()
     db.refresh(compte)
     return compte

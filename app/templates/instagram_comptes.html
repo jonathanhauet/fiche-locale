@@ -40,7 +40,8 @@
           </span>
         </td>
         <td>{{ compte.cree_le | heure_locale("%Y-%m-%d %H:%M") }}</td>
-        <td>{{ compte.expire_le | heure_locale("%Y-%m-%d") if compte.expire_le else "—" }}</td>
+        <td>{{ compte.expire_le | heure_locale("%Y-%m-%d") if compte.expire_le else "—" }}
+          {% if a_reconnecter is defined and compte.id in a_reconnecter %}<div class="raison-echec" style="color: var(--danger); font-weight: 700;">⚠️ À reconnecter : le renouvellement automatique a échoué (connexion invalidée par Meta). Cliquez sur « + Connecter un compte Instagram » avec ce même compte : les fiches liées sont mises à jour toutes seules.</div>{% endif %}</td>
         <td>
           <div class="cellule-actions-compte">
             {% for client_lie in fiches %}

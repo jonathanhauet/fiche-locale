@@ -1360,7 +1360,36 @@ def deconnexion(request: Request):
 FILTRES_HISTORIQUE = {
     "echecs": ("ECHEC_PUBLICATION", "Publications en échec"),
     "refuses": ("PUBLIE_REJECTED", "Posts refusés par Google"),
+    "reseaux": (None, "Réseaux sociaux en échec"),
 }
+
+
+def _echecs_reseaux_sociaux(db: Session, ids_clients: set = None) -> list:
+    """
+    Publications Facebook, Instagram et LinkedIn en echec sur les 14 derniers jours (date prevue), de la plus recente a la plus ancienne :
+    [{"reseau", "id", "client", "date", "texte", "erreur"}]. ids_clients : limiter aux clients donnes (None = tous).
+    """
+    depuis = datetime.combine(date.today() - timedelta(days=JOURS_FILTRES_HISTORIQUE), datetime.min.time())
+    lignes = []
+    for reseau, modele in (("facebook", models.PostMetaProgramme), ("instagram", models.PostInstagramProgramme)):
+        requete = db.query(modele).filter(modele.etat == "ECHEC", modele.publier_le >= depuis)
+        if ids_clients is not None:
+            requete = requete.filter(modele.client_id.in_(ids_clients or [0]))
+        for post in requete.all():
+            lignes.append({"reseau": reseau, "id": post.id, "client": post.client.nom if post.client else "", "date": post.publier_le, "texte": post.texte or "", "erreur": post.erreur or ""})
+    requete = db.query(models.PostLinkedInProgramme).filter(models.PostLinkedInProgramme.etat == "ECHEC", models.PostLinkedInProgramme.publier_le >= depuis)
+    noms_linkedin = {}
+    for client in db.query(models.Client).filter(models.Client.compte_linkedin_id.isnot(None)).all():
+        if ids_clients is None or client.id in ids_clients:
+            noms_linkedin.setdefault(client.compte_linkedin_id, []).append(client.nom)
+    for post in requete.all():
+        if ids_clients is not None and post.compte_linkedin_id not in noms_linkedin:
+            continue
+        compte = db.get(models.CompteLinkedIn, post.compte_linkedin_id)
+        nom = ", ".join(noms_linkedin.get(post.compte_linkedin_id, [])) or (compte.libelle if compte else "LinkedIn")
+        lignes.append({"reseau": "linkedin", "id": post.id, "client": nom, "date": post.publier_le, "texte": post.texte or "", "erreur": post.erreur or ""})
+    lignes.sort(key=lambda l: l["date"], reverse=True)
+    return lignes
 JOURS_FILTRES_HISTORIQUE = 14       # meme fenetre que la carte « A faire » de la liste des clients
 
 
@@ -1376,7 +1405,11 @@ def historique(request: Request, filtre: str = "", db: Session = Depends(obtenir
     if redirection:
         return redirection
 
-    nombres = {code: _posts_a_traiter_historique(db, statut).count() for code, (statut, _) in FILTRES_HISTORIQUE.items()}
+    nombres = {code: _posts_a_traiter_historique(db, statut).count() for code, (statut, _) in FILTRES_HISTORIQUE.items() if statut}
+    echecs_reseaux = _echecs_reseaux_sociaux(db)
+    nombres["reseaux"] = len(echecs_reseaux)
+    if filtre == "reseaux":
+        return templates.TemplateResponse(request, "historique.html", {"evenements": [], "lignes": None, "lignes_reseaux": echecs_reseaux, "filtre": filtre, "filtres": FILTRES_HISTORIQUE, "nombres": nombres, "jours": JOURS_FILTRES_HISTORIQUE})
     if filtre in FILTRES_HISTORIQUE:
         # un post par ligne, avec son dernier evenement : c'est le post qui est a reprendre, pas chaque tentative
         posts = _posts_a_traiter_historique(db, FILTRES_HISTORIQUE[filtre][0]).all()
@@ -1669,6 +1702,14 @@ def explication_echec_publication(erreur: str) -> str:
     minuscule = brut.lower()
     if "2207027" in minuscule or "not ready for publishing" in minuscule:
         return "Instagram n'avait pas fini de préparer les images au moment de publier. Réessayez : la plateforme patiente désormais plus longtemps."
+    if "session has been invalidated" in minuscule or "error validating access token" in minuscule or '"code":190' in minuscule.replace(" ", ""):
+        return ("La connexion du compte n'est plus valide (mot de passe changé ou contrôle de sécurité de Meta) : reconnectez-le dans Comptes Instagram "
+                "(ou Comptes Meta pour Facebook), puis reprogrammez la publication.")
+    if "2207052" in minuscule or "media download has failed" in minuscule or "2207003" in minuscule:
+        return ("Instagram n'a pas réussi à télécharger l'image ou la vidéo au moment de publier (hébergement lent ou momentanément inaccessible). "
+                "Reprogrammez-la : la plateforme fait maintenant plusieurs essais avant d'abandonner.")
+    if "statut error" in minuscule:
+        return "Instagram a refusé le média pendant son traitement (format ou durée de la vidéo, ou image non acceptée) : vérifiez le fichier puis reprogrammez."
     est_meta_ou_linkedin = any(m in minuscule for m in ("instagram", "oauthexception", "facebook", "graph.", "linkedin"))
     if "code 429" in minuscule or "resource_exhausted" in minuscule or "quota" in minuscule:
         return "Google a limité le nombre de publications envoyées d'un coup : réessayez dans quelques minutes."
@@ -2998,6 +3039,15 @@ def manifeste_application():
     }, media_type="application/manifest+json")
 
 
+JOURS_ALERTE_INSTAGRAM = 5     # le jeton est renouvele chaque jour des 10 jours avant l'expiration : a moins de 5 jours, le renouvellement echoue (connexion invalidee)
+
+
+def _comptes_instagram_a_reconnecter(db: Session) -> list:
+    """Comptes Instagram dont la connexion expire bientot (ou a expire) : le renouvellement automatique n'a pas pu se faire, il faut les reconnecter."""
+    limite = datetime.utcnow() + timedelta(days=JOURS_ALERTE_INSTAGRAM)
+    return db.query(models.CompteInstagram).filter(models.CompteInstagram.expire_le.isnot(None), models.CompteInstagram.expire_le <= limite).order_by(models.CompteInstagram.expire_le).all()
+
+
 def _a_faire_aujourdhui(db: Session, ids_clients: set, nb_sans_post: int) -> list:
     """Ce qui demande une action (comptes, liens, nombre) : sert la carte « A faire » du haut de la liste des clients."""
     aujourdhui = date.today()
@@ -3017,6 +3067,12 @@ def _a_faire_aujourdhui(db: Session, ids_clients: set, nb_sans_post: int) -> lis
     rejetes = compter("PUBLIE_REJECTED", depuis)
     if rejetes:
         elements.append({"icone": "🚫", "ton": "danger", "texte": f"{rejetes} post{'s' if rejetes > 1 else ''} refusé{'s' if rejetes > 1 else ''} par Google (14 derniers jours)", "lien": "/historique?filtre=refuses"})
+    echecs_reseaux = len(_echecs_reseaux_sociaux(db, set(ids_clients or [])))
+    if echecs_reseaux:
+        elements.append({"icone": "⚠️", "ton": "danger", "texte": f"{echecs_reseaux} publication{'s' if echecs_reseaux > 1 else ''} Facebook / Instagram / LinkedIn en échec (14 derniers jours)", "lien": "/historique?filtre=reseaux"})
+    a_reconnecter = _comptes_instagram_a_reconnecter(db)
+    if a_reconnecter:
+        elements.append({"icone": "🔑", "ton": "danger", "texte": f"{len(a_reconnecter)} compte{'s' if len(a_reconnecter) > 1 else ''} Instagram à reconnecter ({', '.join('@' + c.libelle for c in a_reconnecter[:3])}{'…' if len(a_reconnecter) > 3 else ''})", "lien": "/instagram/comptes"})
     suspects = _nb_changements_suspects()
     if suspects:
         elements.append({"icone": "🔔", "ton": "attention", "texte": f"{suspects} changement{'s' if suspects > 1 else ''} suspect{'s' if suspects > 1 else ''} à valider", "lien": "/alertes"})
@@ -9614,7 +9670,7 @@ def linkedin_comptes(request: Request, db: Session = Depends(obtenir_session)):
         {
             "comptes": comptes, "erreur": None, "resultat_publication": None,
             "posts_programmes": _posts_linkedin_programmes(db),
-            "clients": clients, "clients_par_compte_id": clients_par_compte_id,
+            "clients": clients, "clients_par_compte_id": clients_par_compte_id, "a_reconnecter": {c.id for c in _comptes_instagram_a_reconnecter(db)},
         },
     )
 
@@ -9757,7 +9813,7 @@ def linkedin_deconnecter_compte(compte_id: int, request: Request, db: Session = 
                 {
                     "comptes": comptes, "resultat_publication": None,
                     "posts_programmes": _posts_linkedin_programmes(db),
-                    "clients": clients, "clients_par_compte_id": clients_par_compte_id,
+                    "clients": clients, "clients_par_compte_id": clients_par_compte_id, "a_reconnecter": {c.id for c in _comptes_instagram_a_reconnecter(db)},
                     "erreur": message,
                 },
                 status_code=400,
@@ -9860,7 +9916,7 @@ def youtube_deconnecter_compte(compte_id: int, request: Request, db: Session = D
             return templates.TemplateResponse(
                 request, "youtube_comptes.html",
                 {
-                    "comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id,
+                    "comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id, "a_reconnecter": {c.id for c in _comptes_instagram_a_reconnecter(db)},
                     "erreur": (
                         f"Impossible de deconnecter ce compte : le client {clients_lies.nom} y est encore "
                         "rattache. Reliez-le a un autre compte d'abord (ou retirez le lien)."
@@ -16081,7 +16137,7 @@ def instagram_comptes(request: Request, db: Session = Depends(obtenir_session)):
     clients_par_compte_id = _grouper_clients_par(clients, "compte_instagram_id")
     return templates.TemplateResponse(
         request, "instagram_comptes.html",
-        {"comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id, "erreur": None},
+        {"comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id, "a_reconnecter": {c.id for c in _comptes_instagram_a_reconnecter(db)}, "erreur": None},
     )
 
 
@@ -16138,7 +16194,7 @@ def instagram_deconnecter_compte(compte_id: int, request: Request, db: Session =
             return templates.TemplateResponse(
                 request, "instagram_comptes.html",
                 {
-                    "comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id,
+                    "comptes": comptes, "clients": clients, "clients_par_compte_id": clients_par_compte_id, "a_reconnecter": {c.id for c in _comptes_instagram_a_reconnecter(db)},
                     "erreur": (
                         f"Impossible de deconnecter ce compte : {clients_lies} client(s) y sont "
                         "encore rattaches. Reassignez-les d'abord a un autre compte."

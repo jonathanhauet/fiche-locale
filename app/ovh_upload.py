@@ -17,8 +17,27 @@ FTP_DOSSIER = os.getenv("OVH_FTP_DOSSIER", "").strip("/")
 URL_PUBLIQUE_BASE = os.getenv("OVH_URL_PUBLIQUE_BASE", "").rstrip("/")
 
 
+def extension_reelle(octets, nom_fichier: str) -> str:
+    """
+    Corrige l'extension d'une image d'apres son contenu : une image JPEG nommee « .png » est servie avec le mauvais type (image/png), ce qui peut faire
+    refuser l'image par Instagram. Les videos, les fichiers ouverts et les formats inconnus gardent leur nom.
+    """
+    if not isinstance(octets, (bytes, bytearray)) or "." not in nom_fichier:
+        return nom_fichier
+    base, extension = nom_fichier.rsplit(".", 1)
+    if extension.lower() not in ("jpg", "jpeg", "png", "webp", "gif"):
+        return nom_fichier
+    tete = bytes(octets[:12])
+    reelle = ("jpg" if tete[:3] == b"\xff\xd8\xff" else "png" if tete[:8] == b"\x89PNG\r\n\x1a\n" else "webp" if tete[:4] == b"RIFF" and tete[8:12] == b"WEBP"
+              else "gif" if tete[:4] == b"GIF8" else None)
+    if reelle is None or reelle == extension.lower() or (reelle == "jpg" and extension.lower() == "jpeg"):
+        return nom_fichier
+    return f"{base}.{reelle}"
+
+
 def envoyer_octets(octets: bytes, nom_fichier_distant: str) -> str:
     """Envoie des octets (image) ou un fichier ouvert en lecture binaire (video lourde) vers le dossier OVH configure, renvoie l'URL publique."""
+    nom_fichier_distant = extension_reelle(octets, nom_fichier_distant)
     manquants = [
         nom for nom, valeur in [
             ("OVH_FTP_HOTE", FTP_HOTE),

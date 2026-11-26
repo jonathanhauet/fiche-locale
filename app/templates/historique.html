@@ -12,7 +12,30 @@
   {% endfor %}
 </div>
 
-{% if lignes is not none %}
+{% if lignes_reseaux is defined %}
+<p class="texte-discret">Publications Facebook, Instagram et LinkedIn en échec sur les {{ jours }} derniers jours, avec la raison. Ouvrez-les pour les corriger ou les reprogrammer.</p>
+{% if lignes_reseaux %}
+<div class="conteneur-tableau">
+  <table class="tableau-historique">
+    <thead><tr><th>Date prévue</th><th>Client</th><th>Réseau</th><th>Publication</th><th>Raison</th><th></th></tr></thead>
+    <tbody>
+      {% for l in lignes_reseaux %}
+      <tr class="ligne-historique-danger">
+        <td>{{ l.date.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td>{{ l.client }}</td>
+        <td>{{ {"facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn"}[l.reseau] }}</td>
+        <td>{{ l.texte[:70] }}{{ '…' if l.texte|length > 70 else '' }}</td>
+        <td title="{{ l.erreur }}">{{ l.erreur|explication_echec }}</td>
+        <td><a class="bouton-secondaire bouton-mini" href="/publication-multi/{{ l.reseau }}/{{ l.id }}/modifier">Modifier / reprogrammer</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="etat-vide-carte"><span class="badge-icone-vide">✓</span><p class="texte-vide">Aucune publication en échec sur les réseaux sociaux ces {{ jours }} derniers jours.</p></div>
+{% endif %}
+{% elif lignes is not none %}
 <p class="texte-discret">{{ filtres[filtre][1] }} sur les {{ jours }} derniers jours : un post par ligne, avec sa dernière tentative. Ouvrez le post pour le corriger ou le reprogrammer.</p>
 {% if lignes %}
 <div class="conteneur-tableau">
