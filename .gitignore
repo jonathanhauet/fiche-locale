@@ -2,3 +2,7 @@
 donnees.db
 __pycache__/
 *.pyc
+
+# fichiers locaux (base vide de test, réglages d aperçu de Claude)
+fiche_locale.db
+.claude/
