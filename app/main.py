@@ -8313,6 +8313,10 @@ app.include_router(audit_fiche_routes.creer_routeur(templates, lambda request: u
 from . import pagesjaunes_goldunion  # noqa: E402
 app.include_router(pagesjaunes_goldunion.creer_routeur(templates, lambda request: utilisateur_connecte(request), lambda request: rediriger_si_non_connecte(request)))
 
+# --- API de lecture des statistiques Google des agences GoldUnion, protegee par cle (voir api_stats_goldunion.py) -------------------------------
+from . import api_stats_goldunion  # noqa: E402
+app.include_router(api_stats_goldunion.routeur)
+
 
 # --- Baisse de visibilite Google (France, Espagne, Italie) : statistiques, fiches, rangs, reponses des IA, annuaires -------------------------------
 
